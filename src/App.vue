@@ -1,5 +1,10 @@
 <script setup lang="ts">
+// Copyright (C) 2026 Maxim [maxirmx] Samsonov (www.sw.consulting)
+// All rights reserved.
+// This file is a part of Klinok ui application
+
 import { computed, reactive, ref } from "vue";
+import packageJson from "../package.json";
 import AppIcon from "./components/AppIcon.vue";
 import {
   defaultAppointment,
@@ -34,6 +39,7 @@ const selectedSex = ref("Все");
 const appointment = reactive<AppointmentDraft>({ ...defaultAppointment });
 const analysisRows = ref(["Гемоглобин", "Лейкоциты", "Эритроциты", "СОЭ"]);
 const localVisits = ref<Visit[]>([...seedVisits]);
+const version = packageJson.version;
 
 const tabs: { id: TabId; label: string; icon: "home" | "bag" | "calendar" | "book" | "user" }[] = [
   { id: "home", label: "Главная", icon: "home" },
@@ -220,6 +226,7 @@ function roleLabel(role: Role) {
           <AppIcon name="plus" />
           <span>Добавить анализ</span>
         </button>
+        <span class="version-info">Версия {{ version }}</span>
       </aside>
 
       <main class="app-surface">
@@ -458,6 +465,7 @@ function roleLabel(role: Role) {
             <span>{{ tab.label }}</span>
           </button>
           <button class="floating-add" aria-label="Добавить анализ" @click="openSheet('analysis')"><AppIcon name="plus" /></button>
+          <span class="version-info mobile-version">Версия {{ version }}</span>
         </nav>
       </main>
     </section>

@@ -1,5 +1,10 @@
+// Copyright (C) 2026 Maxim [maxirmx] Samsonov (www.sw.consulting)
+// All rights reserved.
+// This file is a part of Klinok ui application
+
 import { mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
+import packageJson from '../package.json'
 import App from '../src/App.vue'
 
 describe('App', () => {
@@ -21,6 +26,7 @@ describe('App', () => {
     await wrapper.get('button.primary-action').trigger('click')
     expect(wrapper.text()).toContain('Здравствуйте, Даниил !')
     expect(wrapper.text()).toContain('Мои питомцы')
+    expect(wrapper.text()).toContain(`Версия ${packageJson.version}`)
   })
 
   it('filters pets by the search field', async () => {

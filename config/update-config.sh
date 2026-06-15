@@ -1,10 +1,14 @@
 #!/bin/sh
+# Copyright (C) 2026 Maxim [maxirmx] Samsonov (www.sw.consulting)
+# All rights reserved.
+# This file is a part of Klinok ui application
+
 set -eu
 
 # This script updates the runtime configuration with environment variables.
 
-CONFIG_PATH=${CONFIG_PATH:-/usr/share/nginx/html/config.json}
-API_URL=${API_URL:-}
+CONFIG_PATH=${CONFIG_PATH:-/var/www/klinok/config.json}
+API_URL=${API_URL:-https://klinok.sw.consulting:8085/api}
 ENABLE_LOG=${ENABLE_LOG:-false}
 
 case "$ENABLE_LOG" in
