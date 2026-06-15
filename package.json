@@ -9,6 +9,7 @@
     "preview": "vite preview --host 127.0.0.1",
     "test": "vitest run --run",
     "lint": "eslint . --ext .vue,.ts,.js,.jsx,.cjs,.mjs --fix",
+    "lint:check": "eslint . --ext .vue,.ts,.js,.jsx,.cjs,.mjs",
     "format": "prettier --write src/ tests/",
     "coverage": "vitest run --coverage"
   },
