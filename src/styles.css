@@ -5,8 +5,15 @@ This file is a part of Klinok ui application
 */
 
 :root {
-  --bg: #f0f2f4;
-  --surface: #ffffff;
+  --brand-sky: #4087D1;
+  --brand-orange: #FF7F1A;
+  --brand-black: #000000;
+  --brand-white: #FFFFFF;
+  --brand-bg-sky: #EAF4FF;
+  --brand-bg-orange: #FFEAD9;
+  --brand-bg-neutral: #EFEFEF;
+  --bg: var(--brand-bg-neutral);
+  --surface: var(--brand-white);
   --surface-soft: #f4f4f5;
   --surface-muted: #eeeeef;
   --surface-card: #f2f2f2;
@@ -14,7 +21,9 @@ This file is a part of Klinok ui application
   --text-soft: rgba(16, 16, 16, 0.64);
   --text-muted: rgba(16, 16, 16, 0.42);
   --line: #e2e2e2;
-  --blue: #3778ff;
+  --accent: var(--brand-sky);
+  --accent-strong: var(--brand-orange);
+  --blue: var(--brand-sky);
   --danger: #c7362f;
   --radius: 10px;
   --font: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Segoe UI", Arial, sans-serif;
@@ -64,6 +73,39 @@ a {
   background: var(--bg);
 }
 
+.brand-logo {
+  display: block;
+  height: auto;
+  flex: 0 0 auto;
+  color: var(--text);
+}
+
+.brand-logo--compact {
+  width: 136px;
+}
+
+.brand-logo--standard {
+  width: 178px;
+}
+
+.brand-logo--mono {
+  color: currentColor;
+}
+
+.brand-block {
+  display: grid;
+  width: max-content;
+  max-width: 100%;
+  gap: 22px;
+  color: var(--text);
+}
+
+.brand-block span {
+  color: var(--text-soft);
+  font-size: 13px;
+  line-height: 1.3;
+}
+
 .auth-surface {
   position: relative;
   display: grid;
@@ -73,6 +115,17 @@ a {
   grid-template-rows: 1fr auto;
   overflow: hidden;
   background: var(--surface);
+}
+
+.auth-brand {
+  position: absolute;
+  top: max(22px, calc(12px + env(safe-area-inset-top, 0px)));
+  left: 24px;
+  z-index: 3;
+}
+
+.auth-surface.has-back .auth-brand {
+  left: 70px;
 }
 
 .back-float,
@@ -231,7 +284,7 @@ label > span {
   height: 52px;
   place-items: center;
   border-radius: 50%;
-  background: #e9f0ff;
+  background: var(--brand-bg-sky);
   color: var(--blue);
 }
 
@@ -285,7 +338,7 @@ label > span {
 }
 
 .black-action {
-  background: #000;
+  background: var(--brand-black);
   color: #fff;
 }
 
@@ -630,10 +683,10 @@ dd {
   align-items: center;
   min-height: 44px;
   padding: 0 14px;
-  border: 1px solid #e8eaf2;
+  border: 1px solid var(--line);
   border-radius: 24px;
   background: var(--surface);
-  color: #8a8da0;
+  color: var(--text-muted);
 }
 
 .search-input input {
@@ -842,8 +895,8 @@ dd {
   height: 28px;
   place-items: center;
   border-radius: 6px;
-  background: #f0f1f6;
-  color: #00042c;
+  background: var(--brand-bg-sky);
+  color: var(--brand-black);
 }
 
 .tiny-control .app-icon {
@@ -917,7 +970,7 @@ dd {
 
 .settings-row:first-of-type {
   grid-template-columns: 1fr auto;
-  color: #566074;
+  color: var(--text-soft);
   font-size: 19px;
   font-weight: 700;
 }
@@ -931,7 +984,7 @@ dd {
   position: relative;
   width: 34px;
   height: 18px;
-  border: 2px solid #5f6878;
+  border: 2px solid var(--text-soft);
   border-radius: 999px;
 }
 
@@ -942,7 +995,7 @@ dd {
   width: 10px;
   height: 10px;
   border-radius: 50%;
-  background: #5f6878;
+  background: var(--text-soft);
   transition: transform 0.2s ease;
 }
 
@@ -1070,7 +1123,7 @@ dd {
   transform: translateX(-50%);
   place-items: center;
   border-radius: 50%;
-  background: #000 !important;
+  background: var(--brand-black) !important;
   color: #aeb4bd !important;
 }
 
@@ -1160,7 +1213,7 @@ dd {
 .plain-card.unread {
   padding-inline: 12px;
   border-radius: 10px;
-  background: #eef4ff;
+  background: var(--brand-bg-sky);
 }
 
 .faq-item {
@@ -1264,7 +1317,7 @@ dd {
 }
 
 .qa-row.current {
-  background: #eef4ff;
+  background: var(--brand-bg-sky);
 }
 
 .qa-row > span:last-child {
@@ -1394,19 +1447,12 @@ dd {
   }
 
   .brand-block {
-    display: grid;
-    gap: 4px;
+    gap: 24px;
     margin-bottom: 20px;
   }
 
-  .brand-block strong {
-    font-size: 26px;
-  }
-
   .brand-block span {
-    color: var(--text-soft);
-    font-size: 13px;
-    line-height: 1.3;
+    max-width: 170px;
   }
 
   .nav-item {
