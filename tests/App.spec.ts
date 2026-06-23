@@ -158,14 +158,14 @@ describe("App", () => {
     const expectedVersion = `Версия ${APP_VERSION}`;
     const missingScreens: string[] = [];
 
-for (const scenario of scenarioRegistry.filter((item) => item.implemented)) {
-  const { wrapper } = await mountAt(resolveScenarioPath(scenario.path));
-  if (!wrapper.text().includes(expectedVersion)) {
-    missingScreens.push(`${scenario.id} (${scenario.path})`);
-  }
-  wrapper.unmount();
-  mountedWrappers.pop();
-}
+   for (const scenario of scenarioRegistry.filter((item) => item.implemented)) {
+     const { wrapper } = await mountAt(resolveScenarioPath(scenario.path));
+     if (!wrapper.text().includes(expectedVersion)) {
+       missingScreens.push(`${scenario.id} (${scenario.path})`);
+     }
+     wrapper.unmount();
+     mountedWrappers.pop();
+   }
 
     expect(missingScreens).toEqual([]);
   });
