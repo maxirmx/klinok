@@ -38,7 +38,7 @@ export const localVisits = ref<Visit[]>([...visits]);
 export const savedAnalyses = ref<AnalysisDraft[]>([...analyses]);
 export const toast = ref("");
 
-const dappRepository = createDefaultDappRepository();
+const dappRepository = createDefaultDappRepository(showToast);
 
 export const complaintTemplates = ref(dappRepository.listComplaintTemplates());
 export const complaintRecords = ref(dappRepository.listComplaintRecords());

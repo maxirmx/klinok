@@ -7,6 +7,8 @@ import type { ComplaintRecord, DappCollections, DrugRecord } from "./types";
 
 const STORAGE_KEY = "klinok.dapp.collections.v1";
 
+export type StorageErrorHandler = (message: string) => void;
+
 export interface DappRepository {
   listComplaintTemplates(): DappCollections["complaintTemplates"];
   listComplaintRecords(): ComplaintRecord[];
@@ -69,12 +71,19 @@ export class InMemoryDappRepository implements DappRepository {
 }
 
 class BrowserStorageDappRepository extends InMemoryDappRepository {
-  constructor(private readonly storage: Storage) {
-    super(readCollections(storage));
+  constructor(
+    private readonly storage: Storage,
+    private readonly onStorageError: StorageErrorHandler,
+  ) {
+    super(readCollections(storage, onStorageError));
   }
 
   protected override persist() {
-    this.storage.setItem(STORAGE_KEY, JSON.stringify(this.collections));
+    try {
+      this.storage.setItem(STORAGE_KEY, JSON.stringify(this.collections));
+    } catch (e) {
+      this.onStorageError(`Не удалось сохранить данные: ${e instanceof Error ? e.message : String(e)}`);
+    }
   }
 }
 
@@ -84,21 +93,21 @@ function upsertById<T extends { id: string }>(items: T[], item: T) {
   return items.map((candidate) => (candidate.id === item.id ? item : candidate));
 }
 
-function readCollections(storage: Storage): DappCollections {
-  const raw = storage.getItem(STORAGE_KEY);
-  if (!raw) return createSeedCollections();
-
+function readCollections(storage: Storage, onError?: StorageErrorHandler): DappCollections {
   try {
+    const raw = storage.getItem(STORAGE_KEY);
+    if (!raw) return createSeedCollections();
     return { ...createSeedCollections(), ...JSON.parse(raw) } as DappCollections;
-  } catch {
+  } catch (e) {
+    onError?.(`Не удалось загрузить данные: ${e instanceof Error ? e.message : String(e)}`);
     return createSeedCollections();
   }
 }
 
-export function createDefaultDappRepository(): DappRepository {
+export function createDefaultDappRepository(onStorageError?: StorageErrorHandler): DappRepository {
   if (typeof window === "undefined" || !window.localStorage) {
     return new InMemoryDappRepository();
   }
 
-  return new BrowserStorageDappRepository(window.localStorage);
+  return new BrowserStorageDappRepository(window.localStorage, onStorageError ?? console.error);
 }
