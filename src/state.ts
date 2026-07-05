@@ -94,7 +94,16 @@ function createUnavailableCaseRepository(message: string): CaseRepository {
   };
 }
 
-let caseRepository: CaseRepository = createUnavailableCaseRepository("Backend is not initialized.");
+let caseRepository: CaseRepository = createUnavailableCaseRepository("Backend is still initializing.");
+
+function assertBackendAvailable() {
+  if (!backendReady.value) {
+    throw new Error("Backend is still initializing.");
+  }
+  if (backendError.value) {
+    throw new Error(backendError.value);
+  }
+}
 
 function applyDappCollections(collections: DappCollections) {
   complaintTemplates.value = collections.complaintTemplates;
@@ -207,6 +216,7 @@ export function createComplaintRecord(): ComplaintRecord {
 }
 
 export async function submitAppointment() {
+  assertBackendAvailable();
   const complaintRecord = createComplaintRecord();
   const view = await caseRepository.createCaseFromAppointment(
     {
@@ -233,6 +243,7 @@ export function saveAnalysisDraft() {
 }
 
 export async function saveDrugDraft(): Promise<DrugRecord> {
+  assertBackendAvailable();
   if (!selectedDrugTemplate.value) {
     throw new Error("Drug template is not available");
   }
@@ -249,6 +260,7 @@ export async function saveDrugDraft(): Promise<DrugRecord> {
 }
 
 export async function updateDrugDraft(record: DrugRecord): Promise<DrugRecord> {
+  assertBackendAvailable();
   if (!selectedDrugTemplate.value) {
     throw new Error("Drug template is not available");
   }
@@ -278,6 +290,7 @@ export function validateDrugDraft() {
 }
 
 export async function deleteDrugRecord(id: string) {
+  assertBackendAvailable();
   const deleted = await caseRepository.deleteDrugRecord(id);
   await refreshDappCollections();
   return deleted;

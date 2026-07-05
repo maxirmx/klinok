@@ -26,12 +26,16 @@ function normalizeWriteIdentities(write: unknown): string[] {
   return Array.isArray(write) ? write.filter((item): item is string => typeof item === "string" && item.trim().length > 0).map((item) => item.trim()) : [];
 }
 
-function parseWriteIdentitiesFromAddress(address?: string): string[] {
+function parseWriteIdentitiesFromAddress(address?: string): string[] | null {
   if (!address?.startsWith(`/${KLINOK_ACCESS_CONTROLLER_TYPE}/`)) {
-    return [];
+    return null;
   }
 
-  return normalizeWriteIdentities(decodeURIComponent(address.slice(KLINOK_ACCESS_CONTROLLER_TYPE.length + 2)).split(","));
+  try {
+    return normalizeWriteIdentities(decodeURIComponent(address.slice(KLINOK_ACCESS_CONTROLLER_TYPE.length + 2)).split(","));
+  } catch {
+    return [];
+  }
 }
 
 function createAccessControllerAddress(write: string[]) {
@@ -43,8 +47,8 @@ export const KlinokAccessController = Object.assign(
     const configuredWrite = normalizeWriteIdentities(write);
 
     return async ({ identities, address }: AccessControllerInit = {}) => {
-      const writeIdentities = configuredWrite.length ? configuredWrite : parseWriteIdentitiesFromAddress(address);
-      const allowedWriters = writeIdentities.length ? writeIdentities : ["*"];
+      const parsedWriteIdentities = parseWriteIdentitiesFromAddress(address);
+      const allowedWriters = configuredWrite.length ? configuredWrite : parsedWriteIdentities ?? ["*"];
 
       return {
         type: KLINOK_ACCESS_CONTROLLER_TYPE,

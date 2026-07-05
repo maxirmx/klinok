@@ -3,7 +3,7 @@
 // This file is a part of Klinok ui application
 
 import type { AppointmentDraft } from "../data";
-import type { P2PClientConfig } from "../runtimeConfig";
+import { isWebSocketTrustedNodeMultiaddr, type P2PClientConfig } from "../runtimeConfig";
 import { KlinokAccessController } from "./accessController";
 import {
   createParticipantKeyPair,
@@ -137,6 +137,7 @@ async function createOrbitRuntime(config: P2PClientConfig): Promise<OrbitRuntime
 
   for (const address of config.trustedNodeMultiaddrs) {
     try {
+      if (!isWebSocketTrustedNodeMultiaddr(address)) continue;
       const trustedNode = multiaddr(address);
       if (trustedNode.getPeerId()) {
         bootstrapMultiaddrs.push(address);

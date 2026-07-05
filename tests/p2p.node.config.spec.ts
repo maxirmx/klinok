@@ -130,6 +130,13 @@ describe("p2p node config", () => {
     expect(identities.verifyIdentity).toHaveBeenCalledWith(writerIdentity);
   });
 
+  it("treats malformed persisted access-controller writer lists as empty instead of throwing", async () => {
+    const access = await KlinokAccessController()({ address: "/klinok/%E0%A4%A" });
+
+    expect(access.write).toEqual([]);
+    await expect(access.canAppend({ identity: "identity-hash" })).resolves.toBe(false);
+  });
+
   it("persists a generated libp2p private key and accepts an explicit key from env", async () => {
     const tempDir = mkdtempSync(join(tmpdir(), "klinok-p2p-key-"));
     const keyPath = join(tempDir, "libp2p-private-key.base64");
