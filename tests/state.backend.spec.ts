@@ -1,0 +1,26 @@
+// Copyright (C) 2026 Maxim [maxirmx] Samsonov (www.sw.consulting)
+// All rights reserved.
+// This file is a part of Klinok ui application
+
+import { beforeEach, describe, expect, it } from "vitest";
+import { backendError, backendReady, resetPrototypeStateForTests, submitAppointment } from "../src/state";
+
+describe("backend state guards", () => {
+  beforeEach(async () => {
+    await resetPrototypeStateForTests();
+  });
+
+  it("blocks replicated writes while backend initialization is still running", async () => {
+    backendReady.value = false;
+    backendError.value = "";
+
+    await expect(submitAppointment()).rejects.toThrow("Backend is still initializing.");
+  });
+
+  it("reports the backend initialization error instead of the placeholder repository error", async () => {
+    backendReady.value = true;
+    backendError.value = "Failed to dial trusted node.";
+
+    await expect(submitAppointment()).rejects.toThrow("Failed to dial trusted node.");
+  });
+});
