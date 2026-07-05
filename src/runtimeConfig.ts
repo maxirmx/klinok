@@ -39,6 +39,12 @@ export const defaultRuntimeConfig: AppRuntimeConfig = {
 function normalizeRuntimeConfig(value: Partial<AppRuntimeConfig>): AppRuntimeConfig {
   const p2p: Partial<P2PClientConfig> = value.p2p ?? {};
   const backendMode = value.backendMode === "p2p" ? "p2p" : "mock";
+  const participantPublicKeys =
+    p2p.participantPublicKeys &&
+    typeof p2p.participantPublicKeys === "object" &&
+    !Array.isArray(p2p.participantPublicKeys)
+      ? (p2p.participantPublicKeys as Record<string, JsonWebKey>)
+      : {};
 
   return {
     ...defaultRuntimeConfig,
@@ -49,7 +55,7 @@ function normalizeRuntimeConfig(value: Partial<AppRuntimeConfig>): AppRuntimeCon
       ...p2p,
       trustedNodeMultiaddrs: Array.isArray(p2p.trustedNodeMultiaddrs) ? p2p.trustedNodeMultiaddrs : [],
       writeIdentityIds: Array.isArray(p2p.writeIdentityIds) ? p2p.writeIdentityIds : ["*"],
-      participantPublicKeys: p2p.participantPublicKeys ?? {},
+      participantPublicKeys,
     },
   };
 }

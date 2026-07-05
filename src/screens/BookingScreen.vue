@@ -18,6 +18,7 @@ import {
   selectedComplaintTemplate,
   selectedComplaintTemplateId,
   selectComplaintOption,
+  showToast,
   submitAppointment,
 } from "../state";
 
@@ -40,8 +41,12 @@ function changeComplaintTemplate() {
 }
 
 async function submit() {
-  await submitAppointment();
-  router.push("/owner/booking/success");
+  try {
+    await submitAppointment();
+    await router.push("/owner/booking/success");
+  } catch (error) {
+    showToast(error instanceof Error ? error.message : "Не удалось создать заявку");
+  }
 }
 </script>
 

@@ -236,9 +236,13 @@ function cancelDrugDelete() {
 
 async function confirmDrugDelete() {
   if (!drugRecord.value) return;
-  const deleted = await deleteDrugRecord(drugRecord.value.id);
-  showToast(deleted ? "Препарат удален" : "Препарат не найден");
-  router.push("/owner/materials");
+  try {
+    const deleted = await deleteDrugRecord(drugRecord.value.id);
+    showToast(deleted ? "Препарат удален" : "Препарат не найден");
+    await router.push("/owner/materials");
+  } catch (error) {
+    showToast(error instanceof Error ? error.message : "Не удалось удалить препарат");
+  }
 }
 
 watch(
