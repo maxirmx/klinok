@@ -16,14 +16,12 @@ export interface P2PClientConfig {
 }
 
 export interface AppRuntimeConfig {
-  apiUrl: string;
   enableLog: boolean;
   backendMode: BackendMode;
   p2p: P2PClientConfig;
 }
 
 export const defaultRuntimeConfig: AppRuntimeConfig = {
-  apiUrl: "http://localhost:8080/api",
   enableLog: true,
   backendMode: "mock",
   p2p: {
