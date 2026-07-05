@@ -4,7 +4,7 @@
 
 import { describe, expect, it } from "vitest";
 import { InMemoryDappRepository } from "../src/dapp/repository";
-import { seedComplaintTemplates, seedDrugTemplates } from "../src/dapp/seeds";
+import { createSeedCollections, seedComplaintTemplates, seedDrugTemplates } from "../src/dapp/seeds";
 import {
   createComplaintRecordFromTemplate,
   createDrugRecordFromTemplate,
@@ -54,6 +54,7 @@ describe("dApp template records", () => {
         activeSubstanceRu: "  Тестовое вещество  ",
         activeSubstanceLatin: "Substantia test",
         pharmacyType: "vet",
+        groupIds: ["drug-group-analgesics", "drug-group-analgesics", ""],
         tradeNames: "Название 1, Название 2\nНазвание 3",
         pharmacokinetics: "",
         pharmacodynamics: "",
@@ -69,6 +70,7 @@ describe("dApp template records", () => {
     expect(record).toMatchObject({
       id: "drug-test",
       activeSubstanceRu: "Тестовое вещество",
+      groupIds: ["drug-group-analgesics"],
       tradeNames: ["Название 1", "Название 2", "Название 3"],
       dogDose: { text: "", source: "" },
       catDose: { text: "", source: "" },
@@ -80,6 +82,7 @@ describe("dApp template records", () => {
       activeSubstanceRu: "Вещество",
       activeSubstanceLatin: "",
       pharmacyType: "vet" as const,
+      groupIds: [],
       tradeNames: "",
       pharmacokinetics: "",
       pharmacodynamics: "",
@@ -103,6 +106,7 @@ describe("dApp template records", () => {
         activeSubstanceRu: "Вещество",
         activeSubstanceLatin: "Substantia",
         pharmacyType: "vet",
+        groupIds: ["drug-group-analgesics"],
         tradeNames: "Старое",
         pharmacokinetics: "",
         pharmacodynamics: "",
@@ -121,6 +125,7 @@ describe("dApp template records", () => {
         activeSubstanceRu: "Обновленное вещество",
         activeSubstanceLatin: "Substantia renovata",
         pharmacyType: "human",
+        groupIds: [],
         tradeNames: "Новое, Дополнительное",
         pharmacokinetics: "Кратко",
         pharmacodynamics: "Кратко",
@@ -136,6 +141,7 @@ describe("dApp template records", () => {
       id: "drug-update",
       activeSubstanceRu: "Обновленное вещество",
       pharmacyType: "human",
+      groupIds: [],
       tradeNames: ["Новое", "Дополнительное"],
       dogDose: { text: "5 мг/кг", source: "Справочник" },
       createdAt: "2026-06-22T21:03:28.000Z",
@@ -164,6 +170,7 @@ describe("dApp template records", () => {
         activeSubstanceRu: "Вещество",
         activeSubstanceLatin: "",
         pharmacyType: "human",
+        groupIds: [],
         tradeNames: "",
         pharmacokinetics: "",
         pharmacodynamics: "",
@@ -183,5 +190,29 @@ describe("dApp template records", () => {
     expect(repository.deleteDrugRecord("drug-repo")).toBe(true);
     expect(repository.listDrugRecords().map((item) => item.id)).not.toContain("drug-repo");
     expect(repository.deleteDrugRecord("drug-repo")).toBe(false);
+  });
+
+  it("normalizes older persisted drug data without groups", () => {
+    const collections = createSeedCollections();
+    const { groupIds: _groupIds, ...legacyDrugRecord } = collections.drugRecords[0];
+    const legacyDrugTemplates = collections.drugTemplates.map((template) => ({
+      ...template,
+      fields: template.fields.map((field) => {
+        if (field.id !== "dogDoseSource" && field.id !== "catDoseSource") return field;
+        const { multiline: _multiline, ...legacyField } = field;
+        return legacyField;
+      }),
+    }));
+    const repository = new InMemoryDappRepository({
+      ...collections,
+      drugGroups: undefined,
+      drugTemplates: legacyDrugTemplates,
+      drugRecords: [legacyDrugRecord],
+    } as unknown as ReturnType<typeof createSeedCollections>);
+
+    expect(repository.listDrugGroups().map((group) => group.id)).toContain("drug-group-analgesics");
+    expect(repository.listDrugRecords()[0].groupIds).toEqual([]);
+    expect(repository.listDrugTemplates()[0].fields.find((field) => field.id === "dogDoseSource")?.multiline).toBe(true);
+    expect(repository.listDrugTemplates()[0].fields.find((field) => field.id === "catDoseSource")?.multiline).toBe(true);
   });
 });

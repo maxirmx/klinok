@@ -837,6 +837,19 @@ dd {
   margin: 0;
 }
 
+.materials-tabs {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  max-width: 100%;
+}
+
+.materials-tabs button {
+  min-width: 0;
+  padding: 0 8px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .segmented button {
   min-height: 40px;
   border: 0;
@@ -1024,6 +1037,22 @@ dd {
   margin-top: 6px;
   color: var(--text-muted);
   overflow-wrap: anywhere;
+}
+
+.drug-form-actions {
+  grid-column: 1 / -1;
+}
+
+.drug-field-tradeNames {
+  grid-column: 1 / -1;
+}
+
+.drug-field-growable {
+  grid-template-rows: auto minmax(105px, 1fr);
+}
+
+.drug-field-growable textarea {
+  height: 100%;
 }
 
 .create-row {

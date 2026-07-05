@@ -40,8 +40,17 @@ export interface DrugDose {
   source: string;
 }
 
+export interface DrugGroup {
+  id: string;
+  title: string;
+  sortOrder: number;
+  description?: string;
+}
+
+export type DrugTemplateFieldId = Exclude<keyof DrugRecordDraft, "groupIds">;
+
 export interface DrugTemplateField {
-  id: keyof DrugRecordDraft;
+  id: DrugTemplateFieldId;
   label: string;
   multiline?: boolean;
   required?: boolean;
@@ -58,6 +67,7 @@ export interface DrugRecordDraft {
   activeSubstanceRu: string;
   activeSubstanceLatin: string;
   pharmacyType: DrugPharmacyType;
+  groupIds: string[];
   tradeNames: string;
   pharmacokinetics: string;
   pharmacodynamics: string;
@@ -74,6 +84,7 @@ export interface DrugRecord {
   activeSubstanceRu: string;
   activeSubstanceLatin: string;
   pharmacyType: DrugPharmacyType;
+  groupIds: string[];
   tradeNames: string[];
   pharmacokinetics: string;
   pharmacodynamics: string;
@@ -86,6 +97,7 @@ export interface DrugRecord {
 export interface DappCollections {
   complaintTemplates: ComplaintTemplate[];
   complaintRecords: ComplaintRecord[];
+  drugGroups: DrugGroup[];
   drugTemplates: DrugTemplate[];
   drugRecords: DrugRecord[];
 }

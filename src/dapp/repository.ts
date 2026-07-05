@@ -3,7 +3,8 @@
 // This file is a part of Klinok ui application
 
 import { createSeedCollections } from "./seeds";
-import type { ComplaintRecord, DappCollections, DrugRecord } from "./types";
+import { normalizeDrugGroupIds } from "./templates";
+import type { ComplaintRecord, DappCollections, DrugGroup, DrugRecord, DrugTemplate } from "./types";
 
 const STORAGE_KEY = "klinok.dapp.collections.v1";
 
@@ -13,6 +14,7 @@ export interface DappRepository {
   listComplaintTemplates(): DappCollections["complaintTemplates"];
   listComplaintRecords(): ComplaintRecord[];
   saveComplaintRecord(record: ComplaintRecord): void;
+  listDrugGroups(): DappCollections["drugGroups"];
   listDrugTemplates(): DappCollections["drugTemplates"];
   listDrugRecords(): DrugRecord[];
   saveDrugRecord(record: DrugRecord): void;
@@ -28,11 +30,74 @@ function cloneList<T>(items: T[]): T[] {
   return JSON.parse(JSON.stringify(items)) as T[];
 }
 
+function normalizeList<T>(items: unknown, fallback: T[]) {
+  return Array.isArray(items) ? cloneList(items as T[]) : cloneList(fallback);
+}
+
+function normalizeDrugGroups(items: unknown, fallback: DrugGroup[]) {
+  if (!Array.isArray(items)) return cloneList(fallback);
+  return items
+    .map((item, index) => {
+      if (!item || typeof item !== "object") return null;
+      const group = item as Partial<DrugGroup>;
+      if (typeof group.id !== "string" || typeof group.title !== "string") return null;
+      return {
+        id: group.id,
+        title: group.title,
+        sortOrder: typeof group.sortOrder === "number" ? group.sortOrder : index,
+        ...(typeof group.description === "string" && group.description.trim() ? { description: group.description } : {}),
+      };
+    })
+    .filter((item): item is DrugGroup => Boolean(item));
+}
+
+function normalizeDrugRecords(items: unknown, fallback: DrugRecord[]) {
+  const records = Array.isArray(items) ? items : fallback;
+  return records.map((item) => {
+    const record = item as DrugRecord;
+    return {
+      ...record,
+      groupIds: normalizeDrugGroupIds(record.groupIds),
+    };
+  });
+}
+
+function normalizeDrugTemplates(items: unknown, fallback: DrugTemplate[]) {
+  if (!Array.isArray(items)) return cloneList(fallback);
+  const seedTemplateById = new Map(fallback.map((template) => [template.id, template]));
+  return items.map((item) => {
+    const template = item as DrugTemplate;
+    const seedTemplate = seedTemplateById.get(template.id);
+    if (!seedTemplate) return template;
+    const seedFieldById = new Map(seedTemplate.fields.map((field) => [field.id, field]));
+    return {
+      ...seedTemplate,
+      ...template,
+      fields: template.fields.map((field) => ({
+        ...seedFieldById.get(field.id),
+        ...field,
+      })),
+    };
+  });
+}
+
+export function normalizeDappCollections(collections: Partial<DappCollections> = {}): DappCollections {
+  const seed = createSeedCollections();
+  const merged = { ...seed, ...collections };
+  return {
+    complaintTemplates: normalizeList(merged.complaintTemplates, seed.complaintTemplates),
+    complaintRecords: normalizeList(merged.complaintRecords, seed.complaintRecords),
+    drugGroups: normalizeDrugGroups(merged.drugGroups, seed.drugGroups),
+    drugTemplates: normalizeDrugTemplates(merged.drugTemplates, seed.drugTemplates),
+    drugRecords: normalizeDrugRecords(merged.drugRecords, seed.drugRecords),
+  };
+}
+
 export class InMemoryDappRepository implements DappRepository {
   protected collections: DappCollections;
 
   constructor(collections: DappCollections = createSeedCollections()) {
-    this.collections = cloneCollections(collections);
+    this.collections = cloneCollections(normalizeDappCollections(collections));
   }
 
   listComplaintTemplates() {
@@ -46,6 +111,10 @@ export class InMemoryDappRepository implements DappRepository {
   saveComplaintRecord(record: ComplaintRecord) {
     this.collections.complaintRecords = upsertById(this.collections.complaintRecords, record);
     this.persist();
+  }
+
+  listDrugGroups() {
+    return cloneList(this.collections.drugGroups);
   }
 
   listDrugTemplates() {
@@ -70,7 +139,7 @@ export class InMemoryDappRepository implements DappRepository {
   }
 
   reset(collections: DappCollections = createSeedCollections()) {
-    this.collections = cloneCollections(collections);
+    this.collections = cloneCollections(normalizeDappCollections(collections));
     this.persist();
   }
 
@@ -106,7 +175,7 @@ function readCollections(storage: Storage, onError?: StorageErrorHandler): DappC
   try {
     const raw = storage.getItem(STORAGE_KEY);
     if (!raw) return createSeedCollections();
-    return { ...createSeedCollections(), ...JSON.parse(raw) } as DappCollections;
+    return normalizeDappCollections(JSON.parse(raw) as Partial<DappCollections>);
   } catch (e) {
     onError?.(`Не удалось загрузить данные: ${e instanceof Error ? e.message : String(e)}`);
     return createSeedCollections();

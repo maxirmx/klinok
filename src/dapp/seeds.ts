@@ -2,7 +2,7 @@
 // All rights reserved.
 // This file is a part of Klinok ui application
 
-import type { ComplaintTemplate, DappCollections, DrugRecord, DrugTemplate } from "./types";
+import type { ComplaintTemplate, DappCollections, DrugGroup, DrugRecord, DrugTemplate } from "./types";
 
 export const seedComplaintTemplates: ComplaintTemplate[] = [
   {
@@ -131,10 +131,18 @@ export const seedDrugTemplates: DrugTemplate[] = [
       { id: "pharmacokinetics", label: "Фармакокинетика", multiline: true },
       { id: "pharmacodynamics", label: "Фармакодинамика", multiline: true },
       { id: "dogDoseText", label: "Дозы, способы введения и кратность для собак", multiline: true },
-      { id: "dogDoseSource", label: "Источник для собак" },
+      { id: "dogDoseSource", label: "Источник для собак", multiline: true },
       { id: "catDoseText", label: "Дозы, способы введения и кратность для кошек", multiline: true },
-      { id: "catDoseSource", label: "Источник для кошек" },
+      { id: "catDoseSource", label: "Источник для кошек", multiline: true },
     ],
+  },
+];
+
+export const seedDrugGroups: DrugGroup[] = [
+  {
+    id: "drug-group-analgesics",
+    title: "Обезболивающие",
+    sortOrder: 10,
   },
 ];
 
@@ -146,6 +154,7 @@ export const seedDrugRecords: DrugRecord[] = [
     activeSubstanceRu: "Парацетамол",
     activeSubstanceLatin: "Paracetamolum",
     pharmacyType: "human",
+    groupIds: ["drug-group-analgesics"],
     tradeNames: [],
     pharmacokinetics: "",
     pharmacodynamics: "",
@@ -161,6 +170,7 @@ export const seedDrugRecords: DrugRecord[] = [
     activeSubstanceRu: "Мелоксикам",
     activeSubstanceLatin: "Meloxicamum",
     pharmacyType: "vet",
+    groupIds: ["drug-group-analgesics"],
     tradeNames: [],
     pharmacokinetics: "",
     pharmacodynamics: "",
@@ -175,6 +185,7 @@ export function createSeedCollections(): DappCollections {
   return {
     complaintTemplates: seedComplaintTemplates,
     complaintRecords: [],
+    drugGroups: seedDrugGroups,
     drugTemplates: seedDrugTemplates,
     drugRecords: seedDrugRecords,
   };

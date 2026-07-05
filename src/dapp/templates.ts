@@ -99,6 +99,7 @@ export function createEmptyDrugDraft(): DrugRecordDraft {
     activeSubstanceRu: "",
     activeSubstanceLatin: "",
     pharmacyType: "vet",
+    groupIds: [],
     tradeNames: "",
     pharmacokinetics: "",
     pharmacodynamics: "",
@@ -114,6 +115,7 @@ export function createDrugDraftFromRecord(record: DrugRecord): DrugRecordDraft {
     activeSubstanceRu: record.activeSubstanceRu,
     activeSubstanceLatin: record.activeSubstanceLatin,
     pharmacyType: record.pharmacyType,
+    groupIds: normalizeDrugGroupIds(record.groupIds),
     tradeNames: record.tradeNames.join(", "),
     pharmacokinetics: record.pharmacokinetics,
     pharmacodynamics: record.pharmacodynamics,
@@ -129,6 +131,17 @@ export function splitTradeNames(value: string) {
     .split(/[\n,]/)
     .map((item) => item.trim())
     .filter(Boolean);
+}
+
+export function normalizeDrugGroupIds(value: unknown) {
+  if (!Array.isArray(value)) return [];
+  return Array.from(
+    new Set(
+      value
+        .map((item) => (typeof item === "string" ? trim(item) : ""))
+        .filter(Boolean),
+    ),
+  );
 }
 
 export function getDrugDraftValidationError(draft: DrugRecordDraft) {
@@ -152,6 +165,7 @@ export function createDrugRecordFromTemplate(
     activeSubstanceRu: trim(draft.activeSubstanceRu),
     activeSubstanceLatin: trim(draft.activeSubstanceLatin),
     pharmacyType: draft.pharmacyType,
+    groupIds: normalizeDrugGroupIds(draft.groupIds),
     tradeNames: splitTradeNames(draft.tradeNames),
     pharmacokinetics: trim(draft.pharmacokinetics),
     pharmacodynamics: trim(draft.pharmacodynamics),

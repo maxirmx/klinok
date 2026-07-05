@@ -45,6 +45,7 @@ const dappRepository = createDefaultDappRepository(showToast);
 
 export const complaintTemplates = ref(dappRepository.listComplaintTemplates());
 export const complaintRecords = ref(dappRepository.listComplaintRecords());
+export const drugGroups = ref(dappRepository.listDrugGroups());
 export const drugTemplates = ref(dappRepository.listDrugTemplates());
 export const drugRecords = ref(dappRepository.listDrugRecords());
 export const selectedComplaintTemplateId = ref(complaintTemplates.value[0]?.id ?? "");
@@ -206,6 +207,7 @@ export function resetDappStateForTests() {
   dappRepository.reset();
   complaintTemplates.value = dappRepository.listComplaintTemplates();
   complaintRecords.value = dappRepository.listComplaintRecords();
+  drugGroups.value = dappRepository.listDrugGroups();
   drugTemplates.value = dappRepository.listDrugTemplates();
   drugRecords.value = dappRepository.listDrugRecords();
   selectedComplaintTemplateId.value = complaintTemplates.value[0]?.id ?? "";
