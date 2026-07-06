@@ -34,6 +34,7 @@ const browserGlobals = {
 const nodeGlobals = {
   process: 'readonly',
   module: 'readonly',
+  Buffer: 'readonly',
   require: 'readonly',
   __dirname: 'readonly',
   __filename: 'readonly'
@@ -130,7 +131,7 @@ export default [
     }
   },
   {
-    files: ['*.config.{js,mjs,cjs,ts}', 'eslint.config.js', 'vite.config.ts', 'vitest.config.ts', 'p2p-node/**/*.js'],
+    files: ['*.config.{js,mjs,cjs,ts}', 'eslint.config.js', 'vite.config.ts', 'vitest.config.ts', 'p2p-node/**/*.js', 'scripts/**/*.js'],
     languageOptions: {
       globals: nodeGlobals
     },

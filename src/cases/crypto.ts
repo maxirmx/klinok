@@ -49,6 +49,25 @@ export interface EncryptedEventRecord {
   };
 }
 
+export function deriveParticipantPublicKeyJwk(privateKey: JsonWebKey): JsonWebKey | undefined {
+  if (
+    privateKey.kty !== "RSA" ||
+    typeof privateKey.n !== "string" ||
+    typeof privateKey.e !== "string"
+  ) {
+    return undefined;
+  }
+
+  return {
+    kty: "RSA",
+    n: privateKey.n,
+    e: privateKey.e,
+    alg: privateKey.alg ?? "RSA-OAEP-256",
+    ext: true,
+    key_ops: ["wrapKey"],
+  };
+}
+
 function getSubtle() {
   const subtle = globalThis.crypto?.subtle;
   if (!subtle) {

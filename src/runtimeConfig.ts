@@ -2,8 +2,16 @@
 // All rights reserved.
 // This file is a part of Klinok ui application
 
+import { deriveParticipantPublicKeyJwk } from "./cases/crypto";
+
 export const DEVELOPMENT_TRUSTED_NODE_MULTIADDR = "/ip4/127.0.0.1/tcp/8089/ws";
 export const PRODUCTION_TRUSTED_NODE_MULTIADDR = "/dns4/klinok.sw.consulting/tcp/8089/tls/ws";
+export const SHARED_DEMO_PARTICIPANT_ID = "klinok-demo-shared";
+export const RUNTIME_CONFIG_PATHS = [
+  "/config.json",
+  "/shared-participant-key.json",
+  "/shared-participant-key.local.json",
+];
 
 export interface P2PClientConfig {
   databaseName: string;
@@ -14,11 +22,19 @@ export interface P2PClientConfig {
   writeIdentityIds: string[];
   participantPublicKeys: Record<string, JsonWebKey>;
   participantPrivateKey?: JsonWebKey;
+  allowGeneratedParticipantKeys: boolean;
 }
 
 export interface AppRuntimeConfig {
   enableLog: boolean;
   p2p: P2PClientConfig;
+}
+
+export type P2PClientConfigInput = Partial<P2PClientConfig>;
+
+export interface AppRuntimeConfigInput {
+  enableLog?: boolean;
+  p2p?: P2PClientConfigInput;
 }
 
 function normalizeString(value: unknown, fallback: string): string {
@@ -36,6 +52,10 @@ function normalizeStringList(value: unknown, fallback: string[]): string[] {
   return items.length ? items : [...fallback];
 }
 
+function normalizeBoolean(value: unknown, fallback: boolean): boolean {
+  return typeof value === "boolean" ? value : fallback;
+}
+
 export function isWebSocketTrustedNodeMultiaddr(value: string): boolean {
   return /\/(?:tls\/)?ws(?:\/|$)/.test(value) || /\/wss(?:\/|$)/.test(value);
 }
@@ -45,10 +65,10 @@ function normalizeTrustedNodeMultiaddrs(value: unknown, fallback: string[]): str
   return items.length ? items : [...fallback];
 }
 
-function normalizePublicKeys(value: unknown): Record<string, JsonWebKey> {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+function normalizePublicKeys(value: unknown, fallback: Record<string, JsonWebKey> = {}): Record<string, JsonWebKey> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return { ...fallback };
 
-  const result: Record<string, JsonWebKey> = Object.create(null);
+  const result: Record<string, JsonWebKey> = { ...fallback };
   for (const [key, jwk] of Object.entries(value as Record<string, unknown>)) {
     if (key === "__proto__" || key === "constructor" || key === "prototype") continue;
     if (jwk && typeof jwk === "object" && !Array.isArray(jwk)) {
@@ -72,10 +92,11 @@ export function createDefaultRuntimeConfig(isDevelopment = import.meta.env.DEV):
     p2p: {
       databaseName: "klinok-cases",
       identityId: "klinok-browser-owner",
-      participantId: "owner-demo",
+      participantId: SHARED_DEMO_PARTICIPANT_ID,
       trustedNodeMultiaddrs: getDefaultTrustedNodeMultiaddrs(isDevelopment),
       writeIdentityIds: ["*"],
       participantPublicKeys: {},
+      allowGeneratedParticipantKeys: false,
     },
   };
 }
@@ -83,10 +104,19 @@ export function createDefaultRuntimeConfig(isDevelopment = import.meta.env.DEV):
 export const defaultRuntimeConfig: AppRuntimeConfig = createDefaultRuntimeConfig();
 
 export function normalizeRuntimeConfig(
-  value: Partial<AppRuntimeConfig>,
+  value: AppRuntimeConfigInput,
   defaults: AppRuntimeConfig = defaultRuntimeConfig,
 ): AppRuntimeConfig {
-  const p2p: Partial<P2PClientConfig> = value.p2p ?? {};
+  const p2p: P2PClientConfigInput = value.p2p ?? {};
+  const participantId = normalizeString(p2p.participantId, defaults.p2p.participantId);
+  const participantPrivateKey = normalizeOptionalJsonWebKey(p2p.participantPrivateKey, defaults.p2p.participantPrivateKey);
+  const participantPublicKeys = normalizePublicKeys(p2p.participantPublicKeys, defaults.p2p.participantPublicKeys);
+  if (participantPrivateKey && !participantPublicKeys[participantId]) {
+    const derivedPublicKey = deriveParticipantPublicKeyJwk(participantPrivateKey);
+    if (derivedPublicKey) {
+      participantPublicKeys[participantId] = derivedPublicKey;
+    }
+  }
 
   return {
     enableLog: typeof value.enableLog === "boolean" ? value.enableLog : defaults.enableLog,
@@ -94,13 +124,56 @@ export function normalizeRuntimeConfig(
       databaseName: normalizeString(p2p.databaseName, defaults.p2p.databaseName),
       databaseAddress: normalizeOptionalString(p2p.databaseAddress, defaults.p2p.databaseAddress),
       identityId: normalizeString(p2p.identityId, defaults.p2p.identityId),
-      participantId: normalizeString(p2p.participantId, defaults.p2p.participantId),
+      participantId,
       trustedNodeMultiaddrs: normalizeTrustedNodeMultiaddrs(p2p.trustedNodeMultiaddrs, defaults.p2p.trustedNodeMultiaddrs),
       writeIdentityIds: normalizeStringList(p2p.writeIdentityIds, defaults.p2p.writeIdentityIds),
-      participantPublicKeys: normalizePublicKeys(p2p.participantPublicKeys),
-      participantPrivateKey: normalizeOptionalJsonWebKey(p2p.participantPrivateKey, defaults.p2p.participantPrivateKey),
+      participantPublicKeys,
+      participantPrivateKey,
+      allowGeneratedParticipantKeys: normalizeBoolean(
+        p2p.allowGeneratedParticipantKeys,
+        defaults.p2p.allowGeneratedParticipantKeys,
+      ),
     },
   };
+}
+
+function mergeRuntimeConfigOverlay(
+  base: AppRuntimeConfigInput,
+  overlay: AppRuntimeConfigInput,
+): AppRuntimeConfigInput {
+  return {
+    ...base,
+    ...overlay,
+    p2p: {
+      ...(base.p2p ?? {}),
+      ...(overlay.p2p ?? {}),
+      participantPublicKeys: {
+        ...(base.p2p?.participantPublicKeys ?? {}),
+        ...(overlay.p2p?.participantPublicKeys ?? {}),
+      },
+    },
+  };
+}
+
+export function mergeRuntimeConfigOverlays(overlays: AppRuntimeConfigInput[]): AppRuntimeConfigInput {
+  return overlays.reduce<AppRuntimeConfigInput>(mergeRuntimeConfigOverlay, {});
+}
+
+async function loadRuntimeConfigOverlay(path: string): Promise<AppRuntimeConfigInput | null> {
+  if (typeof fetch !== "function") {
+    return null;
+  }
+
+  try {
+    const response = await fetch(path, { cache: "no-store" });
+    if (!response.ok) {
+      return null;
+    }
+
+    return (await response.json()) as AppRuntimeConfigInput;
+  } catch {
+    return null;
+  }
 }
 
 export async function loadRuntimeConfig(): Promise<AppRuntimeConfig> {
@@ -108,15 +181,6 @@ export async function loadRuntimeConfig(): Promise<AppRuntimeConfig> {
     return defaultRuntimeConfig;
   }
 
-  try {
-    const response = await fetch("/config.json", { cache: "no-store" });
-    if (!response.ok) {
-      return defaultRuntimeConfig;
-    }
-
-    const json = (await response.json()) as Partial<AppRuntimeConfig>;
-    return normalizeRuntimeConfig(json);
-  } catch {
-    return defaultRuntimeConfig;
-  }
+  const overlays = await Promise.all(RUNTIME_CONFIG_PATHS.map(loadRuntimeConfigOverlay));
+  return normalizeRuntimeConfig(mergeRuntimeConfigOverlays(overlays.filter((item): item is AppRuntimeConfigInput => item !== null)));
 }

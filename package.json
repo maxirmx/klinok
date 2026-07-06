@@ -8,6 +8,8 @@
     "build": "vue-tsc --noEmit && vite build",
     "preview": "vite preview --host 127.0.0.1",
     "p2p:node": "node p2p-node/src/index.js",
+    "p2p:key:generate": "node scripts/generate-shared-participant-key.js",
+    "p2p:key:write-build": "node scripts/write-shared-participant-key-overlay.js --secret-file /run/secrets/klinok_demo_participant_private_key_b64 --optional",
     "test": "vitest run --run",
     "lint": "eslint . --ext .vue,.ts,.js,.jsx,.cjs,.mjs --fix",
     "lint:check": "eslint . --ext .vue,.ts,.js,.jsx,.cjs,.mjs",

@@ -7,13 +7,10 @@ import { isWebSocketTrustedNodeMultiaddr, type P2PClientConfig } from "../runtim
 import { KlinokAccessController } from "./accessController";
 import { BROWSER_ORBITDB_DIRECTORY, createBrowserHeliaInit } from "./browserStorage";
 import {
-  createParticipantKeyPair,
   decryptReplicatedEventRecord,
   encryptReplicatedEvent,
   encryptReplicatedEventWithKeyring,
-  exportParticipantKeyPair,
   generateCaseKey,
-  importParticipantKeyPair,
   importParticipantPublicKey,
   unwrapCaseKeyFromRecord,
   wrapCaseKeyForParticipants,
@@ -21,6 +18,7 @@ import {
   type ParticipantKeyPair,
   type ParticipantPublicKey,
 } from "./crypto";
+import { resolveParticipantKeyPair } from "./participantKeys";
 import { createCaseEvent, createOwnerRequestEvent, isCaseEvent, reduceCaseEvents, reduceSingleCase } from "./events";
 import { createDappEvent, isDappEvent, reduceDappCollections } from "../dapp/repository";
 import type { DappEvent, DappWatchCallback, DrugRecord } from "../dapp/types";
@@ -44,8 +42,6 @@ interface OrbitEventsDb {
   };
 }
 
-const KEY_STORAGE_PREFIX = "klinok:p2p:participant:";
-
 function includesPeerId(address: { getComponents: () => Array<{ name: string; value?: string }> }): boolean {
   return address.getComponents().some((component) => component.name === "p2p" && Boolean(component.value));
 }
@@ -68,34 +64,6 @@ function extractOrbitValue(entry: unknown): EncryptedEventRecord | null {
   }
 
   return null;
-}
-
-async function loadOrCreateParticipantKeyPair(config: P2PClientConfig): Promise<ParticipantKeyPair> {
-  if (config.participantPrivateKey && config.participantPublicKeys[config.participantId]) {
-    return importParticipantKeyPair(
-      config.participantId,
-      config.participantPublicKeys[config.participantId],
-      config.participantPrivateKey,
-    );
-  }
-
-  const storageKey = `${KEY_STORAGE_PREFIX}${config.participantId}`;
-  const stored = typeof localStorage === "undefined" ? null : localStorage.getItem(storageKey);
-  if (stored) {
-    const parsed = JSON.parse(stored) as { publicKey: JsonWebKey; privateKey: JsonWebKey };
-    return importParticipantKeyPair(config.participantId, parsed.publicKey, parsed.privateKey);
-  }
-
-  const pair = await createParticipantKeyPair(config.participantId);
-  if (typeof localStorage !== "undefined") {
-    const exported = await exportParticipantKeyPair(pair);
-    localStorage.setItem(
-      storageKey,
-      JSON.stringify({ publicKey: exported.publicKey, privateKey: exported.privateKey }),
-    );
-  }
-
-  return pair;
 }
 
 async function loadRecipients(config: P2PClientConfig, self: ParticipantKeyPair): Promise<ParticipantPublicKey[]> {
@@ -223,7 +191,7 @@ async function createOrbitRuntime(config: P2PClientConfig): Promise<OrbitRuntime
 }
 
 export async function createOrbitCaseRepository(config: P2PClientConfig): Promise<CaseRepository> {
-  const participant = await loadOrCreateParticipantKeyPair(config);
+  const participant = await resolveParticipantKeyPair(config);
   const recipients = await loadRecipients(config, participant);
   return new OrbitCaseRepository(config, participant, recipients);
 }
