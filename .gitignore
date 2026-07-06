@@ -37,6 +37,7 @@ dist/
 coverage/
 .tmp*/
 .klinok-p2p/
+public/shared-participant-key*.json
 
 # Local Figma/design handoff extracts
 .design-reference/

@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1.7
 # Copyright (C) 2026 Maxim [maxirmx] Samsonov (www.sw.consulting)
 # All rights reserved.
 # This file is a part of Klinok ui application
@@ -10,6 +11,10 @@ COPY package*.json ./
 RUN npm ci
 
 COPY . .
+RUN --mount=type=secret,id=klinok_demo_participant_private_key_b64,target=/run/secrets/klinok_demo_participant_private_key_b64 \
+    node scripts/write-shared-participant-key-overlay.js \
+    --secret-file /run/secrets/klinok_demo_participant_private_key_b64 \
+    --optional
 RUN npm run build
 
 # Stage for running nginx with static files
