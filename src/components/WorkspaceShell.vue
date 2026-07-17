@@ -42,6 +42,7 @@ const navigationByRole: Record<Role, WorkspaceNavItem[]> = {
   ],
   doctor: [
     { id: "workspace-top", label: "Главная страница", icon: "home" },
+    { id: "doctor-request-access", label: "Запросить доступ", icon: "plus" },
     { id: "doctor-pets", label: "Питомцы", icon: "pets" },
     { id: "doctor-new-record", label: "Новая запись", icon: "plus" },
     { id: "doctor-delegation", label: "Делегирование", icon: "user" },
@@ -67,6 +68,15 @@ function selectSection(id: string) {
     hash: `#${id}`,
   });
 }
+
+function ownerPathActive(path: string, exact = false) {
+  if (props.settings) return false;
+  return exact ? route.path === path : route.path === path || route.path.startsWith(`${path}/`);
+}
+
+function selectOwnerPath(path: string) {
+  void router.push(path);
+}
 </script>
 
 <template>
@@ -77,7 +87,47 @@ function selectSection(id: string) {
         <span>Здоровье питомца под контролем</span>
       </a>
 
-      <nav class="workspace-sidebar-nav">
+      <nav v-if="effectiveRole === 'owner'" class="workspace-sidebar-nav owner-navigation">
+        <ul class="workspace-nav-tree">
+          <li>
+            <a
+              class="workspace-nav-item"
+              :class="{ active: ownerPathActive('/owner/home', true) }"
+              href="/owner/home"
+              @click.prevent="selectOwnerPath('/owner/home')"
+            >
+              <AppIcon name="home" />
+              <span>Главная страница</span>
+            </a>
+            <ul>
+              <li>
+                <a
+                  class="workspace-nav-item owner-child"
+                  :class="{ active: ownerPathActive('/owner/pets/new', true) }"
+                  href="/owner/pets/new"
+                  @click.prevent="selectOwnerPath('/owner/pets/new')"
+                >
+                  <AppIcon name="plus" />
+                  <span>Добавить питомца</span>
+                </a>
+              </li>
+              <li v-for="pet in appState.medical.pets" :key="pet.petId">
+                <a
+                  class="workspace-nav-item owner-child"
+                  :class="{ active: ownerPathActive(`/owner/pets/${pet.petId}`) }"
+                  :href="`/owner/pets/${pet.petId}`"
+                  @click.prevent="selectOwnerPath(`/owner/pets/${pet.petId}`)"
+                >
+                  <AppIcon name="pets" />
+                  <span>{{ pet.name }}</span>
+                </a>
+              </li>
+            </ul>
+          </li>
+        </ul>
+      </nav>
+
+      <nav v-else class="workspace-sidebar-nav">
         <a
           v-for="item in navigation"
           :key="item.id"
@@ -122,7 +172,17 @@ function selectSection(id: string) {
         <slot />
       </div>
 
-      <nav class="workspace-bottom-nav" aria-label="Нижняя навигация">
+      <nav v-if="effectiveRole === 'owner'" class="workspace-bottom-nav" aria-label="Нижняя навигация">
+        <a href="/owner/home" :class="{ active: ownerPathActive('/owner/home', true) }" @click.prevent="selectOwnerPath('/owner/home')">
+          <AppIcon name="home" />
+          <span>Главная</span>
+        </a>
+        <a href="/owner/pets/new" :class="{ active: ownerPathActive('/owner/pets/new', true) }" @click.prevent="selectOwnerPath('/owner/pets/new')">
+          <AppIcon name="plus" />
+          <span>Добавить</span>
+        </a>
+      </nav>
+      <nav v-else class="workspace-bottom-nav" aria-label="Нижняя навигация">
         <a
           v-for="item in navigation"
           :key="item.id"

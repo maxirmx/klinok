@@ -7,6 +7,7 @@ import RoleSelectionCards from "../src/components/RoleSelectionCards.vue";
 import AuthScreen from "../src/screens/AuthScreen.vue";
 import RoleStatusScreen from "../src/screens/RoleStatusScreen.vue";
 import WorkspaceScreen from "../src/screens/WorkspaceScreen.vue";
+import OwnerScreen from "../src/screens/OwnerScreen.vue";
 import { getOrCreateDeviceId, setDeviceName } from "../src/repositories/deviceVault";
 import { routes } from "../src/router";
 
@@ -135,8 +136,7 @@ describe("operational Russian UI", () => {
 
   it.each([
     ["administrator", "/admin/home", ["Главная страница", "Заявки", "Аккаунты", "Конфликты", "Журнал"]],
-    ["doctor", "/doctor/home", ["Главная страница", "Питомцы", "Новая запись", "Делегирование", "Медкарта"]],
-    ["owner", "/owner/home", ["Главная страница", "Добавить", "Питомцы", "Дать доступ", "Доступы", "Медкарта"]],
+    ["doctor", "/doctor/home", ["Главная страница", "Запросить доступ", "Питомцы", "Новая запись", "Делегирование", "Медкарта"]],
   ] as const)("renders responsive %s navigation for the current feature set", async (role, path, labels) => {
     const workspace = await mountScreen(WorkspaceScreen, path, { scenarioId: `${role}-home`, role });
     const sidebarLabels = workspace.findAll(".workspace-sidebar-nav .workspace-nav-item span").map((node) => node.text());
@@ -153,5 +153,14 @@ describe("operational Russian UI", () => {
     await flushPromises();
     expect(workspace.vm.$route.hash).toBe(target.attributes("href"));
     expect(target.classes()).toContain("active");
+  });
+
+  it("renders the Owner route hierarchy and compact mobile actions", async () => {
+    const owner = await mountScreen(OwnerScreen, "/owner/home", { scenarioId: "owner-home", role: "owner" });
+    expect(owner.findAll(".workspace-sidebar-nav .workspace-nav-item span").map((node) => node.text())).toEqual([
+      "Главная страница", "Добавить питомца",
+    ]);
+    expect(owner.findAll(".workspace-bottom-nav a span").map((node) => node.text())).toEqual(["Главная", "Добавить"]);
+    expect(owner.text()).toContain("Мои питомцы");
   });
 });

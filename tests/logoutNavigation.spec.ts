@@ -36,7 +36,7 @@ vi.mock("../src/appStore", async () => {
       ],
       pendingQueue: [], notifications: [], events: [],
     },
-    medical: { pets: [], grants: [], records: [], confirmations: [], events: [] },
+    medical: { pets: [], grants: [], accessRequests: [], records: [], confirmations: [], events: [] },
     conflicts: [],
     keyRecoveryRequired: false,
     devicePending: false,
@@ -105,7 +105,7 @@ describe("logout navigation", () => {
   it("shows recognizable names before device IDs", async () => {
     const { wrapper } = await mountAt(RoleStatusScreen, "/profile", { scenarioId: "user-profile" });
     expect(wrapper.findAll(".workspace-sidebar-nav .workspace-nav-item span").map((node) => node.text())).toEqual([
-      "Главная страница", "Добавить", "Питомцы", "Дать доступ", "Доступы", "Медкарта",
+      "Главная страница", "Добавить питомца",
     ]);
     expect(wrapper.find(".workspace-sidebar-footer .workspace-nav-item.active").text()).toContain("Настройки пользователя");
     expect(wrapper.text()).toContain("Телефон Максима");
@@ -121,7 +121,7 @@ describe("logout navigation", () => {
     mockedStore.setMockActiveRole(null);
     const { wrapper } = await mountAt(RoleStatusScreen, "/profile", { scenarioId: "user-profile" });
     expect(wrapper.findAll(".workspace-sidebar-nav .workspace-nav-item span").map((node) => node.text())).toEqual([
-      "Главная страница", "Добавить", "Питомцы", "Дать доступ", "Доступы", "Медкарта",
+      "Главная страница", "Добавить питомца",
     ]);
 
     mockedStore.setMockActiveRole("administrator");
