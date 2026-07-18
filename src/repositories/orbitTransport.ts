@@ -86,9 +86,11 @@ export function sizeBoundEventBatch(
   maxCount = 100,
 ): SignedEvent[] {
   const selected: SignedEvent[] = [];
-  for (const event of parentOrdered(events).slice(0, maxCount)) {
+  const ordered = parentOrdered(events).slice(0, maxCount);
+  const encoder = new TextEncoder();
+  for (const event of ordered) {
     const candidate = [...selected, event];
-    const bytes = new TextEncoder().encode(JSON.stringify({ events: candidate })).byteLength;
+    const bytes = encoder.encode(JSON.stringify({ events: candidate })).byteLength;
     if (bytes > maxBytes) break;
     selected.push(event);
   }
