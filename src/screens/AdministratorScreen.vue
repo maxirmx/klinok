@@ -316,7 +316,7 @@ watch(auditPageCount, (count) => { if (auditPage.value > count) auditPage.value 
 <template>
   <WorkspaceShell
     :role="role"
-    :title="isAudit ? 'Журнал' : 'Кабинет администратора'"
+    title="Кабинет администратора"
     :profile-name="formatProfileName(appState.control.profile)"
     @sign-out="signOut"
   >
