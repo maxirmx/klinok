@@ -2966,7 +2966,11 @@ dd {
 }
 .owner-profile-fields .owner-pet-id { grid-column: 1 / -1; }
 .owner-pet-id dd { display: flex; align-items: center; justify-content: flex-end; gap: 8px; min-width: 0; }
-.owner-pet-id code { overflow-wrap: anywhere; }
+.owner-pet-id code {
+  overflow-wrap: anywhere;
+  font-family: inherit;
+  font-size: inherit;
+}
 .owner-pet-notes { margin-top: 18px; }
 .owner-pet-notes h3 { margin: 0 0 7px; }
 .owner-pet-notes p { margin: 0; white-space: pre-wrap; color: #344054; }
@@ -2989,6 +2993,21 @@ dd {
     grid-template-columns: 1fr;
     flex-direction: column;
   }
+  .owner-pet-ribbon {
+    flex-direction: column;
+    overflow-x: visible;
+    padding-bottom: 0;
+    scroll-snap-type: none;
+  }
+  .owner-pet-card {
+    width: 100%;
+    min-width: 0;
+    min-height: 112px;
+    grid-template-columns: 112px minmax(0, 1fr);
+    grid-template-rows: 112px;
+    scroll-snap-align: none;
+  }
+  .owner-pet-card-copy { align-content: center; }
   .owner-pet-profile-header > :first-child { width: 112px; height: 112px; }
   .owner-profile-actions { justify-content: flex-start; }
   .owner-form-grid,

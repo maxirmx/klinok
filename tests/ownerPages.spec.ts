@@ -136,7 +136,7 @@ describe("Owner pages", () => {
     ]);
     expect(wrapper.get(".owner-pet-card").text()).toContain("Шарик");
     expect(wrapper.get(".owner-pet-card").text()).toContain("Бигль");
-    expect(wrapper.get(".owner-pet-card").text()).toContain("полных лет");
+    expect(wrapper.get(".owner-pet-card").text()).toMatch(/\d+ полн(?:ый|ых) (?:год|года|лет)/);
     expect(wrapper.text()).not.toContain("Любит длительные прогулки");
   });
 
@@ -280,6 +280,10 @@ describe("Owner pages", () => {
 
     await setMedical(snapshot({ pets: [pet] }));
     const detail = await mountAt("/owner/pets/pet-1", "owner-pet-detail");
+    const ageField = detail.findAll(".owner-profile-fields > div")
+      .find((field) => field.get("dt").text() === "Возраст")!;
+    expect(ageField.get("dd").text()).toMatch(/\d+ полн(?:ый|ых) (?:год|года|лет) · дата рождения 17\.06\.2022/);
+    expect(detail.findAll(".owner-profile-fields dt").map((node) => node.text())).not.toContain("Дата рождения");
     const deleteButton = detail.findAll("button").find((button) => button.text() === "Удалить");
     await deleteButton!.trigger("click");
     expect(detail.get('[role="alertdialog"]').text()).toContain("Удалить профиль Шарик?");
@@ -290,5 +294,17 @@ describe("Owner pages", () => {
 
     expect(repositoryMocks.deletePet).toHaveBeenCalledWith("pet-1");
     expect(detail.vm.$route.path).toBe("/owner/home");
+  });
+
+  it("shows an age interval and birth year in one age field when no exact birth date is stored", async () => {
+    await setMedical(snapshot({ pets: [{ ...pet, birthDate: undefined, birthYear: 2022 }] }));
+    const detail = await mountAt("/owner/pets/pet-1", "owner-pet-detail");
+    const labels = detail.findAll(".owner-profile-fields dt").map((node) => node.text());
+
+    expect(labels).toContain("Возраст");
+    expect(labels).not.toContain("Год рождения");
+    expect(labels).not.toContain("Дата рождения");
+    expect(detail.get(".owner-profile-fields").text())
+      .toMatch(/\d+-\d+ полн(?:ый|ых) (?:год|года|лет) · год рождения 2022/);
   });
 });

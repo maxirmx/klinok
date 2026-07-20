@@ -6,6 +6,7 @@ export const MAX_PET_PHOTO_DATA_URL_LENGTH = 200 * 1024;
 export const MAX_PET_PHOTO_DIMENSION = 1024;
 
 const petSexes = new Set<string>(PET_SEXES);
+const russianCardinalPluralRules = new Intl.PluralRules("ru-RU", { type: "cardinal" });
 
 function optionalText(value: unknown): string | undefined {
   const text = typeof value === "string" ? value.trim() : "";
@@ -73,14 +74,54 @@ export function normalizePetInput(input: PetProfileInput): PetProfileInput {
   };
 }
 
-export function petBirthSummary(pet: Pick<PetProfile, "birthDate" | "birthYear">, now = new Date()): string {
+export function petCompletedYears(pet: Pick<PetProfile, "birthDate">, now = new Date()): number | null {
   if (pet.birthDate && /^\d{4}-\d{2}-\d{2}$/.test(pet.birthDate)) {
     const [year, month, day] = pet.birthDate.split("-").map(Number);
     let age = now.getFullYear() - year!;
     if (now.getMonth() + 1 < month! || (now.getMonth() + 1 === month && now.getDate() < day!)) age -= 1;
-    return `${Math.max(0, age)} полных лет · ${String(day).padStart(2, "0")}.${String(month).padStart(2, "0")}.${year}`;
+    return Math.max(0, age);
   }
-  return pet.birthYear ? `${pet.birthYear} год рождения` : "Дата рождения не указана";
+  return null;
+}
+
+export function formatCompletedYears(years: number): string {
+  switch (russianCardinalPluralRules.select(years)) {
+    case "one":
+      return `${years} полный год`;
+    case "few":
+      return `${years} полных года`;
+    default:
+      return `${years} полных лет`;
+  }
+}
+
+export function formatCompletedYearsInterval(youngerYears: number, olderYears: number): string {
+  const interval = `${youngerYears}-${olderYears}`;
+  switch (russianCardinalPluralRules.select(olderYears)) {
+    case "one":
+      return `${interval} полный год`;
+    case "few":
+      return `${interval} полных года`;
+    default:
+      return `${interval} полных лет`;
+  }
+}
+
+export function petBirthSummary(pet: Pick<PetProfile, "birthDate" | "birthYear">, now = new Date()): string {
+  const completedYears = petCompletedYears(pet, now);
+  if (completedYears !== null && pet.birthDate) {
+    const [year, month, day] = pet.birthDate.split("-");
+    return `${formatCompletedYears(completedYears)} · дата рождения ${day}.${month}.${year}`;
+  }
+  if (pet.birthYear) {
+    const olderYears = Math.max(0, now.getFullYear() - pet.birthYear);
+    const youngerYears = Math.max(0, olderYears - 1);
+    const age = youngerYears === olderYears
+      ? formatCompletedYears(olderYears)
+      : formatCompletedYearsInterval(youngerYears, olderYears);
+    return `${age} · год рождения ${pet.birthYear}`;
+  }
+  return "Дата рождения не указана";
 }
 
 function readFile(file: File): Promise<string> {

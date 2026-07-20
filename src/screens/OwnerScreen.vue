@@ -5,7 +5,11 @@ import { PET_SEXES, type PetSex } from "@klinok/protocol";
 import ConfirmationDialog from "../components/ConfirmationDialog.vue";
 import WorkspaceShell from "../components/WorkspaceShell.vue";
 import { appState, logout, requireRepository } from "../appStore";
-import { normalizePetInput, petBirthSummary, preparePetPhoto } from "../petProfile";
+import {
+  normalizePetInput,
+  petBirthSummary,
+  preparePetPhoto,
+} from "../petProfile";
 import type { PetProfile, PetProfileInput } from "../repositories/types";
 
 const props = defineProps<{ role: "owner"; scenarioId: string }>();
