@@ -133,12 +133,12 @@ describe("Owner pages", () => {
     const wrapper = await mountAt("/owner/home", "owner-home");
 
     expect(wrapper.findAll(".workspace-nav-tree .workspace-nav-item span").map((node) => node.text())).toEqual([
-      "Главная страница",
+      "Питомцы",
       "Добавить питомца",
       "Шарик",
     ]);
     expect(wrapper.findAll(".workspace-bottom-nav :is(a, button) span").map((node) => node.text())).toEqual([
-      "Главная страница",
+      "Питомцы",
       "Настройки пользователя",
       "Выйти",
     ]);

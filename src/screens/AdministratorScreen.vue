@@ -316,7 +316,7 @@ watch(auditPageCount, (count) => { if (auditPage.value > count) auditPage.value 
 <template>
   <WorkspaceShell
     :role="role"
-    :title="isAudit ? 'Журнал ролей' : 'Кабинет администратора'"
+    :title="isAudit ? 'Журнал' : 'Кабинет администратора'"
     :profile-name="formatProfileName(appState.control.profile)"
     @sign-out="signOut"
   >
@@ -327,19 +327,25 @@ watch(auditPageCount, (count) => { if (auditPage.value > count) auditPage.value 
       <article class="panel administrator-panel">
         <div class="administrator-heading">
           <div>
-            <h2>Расширенные роли</h2>
-            <p>Одобряйте и отзывайте роли ветеринаров и администраторов.</p>
+            <h2>Ветеринары и администраторы</h2>
+            <p>Управляйте правами ветеринаров и администраторов.</p>
           </div>
-          <RouterLink class="outline-action inline administrator-audit-link" to="/admin/audit">
+          <RouterLink
+            class="outline-action inline administrator-audit-link administrator-icon-action"
+            to="/admin/audit"
+            title="Открыть журнал действий"
+            aria-label="Открыть журнал действий"
+          >
             <AppIcon name="book" />
-            <span>Журнал действий</span>
           </RouterLink>
         </div>
 
         <label class="administrator-search">
           <span class="visually-hidden">Поиск по ФИО</span>
-          <AppIcon name="search" />
-          <input v-model="search" type="search" placeholder="Поиск по ФИО" />
+          <span class="administrator-search-control">
+            <AppIcon name="search" />
+            <input v-model="search" type="search" placeholder="Поиск по ФИО" />
+          </span>
         </label>
 
         <p v-if="!administratorRows.length" class="administrator-empty">Запросов расширенных ролей пока нет.</p>
@@ -439,7 +445,13 @@ watch(auditPageCount, (count) => { if (auditPage.value > count) auditPage.value 
           <div class="administrator-pagination" aria-label="Навигация по страницам">
             <span>Показаны {{ pageStart }}–{{ pageEnd }} из {{ filteredRows.length }}</span>
             <div class="administrator-page-buttons">
-              <button type="button" :disabled="page === 1" aria-label="Предыдущая страница" @click="page--">
+              <button
+                type="button"
+                :disabled="page === 1"
+                title="Предыдущая страница"
+                aria-label="Предыдущая страница"
+                @click="page--"
+              >
                 <AppIcon name="chevron-left" />
               </button>
               <button
@@ -453,7 +465,13 @@ watch(auditPageCount, (count) => { if (auditPage.value > count) auditPage.value 
               >
                 {{ pageNumber }}
               </button>
-              <button type="button" :disabled="page === pageCount" aria-label="Следующая страница" @click="page++">
+              <button
+                type="button"
+                :disabled="page === pageCount"
+                title="Следующая страница"
+                aria-label="Следующая страница"
+                @click="page++"
+              >
                 <AppIcon name="chevron" />
               </button>
             </div>
@@ -473,19 +491,25 @@ watch(auditPageCount, (count) => { if (auditPage.value > count) auditPage.value 
         <div class="administrator-heading">
           <div>
             <h2>Журнал действий с ролями</h2>
-            <p>История запросов и решений по расширенным ролям.</p>
+            <p>История запросов и решений.</p>
           </div>
-          <RouterLink class="outline-action inline administrator-audit-link" to="/admin/home">
+          <RouterLink
+            class="outline-action inline administrator-audit-link administrator-icon-action"
+            to="/admin/home"
+            title="К управлению ролями"
+            aria-label="К управлению ролями"
+          >
             <AppIcon name="chevron-left" />
-            <span>К управлению ролями</span>
           </RouterLink>
         </div>
 
         <div class="administrator-audit-filters">
           <label class="administrator-search">
-            <span class="visually-hidden">Поиск по ФИО или идентификатору</span>
-            <AppIcon name="search" />
-            <input v-model="auditSearch" type="search" placeholder="ФИО или идентификатор" />
+            <span>ФИО или идентификатор</span>
+            <span class="administrator-search-control">
+              <AppIcon name="search" />
+              <input v-model="auditSearch" type="search" placeholder="Поиск" />
+            </span>
           </label>
           <label>
             <span>Роль</span>
@@ -546,7 +570,13 @@ watch(auditPageCount, (count) => { if (auditPage.value > count) auditPage.value 
           <div class="administrator-pagination" aria-label="Навигация по журналу">
             <span>Показаны {{ auditPageStart }}–{{ auditPageEnd }} из {{ filteredAuditRows.length }}</span>
             <div class="administrator-page-buttons">
-              <button type="button" :disabled="auditPage === 1" aria-label="Предыдущая страница" @click="auditPage--">
+              <button
+                type="button"
+                :disabled="auditPage === 1"
+                title="Предыдущая страница"
+                aria-label="Предыдущая страница"
+                @click="auditPage--"
+              >
                 <AppIcon name="chevron-left" />
               </button>
               <button
@@ -560,7 +590,13 @@ watch(auditPageCount, (count) => { if (auditPage.value > count) auditPage.value 
               >
                 {{ pageNumber }}
               </button>
-              <button type="button" :disabled="auditPage === auditPageCount" aria-label="Следующая страница" @click="auditPage++">
+              <button
+                type="button"
+                :disabled="auditPage === auditPageCount"
+                title="Следующая страница"
+                aria-label="Следующая страница"
+                @click="auditPage++"
+              >
                 <AppIcon name="chevron" />
               </button>
             </div>

@@ -138,13 +138,13 @@ describe("operational Russian UI", () => {
     expect(statuses.findAll<HTMLInputElement>('.credentials-form input[type="password"]').every((input) => input.attributes("minlength") === "6")).toBe(true);
     expect(statuses.findAll<HTMLInputElement>('.credentials-form input[type="password"]').every((input) => input.element.value === "")).toBe(true);
     const administrator = await mountScreen(AdministratorScreen, "/admin/home", { scenarioId: "administrator-home", role: "administrator" });
-    expect(administrator.text()).toContain("Расширенные роли");
-    expect(administrator.text()).toContain("Журнал действий");
+    expect(administrator.text()).toContain("Ветеринары и администраторы");
+    expect(administrator.get(".administrator-audit-link").attributes("title")).toBe("Открыть журнал действий");
     expect(administrator.text()).not.toContain("Конфликты авторизации");
   });
 
   it.each([
-    ["administrator", AdministratorScreen, "/admin/home", ["Главная страница", "Журнал ролей"]],
+    ["administrator", AdministratorScreen, "/admin/home", ["Пользователи", "Журнал"]],
     ["doctor", WorkspaceScreen, "/doctor/home", ["Главная страница", "Запросить доступ", "Питомцы", "Новая запись", "Делегирование", "Медкарта"]],
   ] as const)("renders responsive %s navigation for the current feature set", async (role, component, path, labels) => {
     const workspace = await mountScreen(component, path, { scenarioId: `${role}-home`, role });
@@ -173,10 +173,10 @@ describe("operational Russian UI", () => {
     const owner = await mountScreen(OwnerScreen, "/owner/home", { scenarioId: "owner-home", role: "owner" });
     const sidebarLabels = owner.findAll(".workspace-sidebar-nav .workspace-nav-item span").map((node) => node.text());
     expect(sidebarLabels).toEqual([
-      "Главная страница", "Добавить питомца",
+      "Питомцы", "Добавить питомца",
     ]);
     expect(owner.findAll(".workspace-bottom-nav :is(a, button) span").map((node) => node.text())).toEqual([
-      "Главная страница", "Настройки пользователя", "Выйти",
+      "Питомцы", "Настройки пользователя", "Выйти",
     ]);
     expect(owner.text()).toContain("Мои питомцы");
   });

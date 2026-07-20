@@ -2,6 +2,7 @@ import { flushPromises, mount, type VueWrapper } from "@vue/test-utils";
 import { createMemoryHistory, createRouter } from "vue-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { AccountProfile, Role, RoleRequest, SignedEvent } from "@klinok/protocol";
+import AppIcon from "../src/components/AppIcon.vue";
 import AdministratorScreen from "../src/screens/AdministratorScreen.vue";
 
 const appMocks = vi.hoisted(() => ({
@@ -152,6 +153,11 @@ describe("Administrator pages", () => {
     });
     const wrapper = await mountAt("/admin/home", "administrator-home");
 
+    const auditLink = wrapper.get(".administrator-audit-link");
+    expect(auditLink.attributes("title")).toBe("Открыть журнал действий");
+    expect(auditLink.attributes("aria-label")).toBe("Открыть журнал действий");
+    expect(auditLink.text()).toBe("");
+    expect(auditLink.getComponent(AppIcon).props("name")).toBe("book");
     expect(wrapper.findAll(".administrator-table th").map((header) => header.text())).toEqual([
       "Действия", "ФИО", "Ветеринар", "Администратор",
     ]);
@@ -263,6 +269,14 @@ describe("Administrator pages", () => {
     });
     const wrapper = await mountAt("/admin/audit", "administrator-audit");
 
+    const homeLink = wrapper.get(".administrator-audit-link");
+    expect(homeLink.attributes("title")).toBe("К управлению ролями");
+    expect(homeLink.attributes("aria-label")).toBe("К управлению ролями");
+    expect(homeLink.text()).toBe("");
+    expect(homeLink.getComponent(AppIcon).props("name")).toBe("chevron-left");
+    const searchLabel = wrapper.get(".administrator-audit-filters .administrator-search");
+    expect(searchLabel.get(":scope > span").text()).toBe("ФИО или идентификатор");
+    expect(searchLabel.get("input").attributes("placeholder")).toBe("Поиск");
     const rows = wrapper.findAll(".administrator-audit-table tbody tr");
     expect(rows).toHaveLength(3);
     expect(rows[0]!.text()).toContain("Роль восстановлена");

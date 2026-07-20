@@ -3171,23 +3171,38 @@ dd {
 }
 .administrator-heading h2,
 .administrator-heading p { margin: 0; }
-.administrator-heading > div { display: grid; gap: 4px; }
+.administrator-heading > div {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+}
 .administrator-heading p,
 .administrator-empty { color: var(--text-muted); }
 .administrator-audit-link {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
   flex: 0 0 auto;
   text-decoration: none;
 }
-.administrator-audit-link .app-icon { width: 17px; height: 17px; }
+.workspace-content .administrator-icon-action {
+  display: inline-grid;
+  width: 34px;
+  height: 34px;
+  min-height: 34px;
+  padding: 0;
+  place-items: center;
+}
+.administrator-icon-action .app-icon { width: 18px; height: 18px; }
 .administrator-search {
+  display: grid;
+  max-width: 420px;
+  gap: 5px;
+}
+.administrator-search-control {
   position: relative;
   display: block;
-  max-width: 420px;
 }
-.administrator-search .app-icon {
+.administrator-search-control .app-icon {
   position: absolute;
   top: 50%;
   left: 12px;
@@ -3201,6 +3216,7 @@ dd {
 .administrator-audit-filters select,
 .administrator-pagination select {
   width: 100%;
+  height: 40px;
   min-height: 40px;
   box-sizing: border-box;
   border: 1px solid #d0d5dd;
@@ -3209,7 +3225,9 @@ dd {
   color: var(--text);
   font: inherit;
 }
-.administrator-search input { padding: 8px 12px 8px 38px; }
+.workspace-content .administrator-search-control > input[type="search"] {
+  padding: 8px 12px 8px 38px;
+}
 .administrator-audit-filters select,
 .administrator-pagination select { padding: 7px 30px 7px 10px; }
 .administrator-search input:focus-visible,
@@ -3334,12 +3352,13 @@ dd {
   align-items: end;
   gap: 12px;
 }
-.administrator-audit-filters > label:not(.administrator-search) {
+.administrator-audit-filters > label {
   display: grid;
   gap: 5px;
   color: var(--text-soft);
   font-size: 12px;
 }
+.administrator-audit-filters .administrator-search { max-width: none; }
 .administrator-audit-table {
   min-width: 980px;
   table-layout: auto;
@@ -3401,10 +3420,8 @@ dd {
 
 @media (max-width: 760px) {
   .administrator-heading {
-    align-items: flex-start;
-    flex-direction: column;
+    align-items: center;
   }
-  .administrator-audit-link { width: 100%; justify-content: center; }
   .administrator-search { max-width: none; }
   .administrator-audit-filters { grid-template-columns: 1fr; }
   .administrator-table-wrap {

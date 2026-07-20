@@ -26,14 +26,14 @@ const activeSection = ref(route.hash.slice(1) || "workspace-top");
 
 const navigationByRole: Record<Role, WorkspaceNavItem[]> = {
   administrator: [
-    { id: "workspace-top", label: "Главная страница", icon: "home" },
+    { id: "workspace-top", label: "Пользователи", icon: "home" },
     { id: "administrator-requests", label: "Заявки", icon: "bell" },
     { id: "administrator-accounts", label: "Аккаунты", icon: "user" },
     { id: "administrator-conflicts", label: "Конфликты", icon: "eye" },
     { id: "administrator-journal", label: "Журнал", icon: "book" },
   ],
   owner: [
-    { id: "workspace-top", label: "Главная страница", icon: "home" },
+    { id: "workspace-top", label: "Питомцы", icon: "home" },
     { id: "owner-add-pet", label: "Добавить", icon: "plus" },
     { id: "owner-pets", label: "Питомцы", icon: "pets" },
     { id: "owner-grant-access", label: "Дать доступ", icon: "user" },
@@ -51,7 +51,7 @@ const navigationByRole: Record<Role, WorkspaceNavItem[]> = {
 };
 const ownerRootNavigation: WorkspacePathNavItem = {
   id: "owner-home",
-  label: "Главная страница",
+  label: "Питомцы",
   icon: "home",
   path: "/owner/home",
   exact: true,
@@ -67,8 +67,8 @@ const ownerChildNavigation = computed<WorkspacePathNavItem[]>(() => [
   })),
 ]);
 const administratorNavigation: WorkspacePathNavItem[] = [
-  { id: "administrator-home", label: "Главная страница", icon: "home", path: "/admin/home", exact: true },
-  { id: "administrator-audit", label: "Журнал ролей", icon: "book", path: "/admin/audit", exact: true },
+  { id: "administrator-home", label: "Пользователи", icon: "home", path: "/admin/home", exact: true },
+  { id: "administrator-audit", label: "Журнал", icon: "book", path: "/admin/audit", exact: true },
 ];
 const effectiveRole = computed<Role | null>(() => props.role
   ?? (props.settings

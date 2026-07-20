@@ -145,7 +145,7 @@ test("fresh provisioning, Doctor approval, grant, draft, and confirmation", asyn
   });
   await administratorPage.getByLabel("Пароль пакета").fill(process.env.KLINOK_E2E_RECOVERY_PASSPHRASE ?? "offline-recovery-passphrase-2026");
   await administratorPage.getByRole("button", { name: "Импортировать ключи" }).click();
-  await administratorPage.locator(".workspace-sidebar").getByRole("link", { name: "Главная страница" }).click();
+  await administratorPage.locator(".workspace-sidebar").getByRole("link", { name: "Пользователи" }).click();
   await expect(administratorPage).toHaveURL(/\/admin\/home/);
   const requestRow = administratorPage.locator(".request-row").filter({ hasText: doctorAccountId });
   await expect(requestRow).toBeVisible({ timeout: replicationTimeout });
@@ -229,7 +229,7 @@ test("fresh provisioning, Doctor approval, grant, draft, and confirmation", asyn
     await expect(ownerRole.getByText("Одобрена", { exact: true })).toBeVisible({ timeout: replicationTimeout });
   }
   await openProfileAndWaitForSync(ownerPage);
-  await ownerPage.locator(".workspace-sidebar").getByRole("link", { name: "Главная страница" }).click();
+  await ownerPage.locator(".workspace-sidebar").getByRole("link", { name: "Питомцы" }).click();
   await expect(ownerPage).toHaveURL(/\/owner\/home/);
   await expect(ownerPage.locator(".owner-pet-card strong").filter({ hasText: "Шарик" })).toBeVisible({ timeout: replicationTimeout });
 });

@@ -132,7 +132,7 @@ describe("logout navigation", () => {
   it("shows recognizable names before device IDs", async () => {
     const { wrapper } = await mountAt(RoleStatusScreen, "/profile", { scenarioId: "user-profile" });
     expect(wrapper.findAll(".workspace-sidebar-nav .workspace-nav-item span").map((node) => node.text())).toEqual([
-      "Главная страница", "Добавить питомца",
+      "Питомцы", "Добавить питомца",
     ]);
     expect(wrapper.find(".workspace-sidebar-footer .workspace-nav-item.active").text()).toContain("Настройки пользователя");
     expect(wrapper.text()).toContain("Телефон Максима");
@@ -220,13 +220,13 @@ describe("logout navigation", () => {
     mockedStore.setMockActiveRole(null);
     const { wrapper } = await mountAt(RoleStatusScreen, "/profile", { scenarioId: "user-profile" });
     expect(wrapper.findAll(".workspace-sidebar-nav .workspace-nav-item span").map((node) => node.text())).toEqual([
-      "Главная страница", "Добавить питомца",
+      "Питомцы", "Добавить питомца",
     ]);
 
     mockedStore.setMockActiveRole("administrator");
     await flushPromises();
     expect(wrapper.findAll(".workspace-sidebar-nav .workspace-nav-item span").map((node) => node.text())).toEqual([
-      "Главная страница", "Журнал ролей",
+      "Пользователи", "Журнал",
     ]);
     mockedStore.setMockActiveRole("owner");
   });
