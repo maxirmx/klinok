@@ -3198,6 +3198,10 @@ dd {
   max-width: 420px;
   gap: 5px;
 }
+.administrator-search > span:first-child {
+  color: var(--text-soft);
+  font-size: 12px;
+}
 .administrator-search-control {
   position: relative;
   display: block;

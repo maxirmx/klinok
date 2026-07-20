@@ -121,7 +121,7 @@ function compareText(left: string, right: string): number {
 const filteredRows = computed(() => {
   const query = normalize(search.value);
   return administratorRows.value
-    .filter((row) => !query || normalize(row.displayName).includes(query))
+    .filter((row) => !query || [row.displayName, row.accountId].some((value) => normalize(value).includes(query)))
     .sort((left, right) => {
       if (sortField.value !== "name") {
         const leftStatus = left[sortField.value];
@@ -341,15 +341,17 @@ watch(auditPageCount, (count) => { if (auditPage.value > count) auditPage.value 
         </div>
 
         <label class="administrator-search">
-          <span class="visually-hidden">Поиск по ФИО</span>
+          <span>ФИО или идентификатор</span>
           <span class="administrator-search-control">
             <AppIcon name="search" />
-            <input v-model="search" type="search" placeholder="Поиск по ФИО" />
+            <input v-model="search" type="search" placeholder="Поиск" />
           </span>
         </label>
 
         <p v-if="!administratorRows.length" class="administrator-empty">Запросов расширенных ролей пока нет.</p>
-        <p v-else-if="!filteredRows.length" class="administrator-empty">Пользователи с таким ФИО не найдены.</p>
+        <p v-else-if="!filteredRows.length" class="administrator-empty">
+          Пользователи с таким ФИО или идентификатором не найдены.
+        </p>
         <template v-else>
           <div class="administrator-table-wrap">
             <table class="administrator-table">

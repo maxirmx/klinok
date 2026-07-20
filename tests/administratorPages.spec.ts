@@ -209,6 +209,9 @@ describe("Administrator pages", () => {
     });
     const wrapper = await mountAt("/admin/home", "administrator-home");
 
+    const searchLabel = wrapper.get(".administrator-search");
+    expect(searchLabel.get(":scope > span").text()).toBe("ФИО или идентификатор");
+    expect(searchLabel.get("input").attributes("placeholder")).toBe("Поиск");
     expect(wrapper.findAll(".administrator-table tbody tr")).toHaveLength(20);
     expect(wrapper.get(".administrator-pagination").text()).toContain("Показаны 1–20 из 22");
     await wrapper.get('.administrator-pagination select').setValue("50");
@@ -218,6 +221,10 @@ describe("Administrator pages", () => {
     await wrapper.get<HTMLInputElement>('.administrator-search input').setValue("Имя21");
     expect(wrapper.findAll(".administrator-table tbody tr")).toHaveLength(1);
     expect(wrapper.get(".administrator-table tbody tr").text()).toContain("Имя21");
+
+    await wrapper.get<HTMLInputElement>('.administrator-search input').setValue("doctor-20");
+    expect(wrapper.findAll(".administrator-table tbody tr")).toHaveLength(1);
+    expect(wrapper.get(".administrator-table tbody tr").text()).toContain("doctor-20");
   });
 
   it("renders, filters, and paginates signed role audit actions with their actors", async () => {
