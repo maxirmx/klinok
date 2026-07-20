@@ -208,6 +208,8 @@ describe("logout navigation", () => {
     const { wrapper } = await mountAt(RoleStatusScreen, "/profile", { scenarioId: "user-profile" });
     const profileSave = wrapper.get<HTMLButtonElement>('button[form="profile-form"]');
     const credentialsSave = wrapper.get<HTMLButtonElement>('button[form="credentials-form"]');
+    const profileRestore = wrapper.get<HTMLButtonElement>('button[title="Восстановить личные данные"]');
+    const credentialsRestore = wrapper.get<HTMLButtonElement>('button[title="Восстановить электронную почту и пароль"]');
 
     expect(wrapper.get<HTMLInputElement>('input[autocomplete="given-name"]').element.value).toBe("Максим");
     expect(wrapper.get<HTMLInputElement>('input[autocomplete="additional-name"]').element.value).toBe("Сергеевич");
@@ -217,9 +219,16 @@ describe("logout navigation", () => {
     expect(wrapper.get(".workspace-topbar p").text()).toBe("Максим Сергеевич Иванов");
     expect(profileSave.element.disabled).toBe(true);
     expect(credentialsSave.element.disabled).toBe(true);
+    expect(profileRestore.element.disabled).toBe(true);
+    expect(credentialsRestore.element.disabled).toBe(true);
 
     await wrapper.get<HTMLInputElement>('input[autocomplete="given-name"]').setValue("Мария");
     expect(profileSave.element.disabled).toBe(false);
+    expect(profileRestore.element.disabled).toBe(false);
+    await profileRestore.trigger("click");
+    expect(wrapper.get<HTMLInputElement>('input[autocomplete="given-name"]').element.value).toBe("Максим");
+    expect(profileRestore.element.disabled).toBe(true);
+    await wrapper.get<HTMLInputElement>('input[autocomplete="given-name"]').setValue("Мария");
     await wrapper.get(".profile-form").trigger("submit");
     await flushPromises();
     expect(updateProfile).toHaveBeenCalledWith({ firstName: "Мария", patronymic: "Сергеевич", lastName: "Иванов" });
@@ -232,6 +241,11 @@ describe("logout navigation", () => {
     expect(emailFields).toHaveLength(1);
     await emailFields[0]!.setValue("new-owner@example.ru");
     expect(credentialsSave.element.disabled).toBe(false);
+    expect(credentialsRestore.element.disabled).toBe(false);
+    await credentialsRestore.trigger("click");
+    expect(emailFields[0]!.element.value).toBe("owner@example.ru");
+    expect(credentialsRestore.element.disabled).toBe(true);
+    await emailFields[0]!.setValue("new-owner@example.ru");
     await wrapper.get(".credentials-form").trigger("submit");
     await flushPromises();
     expect(updateCredentials).toHaveBeenCalledWith({ email: "new-owner@example.ru" });

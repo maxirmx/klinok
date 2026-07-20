@@ -52,6 +52,7 @@ const profileDraft = reactive<ProfileValues>({ firstName: "", lastName: "", patr
 const savedProfile = reactive<ProfileValues>({ firstName: "", lastName: "", patronymic: "" });
 const credentialsDraft = reactive({ email: "", password: "", confirmPassword: "" });
 const savedEmail = ref("");
+const savedEmailDisplay = ref("");
 const normalizedProfileDraft = computed<ProfileValues>(() => ({
   firstName: profileDraft.firstName.trim(),
   lastName: profileDraft.lastName.trim(),
@@ -70,6 +71,11 @@ const profileCanSave = computed(() => {
     || draft.patronymic !== savedProfile.patronymic
   );
 });
+const profileCanRestore = computed(() => (
+  profileDraft.firstName !== savedProfile.firstName
+  || profileDraft.lastName !== savedProfile.lastName
+  || profileDraft.patronymic !== savedProfile.patronymic
+));
 const normalizedEmailDraft = computed(() => credentialsDraft.email.trim().toLocaleLowerCase());
 const credentialsCanSave = computed(() => {
   const password = credentialsDraft.password;
@@ -79,6 +85,11 @@ const credentialsCanSave = computed(() => {
   const hasChanges = normalizedEmailDraft.value !== savedEmail.value || Boolean(password);
   return normalizedEmailDraft.value.includes("@") && passwordValid && hasChanges;
 });
+const credentialsCanRestore = computed(() => (
+  credentialsDraft.email !== savedEmailDisplay.value
+  || Boolean(credentialsDraft.password)
+  || Boolean(credentialsDraft.confirmPassword)
+));
 const visibleDevices = computed(() => (appState.session.devices ?? [])
   .filter((device) => device.status === "active"));
 const canRevokeDevice = computed(() => visibleDevices.value.length > 1);
@@ -101,8 +112,21 @@ function resetProfileDraft() {
 watch(() => appState.control.profile, resetProfileDraft, { immediate: true });
 watch(() => appState.session.email, (email) => {
   credentialsDraft.email = email ?? "";
+  savedEmailDisplay.value = email ?? "";
   savedEmail.value = email?.trim().toLocaleLowerCase() ?? "";
 }, { immediate: true });
+
+function restoreProfile() {
+  Object.assign(profileDraft, savedProfile);
+  feedback.forms = null;
+}
+
+function restoreCredentials() {
+  credentialsDraft.email = savedEmailDisplay.value;
+  credentialsDraft.password = "";
+  credentialsDraft.confirmPassword = "";
+  feedback.forms = null;
+}
 
 async function readRecoveryFile(event: Event) {
   const file = (event.target as HTMLInputElement).files?.[0];
@@ -172,6 +196,7 @@ async function saveCredentials() {
   const saved = await action("forms", successMessage, () => updateCredentials(input));
   if (saved) {
     savedEmail.value = email;
+    savedEmailDisplay.value = email;
     credentialsDraft.email = email;
     credentialsDraft.password = "";
     credentialsDraft.confirmPassword = "";
@@ -227,7 +252,28 @@ async function confirmDeviceRevocation() {
       <section class="panel profile-section">
         <div class="profile-section-heading">
           <div><h2>Личные данные</h2><p>Измените личные данные.</p></div>
-          <button class="outline-action inline" type="submit" form="profile-form" :disabled="appState.busy || !profileCanSave">Сохранить</button>
+          <div class="profile-section-actions">
+            <button
+              class="primary-action inline profile-icon-action"
+              type="submit"
+              form="profile-form"
+              :disabled="appState.busy || !profileCanSave"
+              title="Сохранить личные данные"
+              aria-label="Сохранить личные данные"
+            >
+              <AppIcon name="check" />
+            </button>
+            <button
+              class="outline-action inline profile-icon-action"
+              type="button"
+              :disabled="appState.busy || !profileCanRestore"
+              title="Восстановить личные данные"
+              aria-label="Восстановить личные данные"
+              @click="restoreProfile"
+            >
+              <AppIcon name="restore" />
+            </button>
+          </div>
         </div>
         <form id="profile-form" class="form-stack profile-form" @submit.prevent="saveProfile">
           <label><span>Имя</span><input v-model="profileDraft.firstName" autocomplete="given-name" required /></label>
@@ -239,7 +285,28 @@ async function confirmDeviceRevocation() {
       <section class="panel profile-section">
         <div class="profile-section-heading">
           <div><h2>Электронная почта и пароль</h2><p>Для смены пароля подтвердите его повторным вводом.</p></div>
-          <button class="outline-action inline" type="submit" form="credentials-form" :disabled="appState.busy || !credentialsCanSave">Сохранить</button>
+          <div class="profile-section-actions">
+            <button
+              class="primary-action inline profile-icon-action"
+              type="submit"
+              form="credentials-form"
+              :disabled="appState.busy || !credentialsCanSave"
+              title="Сохранить электронную почту и пароль"
+              aria-label="Сохранить электронную почту и пароль"
+            >
+              <AppIcon name="check" />
+            </button>
+            <button
+              class="outline-action inline profile-icon-action"
+              type="button"
+              :disabled="appState.busy || !credentialsCanRestore"
+              title="Восстановить электронную почту и пароль"
+              aria-label="Восстановить электронную почту и пароль"
+              @click="restoreCredentials"
+            >
+              <AppIcon name="restore" />
+            </button>
+          </div>
         </div>
         <form id="credentials-form" class="form-stack credentials-form" @submit.prevent="saveCredentials">
           <label><span>Электронная почта</span><input v-model="credentialsDraft.email" type="email" autocomplete="email" required /></label>

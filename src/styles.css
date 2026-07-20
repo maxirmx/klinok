@@ -2657,6 +2657,24 @@ dd {
   gap: 8px;
   margin-bottom: 8px;
 }
+.profile-section-actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 4px;
+}
+.profile-page .profile-icon-action {
+  display: inline-grid;
+  width: 32px;
+  height: 32px;
+  min-height: 32px;
+  padding: 0;
+  place-items: center;
+}
+.profile-icon-action .app-icon {
+  width: 18px;
+  height: 18px;
+}
 .profile-page .profile-section-heading h2,
 .profile-page .profile-section > h2 { margin: 0 0 2px; font-size: 17px; line-height: 1.25; }
 .profile-page .profile-section-heading p,
@@ -2693,6 +2711,12 @@ dd {
   min-height: 28px;
   margin-top: 0;
   padding: 4px 8px;
+}
+.profile-page :is(.primary-action, .outline-action).profile-icon-action {
+  width: 32px;
+  height: 32px;
+  min-height: 32px;
+  padding: 0;
 }
 .profile-page .form-alert { margin-bottom: 7px; padding: 7px 9px; border-radius: 7px; font-size: 12.5px; }
 .profile-page .profile-form-feedback {

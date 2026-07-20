@@ -2,6 +2,7 @@ import { flushPromises, mount } from "@vue/test-utils";
 import { defineComponent } from "vue";
 import { createMemoryHistory, createRouter } from "vue-router";
 import { beforeEach, describe, expect, it } from "vitest";
+import AppIcon from "../src/components/AppIcon.vue";
 import PasswordInput from "../src/components/PasswordInput.vue";
 import RoleSelectionCards from "../src/components/RoleSelectionCards.vue";
 import AuthScreen from "../src/screens/AuthScreen.vue";
@@ -117,8 +118,16 @@ describe("operational Russian UI", () => {
     expect(statuses.findAll('.profile-roles input[type="radio"]')).toHaveLength(3);
     expect(statuses.get(".profile-form").find('button[type="submit"]').exists()).toBe(false);
     expect(statuses.get(".credentials-form").find('button[type="submit"]').exists()).toBe(false);
-    expect(statuses.get('.profile-section-heading button[form="profile-form"]').text()).toBe("Сохранить");
-    expect(statuses.get('.profile-section-heading button[form="credentials-form"]').text()).toBe("Сохранить");
+    const profileSave = statuses.get('.profile-section-heading button[form="profile-form"]');
+    const credentialsSave = statuses.get('.profile-section-heading button[form="credentials-form"]');
+    expect(profileSave.text()).toBe("");
+    expect(credentialsSave.text()).toBe("");
+    expect(profileSave.attributes("title")).toBe("Сохранить личные данные");
+    expect(credentialsSave.attributes("title")).toBe("Сохранить электронную почту и пароль");
+    expect(profileSave.getComponent(AppIcon).props("name")).toBe("check");
+    expect(credentialsSave.getComponent(AppIcon).props("name")).toBe("check");
+    expect(statuses.get('button[title="Восстановить личные данные"]').getComponent(AppIcon).props("name")).toBe("restore");
+    expect(statuses.get('button[title="Восстановить электронную почту и пароль"]').getComponent(AppIcon).props("name")).toBe("restore");
     expect(statuses.findAll(".profile-form > label").map((label) => label.text())).toEqual([
       "Имя", "Отчество, если есть", "Фамилия",
     ]);
