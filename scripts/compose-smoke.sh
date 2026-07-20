@@ -1,7 +1,7 @@
 #!/bin/sh
 # Copyright (C) 2026 Maxim [maxirmx] Samsonov (www.sw.consulting)
 # All rights reserved.
-# This file is a part of Klinok applicationin
+# This file is a part of Klinok application
 
 set -eu
 # Git Bash rewrites leading-slash multiaddrs as Windows paths when invoking docker.exe.

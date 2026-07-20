@@ -1,6 +1,6 @@
 // Copyright (C) 2026 Maxim [maxirmx] Samsonov (www.sw.consulting)
 // All rights reserved.
-// This file is a part of Klinok applicationi
+// This file is a part of Klinok application
 
 import { expect, test, type APIRequestContext, type BrowserContext, type Page } from "@playwright/test";
 import { execFile as execFileCallback } from "node:child_process";
