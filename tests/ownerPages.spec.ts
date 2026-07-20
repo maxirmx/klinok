@@ -129,6 +129,11 @@ describe("Owner pages", () => {
       "Добавить питомца",
       "Шарик",
     ]);
+    expect(wrapper.findAll(".workspace-bottom-nav :is(a, button) span").map((node) => node.text())).toEqual([
+      "Главная страница",
+      "Настройки пользователя",
+      "Выйти",
+    ]);
     expect(wrapper.get(".owner-pet-card").text()).toContain("Шарик");
     expect(wrapper.get(".owner-pet-card").text()).toContain("Бигль");
     expect(wrapper.get(".owner-pet-card").text()).toContain("полных лет");

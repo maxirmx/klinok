@@ -3,6 +3,7 @@ import { computed, reactive, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import type { Role, RoleStatus } from "@klinok/protocol";
 import AppIcon from "../components/AppIcon.vue";
+import ConfirmationDialog from "../components/ConfirmationDialog.vue";
 import PasswordInput from "../components/PasswordInput.vue";
 import RoleSelectionCards from "../components/RoleSelectionCards.vue";
 import WorkspaceShell from "../components/WorkspaceShell.vue";
@@ -44,7 +45,8 @@ const disabledRoleSelection = computed<Role[]>(() => (["owner", "doctor", "admin
   .filter((role) => requests.value.get(role)?.status !== "approved"));
 const recoveryText = ref("");
 const recoveryPassphrase = ref("");
-const deletionArmed = ref(false);
+const accountDeletionConfirmation = ref(false);
+const devicePendingRevocation = ref<{ deviceId: string; deviceName: string } | null>(null);
 const feedback = reactive<Record<FeedbackKey, Feedback>>({ forms: null, roles: null, devices: null });
 const profileDraft = reactive<ProfileValues>({ firstName: "", lastName: "", patronymic: "" });
 const savedProfile = reactive<ProfileValues>({ firstName: "", lastName: "", patronymic: "" });
@@ -77,6 +79,9 @@ const credentialsCanSave = computed(() => {
   const hasChanges = normalizedEmailDraft.value !== savedEmail.value || Boolean(password);
   return normalizedEmailDraft.value.includes("@") && passwordValid && hasChanges;
 });
+const visibleDevices = computed(() => (appState.session.devices ?? [])
+  .filter((device) => device.status === "active"));
+const canRevokeDevice = computed(() => visibleDevices.value.length > 1);
 
 const deviceName = (device: { deviceId: string; deviceName?: string }) => device.deviceName?.trim()
   || (device.deviceId === appState.session.device?.deviceId ? getDeviceName() : null)
@@ -179,6 +184,18 @@ async function activate(role: Role) {
     if (typeof route.query.continue === "string" && route.query.switch === role) await router.push(route.query.continue);
   });
   if (!changed) return;
+}
+
+async function confirmAccountDeletion() {
+  accountDeletionConfirmation.value = false;
+  await action("devices", "Аккаунт удалён.", deleteAccount);
+}
+
+async function confirmDeviceRevocation() {
+  const device = devicePendingRevocation.value;
+  if (!device) return;
+  devicePendingRevocation.value = null;
+  await action("devices", "Устройство отозвано.", () => revokeDevice(device.deviceId));
 }
 </script>
 
@@ -286,23 +303,38 @@ async function activate(role: Role) {
           </div>
         </template>
 
-        <div v-for="device in appState.session.devices" :key="device.deviceId" class="list-row">
-          <div><strong>{{ deviceName(device) }}</strong><span>{{ device.deviceId === appState.session.device?.deviceId ? 'Это устройство' : device.status === 'active' ? 'Действующее устройство' : 'Устройство отозвано' }}</span><small>ID: {{ device.deviceId }}</small></div>
-          <button v-if="device.status === 'active'" class="outline-action inline" @click="action('devices', 'Устройство отозвано.', () => revokeDevice(device.deviceId))">Отозвать устройство</button>
+        <div v-for="device in visibleDevices" :key="device.deviceId" class="list-row">
+          <div><strong>{{ deviceName(device) }}</strong><span>{{ device.deviceId === appState.session.device?.deviceId ? 'Это устройство' : 'Действующее устройство' }}</span><small>ID: {{ device.deviceId }}</small></div>
+          <button
+            class="outline-action inline"
+            :disabled="!canRevokeDevice"
+            :title="canRevokeDevice ? undefined : 'Нельзя отозвать последнее действующее устройство.'"
+            @click="devicePendingRevocation = { deviceId: device.deviceId, deviceName: deviceName(device) }"
+          >
+            Отозвать устройство
+          </button>
         </div>
         <div class="row-actions account-actions">
           <button class="outline-action inline" @click="signOut(true)">Выйти на всех устройствах</button>
-          <button v-if="!deletionArmed" class="outline-action inline danger-link" @click="deletionArmed = true">Удалить аккаунт</button>
-        </div>
-        <div v-if="deletionArmed" class="form-alert error" role="alert">
-          <p>Удаление необратимо. Медицинская история останется в подписанном журнале, но аккаунт потеряет доступ.</p>
-          <div class="row-actions">
-            <button class="outline-action inline" @click="deletionArmed = false">Отмена</button>
-            <button class="primary-action inline" @click="action('devices', 'Аккаунт удалён.', deleteAccount)">Подтвердить удаление</button>
-          </div>
+          <button class="outline-action inline danger-link" @click="accountDeletionConfirmation = true">Удалить аккаунт</button>
         </div>
       </section>
       </div>
     </div>
+    <ConfirmationDialog
+      v-model="accountDeletionConfirmation"
+      title="Удалить аккаунт?"
+      description="Удаление необратимо. Медицинская история останется в подписанном журнале, но аккаунт потеряет доступ."
+      confirm-label="Удалить аккаунт"
+      @confirm="confirmAccountDeletion"
+    />
+    <ConfirmationDialog
+      :model-value="Boolean(devicePendingRevocation)"
+      :title="`Отозвать устройство «${devicePendingRevocation?.deviceName ?? ''}»?`"
+      description="Устройство потеряет доступ к аккаунту и больше не сможет использовать сохранённые ключи."
+      confirm-label="Отозвать устройство"
+      @update:model-value="value => { if (!value) devicePendingRevocation = null; }"
+      @confirm="confirmDeviceRevocation"
+    />
   </WorkspaceShell>
 </template>

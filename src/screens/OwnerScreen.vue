@@ -2,6 +2,7 @@
 import { computed, reactive, ref, watch } from "vue";
 import { RouterLink, useRoute, useRouter } from "vue-router";
 import { PET_SEXES, type PetSex } from "@klinok/protocol";
+import ConfirmationDialog from "../components/ConfirmationDialog.vue";
 import WorkspaceShell from "../components/WorkspaceShell.vue";
 import { appState, logout, requireRepository } from "../appStore";
 import { normalizePetInput, petBirthSummary, preparePetPhoto } from "../petProfile";
@@ -255,6 +256,7 @@ async function grantDoctor() {
 
 async function deletePet() {
   if (!selectedPet.value) return;
+  deleteConfirmation.value = false;
   await action(async () => {
     await requireRepository().medical.deletePet(selectedPet.value!.petId);
     await router.push("/owner/home");
@@ -445,14 +447,13 @@ function formatDate(value?: string) {
         </div>
       </article>
 
-      <article v-if="deleteConfirmation" class="panel owner-delete-confirmation" role="alertdialog" aria-labelledby="delete-pet-title">
-        <h2 id="delete-pet-title">Удалить профиль {{ selectedPet.name }}?</h2>
-        <p>Профиль исчезнет из кабинета, ожидающие запросы будут отклонены, а действующие доступы — отозваны.</p>
-        <div class="row-actions">
-          <button class="primary-action danger" @click="deletePet">Удалить питомца</button>
-          <button class="outline-action inline" @click="deleteConfirmation = false">Отмена</button>
-        </div>
-      </article>
+      <ConfirmationDialog
+        v-model="deleteConfirmation"
+        :title="`Удалить профиль ${selectedPet.name}?`"
+        description="Профиль исчезнет из кабинета, ожидающие запросы будут отклонены, а действующие доступы — отозваны."
+        confirm-label="Удалить питомца"
+        @confirm="deletePet"
+      />
     </section>
 
     <section v-else class="owner-empty-state">

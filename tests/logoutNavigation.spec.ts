@@ -1,9 +1,10 @@
 import { flushPromises, mount } from "@vue/test-utils";
 import { createMemoryHistory, createRouter } from "vue-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import AppIcon from "../src/components/AppIcon.vue";
 import RoleStatusScreen from "../src/screens/RoleStatusScreen.vue";
 import WorkspaceScreen from "../src/screens/WorkspaceScreen.vue";
-import { logout, switchRole, updateCredentials, updateProfile } from "../src/appStore";
+import { deleteAccount, logout, revokeDevice, switchRole, updateCredentials, updateProfile } from "../src/appStore";
 
 vi.mock("../src/appStore", async () => {
   const { reactive, readonly } = await import("vue");
@@ -16,7 +17,10 @@ vi.mock("../src/appStore", async () => {
       accountId: "account-1",
       email: "owner@example.ru",
       device: { deviceId: "current-device", deviceName: "Домашний ноутбук" },
-      devices: [{ deviceId: "current-device", deviceName: "Домашний ноутбук", status: "active" }],
+      devices: [
+        { deviceId: "current-device", deviceName: "Домашний ноутбук", status: "active" },
+        { deviceId: "revoked-device", deviceName: "Старый телефон", status: "revoked" },
+      ],
       enrollments: [{
         enrollmentId: "pending-enrollment",
         deviceId: "pending-device",
@@ -44,6 +48,7 @@ vi.mock("../src/appStore", async () => {
   return {
     appState: readonly(state),
     setMockActiveRole: (role: "owner" | "doctor" | "administrator" | null) => { state.activeRole = role; },
+    setMockDevices: (devices: typeof state.session.devices) => { state.session.devices = devices; },
     approveDeviceEnrollment: vi.fn(),
     bootstrapApp: vi.fn(),
     cancelRole: vi.fn(),
@@ -76,8 +81,17 @@ async function mountAt(component: object, path: string, props: Record<string, un
   return { router, wrapper };
 }
 
-beforeEach(() => {
+beforeEach(async () => {
+  const mockedStore = await import("../src/appStore") as typeof import("../src/appStore") & {
+    setMockDevices: (devices: Array<{ deviceId: string; deviceName: string; status: string }>) => void;
+  };
+  mockedStore.setMockDevices([
+    { deviceId: "current-device", deviceName: "Домашний ноутбук", status: "active" },
+    { deviceId: "revoked-device", deviceName: "Старый телефон", status: "revoked" },
+  ]);
+  vi.mocked(deleteAccount).mockClear();
   vi.mocked(logout).mockClear();
+  vi.mocked(revokeDevice).mockClear();
   vi.mocked(updateCredentials).mockClear();
   vi.mocked(updateProfile).mockClear();
   vi.mocked(switchRole).mockClear();
@@ -86,7 +100,13 @@ beforeEach(() => {
 describe("logout navigation", () => {
   it("leaves the workspace after logout", async () => {
     const { router, wrapper } = await mountAt(WorkspaceScreen, "/owner/home", { scenarioId: "owner-home", role: "owner" });
-    await wrapper.get("header .link-action:last-child").trigger("click");
+    expect(wrapper.find("header .link-action").exists()).toBe(false);
+    expect(wrapper.get(".workspace-bottom-nav").text()).toContain("Настройки пользователя");
+    expect(wrapper.get(".workspace-bottom-nav").text()).toContain("Выйти");
+    const bottomBarButtons = wrapper.findAll(".workspace-bottom-nav button");
+    expect(bottomBarButtons[0]!.findComponent(AppIcon).props("name")).toBe("user");
+    expect(bottomBarButtons[1]!.findComponent(AppIcon).props("name")).toBe("close");
+    await wrapper.get(".workspace-bottom-nav button:last-of-type").trigger("click");
     await flushPromises();
     expect(logout).toHaveBeenCalledWith();
     expect(router.currentRoute.value.path).toBe("/auth/login");
@@ -112,6 +132,58 @@ describe("logout navigation", () => {
     expect(wrapper.text()).toContain("Домашний ноутбук");
     expect(wrapper.text()).toContain("ID: pending-device");
     expect(wrapper.text()).toContain("Это устройство");
+    expect(wrapper.text()).not.toContain("Старый телефон");
+    expect(wrapper.text()).not.toContain("revoked-device");
+    expect(wrapper.find(".workspace-account-actions").exists()).toBe(false);
+    expect(wrapper.get(".workspace-bottom-nav").text()).toContain("Настройки пользователя");
+    expect(wrapper.get(".workspace-bottom-nav").text()).toContain("Выйти");
+    const revokeButton = wrapper.findAll<HTMLButtonElement>("button")
+      .find((button) => button.text() === "Отозвать устройство");
+    expect(revokeButton?.element.disabled).toBe(true);
+    expect(revokeButton?.attributes("title")).toBe("Нельзя отозвать последнее действующее устройство.");
+  });
+
+  it("confirms account deletion in a modal before executing it", async () => {
+    const { wrapper } = await mountAt(RoleStatusScreen, "/profile", { scenarioId: "user-profile" });
+    const deleteButton = wrapper.findAll("button").find((button) => button.text() === "Удалить аккаунт");
+    await deleteButton!.trigger("click");
+
+    const dialog = wrapper.get('[role="alertdialog"]');
+    expect(dialog.attributes("aria-modal")).toBe("true");
+    expect(dialog.text()).toContain("Удалить аккаунт?");
+    expect(deleteAccount).not.toHaveBeenCalled();
+
+    await dialog.findAll("button").find((button) => button.text() === "Отмена")!.trigger("click");
+    expect(wrapper.find('[role="alertdialog"]').exists()).toBe(false);
+    expect(deleteAccount).not.toHaveBeenCalled();
+
+    await deleteButton!.trigger("click");
+    await wrapper.get('[role="alertdialog"]').findAll("button")
+      .find((button) => button.text() === "Удалить аккаунт")!
+      .trigger("click");
+    await flushPromises();
+    expect(deleteAccount).toHaveBeenCalledOnce();
+  });
+
+  it("confirms device revocation before executing it", async () => {
+    const mockedStore = await import("../src/appStore") as typeof import("../src/appStore") & {
+      setMockDevices: (devices: Array<{ deviceId: string; deviceName: string; status: string }>) => void;
+    };
+    mockedStore.setMockDevices([
+      { deviceId: "current-device", deviceName: "Домашний ноутбук", status: "active" },
+      { deviceId: "second-device", deviceName: "Рабочий ноутбук", status: "active" },
+    ]);
+    const { wrapper } = await mountAt(RoleStatusScreen, "/profile", { scenarioId: "user-profile" });
+    const revokeButton = wrapper.findAll("button").find((button) => button.text() === "Отозвать устройство");
+    expect((revokeButton!.element as HTMLButtonElement).disabled).toBe(false);
+    await revokeButton!.trigger("click");
+
+    const dialog = wrapper.get('[role="alertdialog"]');
+    expect(dialog.text()).toContain("Отозвать устройство «Домашний ноутбук»?");
+    expect(revokeDevice).not.toHaveBeenCalled();
+    await dialog.findAll("button").find((button) => button.text() === "Отозвать устройство")!.trigger("click");
+    await flushPromises();
+    expect(revokeDevice).toHaveBeenCalledWith("current-device");
   });
 
   it("shows role navigation when an active role becomes available on the profile page", async () => {

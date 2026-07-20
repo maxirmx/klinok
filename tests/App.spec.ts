@@ -140,10 +140,14 @@ describe("operational Russian UI", () => {
   ] as const)("renders responsive %s navigation for the current feature set", async (role, path, labels) => {
     const workspace = await mountScreen(WorkspaceScreen, path, { scenarioId: `${role}-home`, role });
     const sidebarLabels = workspace.findAll(".workspace-sidebar-nav .workspace-nav-item span").map((node) => node.text());
-    const bottomLabels = workspace.findAll(".workspace-bottom-nav a span").map((node) => node.text());
+    const sidebarMenuLabels = [
+      ...sidebarLabels,
+      ...workspace.findAll(".workspace-sidebar-footer .workspace-nav-item span").map((node) => node.text()),
+    ];
+    const bottomLabels = workspace.findAll(".workspace-bottom-nav :is(a, button) span").map((node) => node.text());
 
     expect(sidebarLabels).toEqual(labels);
-    expect(bottomLabels).toEqual(labels);
+    expect(bottomLabels).toEqual(sidebarMenuLabels);
     expect(workspace.find(".workspace-sidebar").attributes("aria-label")).toBe("Основная навигация");
     expect(workspace.find(".workspace-bottom-nav").attributes("aria-label")).toBe("Нижняя навигация");
     expect(workspace.text()).toContain("Настройки пользователя");
@@ -157,10 +161,13 @@ describe("operational Russian UI", () => {
 
   it("renders the Owner route hierarchy and compact mobile actions", async () => {
     const owner = await mountScreen(OwnerScreen, "/owner/home", { scenarioId: "owner-home", role: "owner" });
-    expect(owner.findAll(".workspace-sidebar-nav .workspace-nav-item span").map((node) => node.text())).toEqual([
+    const sidebarLabels = owner.findAll(".workspace-sidebar-nav .workspace-nav-item span").map((node) => node.text());
+    expect(sidebarLabels).toEqual([
       "Главная страница", "Добавить питомца",
     ]);
-    expect(owner.findAll(".workspace-bottom-nav a span").map((node) => node.text())).toEqual(["Главная", "Добавить"]);
+    expect(owner.findAll(".workspace-bottom-nav :is(a, button) span").map((node) => node.text())).toEqual([
+      "Главная страница", "Настройки пользователя", "Выйти",
+    ]);
     expect(owner.text()).toContain("Мои питомцы");
   });
 });
