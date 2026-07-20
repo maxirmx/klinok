@@ -147,9 +147,13 @@ test("fresh provisioning, Doctor approval, grant, draft, and confirmation", asyn
   await administratorPage.getByRole("button", { name: "Импортировать ключи" }).click();
   await administratorPage.locator(".workspace-sidebar").getByRole("link", { name: "Пользователи" }).click();
   await expect(administratorPage).toHaveURL(/\/admin\/home/);
-  const requestRow = administratorPage.locator(".request-row").filter({ hasText: doctorAccountId });
+  const requestRow = administratorPage.locator(".administrator-table tbody tr").filter({ hasText: doctorAccountId });
   await expect(requestRow).toBeVisible({ timeout: replicationTimeout });
-  await requestRow.getByRole("button", { name: "Одобрить" }).click();
+  await requestRow.getByRole("button", { name: "Одобрить роль «Ветеринар»", exact: true }).click();
+  const approvalDialog = administratorPage.getByRole("dialog", { name: "Одобрить роль «Ветеринар»?" });
+  await expect(approvalDialog).toBeVisible();
+  await approvalDialog.getByRole("button", { name: "Одобрить", exact: true }).click();
+  await expect(approvalDialog).toBeHidden();
 
   await doctorPage.bringToFront();
   const doctorHome = doctorPage.locator(".workspace-sidebar").getByRole("link", { name: "Главная страница" });
