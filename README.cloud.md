@@ -102,7 +102,7 @@ export KLINOK_BOOTSTRAP_EMAIL='administrator@example.com'
 export KLINOK_BOOTSTRAP_PASSWORD='a-long-unique-password'
 export KLINOK_RECOVERY_PASSPHRASE='a-separate-long-offline-passphrase'
 
-docker compose -f docker-compose-ghrc.yml run --rm --no-deps -T \
+docker compose -f docker-compose.yml run --rm --no-deps -T \
   -e KLINOK_BOOTSTRAP_EMAIL \
   -e KLINOK_BOOTSTRAP_PASSWORD \
   -e KLINOK_RECOVERY_PASSPHRASE \
@@ -119,7 +119,7 @@ This creates:
 Extract the authentication attestation public key:
 
 ```sh
-docker compose -f docker-compose-ghrc.yml run --rm --no-deps -T \
+docker compose -f docker-compose.yml run --rm --no-deps -T \
   auth-blue node -e \
   "const fs=require('fs');process.stdout.write(JSON.stringify(JSON.parse(fs.readFileSync('/data/provisioned/auth-attestation-public-key.json'))))"
 ```
@@ -127,7 +127,7 @@ docker compose -f docker-compose-ghrc.yml run --rm --no-deps -T \
 Extract the bootstrap signing public key:
 
 ```sh
-docker compose -f docker-compose-ghrc.yml run --rm --no-deps -T \
+docker compose -f docker-compose.yml run --rm --no-deps -T \
   auth-blue node -e \
   "const fs=require('fs');process.stdout.write(JSON.stringify(JSON.parse(fs.readFileSync('/data/provisioned/bootstrap-public-anchor.json')).signingPublicKey))"
 ```
@@ -146,7 +146,7 @@ Copy the recovery bundle to secure offline storage:
 ```sh
 umask 077
 
-docker compose -f docker-compose-ghrc.yml run --rm --no-deps -T \
+docker compose -f docker-compose.yml run --rm --no-deps -T \
   auth-blue node -e \
   "const fs=require('fs');process.stdout.write(fs.readFileSync('/data/provisioned/bootstrap-recovery.bundle.json','utf8'))" \
   > bootstrap-recovery.bundle.json
@@ -163,17 +163,17 @@ unset KLINOK_BOOTSTRAP_EMAIL KLINOK_BOOTSTRAP_PASSWORD KLINOK_RECOVERY_PASSPHRAS
 Pull the configured image versions and start the trusted P2P node first:
 
 ```sh
-docker compose --env-file .env -f docker-compose-ghrc.yml pull
-docker compose --env-file .env -f docker-compose-ghrc.yml up -d p2p-blue
-docker compose --env-file .env -f docker-compose-ghrc.yml ps
+docker compose --env-file klinok.env -f docker-compose.yml pull
+docker compose --env-file klinok.env -f docker-compose.yml up -d p2p-blue
+docker compose --env-file klinok.env -f docker-compose.yml ps
 ```
 
 Wait until `p2p-blue` is healthy, and then start authentication and the UI:
 
 ```sh
-docker compose --env-file .env -f docker-compose-ghrc.yml up -d auth-blue
-docker compose --env-file .env -f docker-compose-ghrc.yml up -d ui-blue
-docker compose --env-file .env -f docker-compose-ghrc.yml ps
+docker compose --env-file klinok.env -f docker-compose.yml up -d auth-blue
+docker compose --env-file klinok.env -f docker-compose.yml up -d ui-blue
+docker compose --env-file klinok.env -f docker-compose.yml ps
 ```
 
 The resulting startup order is:

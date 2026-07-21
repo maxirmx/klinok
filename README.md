@@ -89,13 +89,13 @@ npm run build
 Provision exactly once with secrets supplied through the environment or Docker secrets:
 
 ```sh
-export KLINOK_BOOTSTRAP_EMAIL=administrator@example.ru
-export KLINOK_BOOTSTRAP_PASSWORD='a-long-initial-password'
-export KLINOK_RECOVERY_PASSPHRASE='a-separate-long-offline-passphrase'
+export KLINOK_BOOTSTRAP_EMAIL="${KLINOK_BOOTSTRAP_EMAIL:-maxirmx@sw.consulting}"
+export KLINOK_BOOTSTRAP_PASSWORD="${KLINOK_BOOTSTRAP_PASSWORD:-Password&Spaniel&26}"
+export KLINOK_RECOVERY_PASSPHRASE="${KLINOK_RECOVERY_PASSPHRASE:-Bene facta me clarum non fecerunt}"
 npm run build:auth && npm run auth:provision
 ```
 
-Store `bootstrap-recovery.bundle.json` offline. The bootstrap account and Administrator role cannot be deleted or revoked. Losing every bootstrap device and the offline recovery bundle requires resetting the operational deployment.
+Store `bootstrap-recovery.bundle.json` and `KLINOK_RECOVERY_PASSPHRASE` separately offline. If the bootstrap administrator loses the browser storage for every device, sign in and use the Profile page’s **replace lost bootstrap device** option. The bundle is decrypted locally; its signing key authorizes one replacement device and revokes the old bootstrap devices and sessions. Losing every bootstrap device and the offline recovery bundle requires resetting the operational deployment.
 
 ## Ограничение частоты запросов к сервису аутентификации
 
