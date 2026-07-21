@@ -1,5 +1,5 @@
 import { flushPromises, mount } from "@vue/test-utils";
-import { createMemoryHistory, createRouter } from "vue-router";
+import { createMemoryHistory, createRouter, RouterView } from "vue-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import AuthScreen from "../src/screens/AuthScreen.vue";
 import * as appStoreModule from "../src/appStore";
@@ -27,13 +27,14 @@ vi.mock("../src/appStore", async () => {
   };
 });
 
-const { dismissAuthFeedback, login } = appStoreModule;
+const { dismissAuthFeedback, login, register } = appStoreModule;
 const { setMockFeedback } = appStoreModule as unknown as {
   setMockFeedback: (feedback: { kind: "success" | "error"; text: string } | null) => void;
 };
 
 beforeEach(() => {
   vi.clearAllMocks();
+  sessionStorage.clear();
   setMockFeedback(null);
 });
 
@@ -92,5 +93,31 @@ describe("login navigation", () => {
     await flushPromises();
     expect(dismissAuthFeedback).toHaveBeenCalledOnce();
     expect(wrapper.find('[role="status"]').exists()).toBe(false);
+  });
+
+  it("replaces the completed consent form with the neutral email-verification screen", async () => {
+    sessionStorage.setItem("klinok:registration", JSON.stringify({
+      firstName: "Иван",
+      lastName: "Иванов",
+      patronymic: "",
+      email: "user@example.com",
+      password: "correct horse battery",
+      requestedRoles: ["owner"],
+    }));
+    const router = createRouter({ history: createMemoryHistory(), routes });
+    await router.push("/auth/register/consent");
+    await router.isReady();
+    const wrapper = mount(RouterView, { global: { plugins: [router] } });
+    await flushPromises();
+
+    for (const checkbox of wrapper.findAll<HTMLInputElement>('input[type="checkbox"]')) await checkbox.setValue(true);
+    await wrapper.get("form").trigger("submit");
+    await flushPromises();
+
+    expect(register).toHaveBeenCalledOnce();
+    expect(router.currentRoute.value.path).toBe("/auth/verify-email");
+    expect(wrapper.find('input[type="checkbox"]').exists()).toBe(false);
+    expect(wrapper.text()).toContain("Перейдите в Вашу программу электронной почты и откройте ссылку из письма для завершения регистрации.");
+    expect(wrapper.get('a[href="/auth/login"]').text()).toBe("Перейти ко входу");
   });
 });

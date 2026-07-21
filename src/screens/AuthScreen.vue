@@ -60,6 +60,7 @@ async function submitRegistration() {
   try {
     await register({ ...input, patronymic: input.patronymic || undefined, ageConfirmed: true });
     sessionStorage.removeItem("klinok:registration");
+    await router.replace("/auth/verify-email");
   } catch { /* app store exposes a localized error */ }
 }
 
