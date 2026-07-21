@@ -259,7 +259,7 @@ async function confirmDeviceRevocation() {
     <section v-else-if="appState.devicePending" class="panel profile-gate" role="status">
       <h2>Устройство ожидает подтверждения</h2>
       <p>Откройте Клинок на действующем устройстве и подтвердите перенос ключей.</p>
-      <template v-if="isBootstrapAccount">
+      <template v-if="isBootstrapAccount && !appState.session.serverKeySetAvailable">
         <h3>Все действующие устройства утрачены?</h3>
         <p>Замените их только с помощью офлайн-пакета начального администратора. Все прежние устройства и сеансы будут отозваны.</p>
         <form class="form-stack" @submit.prevent="action('devices', 'Утраченное устройство заменено.', () => replaceLostBootstrapDevice(recoveryText, recoveryPassphrase))">
@@ -389,10 +389,10 @@ async function confirmDeviceRevocation() {
       </section>
 
       <section class="panel profile-section account-security">
-        <div class="profile-section-heading"><div><h2>Аккаунт и устройства</h2><p>Управляйте подтверждёнными устройствами и сеансами.</p></div></div>
+        <div class="profile-section-heading"><div><h2>Аккаунт и устройства</h2><p>После успешного входа новое устройство подтверждается автоматически и получает серверную копию ключей.</p></div></div>
         <p v-if="feedback.devices" class="form-alert" :class="feedback.devices.kind" :role="feedback.devices.kind === 'error' ? 'alert' : 'status'">{{ feedback.devices.text }}</p>
 
-        <template v-if="appState.session.enrollments?.some(item => item.status === 'pending' && item.ephemeralPublicKey) && appState.session.device">
+        <template v-if="!appState.session.serverKeySetAvailable && appState.session.enrollments?.some(item => item.status === 'pending' && item.ephemeralPublicKey) && appState.session.device">
           <h3>Новые устройства</h3>
           <p>Подтверждайте только свои устройства. Передача ключей зашифрована для конкретного запроса.</p>
           <div v-for="enrollment in appState.session.enrollments.filter(item => item.status === 'pending' && item.ephemeralPublicKey)" :key="enrollment.enrollmentId" class="list-row">
@@ -403,6 +403,8 @@ async function confirmDeviceRevocation() {
             </div>
           </div>
         </template>
+
+        <p v-if="appState.session.serverKeySetAvailable">Отозванное устройство отключается, но может быть зарегистрировано снова после успешного входа в аккаунт.</p>
 
         <div v-for="device in visibleDevices" :key="device.deviceId" class="list-row">
           <div><strong>{{ deviceName(device) }}</strong><span>{{ device.deviceId === appState.session.device?.deviceId ? 'Это устройство' : 'Действующее устройство' }}</span><small>ID: {{ device.deviceId }}</small></div>

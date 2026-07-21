@@ -3,6 +3,7 @@ import {
   exportUserKeySet,
   generateUserKeySet,
   type AuthSessionDto,
+  type ExportedUserKeySet,
   type Role,
   type RoleRequest,
   type UserKeySet,
@@ -93,11 +94,20 @@ async function ensureDevice(session: AuthSessionDto): Promise<AuthSessionDto> {
   keys = await loadUserKeys(session.accountId);
   if (session.device) {
     state.devicePending = false;
+    state.keyRecoveryRequired = false;
     if (session.device.deviceName) setDeviceName(session.device.deviceName);
-    if (!keys) {
-      const enrollment = session.enrollments?.find((item) => item.deviceId === session.device?.deviceId && item.status === "active" && item.encryptedKeyBundle);
-      if (enrollment?.encryptedKeyBundle) keys = await decryptAndStoreUserKeyBundle(session.accountId, enrollment.encryptedKeyBundle);
-      else state.keyRecoveryRequired = true;
+    if (!keys || keys.version !== session.device.userKeyVersion) {
+      if (session.serverKeySetAvailable) {
+        keys = await storeExportedUserKeys(session.accountId, (await auth.getUserKeySet()).userKeySet);
+      } else {
+        const enrollment = session.enrollments?.find((item) => item.deviceId === session.device?.deviceId && item.status === "active" && item.encryptedKeyBundle);
+        if (enrollment?.encryptedKeyBundle) keys = await decryptAndStoreUserKeyBundle(session.accountId, enrollment.encryptedKeyBundle);
+        else state.keyRecoveryRequired = true;
+      }
+    }
+    if (keys && !session.serverKeySetAvailable) {
+      await auth.putUserKeySet(await exportUserKeySet(keys));
+      session = { ...session, serverKeySetAvailable: true };
     }
     return session;
   }
@@ -107,7 +117,7 @@ async function ensureDevice(session: AuthSessionDto): Promise<AuthSessionDto> {
     deviceId = getOrCreateDeviceId();
   }
   const existingPending = session.enrollments?.find((enrollment) => enrollment.deviceId === deviceId && enrollment.status === "pending");
-  if (existingPending) {
+  if (existingPending && !session.serverKeySetAvailable) {
     state.devicePending = true;
     return session;
   }
@@ -115,16 +125,18 @@ async function ensureDevice(session: AuthSessionDto): Promise<AuthSessionDto> {
   let signingPublicKey: JsonWebKey | undefined;
   let encryptionPublicKey: JsonWebKey | undefined;
   let ephemeralPublicKey: JsonWebKey | undefined;
-  if (firstDevice) {
+  let userKeySet: ExportedUserKeySet | undefined;
+  if (!session.serverKeySetAvailable && firstDevice) {
     if (!keys && session.accountId === config.p2p.bootstrapAccountId) {
       state.keyRecoveryRequired = true;
       return session;
     }
     keys ??= await createAndStoreUserKeys(session.accountId);
     const exported = await exportUserKeySet(keys);
+    userKeySet = exported;
     signingPublicKey = exported.signingPublicKey;
     encryptionPublicKey = exported.encryptionPublicKey;
-  } else {
+  } else if (!session.serverKeySetAvailable) {
     ephemeralPublicKey = await createEnrollmentKey(session.accountId);
   }
   const result = await auth.enrollDevice({
@@ -134,12 +146,19 @@ async function ensureDevice(session: AuthSessionDto): Promise<AuthSessionDto> {
     ...(signingPublicKey ? { signingPublicKey } : {}),
     ...(encryptionPublicKey ? { encryptionPublicKey } : {}),
     ...(ephemeralPublicKey ? { ephemeralPublicKey } : {}),
+    ...(userKeySet ? { userKeySet } : {}),
   });
   if (!result.certificate) {
     state.devicePending = true;
     return { ...session, enrollments: [...(session.enrollments ?? []), result.enrollment] };
   }
-  return { ...session, device: result.certificate, enrollments: [...(session.enrollments ?? []), result.enrollment] };
+  if (result.userKeySet) keys = await storeExportedUserKeys(session.accountId, result.userKeySet);
+  state.devicePending = false;
+  state.keyRecoveryRequired = false;
+  const enrollments = existingPending
+    ? (session.enrollments ?? []).map((candidate) => candidate.enrollmentId === result.enrollment.enrollmentId ? result.enrollment : candidate)
+    : [...(session.enrollments ?? []), result.enrollment];
+  return { ...session, device: result.certificate, enrollments, serverKeySetAvailable: Boolean(result.userKeySet || session.serverKeySetAvailable) };
 }
 
 function chooseInitialRole(session: AuthSessionDto): Role {
@@ -282,10 +301,7 @@ export async function revokeDevice(deviceId: string) {
   if (currentDeviceId && currentDeviceId !== deviceId && keys) {
     const nextKeys = await generateUserKeySet(keys.version + 1);
     const exported = await exportUserKeySet(nextKeys);
-    const result = await auth.revokeDevice(deviceId, {
-      signingPublicKey: exported.signingPublicKey,
-      encryptionPublicKey: exported.encryptionPublicKey,
-    });
+    const result = await auth.revokeDevice(deviceId, exported);
     for (const revokedId of result.revokedDeviceIds) await activeRepository.control.revokeDevice(revokedId);
     if (result.certificate) {
       await activeRepository.control.rotateCurrentDevice(result.certificate);

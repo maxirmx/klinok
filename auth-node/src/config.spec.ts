@@ -10,6 +10,7 @@ describe("auth configuration", () => {
     const config = loadAuthConfig({});
     expect(config.trustProxy).toBe(false);
     expect(config.publicOrigin).toBe("http://localhost:8080");
+    expect(config.escrowKeyPath).toBe(".klinok-auth/user-key-escrow-key.json");
     expect(config.bootstrapAccountId).toBe("bootstrap-administrator");
     expect(config.bootstrapSigningPublicKey).toBeUndefined();
     expect(config.rateLimit).toEqual(DEFAULT_AUTH_RATE_LIMITS);

@@ -7,13 +7,18 @@ import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest }
 import cookie from "@fastify/cookie";
 import rateLimit from "@fastify/rate-limit";
 import {
+  generateDataKey,
   importSigningPublicKey,
+  importUserKeySet,
   stableSerialize,
+  unwrapDataKey,
+  wrapDataKey,
   type AuthErrorBody,
   type AuthSessionDto,
   type BootstrapDeviceReplacementPayload,
   type DeviceCertificate,
   type DeviceEnrollmentDto,
+  type ExportedUserKeySet,
   type RegistrationSetupDto,
   type Role,
 } from "@klinok/protocol";
@@ -31,6 +36,7 @@ import {
 } from "./security.js";
 import { AuthStore, type AuthAccount, type AuthSessionRecord } from "./store.js";
 import { ControlPlaneObserver } from "./controlObserver.js";
+import { UserKeyEscrowService } from "./escrow.js";
 
 const COOKIE_NAME = "klinok_session";
 const IDLE_MS = 30 * 60_000;
@@ -56,6 +62,7 @@ interface DeviceBody {
   signingPublicKey?: JsonWebKey;
   encryptionPublicKey?: JsonWebKey;
   ephemeralPublicKey?: JsonWebKey;
+  userKeySet?: ExportedUserKeySet;
 }
 
 interface CredentialsBody {
@@ -148,6 +155,7 @@ export async function buildAuthApp(options: AuthAppOptions): Promise<FastifyInst
     },
   };
   const attestation = options.attestation ?? await AttestationService.loadOrCreate(options.config.attestationKeyPath);
+  const escrow = await UserKeyEscrowService.loadOrCreate(options.config.escrowKeyPath);
   const now = options.now ?? (() => new Date());
   const limiterKeySecret = randomBytes(32);
 
@@ -188,6 +196,33 @@ export async function buildAuthApp(options: AuthAppOptions): Promise<FastifyInst
     metrics.rateLimitRejected += 1;
     if (!result.isAllowed) reply.header("Retry-After", Math.max(1, result.ttlInSeconds));
     return error(reply, 429, "RATE_LIMITED", "Слишком много запросов. Повторите попытку позже.");
+  }
+
+  async function validUserKeySet(keySet: ExportedUserKeySet | undefined): Promise<boolean> {
+    if (!keySet || !Number.isSafeInteger(keySet.version) || keySet.version <= 0) return false;
+    try {
+      const imported = await importUserKeySet(keySet);
+      const probe = crypto.getRandomValues(new Uint8Array(32));
+      const signature = await crypto.subtle.sign({ name: "ECDSA", hash: "SHA-256" }, imported.signingPrivateKey, probe);
+      if (!await crypto.subtle.verify({ name: "ECDSA", hash: "SHA-256" }, imported.signingPublicKey, signature, probe)) return false;
+      const dataKey = await generateDataKey();
+      const [envelope] = await wrapDataKey(dataKey, [{ recipientId: "escrow-validation", keyVersion: keySet.version, publicKey: imported.encryptionPublicKey }]);
+      if (!envelope) return false;
+      const unwrapped = await unwrapDataKey(envelope, imported.encryptionPrivateKey);
+      const [originalRaw, unwrappedRaw] = await Promise.all([
+        crypto.subtle.exportKey("raw", dataKey),
+        crypto.subtle.exportKey("raw", unwrapped),
+      ]);
+      return Buffer.from(originalRaw).equals(Buffer.from(unwrappedRaw));
+    } catch {
+      return false;
+    }
+  }
+
+  function keySetMatchesCertificate(keySet: ExportedUserKeySet, certificate: DeviceCertificate): boolean {
+    return keySet.version === certificate.userKeyVersion
+      && stableSerialize(keySet.signingPublicKey) === stableSerialize(certificate.signingPublicKey)
+      && stableSerialize(keySet.encryptionPublicKey) === stableSerialize(certificate.encryptionPublicKey);
   }
 
   async function allowAccountMutation(request: FastifyRequest, reply: FastifyReply, accountId: string, sensitive = false): Promise<boolean> {
@@ -412,8 +447,51 @@ export async function buildAuthApp(options: AuthAppOptions): Promise<FastifyInst
       devices: account.devices,
       enrollments: account.enrollments,
       pendingOperations: account.pendingOperations,
+      serverKeySetAvailable: Boolean(account.encryptedUserKeySet),
       ...(account.setup ? { setup: account.setup } : {}),
     } satisfies AuthSessionDto;
+  });
+
+  app.get("/api/auth/user-key-set", {
+    config: { rateLimit: { max: options.config.rateLimit.sensitiveMutationIpPerMinute, timeWindow: 60_000 } },
+  }, async (request, reply) => {
+    const current = await authenticated(request, reply, false);
+    if (!current) return;
+    const currentDevice = current.account.devices.find((device) =>
+      device.deviceId === current.session.deviceId && device.status === "active");
+    if (!currentDevice) return error(reply, 403, "ACTIVE_DEVICE_REQUIRED", "Получить ключи можно только для действующего устройства.");
+    if (!current.account.encryptedUserKeySet) return error(reply, 404, "USER_KEY_SET_NOT_FOUND", "Серверная копия ключей ещё не создана.");
+    const userKeySet = await escrow.decrypt(current.account.accountId, current.account.encryptedUserKeySet);
+    if (!keySetMatchesCertificate(userKeySet, currentDevice)) {
+      return error(reply, 500, "USER_KEY_SET_MISMATCH", "Серверная копия ключей не соответствует сертификату устройства.");
+    }
+    reply.header("Cache-Control", "no-store");
+    return { userKeySet };
+  });
+
+  app.put<{ Body: { userKeySet: ExportedUserKeySet } }>("/api/auth/user-key-set", {
+    config: { rateLimit: { max: options.config.rateLimit.sensitiveMutationIpPerMinute, timeWindow: 60_000 } },
+  }, async (request, reply) => {
+    const current = await authenticated(request, reply);
+    if (!current) return;
+    if (!await allowAccountMutation(request, reply, current.account.accountId, true)) return;
+    const currentDevice = current.account.devices.find((device) =>
+      device.deviceId === current.session.deviceId && device.status === "active");
+    const keySet = request.body?.userKeySet;
+    if (!currentDevice) return error(reply, 403, "ACTIVE_DEVICE_REQUIRED", "Сохранить ключи можно только с действующего устройства.");
+    if (!await validUserKeySet(keySet)
+      || !keySetMatchesCertificate(keySet, currentDevice)) {
+      return error(reply, 400, "USER_KEY_SET_INVALID", "Ключи не соответствуют сертификату текущего устройства.");
+    }
+    if (current.account.encryptedUserKeySet && current.account.encryptedUserKeySet.keyVersion > keySet.version) {
+      return error(reply, 409, "USER_KEY_SET_STALE", "Нельзя заменить серверную копию устаревшей версией ключей.");
+    }
+    await store.putAccount({
+      ...current.account,
+      encryptedUserKeySet: await escrow.encrypt(current.account.accountId, keySet),
+      updatedAt: now().toISOString(),
+    });
+    return { stored: true, version: keySet.version };
   });
 
   app.post("/api/auth/logout", {
@@ -690,14 +768,60 @@ export async function buildAuthApp(options: AuthAppOptions): Promise<FastifyInst
     const existingEnrollment = current.account.enrollments.find((enrollment) => enrollment.deviceId === request.body.deviceId);
     if (existingEnrollment) {
       const certificate = current.account.devices.find((device) => device.deviceId === existingEnrollment.deviceId && device.status === "active");
+      if (certificate && current.account.encryptedUserKeySet) {
+        const userKeySet = await escrow.decrypt(current.account.accountId, current.account.encryptedUserKeySet);
+        if (!keySetMatchesCertificate(userKeySet, certificate)) {
+          return error(reply, 500, "USER_KEY_SET_MISMATCH", "Серверная копия ключей не соответствует сертификату устройства.");
+        }
+        reply.header("Cache-Control", "no-store");
+        return {
+          enrollment: existingEnrollment,
+          certificate,
+          userKeySet,
+        };
+      }
+      if (existingEnrollment.status === "pending" && current.account.encryptedUserKeySet) {
+        const userKeySet = await escrow.decrypt(current.account.accountId, current.account.encryptedUserKeySet);
+        const enrollment: DeviceEnrollmentDto = {
+          ...existingEnrollment,
+          status: "active",
+          signingPublicKey: userKeySet.signingPublicKey,
+          encryptionPublicKey: userKeySet.encryptionPublicKey,
+          userKeyVersion: userKeySet.version,
+        };
+        const activatedCertificate = await attestation.certificate(enrollment, now().toISOString());
+        current.session.deviceId = enrollment.deviceId;
+        await store.putSession(current.session);
+        await store.putAccount({
+          ...current.account,
+          devices: [...current.account.devices, activatedCertificate],
+          enrollments: current.account.enrollments.map((candidate) => candidate.enrollmentId === enrollment.enrollmentId ? enrollment : candidate),
+          updatedAt: now().toISOString(),
+        });
+        reply.header("Cache-Control", "no-store");
+        return { enrollment, certificate: activatedCertificate, userKeySet };
+      }
       return { enrollment: existingEnrollment, ...(certificate ? { certificate } : {}) };
     }
     const hasActiveDevices = current.account.devices.some((device) => device.status === "active");
+    const suppliedKeySet = request.body.userKeySet;
+    if (suppliedKeySet && (hasActiveDevices || current.account.encryptedUserKeySet)) {
+      return error(reply, 409, "USER_KEY_SET_ALREADY_INITIALIZED", "Первичный набор ключей уже создан; обновите его с действующего устройства.");
+    }
+    if (suppliedKeySet && !await validUserKeySet(suppliedKeySet)) {
+      return error(reply, 400, "USER_KEY_SET_INVALID", "Набор ключей пользователя недействителен.");
+    }
     if (!request.body.deviceId || !request.body.orbitIdentityId ||
-      (!hasActiveDevices && (!request.body.signingPublicKey || !request.body.encryptionPublicKey)) ||
-      (hasActiveDevices && !request.body.ephemeralPublicKey)) {
+      (!current.account.encryptedUserKeySet && !suppliedKeySet && !hasActiveDevices && (!request.body.signingPublicKey || !request.body.encryptionPublicKey)) ||
+      (!current.account.encryptedUserKeySet && !suppliedKeySet && hasActiveDevices && !request.body.ephemeralPublicKey)) {
       return error(reply, 400, "DEVICE_INVALID", "Данные устройства неполны.");
     }
+    const encryptedUserKeySet = suppliedKeySet
+      ? await escrow.encrypt(current.account.accountId, suppliedKeySet)
+      : current.account.encryptedUserKeySet;
+    const serverKeySet = encryptedUserKeySet
+      ? suppliedKeySet ?? await escrow.decrypt(current.account.accountId, encryptedUserKeySet)
+      : undefined;
     const deviceName = request.body.deviceName?.trim() || `Устройство ${request.body.deviceId.slice(0, 8)}`;
     if (deviceName.length > 80) return error(reply, 400, "DEVICE_NAME_INVALID", "Название устройства не должно превышать 80 символов.");
     const enrollment: DeviceEnrollmentDto = {
@@ -707,10 +831,11 @@ export async function buildAuthApp(options: AuthAppOptions): Promise<FastifyInst
       deviceId: request.body.deviceId,
       deviceName,
       orbitIdentityId: request.body.orbitIdentityId,
-      status: hasActiveDevices ? "pending" : "active",
-      ...(request.body.signingPublicKey ? { signingPublicKey: request.body.signingPublicKey } : {}),
-      ...(request.body.encryptionPublicKey ? { encryptionPublicKey: request.body.encryptionPublicKey } : {}),
+      status: serverKeySet || !hasActiveDevices ? "active" : "pending",
+      ...(serverKeySet?.signingPublicKey || request.body.signingPublicKey ? { signingPublicKey: serverKeySet?.signingPublicKey ?? request.body.signingPublicKey } : {}),
+      ...(serverKeySet?.encryptionPublicKey || request.body.encryptionPublicKey ? { encryptionPublicKey: serverKeySet?.encryptionPublicKey ?? request.body.encryptionPublicKey } : {}),
       ...(request.body.ephemeralPublicKey ? { ephemeralPublicKey: request.body.ephemeralPublicKey } : {}),
+      ...(serverKeySet ? { userKeyVersion: serverKeySet.version } : {}),
       createdAt: now().toISOString(),
     };
     const devices = [...current.account.devices];
@@ -722,6 +847,7 @@ export async function buildAuthApp(options: AuthAppOptions): Promise<FastifyInst
     await store.putSession(current.session);
     await store.putAccount({
       ...current.account,
+      ...(encryptedUserKeySet ? { encryptedUserKeySet } : {}),
       devices,
       enrollments: [...current.account.enrollments, enrollment],
       pendingOperations: [...current.account.pendingOperations, {
@@ -732,7 +858,12 @@ export async function buildAuthApp(options: AuthAppOptions): Promise<FastifyInst
       }],
       updatedAt: now().toISOString(),
     });
-    return { enrollment, ...(enrollment.status === "active" ? { certificate: devices.at(-1) } : {}) };
+    if (serverKeySet) reply.header("Cache-Control", "no-store");
+    return {
+      enrollment,
+      ...(enrollment.status === "active" ? { certificate: devices.at(-1) } : {}),
+      ...(serverKeySet ? { userKeySet: serverKeySet } : {}),
+    };
   });
 
   app.post<{ Params: { id: string }; Body: { encryptedKeyBundle: string; signingPublicKey: JsonWebKey; encryptionPublicKey: JsonWebKey } }>("/api/auth/device-enrollments/:id/approve", {
@@ -781,7 +912,7 @@ export async function buildAuthApp(options: AuthAppOptions): Promise<FastifyInst
     return { rejected: true };
   });
 
-  app.delete<{ Params: { id: string }; Body: { signingPublicKey?: JsonWebKey; encryptionPublicKey?: JsonWebKey } }>("/api/auth/devices/:id", {
+  app.delete<{ Params: { id: string }; Body: { userKeySet?: ExportedUserKeySet } }>("/api/auth/devices/:id", {
     config: { rateLimit: { max: options.config.rateLimit.sensitiveMutationIpPerMinute, timeWindow: 60_000 } },
   }, async (request, reply) => {
     const current = await authenticated(request, reply);
@@ -790,18 +921,22 @@ export async function buildAuthApp(options: AuthAppOptions): Promise<FastifyInst
     const found = current.account.devices.find((device) => device.deviceId === request.params.id);
     if (!found) return error(reply, 404, "DEVICE_NOT_FOUND", "Устройство не найдено.");
     const currentDevice = current.account.devices.find((device) => device.deviceId === current.session.deviceId && device.status === "active");
-    const canRotate = currentDevice && currentDevice.deviceId !== request.params.id && request.body?.signingPublicKey && request.body?.encryptionPublicKey;
+    const nextKeySet = request.body?.userKeySet;
+    const canRotate = Boolean(currentDevice && currentDevice.deviceId !== request.params.id && nextKeySet);
+    if (canRotate && (!await validUserKeySet(nextKeySet) || nextKeySet!.version !== currentDevice!.userKeyVersion + 1)) {
+      return error(reply, 400, "USER_KEY_SET_INVALID", "Новый набор ключей или его версия недействительны.");
+    }
     const revokedDeviceIds = current.account.devices
       .filter((device) => device.status === "active" && device.deviceId !== currentDevice?.deviceId)
       .map((device) => device.deviceId);
     let rotatedCertificate: DeviceCertificate | undefined;
     if (canRotate) {
       rotatedCertificate = await attestation.certificate({
-        enrollmentId: randomUUID(), operationId: randomUUID(), accountId: current.account.accountId, deviceId: currentDevice.deviceId,
-        ...(currentDevice.deviceName ? { deviceName: currentDevice.deviceName } : {}),
-        orbitIdentityId: currentDevice.orbitIdentityId, status: "active",
-        signingPublicKey: request.body.signingPublicKey!, encryptionPublicKey: request.body.encryptionPublicKey!,
-        userKeyVersion: currentDevice.userKeyVersion + 1, createdAt: now().toISOString(),
+        enrollmentId: randomUUID(), operationId: randomUUID(), accountId: current.account.accountId, deviceId: currentDevice!.deviceId,
+        ...(currentDevice!.deviceName ? { deviceName: currentDevice!.deviceName } : {}),
+        orbitIdentityId: currentDevice!.orbitIdentityId, status: "active",
+        signingPublicKey: nextKeySet!.signingPublicKey, encryptionPublicKey: nextKeySet!.encryptionPublicKey,
+        userKeyVersion: currentDevice!.userKeyVersion + 1, createdAt: now().toISOString(),
       });
     }
     const devices = current.account.devices.map((device) => {
@@ -809,8 +944,11 @@ export async function buildAuthApp(options: AuthAppOptions): Promise<FastifyInst
       if (device.deviceId === request.params.id || (rotatedCertificate && device.deviceId !== rotatedCertificate.deviceId)) return { ...device, status: "revoked" as const };
       return device;
     });
-    const updated = await store.revokeAccountSessions({ ...current.account, devices });
-    await store.putAccount(updated);
+    await store.revokeAccountSessions({
+      ...current.account,
+      devices,
+      ...(canRotate ? { encryptedUserKeySet: await escrow.encrypt(current.account.accountId, nextKeySet!) } : {}),
+    });
     metrics.sessionsRevoked += current.account.sessionDigests.length;
     reply.clearCookie(COOKIE_NAME, cookieOptions(options.config));
     return { revoked: true, rotateUserKeys: Boolean(rotatedCertificate), certificate: rotatedCertificate, revokedDeviceIds };

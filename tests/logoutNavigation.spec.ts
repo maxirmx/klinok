@@ -29,6 +29,7 @@ vi.mock("../src/appStore", async () => {
         ephemeralPublicKey: { kty: "EC" },
         createdAt: "2026-07-15T00:00:00.000Z",
       }],
+      serverKeySetAvailable: false,
     },
     control: {
       profile: { accountId: "account-1", revision: 1, firstName: "Максим", patronymic: "Сергеевич", lastName: "Иванов", updatedAt: "2026-07-15T00:00:00.000Z" },
@@ -53,6 +54,7 @@ vi.mock("../src/appStore", async () => {
     setMockActiveRole: (role: "owner" | "doctor" | "administrator" | null) => { state.activeRole = role; },
     setMockDevices: (devices: typeof state.session.devices) => { state.session.devices = devices; },
     setMockDevicePending: (pending: boolean) => { state.devicePending = pending; },
+    setMockServerKeySetAvailable: (available: boolean) => { state.session.serverKeySetAvailable = available; },
     setMockProfile: (profile: typeof state.control.profile) => { state.control.profile = profile; },
     setMockSync: (sync: typeof state.sync) => { state.sync = sync; },
     approveDeviceEnrollment: vi.fn(),
@@ -94,6 +96,7 @@ beforeEach(async () => {
     setMockActiveRole: (role: "owner" | "doctor" | "administrator" | null) => void;
     setMockDevices: (devices: Array<{ deviceId: string; deviceName: string; status: string }>) => void;
     setMockDevicePending: (pending: boolean) => void;
+    setMockServerKeySetAvailable: (available: boolean) => void;
     setMockProfile: (profile: {
       accountId: string;
       revision: number;
@@ -111,6 +114,7 @@ beforeEach(async () => {
     { deviceId: "revoked-device", deviceName: "Старый телефон", status: "revoked" },
   ]);
   mockedStore.setMockDevicePending(false);
+  mockedStore.setMockServerKeySetAvailable(false);
   mockedStore.setMockProfile({
     accountId: "account-1",
     revision: 1,
@@ -259,6 +263,21 @@ describe("logout navigation", () => {
 
     expect(replaceLostBootstrapDevice).toHaveBeenCalledWith("recovery", "offline recovery passphrase");
     expect(wrapper.text()).toContain("Утраченное устройство заменено.");
+  });
+
+  it("hides legacy approval and recovery controls after server key migration", async () => {
+    const mockedStore = await import("../src/appStore") as typeof import("../src/appStore") & {
+      setMockAccountId: (accountId: string) => void;
+      setMockDevicePending: (pending: boolean) => void;
+      setMockServerKeySetAvailable: (available: boolean) => void;
+    };
+    mockedStore.setMockAccountId("bootstrap-administrator");
+    mockedStore.setMockDevicePending(true);
+    mockedStore.setMockServerKeySetAvailable(true);
+    const { wrapper } = await mountAt(RoleStatusScreen, "/profile", { scenarioId: "user-profile" });
+
+    expect(wrapper.text()).not.toContain("Все действующие устройства утрачены?");
+    expect(wrapper.text()).not.toContain("Подтвердить и передать ключи");
   });
 
   it("confirms device revocation before executing it", async () => {

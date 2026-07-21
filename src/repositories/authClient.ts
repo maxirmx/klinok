@@ -4,6 +4,7 @@ import type {
   BootstrapDeviceReplacementPayload,
   DeviceCertificate,
   DeviceEnrollmentDto,
+  ExportedUserKeySet,
   Role,
 } from "@klinok/protocol";
 
@@ -75,6 +76,17 @@ export class AuthClient {
   }
   deleteAccount() { return this.request<{ operationId: string }>("/api/auth/account", { method: "DELETE" }); }
 
+  getUserKeySet() {
+    return this.request<{ userKeySet: ExportedUserKeySet }>("/api/auth/user-key-set");
+  }
+
+  putUserKeySet(userKeySet: ExportedUserKeySet) {
+    return this.request<{ stored: true; version: number }>("/api/auth/user-key-set", {
+      method: "PUT",
+      body: JSON.stringify({ userKeySet }),
+    });
+  }
+
   bootstrapDeviceReplacementChallenge() {
     return this.request<{ challenge: string; expiresAt: string }>("/api/auth/bootstrap-device-replacement/challenge", { method: "POST" });
   }
@@ -90,8 +102,8 @@ export class AuthClient {
     });
   }
 
-  enrollDevice(input: Omit<DeviceEnrollmentDto, "enrollmentId" | "operationId" | "accountId" | "status" | "createdAt">) {
-    return this.request<{ enrollment: DeviceEnrollmentDto; certificate?: DeviceCertificate }>("/api/auth/device-enrollments", { method: "POST", body: JSON.stringify(input) });
+  enrollDevice(input: Omit<DeviceEnrollmentDto, "enrollmentId" | "operationId" | "accountId" | "status" | "createdAt"> & { userKeySet?: ExportedUserKeySet }) {
+    return this.request<{ enrollment: DeviceEnrollmentDto; certificate?: DeviceCertificate; userKeySet?: ExportedUserKeySet }>("/api/auth/device-enrollments", { method: "POST", body: JSON.stringify(input) });
   }
 
   approveEnrollment(id: string, encryptedKeyBundle: string, signingPublicKey: JsonWebKey, encryptionPublicKey: JsonWebKey) {
@@ -104,10 +116,10 @@ export class AuthClient {
     return this.request<{ rejected: true }>(`/api/auth/device-enrollments/${encodeURIComponent(id)}`, { method: "DELETE" });
   }
 
-  revokeDevice(id: string, nextKeys?: { signingPublicKey: JsonWebKey; encryptionPublicKey: JsonWebKey }) {
+  revokeDevice(id: string, userKeySet?: ExportedUserKeySet) {
     return this.request<{ revoked: true; rotateUserKeys: boolean; certificate?: DeviceCertificate; revokedDeviceIds: string[] }>(
       `/api/auth/devices/${encodeURIComponent(id)}`,
-      { method: "DELETE", ...(nextKeys ? { body: JSON.stringify(nextKeys) } : {}) },
+      { method: "DELETE", ...(userKeySet ? { body: JSON.stringify({ userKeySet }) } : {}) },
     );
   }
 }

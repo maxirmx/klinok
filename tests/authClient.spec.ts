@@ -64,4 +64,32 @@ describe("auth client", () => {
       signature: "signed-proof",
     });
   });
+
+  it("uploads, retrieves, and rotates the server-held key set without caching", async () => {
+    const userKeySet = {
+      version: 2,
+      signingPublicKey: { kty: "EC" },
+      signingPrivateKey: { kty: "EC", d: "private-signing" },
+      encryptionPublicKey: { kty: "RSA" },
+      encryptionPrivateKey: { kty: "RSA", d: "private-encryption" },
+    };
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ authenticated: true, csrfToken: "csrf" }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ stored: true, version: 2 }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ userKeySet }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ revoked: true, rotateUserKeys: true, revokedDeviceIds: [] }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const client = new AuthClient();
+    await client.session();
+    await client.putUserKeySet(userKeySet);
+    await client.getUserKeySet();
+    await client.revokeDevice("old-device", userKeySet);
+
+    expect(fetchMock.mock.calls[1][0]).toBe("/api/auth/user-key-set");
+    expect(fetchMock.mock.calls[1][1]).toMatchObject({ method: "PUT" });
+    expect(fetchMock.mock.calls[2][0]).toBe("/api/auth/user-key-set");
+    expect(fetchMock.mock.calls[3][0]).toBe("/api/auth/devices/old-device");
+    expect(JSON.parse(fetchMock.mock.calls[3][1].body as string)).toEqual({ userKeySet });
+    expect((fetchMock.mock.calls[3][1].headers as Headers).get("X-CSRF-Token")).toBe("csrf");
+  });
 });

@@ -113,6 +113,7 @@ This creates:
 
 - the immutable bootstrap Administrator account;
 - the authentication attestation private key;
+- the user-key escrow master key;
 - the bootstrap signing anchor;
 - an encrypted recovery bundle.
 
@@ -152,7 +153,7 @@ docker compose -f docker-compose.yml run --rm --no-deps -T \
   > bootstrap-recovery.bundle.json
 ```
 
-Keep its passphrase separately. Losing every bootstrap device and the offline recovery bundle requires resetting the operational deployment. Remove the bootstrap password and recovery passphrase from the shell after provisioning:
+Keep its passphrase separately as an emergency and legacy-migration backup. New installations also keep the bootstrap account's encrypted private-key copy in the authentication data directory, so a successfully authenticated replacement browser is approved automatically. Remove the bootstrap password and recovery passphrase from the shell after provisioning:
 
 ```sh
 unset KLINOK_BOOTSTRAP_EMAIL KLINOK_BOOTSTRAP_PASSWORD KLINOK_RECOVERY_PASSPHRASE
@@ -209,10 +210,12 @@ docker compose --env-file .env -f docker-compose-ghrc.yml logs --tail=200 ui-blu
 
 Back up both persistent data directories:
 
-- `auth/data` contains accounts, sessions, and the attestation private key;
+- `auth/data` contains accounts, encrypted user private-key sets, the attestation private key, and `user-key-escrow-key.json`;
 - `p2p/data` contains control and medical events plus the stable P2P identity.
 
-For a consistent filesystem backup, briefly stop the affected containers or use a quiesced disk snapshot. Store backups encrypted and test restoration periodically.
+For a consistent filesystem backup, briefly stop the affected containers or use a quiesced disk snapshot. Store backups encrypted and test restoration periodically. The auth data directory must be restored as one unit: without `user-key-escrow-key.json`, none of its encrypted account key sets can be recovered.
+
+The authentication service can decrypt all account key sets. This prototype therefore relies on the authentication host as a trusted key custodian and does not provide strict end-to-end key custody. A successful password login or email password reset authorizes automatic enrollment and key delivery to a new browser.
 
 Never deploy either backend service with ephemeral storage. Do not run `docker compose down -v` against an operational deployment, because it can delete persistent volumes.
 

@@ -250,6 +250,7 @@ export interface AuthSessionDto {
   enrollments?: DeviceEnrollmentDto[];
   pendingOperations?: PendingOperationDto[];
   setup?: RegistrationSetupDto;
+  serverKeySetAvailable?: boolean;
 }
 
 export interface RegistrationSetupDto {

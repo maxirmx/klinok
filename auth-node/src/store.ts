@@ -13,6 +13,14 @@ import type {
   RegistrationSetupDto,
 } from "@klinok/protocol";
 
+export interface EncryptedUserKeySet {
+  formatVersion: 1;
+  algorithm: "AES-256-GCM";
+  keyVersion: number;
+  iv: string;
+  ciphertext: string;
+}
+
 export interface AuthAccount {
   accountId: string;
   email: string;
@@ -29,6 +37,7 @@ export interface AuthAccount {
   pendingOperations: PendingOperationDto[];
   sessionDigests: string[];
   immutableBootstrap?: boolean;
+  encryptedUserKeySet?: EncryptedUserKeySet;
 }
 
 export interface AuthSessionRecord {
@@ -189,6 +198,7 @@ export class AuthStore {
       ...account,
       credentialStatus: "deleted",
       setup: undefined,
+      encryptedUserKeySet: undefined,
       pendingOperations: [],
       sessionDigests: [],
       updatedAt: new Date().toISOString(),
