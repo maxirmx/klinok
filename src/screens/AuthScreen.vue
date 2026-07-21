@@ -20,8 +20,8 @@ const deviceName = ref(isNewDevice ? suggestedDeviceName() : getOrCreateDeviceNa
 const confirmPassword = ref("");
 const registrationConfirmPassword = ref("");
 const initialRole = ref<Role>("owner");
-const acceptedConsent = ref(false);
-const acceptedAgreement = ref(false);
+const acceptedConsent = ref(true);
+const acceptedAgreement = ref(true);
 const acceptedDisclaimer1 = ref(false);
 const acceptedDisclaimer2 = ref(false);
 const ageConfirmed = ref(false);
@@ -87,6 +87,15 @@ onMounted(async () => {
     catch { /* app store exposes a localized error */ }
   }
 });
+
+// ...... real registration form is commented out for now
+//          <label><input v-model="acceptedConsent" type="checkbox" required />
+//            <span>Я принимаю <a :href="getConfig()?.legal.personalDataConsent.href" target="_blank">согласие на обработку персональных данных</a>.</span>
+//          </label>
+//          <label><input v-model="acceptedAgreement" type="checkbox" required />
+//            <span>Я принимаю <a :href="getConfig()?.legal.userAgreement.href" target="_blank">пользовательское соглашение</a>.</span>
+//          </label>
+
 </script>
 
 <template>
@@ -104,7 +113,6 @@ onMounted(async () => {
       <div class="auth-center operational-form">
         <header class="auth-heading">
           <h1>{{ title }}</h1>
-          <p v-if="mode === 'consent'">Каждое согласие подтверждается отдельно</p>
         </header>
 
         <p v-if="appState.error" class="form-alert error" role="alert">{{ appState.error }}</p>
@@ -145,22 +153,18 @@ onMounted(async () => {
           <span>Я понимаю, что регистрируюсь в тестовой системе, которая используется исключительно для целей разработки.</span>
           </label>
           <label><input v-model="acceptedDisclaimer2" type="checkbox" required />
-          <span>Я обязуюсь не использовать при регистрации своих персональных данных равно как и персональных данных третьих лиц.</span>
+          <span>Я обязуюсь не использовать при регистрации свои персональные данные, равно как и персональные данные третьих лиц.</span>
+          </label>
+          <label><input v-model="ageConfirmed" type="checkbox" required />
+          <span>Мне исполнилось 18 лет.</span>
           </label>
 
-          <label><input v-model="acceptedConsent" type="checkbox" required />
-            <span>Я принимаю <a :href="getConfig()?.legal.personalDataConsent.href" target="_blank">согласие на обработку персональных данных</a>.</span>
-          </label>
-          <label><input v-model="acceptedAgreement" type="checkbox" required />
-            <span>Я принимаю <a :href="getConfig()?.legal.userAgreement.href" target="_blank">пользовательское соглашение</a>.</span>
-          </label>
-          <label><input v-model="ageConfirmed" type="checkbox" required /> <span>Мне исполнилось 18 лет.</span></label>
           <button class="primary-action" :disabled="appState.busy">Зарегистрироваться</button>
           <RouterLink class="auth-text-link" to="/auth/register">Вернуться к данным</RouterLink>
         </form>
 
         <div v-else-if="mode === 'verify'" class="form-stack">
-          <p v-if="!route.query.token">Откройте ссылку из письма для подтверждения электронной почты.</p>
+          <p v-if="!route.query.token">Перейдите в Вашу программу электронной почты и откройте ссылку из письма для завершения регистрации.</p>
           <RouterLink class="primary-action" to="/auth/login">Перейти ко входу</RouterLink>
         </div>
 

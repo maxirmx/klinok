@@ -2238,7 +2238,20 @@ dd {
     padding: 24px 16px;
   }
 }
-.consent-stack > label { display: flex; align-items: flex-start; gap: 10px; }
+.consent-stack > label { display: flex; align-items: flex-start; gap: 32px; }
+.consent-stack > label > input[type="checkbox"] {
+  flex: 0 0 auto;
+  width: 1rem;
+  height: 1rem;
+  margin: .25rem .5rem 0;
+}
+.consent-stack > label > span {
+  font-size: 1rem;
+  font-weight: 500;
+  line-height: 1.5;
+  color: #171616b4;
+}
+.consent-stack > .primary-action { margin-top: 16px; }
 .form-alert { padding: 12px 14px; border-radius: 12px; margin: 0 0 16px; }
 .form-alert.error, .field-error { color: #b42318; background: #fef3f2; }
 .form-alert.success { color: #067647; background: #ecfdf3; }
