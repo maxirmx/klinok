@@ -6,6 +6,7 @@ import {
   generateUserKeySet,
   exportUserKeySet,
   createProtocolState,
+  deviceProjectionKey,
   roleProjectionKey,
   shouldDeferEventVerification,
   applyAcceptedEvent,
@@ -26,6 +27,11 @@ import {
 } from "./index.js";
 
 describe("klinok protocol", () => {
+  it("builds collision-safe account-scoped device projection keys", () => {
+    expect(deviceProjectionKey("account:a", "device")).not.toBe(deviceProjectionKey("account", "a:device"));
+    expect(deviceProjectionKey("account", "device")).toBe(deviceProjectionKey("account", "device"));
+  });
+
   it("uses stable canonical serialization", () => {
     expect(stableSerialize({ z: 1, a: { c: 3, b: 2 } })).toBe('{"a":{"b":2,"c":3},"z":1}');
   });
@@ -83,7 +89,7 @@ describe("klinok protocol", () => {
       issuedAt: "2026-07-10T10:00:00.000Z", attestation: "trusted-attestation",
     };
     const state = createProtocolState();
-    state.devices.set(certificate.deviceId, certificate);
+    state.devices.set(deviceProjectionKey(certificate.accountId, certificate.deviceId), certificate);
     state.roles.set(roleProjectionKey(certificate.accountId, role), {
       request: { requestId: `${role}-proof`, accountId: certificate.accountId, role, status: "approved", profileRevision: 1, requestedAt: certificate.issuedAt },
       eventId: `${role}-proof`, parents: [],
@@ -98,7 +104,7 @@ describe("klinok protocol", () => {
     input: Partial<Omit<SignedEvent, "signature">> = {},
   ) {
     const dataKey = await generateDataKey();
-    const certificate = state.devices.get("device-1")!;
+    const certificate = state.devices.get(deviceProjectionKey("account-1", "device-1"))!;
     const activeRole = input.activeRole ?? "owner";
     const proof = state.roles.get(roleProjectionKey(certificate.accountId, activeRole))?.request.requestId ?? `${activeRole}-proof`;
     return signEvent({

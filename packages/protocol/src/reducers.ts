@@ -1,4 +1,10 @@
-import { chooseConcurrentRoleStatus, roleProjectionKey, shouldDeferEventVerification, verifySignedEvent } from "./authorization.js";
+import {
+  chooseConcurrentRoleStatus,
+  deviceProjectionKey,
+  roleProjectionKey,
+  shouldDeferEventVerification,
+  verifySignedEvent,
+} from "./authorization.js";
 import type {
   DeviceCertificate,
   PetAccessRequest,
@@ -84,11 +90,15 @@ export function applyAcceptedEvent(event: SignedEvent, state: ProtocolState): vo
   if (event.eventType === "account.bootstrap" || event.eventType === "profile.updated") state.accounts.set(event.aggregateId, "active");
   if (event.eventType === "account.deleted") state.accounts.set(event.aggregateId, "deleted");
   if (event.eventType === "device.attested" || event.eventType === "device.rotated") {
-    state.devices.set(event.resourceId, event.metadata.certificate as unknown as DeviceCertificate);
+    const certificate = event.metadata.certificate as unknown as DeviceCertificate;
+    state.devices.set(deviceProjectionKey(certificate.accountId, certificate.deviceId), certificate);
   }
   if (event.eventType === "device.revoked") {
-    const device = state.devices.get(event.resourceId);
-    if (device) state.devices.set(event.resourceId, { ...device, status: "revoked" });
+    const accountId = String(event.metadata.accountId ?? event.aggregateId);
+    const deviceId = String(event.metadata.deviceId ?? event.resourceId);
+    const key = deviceProjectionKey(accountId, deviceId);
+    const device = state.devices.get(key);
+    if (device) state.devices.set(key, { ...device, status: "revoked" });
   }
   if (event.eventType.startsWith("role.")) applyRoleEvent(event, state);
   if (event.eventType === "account.bootstrap") {

@@ -45,6 +45,14 @@ export function roleProjectionKey(accountId: string, role: Role): string {
   return `${accountId}:${role}`;
 }
 
+/**
+ * Device identifiers describe an installation and may therefore be shared by
+ * several accounts. Protocol projections must always scope them to an account.
+ */
+export function deviceProjectionKey(accountId: string, deviceId: string): string {
+  return JSON.stringify([accountId, deviceId]);
+}
+
 export function chooseConcurrentRoleStatus(left: RoleStatus, right: RoleStatus): RoleStatus {
   if (left === "expired") return right === "expired" ? left : right;
   if (right === "expired") return left;
@@ -343,7 +351,7 @@ export async function verifySignedEvent(
   if (event.parents.some((parent) => !state.knownEvents.has(parent))) {
     return { accepted: false, code: "EVENT_PARENT_MISSING", message: "A logical parent is missing." };
   }
-  const device = state.devices.get(event.actorDeviceId);
+  const device = state.devices.get(deviceProjectionKey(event.actorAccountId, event.actorDeviceId));
   if (!device) {
     if (!options.allowUnknownDevice && event.eventType !== "device.attested") {
       return { accepted: false, code: "DEVICE_UNKNOWN", message: "Device certificate is not known." };

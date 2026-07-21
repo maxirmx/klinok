@@ -12,13 +12,13 @@ import { EventIngestService, handleEventIngestRequest } from "../p2p-node/src/ev
 import { ControlRepository } from "../src/repositories/controlRepository";
 import { MemoryEventTransport } from "../src/repositories/eventTransport";
 
-async function generatedEvents(): Promise<SignedEvent[]> {
+async function generatedEvents(accountId = "owner-account", deviceId = "owner-device"): Promise<SignedEvent[]> {
   const keys = await generateUserKeySet();
   const exported = await exportUserKeySet(keys);
   const context: ActiveRoleContext = {
-    accountId: "owner-account",
-    deviceId: "owner-device",
-    orbitIdentityId: "owner-identity",
+    accountId,
+    deviceId,
+    orbitIdentityId: `klinok-device-${deviceId}`,
     role: "owner",
     roleProofId: "setup-owner",
     userKeyVersion: 1,
@@ -61,6 +61,21 @@ function service() {
 }
 
 describe("trusted-node event ingestion", () => {
+  it("persists independent certificates for accounts sharing an installation ID", async () => {
+    const sharedDeviceId = "shared-browser-device";
+    const first = await generatedEvents("first-account", sharedDeviceId);
+    const second = await generatedEvents("second-account", sharedDeviceId);
+    const { ingest, persisted } = service();
+
+    const response = await ingest.ingest([...first, ...second]);
+
+    expect(response.results.every((result) => result.status === "persisted")).toBe(true);
+    expect(persisted.filter((event) => event.eventType === "device.attested")).toEqual(expect.arrayContaining([
+      expect.objectContaining({ aggregateId: "first-account", resourceId: sharedDeviceId }),
+      expect.objectContaining({ aggregateId: "second-account", resourceId: sharedDeviceId }),
+    ]));
+  });
+
   it("reduces reversed replicated events without recording temporary dependency conflicts", async () => {
     const events = await generatedEvents();
     const projection = await reduceSignedEvents(
