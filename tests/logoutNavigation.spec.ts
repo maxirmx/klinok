@@ -49,6 +49,7 @@ vi.mock("../src/appStore", async () => {
   });
   return {
     appState: readonly(state),
+    setMockAccountId: (accountId: string) => { state.session.accountId = accountId; },
     setMockActiveRole: (role: "owner" | "doctor" | "administrator" | null) => { state.activeRole = role; },
     setMockDevices: (devices: typeof state.session.devices) => { state.session.devices = devices; },
     setMockProfile: (profile: typeof state.control.profile) => { state.control.profile = profile; },
@@ -87,6 +88,7 @@ async function mountAt(component: object, path: string, props: Record<string, un
 
 beforeEach(async () => {
   const mockedStore = await import("../src/appStore") as typeof import("../src/appStore") & {
+    setMockAccountId: (accountId: string) => void;
     setMockActiveRole: (role: "owner" | "doctor" | "administrator" | null) => void;
     setMockDevices: (devices: Array<{ deviceId: string; deviceName: string; status: string }>) => void;
     setMockProfile: (profile: {
@@ -99,6 +101,7 @@ beforeEach(async () => {
     }) => void;
     setMockSync: (sync: { pendingCount: number; failedCount: number; syncing: boolean; lastError: string }) => void;
   };
+  mockedStore.setMockAccountId("account-1");
   mockedStore.setMockActiveRole("owner");
   mockedStore.setMockDevices([
     { deviceId: "current-device", deviceName: "Домашний ноутбук", status: "active" },
@@ -207,6 +210,22 @@ describe("logout navigation", () => {
       .trigger("click");
     await flushPromises();
     expect(deleteAccount).toHaveBeenCalledOnce();
+  });
+
+  it("disables account deletion for the bootstrap Administrator", async () => {
+    const mockedStore = await import("../src/appStore") as typeof import("../src/appStore") & {
+      setMockAccountId: (accountId: string) => void;
+    };
+    mockedStore.setMockAccountId("bootstrap-administrator");
+    const { wrapper } = await mountAt(RoleStatusScreen, "/profile", { scenarioId: "user-profile" });
+    const deleteButton = wrapper.findAll<HTMLButtonElement>("button")
+      .find((button) => button.text() === "Удалить аккаунт")!;
+
+    expect(deleteButton.element.disabled).toBe(true);
+    expect(deleteButton.attributes("title")).toBe("Начальный аккаунт администратора нельзя удалить.");
+    await deleteButton.trigger("click");
+    expect(wrapper.find('[role="alertdialog"]').exists()).toBe(false);
+    expect(deleteAccount).not.toHaveBeenCalled();
   });
 
   it("confirms device revocation before executing it", async () => {

@@ -94,6 +94,10 @@ const credentialsCanRestore = computed(() => (
 const visibleDevices = computed(() => (appState.session.devices ?? [])
   .filter((device) => device.status === "active"));
 const canRevokeDevice = computed(() => visibleDevices.value.length > 1);
+const isBootstrapAccount = computed(() => Boolean(
+  appState.session.accountId
+  && appState.session.accountId === getConfig()?.p2p.bootstrapAccountId,
+));
 
 const deviceName = (device: { deviceId: string; deviceName?: string }) => device.deviceName?.trim()
   || (device.deviceId === appState.session.device?.deviceId ? getDeviceName() : null)
@@ -221,6 +225,7 @@ async function activate(role: Role) {
 
 async function confirmAccountDeletion() {
   accountDeletionConfirmation.value = false;
+  if (isBootstrapAccount.value) return;
   await action("devices", "Аккаунт удалён.", deleteAccount);
 }
 
@@ -401,7 +406,14 @@ async function confirmDeviceRevocation() {
         </div>
         <div class="row-actions account-actions">
           <button class="outline-action inline" @click="signOut(true)">Выйти на всех устройствах</button>
-          <button class="outline-action inline danger-link" @click="accountDeletionConfirmation = true">Удалить аккаунт</button>
+          <button
+            class="outline-action inline danger-link"
+            :disabled="appState.busy || isBootstrapAccount"
+            :title="isBootstrapAccount ? 'Начальный аккаунт администратора нельзя удалить.' : undefined"
+            @click="accountDeletionConfirmation = true"
+          >
+            Удалить аккаунт
+          </button>
         </div>
       </section>
       </div>
