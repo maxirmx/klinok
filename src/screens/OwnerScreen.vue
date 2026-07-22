@@ -3,20 +3,26 @@ import { computed, reactive, ref, watch } from "vue";
 import { RouterLink, useRoute, useRouter } from "vue-router";
 import {
   PET_SEXES,
+  type DirectoryProfileDto,
   type PetSex,
 } from "@klinok/protocol";
 import AppIcon from "../components/AppIcon.vue";
+import AppPaginator from "../components/AppPaginator.vue";
 import ConfirmationDialog from "../components/ConfirmationDialog.vue";
+import MedicalRecordEntry from "../components/MedicalRecordEntry.vue";
 import ModalDialog from "../components/ModalDialog.vue";
+import PetAccessManager from "../components/PetAccessManager.vue";
+import PetProfileDetails from "../components/PetProfileDetails.vue";
 import PetProfileHeader from "../components/PetProfileHeader.vue";
 import WorkspaceShell from "../components/WorkspaceShell.vue";
-import { appState, logout, requireRepository } from "../appStore";
+import { appState, deleteDirectoryPet, logout, requireRepository, searchDoctorDirectory, syncDirectoryPet } from "../appStore";
 import {
   normalizePetInput,
   petBirthSummary,
   preparePetPhoto,
 } from "../petProfile";
-import type { PetProfile, PetProfileInput } from "../repositories/types";
+import type { PetAccessRow } from "../petAccess";
+import type { MedicalRecordDraft, PetProfile, PetProfileInput } from "../repositories/types";
 
 const props = defineProps<{ role: "owner"; scenarioId: string }>();
 const route = useRoute();
@@ -28,7 +34,11 @@ const deleteConfirmation = ref(false);
 const grantDialogOpen = ref(false);
 const grantBusy = ref(false);
 const grantError = ref("");
-const manualGrant = reactive({ doctorDisplayName: "", doctorAccountId: "", delegate: false });
+const doctorQuery = ref("");
+const doctorResults = ref<DirectoryProfileDto[]>([]);
+const doctorSearchPerformed = ref(false);
+const selectedDoctor = ref<DirectoryProfileDto | null>(null);
+const grantDelegate = ref(false);
 const birthMode = ref<"date" | "year">("date");
 const draft = reactive({
   name: "",
@@ -60,6 +70,12 @@ const isCreate = computed(() => props.scenarioId === "owner-pet-create");
 const isEdit = computed(() => props.scenarioId === "owner-pet-edit");
 const isAccess = computed(() => props.scenarioId === "owner-pet-access");
 const isForm = computed(() => isCreate.value || isEdit.value);
+const pageSizes = [10, 20, 50] as const;
+const medicalPage = ref(1);
+const medicalPageSize = ref<(typeof pageSizes)[number]>(10);
+const accessPage = ref(1);
+const accessPageSize = ref<(typeof pageSizes)[number]>(10);
+const expandedRecordId = ref("");
 const pageTitle = computed(() => {
   if (isHome.value) return "Мои питомцы";
   if (isCreate.value) return "Добавить питомца";
@@ -69,23 +85,30 @@ const pageTitle = computed(() => {
   return "Питомец не найден";
 });
 const petRecords = computed(() =>
-  selectedPet.value ? appState.medical.records.filter((record) => record.petId === selectedPet.value!.petId) : [],
+  selectedPet.value
+    ? appState.medical.records
+      .filter((record) => record.petId === selectedPet.value!.petId)
+      .sort((left, right) => right.encounterDate.localeCompare(left.encounterDate)
+        || right.createdAt.localeCompare(left.createdAt))
+    : [],
 );
-const confirmedIds = computed(() => new Set(appState.medical.confirmations.map((item) => item.recordId)));
+const medicalPageCount = computed(() => Math.max(1, Math.ceil(petRecords.value.length / medicalPageSize.value)));
+const pagedPetRecords = computed(() => petRecords.value.slice(
+  (medicalPage.value - 1) * medicalPageSize.value,
+  medicalPage.value * medicalPageSize.value,
+));
+const confirmedIds = computed(() => new Set(appState.medical.confirmedRecordIds));
 
-type AccessRow = {
-  accountId: string;
-  displayName: string;
-  status: "granted" | "requested" | "revoked";
-  grant?: (typeof appState.medical.grants)[number];
-  request?: (typeof appState.medical.accessRequests)[number];
-};
+watch([() => selectedPet.value?.petId, medicalPageSize], () => { medicalPage.value = 1; });
+watch(medicalPageCount, (pageCount) => {
+  if (medicalPage.value > pageCount) medicalPage.value = pageCount;
+});
 
 function latest<T>(items: T[], timestamp: (item: T) => string): T | undefined {
   return [...items].sort((left, right) => timestamp(right).localeCompare(timestamp(left)))[0];
 }
 
-const accessRows = computed<AccessRow[]>(() => {
+const accessRows = computed<PetAccessRow[]>(() => {
   if (!selectedPet.value) return [];
   const grants = appState.medical.grants.filter((grant) => grant.petId === selectedPet.value!.petId);
   const requests = appState.medical.accessRequests.filter((request) => request.petId === selectedPet.value!.petId);
@@ -94,7 +117,7 @@ const accessRows = computed<AccessRow[]>(() => {
     ...requests.filter((request) => request.status === "pending").map((request) => request.requesterAccountId),
   ]);
 
-  return [...accountIds].map((accountId): AccessRow | null => {
+  return [...accountIds].map((accountId): PetAccessRow | null => {
     const doctorGrants = grants.filter((grant) => grant.granteeAccountId === accountId);
     const doctorRequests = requests.filter((request) => request.requesterAccountId === accountId);
     const activeGrant = latest(
@@ -124,12 +147,24 @@ const accessRows = computed<AccessRow[]>(() => {
       namedRequest?.requesterDisplayName ??
       profileName) || "ФИО не указано";
 
-    if (activeGrant) return { accountId, displayName, status: "granted", grant: activeGrant };
-    if (pendingRequest) return { accountId, displayName, status: "requested", request: pendingRequest };
-    if (revokedGrant) return { accountId, displayName, status: "revoked", grant: revokedGrant };
+    if (activeGrant) return {
+      accountId,
+      displayName,
+      status: "granted",
+      grantId: activeGrant.grantId,
+      delegationAllowed: activeGrant.actions.includes("delegate"),
+    };
+    if (pendingRequest) return { accountId, displayName, status: "requested", requestId: pendingRequest.requestId };
+    if (revokedGrant) return { accountId, displayName, status: "revoked", grantId: revokedGrant.grantId };
     return null;
-  }).filter((row): row is AccessRow => Boolean(row))
+  }).filter((row): row is PetAccessRow => Boolean(row))
     .sort((left, right) => left.displayName.localeCompare(right.displayName, "ru"));
+});
+const accessPageCount = computed(() => Math.max(1, Math.ceil(accessRows.value.length / accessPageSize.value)));
+
+watch([() => selectedPet.value?.petId, accessPageSize], () => { accessPage.value = 1; });
+watch(accessPageCount, (pageCount) => {
+  if (accessPage.value > pageCount) accessPage.value = pageCount;
 });
 
 function blankDraft() {
@@ -253,6 +288,7 @@ async function savePet() {
   await action(async () => {
     if (isCreate.value) {
       const petId = await requireRepository().medical.createPet(petInput());
+      await syncDirectoryPet({ petId, species: draft.species.trim(), name: draft.name.trim() });
       await router.push(`/owner/pets/${petId}`);
       return;
     }
@@ -265,6 +301,7 @@ async function savePet() {
       updatedAt: selectedPet.value.updatedAt,
       ...petInput(),
     });
+    await syncDirectoryPet({ petId: selectedPet.value.petId, species: draft.species.trim(), name: draft.name.trim() });
     await router.push(`/owner/pets/${selectedPet.value.petId}`);
   });
 }
@@ -300,15 +337,37 @@ async function copyPetLink() {
 
 function openGrantDialog() {
   grantError.value = "";
+  doctorQuery.value = "";
+  doctorResults.value = [];
+  doctorSearchPerformed.value = false;
+  selectedDoctor.value = null;
+  grantDelegate.value = false;
   grantDialogOpen.value = true;
 }
 
+async function findDoctors() {
+  grantBusy.value = true;
+  grantError.value = "";
+  doctorResults.value = [];
+  doctorSearchPerformed.value = false;
+  selectedDoctor.value = null;
+  try {
+    const result = await searchDoctorDirectory(doctorQuery.value, 1, 50);
+    const activeDoctorIds = new Set(appState.medical.grants
+      .filter((grant) => grant.petId === selectedPet.value?.petId && grant.status === "active")
+      .map((grant) => grant.granteeAccountId));
+    doctorResults.value = result.items.filter((doctor) => !activeDoctorIds.has(doctor.accountId));
+    doctorSearchPerformed.value = true;
+  } catch (reason) {
+    grantError.value = reason instanceof Error ? reason.message : "Не удалось найти врача.";
+  } finally {
+    grantBusy.value = false;
+  }
+}
+
 async function grantDoctor() {
-  if (!selectedPet.value) return;
-  const doctorDisplayName = manualGrant.doctorDisplayName.trim();
-  const doctorAccountId = manualGrant.doctorAccountId.trim();
-  if (!doctorDisplayName || !doctorAccountId) {
-    grantError.value = "Укажите ФИО и идентификатор аккаунта врача.";
+  if (!selectedPet.value || !selectedDoctor.value) {
+    grantError.value = "Выберите врача из результатов поиска.";
     return;
   }
   grantBusy.value = true;
@@ -316,13 +375,14 @@ async function grantDoctor() {
   try {
     await requireRepository().medical.grantDoctor(
       selectedPet.value!.petId,
-      doctorAccountId,
-      ["read", "write_unconfirmed", ...(manualGrant.delegate ? ["delegate" as const] : [])],
-      { granteeDisplayName: doctorDisplayName },
+      selectedDoctor.value!.accountId,
+      ["read", "write_unconfirmed", ...(grantDelegate.value ? ["delegate" as const] : [])],
+      { granteeDisplayName: selectedDoctor.value!.displayName },
     );
-    manualGrant.doctorDisplayName = "";
-    manualGrant.doctorAccountId = "";
-    manualGrant.delegate = false;
+    doctorQuery.value = "";
+    doctorResults.value = [];
+    selectedDoctor.value = null;
+    grantDelegate.value = false;
     grantDialogOpen.value = false;
     actionError.value = "";
     actionMessage.value = "Доступ предоставлен.";
@@ -333,7 +393,7 @@ async function grantDoctor() {
   }
 }
 
-async function regrantAccess(row: AccessRow) {
+async function regrantAccess(row: PetAccessRow) {
   if (!selectedPet.value) return;
   await action(
     () => requireRepository().medical.grantDoctor(
@@ -351,14 +411,21 @@ async function deletePet() {
   deleteConfirmation.value = false;
   await action(async () => {
     await requireRepository().medical.deletePet(selectedPet.value!.petId);
+    await deleteDirectoryPet(selectedPet.value!.petId);
     await router.push("/owner/home");
   });
 }
 
-function formatDate(value?: string) {
-  if (!value) return "Не указана";
-  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
-  return match ? `${match[3]}.${match[2]}.${match[1]}` : value;
+function openMedicalRecord(record: MedicalRecordDraft) {
+  expandedRecordId.value = record.recordId;
+  requestAnimationFrame(() => document.getElementById(`encounter-${record.recordId}`)?.scrollIntoView({ behavior: "smooth", block: "start" }));
+}
+
+function confirmMedicalRecord(record: MedicalRecordDraft) {
+  void action(
+    () => requireRepository().medical.confirmRecord(record.petId, record.recordId, record.revision),
+    "Приём подтверждён.",
+  );
 }
 </script>
 
@@ -382,16 +449,6 @@ function formatDate(value?: string) {
       >
         <AppIcon name="plus" />
       </RouterLink>
-      <button
-        v-else-if="isAccess && selectedPet"
-        class="primary-action inline owner-profile-action"
-        type="button"
-        title="Предоставить доступ"
-        aria-label="Предоставить доступ"
-        @click="openGrantDialog"
-      >
-        <AppIcon name="plus" />
-      </button>
     </div>
 
     <section v-if="isHome" class="owner-home">
@@ -518,139 +575,67 @@ function formatDate(value?: string) {
       </form>
     </section>
 
-    <section v-else-if="isAccess && selectedPet" class="owner-pet-detail owner-pet-access-page">
-      <article class="panel owner-pet-profile">
-        <PetProfileHeader :pet="selectedPet">
-          <template #actions>
-            <RouterLink
-              class="outline-action inline owner-profile-action"
-              :to="`/owner/pets/${selectedPet.petId}`"
-              title="Назад к информации о питомце"
-              aria-label="Назад к информации о питомце"
-            >
-              <AppIcon name="chevron-left" />
-            </RouterLink>
-          </template>
-        </PetProfileHeader>
-      </article>
-
-      <article class="panel owner-access-panel">
-        <p v-if="!accessRows.length" class="owner-access-empty">Доступы и ожидающие запросы отсутствуют.</p>
-        <div v-else class="owner-access-table-wrap">
-          <table class="owner-access-table">
-            <thead>
-              <tr>
-                <th><span class="visually-hidden">Действия</span></th>
-                <th>ФИО врача</th>
-                <th>Доступ</th>
-                <th>Делегирование</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="row in accessRows" :key="row.accountId">
-                <td class="owner-access-actions" data-label="Действия">
-                  <div class="owner-access-action-list">
-                    <template v-if="row.status === 'requested' && row.request">
-                      <button
-                        class="primary-action inline access-icon-action"
-                        type="button"
-                        title="Предоставить доступ"
-                        aria-label="Предоставить доступ"
-                        @click="action(() => requireRepository().medical.approveAccessRequest(row.request!.requestId), 'Доступ предоставлен.')"
-                      >
-                        <AppIcon name="check" />
-                      </button>
-                      <button
-                        class="outline-action inline danger-outline access-icon-action"
-                        type="button"
-                        title="Отклонить запрос"
-                        aria-label="Отклонить запрос"
-                        @click="action(() => requireRepository().medical.rejectAccessRequest(row.request!.requestId), 'Запрос отклонён.')"
-                      >
-                        <AppIcon name="close" />
-                      </button>
-                    </template>
-                    <template v-else-if="row.status === 'granted' && row.grant">
-                      <button
-                        v-if="row.grant.actions.includes('delegate')"
-                        class="outline-action inline access-icon-action"
-                        type="button"
-                        title="Отключить делегирование"
-                        aria-label="Отключить делегирование"
-                        @click="action(() => requireRepository().medical.disableGrantDelegation(row.grant!.grantId), 'Делегирование отключено.')"
-                      >
-                        <AppIcon name="share-off" />
-                      </button>
-                      <button
-                        class="outline-action inline danger-outline access-icon-action"
-                        type="button"
-                        title="Отозвать доступ"
-                        aria-label="Отозвать доступ"
-                        @click="action(() => requireRepository().medical.revokeGrant(row.grant!.grantId), 'Доступ отозван.')"
-                      >
-                        <AppIcon name="close" />
-                      </button>
-                    </template>
-                    <button
-                      v-else
-                      class="primary-action inline access-icon-action"
-                      type="button"
-                      title="Предоставить доступ повторно"
-                      aria-label="Предоставить доступ повторно"
-                      @click="regrantAccess(row)"
-                    >
-                      <AppIcon name="check" />
-                    </button>
-                  </div>
-                </td>
-                <td class="owner-access-doctor" data-label="ФИО врача">
-                  <strong>{{ row.displayName }}</strong>
-                  <small>{{ row.accountId }}</small>
-                </td>
-                <td data-label="Доступ">
-                  <span class="status-badge" :class="row.status">
-                    {{ row.status === 'granted' ? 'Предоставлен' : row.status === 'requested' ? 'Запрошен' : 'Отозван' }}
-                  </span>
-                </td>
-                <td :class="{ 'is-empty': row.status !== 'granted' }" data-label="Делегирование">
-                  {{ row.status === 'granted' ? row.grant?.actions.includes('delegate') ? 'Да' : 'Нет' : '' }}
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </article>
+    <PetAccessManager
+      v-else-if="isAccess && selectedPet"
+      v-model:page="accessPage"
+      v-model:page-size="accessPageSize"
+      :pet="selectedPet"
+      :rows="accessRows"
+      :page-sizes="pageSizes"
+      empty-message="Доступы и ожидающие запросы отсутствуют."
+      @add="openGrantDialog"
+    >
+      <template #headerActions>
+        <RouterLink
+          class="outline-action inline owner-profile-action"
+          :to="`/owner/pets/${selectedPet.petId}`"
+          title="Назад к информации о питомце"
+          aria-label="Назад к информации о питомце"
+        >
+          <AppIcon name="chevron-left" />
+        </RouterLink>
+      </template>
+      <template #rowActions="{ row }">
+        <template v-if="row.status === 'requested' && row.requestId">
+          <button class="primary-action inline access-icon-action" type="button" title="Предоставить доступ" aria-label="Предоставить доступ" @click="action(() => requireRepository().medical.approveAccessRequest(row.requestId!), 'Доступ предоставлен.')"><AppIcon name="check" /></button>
+          <button class="outline-action inline danger-outline access-icon-action" type="button" title="Отклонить запрос" aria-label="Отклонить запрос" @click="action(() => requireRepository().medical.rejectAccessRequest(row.requestId!), 'Запрос отклонён.')"><AppIcon name="close" /></button>
+        </template>
+        <template v-else-if="row.status === 'granted' && row.grantId">
+          <button class="outline-action inline access-icon-action" :class="{ 'danger-outline': row.delegationAllowed }" type="button" :title="row.delegationAllowed ? 'Отключить делегирование' : 'Разрешить делегирование'" :aria-label="row.delegationAllowed ? 'Отключить делегирование' : 'Разрешить делегирование'" @click="row.delegationAllowed ? action(() => requireRepository().medical.disableGrantDelegation(row.grantId!), 'Делегирование отключено.') : action(() => requireRepository().medical.enableGrantDelegation(row.grantId!), 'Делегирование разрешено.')"><AppIcon name="share" /></button>
+          <button class="outline-action inline danger-outline access-icon-action" type="button" title="Отозвать доступ" aria-label="Отозвать доступ" @click="action(() => requireRepository().medical.revokeGrant(row.grantId!), 'Доступ отозван.')"><AppIcon name="close" /></button>
+        </template>
+        <button v-else class="primary-action inline access-icon-action" type="button" title="Предоставить доступ повторно" aria-label="Предоставить доступ повторно" @click="regrantAccess(row)"><AppIcon name="check" /></button>
+      </template>
 
       <ModalDialog
         v-model="grantDialogOpen"
         title="Предоставить доступ"
         :busy="grantBusy"
       >
-        <form class="form-stack grant-access-form" @submit.prevent="grantDoctor">
+        <div class="form-stack grant-access-form">
           <p v-if="grantError" class="form-alert error" role="alert">{{ grantError }}</p>
-          <label>
-            <span>ФИО врача</span>
-            <input v-model="manualGrant.doctorDisplayName" required />
-          </label>
-          <label>
-            <span>Идентификатор аккаунта врача</span>
-            <input v-model="manualGrant.doctorAccountId" required />
-          </label>
-          <label class="check-row">
-            <input v-model="manualGrant.delegate" type="checkbox" />
-            <span>Разрешить врачу делегирование</span>
-          </label>
-          <div class="confirmation-dialog-actions">
-            <button class="outline-action inline" type="button" :disabled="grantBusy" @click="grantDialogOpen = false">
-              Отмена
+          <form class="form-stack grant-search-form" @submit.prevent="findDoctors">
+            <label>
+              <span>ФИО врача, его часть или полный ID</span>
+              <input v-model="doctorQuery" type="search" required />
+            </label>
+            <button
+              class="primary-action inline access-icon-action grant-search-action"
+              type="submit"
+              :disabled="grantBusy"
+              :title="grantBusy ? 'Поиск врача…' : 'Найти врача'"
+              :aria-label="grantBusy ? 'Поиск врача…' : 'Найти врача'"
+            >
+              <AppIcon name="search" />
             </button>
-            <button class="primary-action inline" type="submit" :disabled="grantBusy">
-              {{ grantBusy ? 'Предоставление…' : 'Предоставить доступ' }}
-            </button>
-          </div>
-        </form>
+          </form>
+          <div v-for="doctor in doctorResults" :key="doctor.accountId" class="list-row"><div><strong>{{ doctor.displayName }}</strong><span>{{ doctor.accountId }}</span></div><button class="outline-action inline access-icon-action" type="button" title="Выбрать врача" aria-label="Выбрать врача" @click="selectedDoctor = doctor"><AppIcon name="check" /></button></div>
+          <p v-if="doctorSearchPerformed && !doctorResults.length">Врачи не найдены.</p>
+          <form v-if="selectedDoctor" class="form-stack" @submit.prevent="grantDoctor"><strong>Выбран врач: {{ selectedDoctor.displayName }}</strong><label class="check-row"><input v-model="grantDelegate" type="checkbox" /><span>Разрешить врачу делегирование</span></label><div class="confirmation-dialog-actions"><button class="outline-action inline access-icon-action" type="button" :disabled="grantBusy" title="Отмена" aria-label="Отмена" @click="grantDialogOpen = false"><AppIcon name="close" /></button><button class="primary-action inline access-icon-action" type="submit" :disabled="grantBusy" :title="grantBusy ? 'Предоставление доступа…' : 'Предоставить доступ'" :aria-label="grantBusy ? 'Предоставление доступа…' : 'Предоставить доступ'"><AppIcon name="check" /></button></div></form>
+          <div v-else class="confirmation-dialog-actions"><button class="outline-action inline access-icon-action" type="button" :disabled="grantBusy" title="Отмена" aria-label="Отмена" @click="grantDialogOpen = false"><AppIcon name="close" /></button></div>
+        </div>
       </ModalDialog>
-    </section>
+    </PetAccessManager>
 
     <section v-else-if="selectedPet" class="owner-pet-detail">
       <article class="panel owner-pet-profile">
@@ -692,38 +677,45 @@ function formatDate(value?: string) {
             </button>
           </template>
         </PetProfileHeader>
-        <dl class="owner-profile-fields">
-          <div><dt>Вид</dt><dd>{{ selectedPet.species }}</dd></div>
-          <div><dt>Кличка</dt><dd>{{ selectedPet.name }}</dd></div>
-          <div><dt>Порода</dt><dd>{{ selectedPet.breed }}</dd></div>
-          <div><dt>Пол</dt><dd>{{ selectedPet.sex || 'Не указан' }}</dd></div>
-          <div><dt>Возраст</dt><dd>{{ petBirthSummary(selectedPet) }}</dd></div>
-          <div><dt>Окрас</dt><dd>{{ selectedPet.color || 'Не указан' }}</dd></div>
-          <div><dt>Номер чипа</dt><dd>{{ selectedPet.chip || 'Нет' }}</dd></div>
-          <div><dt>Клеймо</dt><dd>{{ selectedPet.brandMark || 'Нет' }}</dd></div>
-          <div><dt>Последняя вакцинация</dt><dd>{{ selectedPet.latestVaccination ? `${formatDate(selectedPet.latestVaccination.date)} · ${selectedPet.latestVaccination.name}` : 'Не указана' }}</dd></div>
-          <div><dt>Вес</dt><dd>{{ selectedPet.weightKg ? `${selectedPet.weightKg} кг` : 'Не указан' }}</dd></div>
-        </dl>
-        <div v-if="selectedPet.notes" class="owner-pet-notes">
-          <h3>Заметки</h3>
-          <p>{{ selectedPet.notes }}</p>
-        </div>
+        <PetProfileDetails :pet="selectedPet" />
       </article>
 
       <article class="panel owner-medical-placeholder">
-        <h2>Медицинская карта</h2>
+        <h2>Эпикриз</h2>
         <p v-if="!petRecords.length">Записи появятся здесь после приёма у врача.</p>
-        <div v-for="record in petRecords" :key="record.recordId" class="record-card">
-          <div><strong>{{ record.title }}</strong><p>{{ record.text }}</p><small>Редакция {{ record.revision }}</small></div>
-          <span v-if="confirmedIds.has(record.recordId)" class="status-badge approved">Подтверждена</span>
-          <button
-            v-else
-            class="primary-action inline"
-            @click="action(() => requireRepository().medical.confirmRecord(record.petId, record.recordId, record.revision))"
-          >
-            Подтвердить
-          </button>
-        </div>
+        <MedicalRecordEntry
+          v-for="record in pagedPetRecords"
+          :key="record.recordId"
+          :record="record"
+          mode="epicrisis"
+          :confirmed="confirmedIds.has(record.recordId)"
+          @activate="openMedicalRecord"
+        />
+      </article>
+
+      <article class="panel owner-medical-placeholder">
+        <h2>Предыдущие приёмы</h2>
+        <p v-if="!petRecords.length">Предыдущих приёмов пока нет.</p>
+        <MedicalRecordEntry
+          v-for="record in pagedPetRecords"
+          :key="record.recordId"
+          :record="record"
+          mode="details"
+          :confirmed="confirmedIds.has(record.recordId)"
+          action="confirm"
+          :open="expandedRecordId === record.recordId"
+          @confirm="confirmMedicalRecord"
+        />
+        <AppPaginator
+          v-if="petRecords.length"
+          v-model:page="medicalPage"
+          v-model:page-size="medicalPageSize"
+          class="owner-medical-pagination"
+          :total-items="petRecords.length"
+          :page-sizes="pageSizes"
+          page-size-label="Записей на странице"
+          aria-label="Навигация по медицинским записям"
+        />
       </article>
 
       <ConfirmationDialog

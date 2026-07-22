@@ -520,6 +520,183 @@ describe("auth-node", () => {
     expect(response.json().error.code).toBe("BOOTSTRAP_REPLACEMENT_FORBIDDEN");
   });
 
+  it("serves role-filtered doctor and pet directory views without caching", async () => {
+    const { app, mailer, store } = await fixture();
+    const owner = await verifiedLogin(app, mailer, { ...registration, email: "directory-owner@example.com" });
+    const doctor = await verifiedLogin(app, mailer, {
+      ...registration,
+      firstName: "Вера",
+      lastName: "Врач",
+      email: "directory-doctor@example.com",
+      requestedRoles: ["doctor"],
+    });
+    const delegate = await verifiedLogin(app, mailer, {
+      ...registration,
+      firstName: "Дина",
+      lastName: "Делегат",
+      email: "directory-delegate@example.com",
+      requestedRoles: ["doctor"],
+    });
+    await store.putObservedRole(owner.accountId, "owner", "approved");
+    await store.putObservedRole(doctor.accountId, "doctor", "approved");
+    await store.putObservedRole(delegate.accountId, "doctor", "approved");
+
+    async function putProfile(login: typeof owner, firstName: string, lastName: string) {
+      return app.inject({
+        method: "PUT",
+        url: "/api/auth/directory/profile",
+        headers: { origin: "https://klinok.test", cookie: login.cookie, "x-csrf-token": login.csrf },
+        payload: { firstName, lastName },
+      });
+    }
+    expect((await putProfile(owner, "Ольга", "Владелец")).statusCode).toBe(200);
+    expect((await putProfile(doctor, "Вера", "Врач")).statusCode).toBe(200);
+    expect((await putProfile(delegate, "Дина", "Делегат")).statusCode).toBe(200);
+
+    const petId = "pet-directory-1";
+    await store.putObservedPetOwner(petId, owner.accountId);
+    const pet = await app.inject({
+      method: "PUT",
+      url: `/api/auth/directory/pets/${petId}`,
+      headers: { origin: "https://klinok.test", cookie: owner.cookie, "x-csrf-token": owner.csrf },
+      payload: { name: "Буся", species: "Собака" },
+    });
+    expect(pet.statusCode).toBe(200);
+    expect(pet.headers["cache-control"]).toBe("no-store");
+
+    const doctors = await app.inject({
+      method: "GET",
+      url: "/api/auth/directory/doctors?query=Дина&page=1&pageSize=10",
+      headers: { cookie: doctor.cookie },
+    });
+    expect(doctors.statusCode).toBe(200);
+    expect(doctors.headers["cache-control"]).toBe("no-store");
+    expect(doctors.json()).toMatchObject({ total: 1, items: [{ accountId: delegate.accountId, displayName: "Дина Делегат" }] });
+
+    const doctorsForOwner = await app.inject({
+      method: "GET",
+      url: "/api/auth/directory/doctors?query=ина&page=1&pageSize=10",
+      headers: { cookie: owner.cookie },
+    });
+    expect(doctorsForOwner.statusCode).toBe(200);
+    expect(doctorsForOwner.json()).toMatchObject({ total: 1, items: [{ accountId: delegate.accountId, displayName: "Дина Делегат" }] });
+
+    const doctorById = await app.inject({
+      method: "GET",
+      url: `/api/auth/directory/doctors?query=${encodeURIComponent(delegate.accountId)}&page=1&pageSize=10`,
+      headers: { cookie: owner.cookie },
+    });
+    expect(doctorById.statusCode).toBe(200);
+    expect(doctorById.json()).toMatchObject({ total: 1, items: [{ accountId: delegate.accountId }] });
+
+    const doctorByPartialId = await app.inject({
+      method: "GET",
+      url: `/api/auth/directory/doctors?query=${encodeURIComponent(delegate.accountId.slice(0, -1))}&page=1&pageSize=10`,
+      headers: { cookie: owner.cookie },
+    });
+    expect(doctorByPartialId.statusCode).toBe(200);
+    expect(doctorByPartialId.json()).toMatchObject({ total: 0, items: [] });
+
+    const matchingPets = await app.inject({
+      method: "GET",
+      url: "/api/auth/directory/pets?owner=льга&pet=ус&page=1&pageSize=10",
+      headers: { cookie: doctor.cookie },
+    });
+    expect(matchingPets.statusCode).toBe(200);
+    expect(matchingPets.headers["cache-control"]).toBe("no-store");
+    expect(matchingPets.json()).toMatchObject({
+      total: 1,
+      items: [{ petId, ownerDisplayName: "Ольга Владелец", name: "Буся" }],
+    });
+
+    const petByIds = await app.inject({
+      method: "GET",
+      url: `/api/auth/directory/pets?owner=${encodeURIComponent(owner.accountId)}&pet=${encodeURIComponent(petId)}&page=1&pageSize=10`,
+      headers: { cookie: doctor.cookie },
+    });
+    expect(petByIds.statusCode).toBe(200);
+    expect(petByIds.json()).toMatchObject({ total: 1, items: [{ petId, ownerAccountId: owner.accountId }] });
+
+    const petByPartialId = await app.inject({
+      method: "GET",
+      url: `/api/auth/directory/pets?owner=${encodeURIComponent(owner.accountId)}&pet=${encodeURIComponent(petId.slice(0, -1))}&page=1&pageSize=10`,
+      headers: { cookie: doctor.cookie },
+    });
+    expect(petByPartialId.statusCode).toBe(200);
+    expect(petByPartialId.json()).toMatchObject({ total: 0, items: [] });
+
+    const incompletePetSearch = await app.inject({
+      method: "GET",
+      url: "/api/auth/directory/pets?owner=Ольга",
+      headers: { cookie: doctor.cookie },
+    });
+    expect(incompletePetSearch.statusCode).toBe(400);
+    expect(incompletePetSearch.json().error.code).toBe("PET_SEARCH_INVALID");
+
+    const exactPet = await app.inject({ method: "GET", url: `/api/auth/directory/pets/${petId}`, headers: { cookie: doctor.cookie } });
+    expect(exactPet.statusCode).toBe(200);
+    expect(exactPet.json()).toMatchObject({ petId, ownerAccountId: owner.accountId, ownerDisplayName: "Ольга Владелец" });
+
+    await store.putObservedGrant({
+      grantId: "grant-directory-1",
+      petId,
+      grantorAccountId: owner.accountId,
+      granteeAccountId: doctor.accountId,
+      actions: ["read", "write_unconfirmed"],
+      petKeyVersion: 1,
+      status: "active",
+      createdAt: "2026-07-21T10:00:00.000Z",
+    });
+    const myPets = await app.inject({ method: "GET", url: "/api/auth/directory/my-pets", headers: { cookie: doctor.cookie } });
+    expect(myPets.statusCode).toBe(200);
+    expect(myPets.json()).toMatchObject({
+      total: 1,
+      items: [{ petId, grantId: "grant-directory-1", permissions: ["read", "write_unconfirmed"] }],
+    });
+
+    const secondPetId = "pet-directory-2";
+    await store.putObservedPetOwner(secondPetId, owner.accountId);
+    expect((await app.inject({
+      method: "PUT",
+      url: `/api/auth/directory/pets/${secondPetId}`,
+      headers: { origin: "https://klinok.test", cookie: owner.cookie, "x-csrf-token": owner.csrf },
+      payload: { name: "Альфа", species: "Кошка" },
+    })).statusCode).toBe(200);
+    await store.putObservedGrant({
+      grantId: "grant-directory-2",
+      petId: secondPetId,
+      grantorAccountId: owner.accountId,
+      granteeAccountId: doctor.accountId,
+      actions: ["read"],
+      petKeyVersion: 1,
+      status: "active",
+      createdAt: "2026-07-21T10:01:00.000Z",
+    });
+    const descendingPets = await app.inject({
+      method: "GET",
+      url: "/api/auth/directory/my-pets?sort=pet&direction=desc",
+      headers: { cookie: doctor.cookie },
+    });
+    expect(descendingPets.statusCode).toBe(200);
+    expect(descendingPets.json().items.map((item: { name: string }) => item.name)).toEqual(["Буся", "Альфа"]);
+
+    const myPetById = await app.inject({ method: "GET", url: `/api/auth/directory/my-pets?query=${encodeURIComponent(petId)}`, headers: { cookie: doctor.cookie } });
+    expect(myPetById.statusCode).toBe(200);
+    expect(myPetById.json()).toMatchObject({ total: 1, items: [{ petId }] });
+
+    const myPetByPartialId = await app.inject({ method: "GET", url: `/api/auth/directory/my-pets?query=${encodeURIComponent(petId.slice(0, -1))}`, headers: { cookie: doctor.cookie } });
+    expect(myPetByPartialId.statusCode).toBe(200);
+    expect(myPetByPartialId.json()).toMatchObject({ total: 0, items: [] });
+
+    const ownerDenied = await app.inject({ method: "GET", url: "/api/auth/directory/my-pets", headers: { cookie: owner.cookie } });
+    expect(ownerDenied.statusCode).toBe(403);
+    expect(ownerDenied.json().error.code).toBe("DOCTOR_ROLE_REQUIRED");
+
+    const petSearchDenied = await app.inject({ method: "GET", url: "/api/auth/directory/pets?owner=Ольга&pet=Буся", headers: { cookie: owner.cookie } });
+    expect(petSearchDenied.statusCode).toBe(403);
+    expect(petSearchDenied.json().error.code).toBe("DOCTOR_ROLE_REQUIRED");
+  });
+
   it("replaces lost bootstrap devices only with a fresh recovery-key proof", async () => {
     const { app, bootstrapKeys } = await fixture({ bootstrap: true });
     const exported = await exportUserKeySet(bootstrapKeys!);

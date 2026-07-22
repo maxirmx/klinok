@@ -31,9 +31,9 @@ async function client(transport: MemoryEventTransport, accountId: string, role: 
 }
 
 const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
-async function waitFor(condition: () => boolean) {
+async function waitFor(condition: () => boolean | Promise<boolean>) {
   for (let attempt = 0; attempt < 30; attempt += 1) {
-    if (condition()) return;
+    if (await condition()) return;
     await tick();
   }
   throw new Error("Timed out waiting for repository synchronization.");
@@ -80,6 +80,96 @@ describe("medical authorization repository", () => {
     await owner.medical.setActiveRole("owner", "owner-role");
     expect(latest?.pets).toEqual([expect.objectContaining({ petId, name: "Шарик" })]);
     unsubscribe();
+  });
+
+  it("stores structured encounters and relinquishes a delegated branch with key rotation", async () => {
+    const transport = new MemoryEventTransport();
+    await transport.initialize();
+    const administrator = await client(transport, "bootstrap-administrator", "administrator");
+    await administrator.control.initialize({ profile: { firstName: "Анна", lastName: "Администратор" }, requestedRoles: ["administrator"] });
+    const owner = await client(transport, "encounter-owner", "owner");
+    await owner.control.initialize({ profile: { firstName: "Ольга", lastName: "Владелец" }, requestedRoles: ["owner"] });
+    const doctor = await client(transport, "encounter-doctor", "doctor");
+    await doctor.control.initialize({ profile: { firstName: "Вера", lastName: "Врач" }, requestedRoles: ["doctor"] });
+    const delegate = await client(transport, "encounter-delegate", "doctor");
+    await delegate.control.initialize({ profile: { firstName: "Дина", lastName: "Врач" }, requestedRoles: ["doctor"] });
+    await tick();
+    for (const accountId of ["encounter-doctor", "encounter-delegate"]) {
+      const pending = (await administrator.control.snapshot()).pendingQueue.find((request) => request.accountId === accountId)!;
+      await administrator.control.decideRole({ accountId, role: "doctor", status: "approved" });
+      expect(pending).toBeDefined();
+    }
+    await tick();
+    const ownerRole = (await owner.control.snapshot()).roles.find((item) => item.role === "owner")!;
+    const doctorRole = (await doctor.control.snapshot()).roles.find((item) => item.role === "doctor")!;
+    const delegateRole = (await delegate.control.snapshot()).roles.find((item) => item.role === "doctor")!;
+    owner.control.setActiveRole("owner", ownerRole.requestId);
+    doctor.control.setActiveRole("doctor", doctorRole.requestId);
+    delegate.control.setActiveRole("doctor", delegateRole.requestId);
+    await owner.medical.setActiveRole("owner", ownerRole.requestId);
+    await doctor.medical.setActiveRole("doctor", doctorRole.requestId);
+    await delegate.medical.setActiveRole("doctor", delegateRole.requestId);
+    await owner.medical.initialize();
+    await doctor.medical.initialize();
+    await delegate.medical.initialize();
+
+    const petId = await owner.medical.createPet(petInput("Буся"));
+    const grantId = await owner.medical.grantDoctor(petId, "encounter-doctor", ["read", "write_unconfirmed", "delegate"]);
+    await waitFor(async () => (await doctor.medical.snapshot()).pets.some((pet) => pet.petId === petId));
+    const delegatedGrantId = await doctor.medical.delegateGrant(grantId, "encounter-delegate", ["read"]);
+    await tick();
+    const recordId = await doctor.medical.saveEncounter({
+      petId,
+      encounterDate: "2026-07-21",
+      sections: {
+        "what-happened": { selectedIds: ["problem.digestive.1"], comment: "Не ест со вчерашнего дня" },
+        diagnosis: { text: "Предварительный диагноз" },
+      },
+    });
+    await tick();
+    const record = (await owner.medical.snapshot()).records.find((item) => item.recordId === recordId)!;
+    expect(record.sections["what-happened"]).toMatchObject({
+      templateVersion: "what-happened-v1",
+      authorAccountId: "encounter-doctor",
+      authorDisplayName: "Вера Врач",
+      value: { selectedIds: ["problem.digestive.1"], comment: "Не ест со вчерашнего дня" },
+    });
+    expect(record.sections.diagnosis).toMatchObject({ templateVersion: "free-text-v0", value: { text: "Предварительный диагноз" } });
+    await owner.medical.confirmRecord(petId, recordId, record.revision);
+    await waitFor(async () => (await doctor.medical.snapshot()).confirmedRecordIds.includes(recordId));
+    const ownerConfirmed = await owner.medical.snapshot();
+    const doctorConfirmed = await doctor.medical.snapshot();
+    const delegateConfirmed = await delegate.medical.snapshot();
+    expect(ownerConfirmed.confirmedRecordIds).toContain(recordId);
+    expect(doctorConfirmed.confirmedRecordIds).toContain(recordId);
+    expect(delegateConfirmed.confirmedRecordIds).toContain(recordId);
+    expect(doctorConfirmed.confirmations).toEqual([]);
+    expect(delegateConfirmed.confirmations).toEqual([]);
+    expect((await administrator.medical.snapshot()).confirmedRecordIds).toEqual([]);
+    await expect(doctor.medical.saveEncounter({
+      petId,
+      encounterDate: "2026-07-21",
+      sections: { "what-happened": { selectedIds: [], comment: "Позднее дополнение" } },
+      addendumTo: recordId,
+    } as Parameters<typeof doctor.medical.saveEncounter>[0])).rejects.toThrow("Дополнения к медицинским записям не поддерживаются.");
+    await expect(doctor.medical.saveEncounter({
+      petId,
+      recordId,
+      encounterDate: "2026-07-21",
+      sections: { "what-happened": { selectedIds: [], comment: "Изменение" } },
+    })).rejects.toMatchObject({ code: "CONFIRMED_RECORD_IMMUTABLE" });
+
+    await doctor.medical.relinquishAccess(grantId);
+    await waitFor(async () => (await owner.medical.snapshot()).grants.find((grant) => grant.grantId === grantId)?.status === "relinquished");
+    const ownerSnapshot = await owner.medical.snapshot();
+    expect(ownerSnapshot.grants.find((grant) => grant.grantId === grantId)?.status).toBe("relinquished");
+    expect(ownerSnapshot.grants.find((grant) => grant.grantId === delegatedGrantId)?.status).toBe("revoked");
+    const doctorAfterRelinquishment = await doctor.medical.snapshot();
+    const delegateAfterRelinquishment = await delegate.medical.snapshot();
+    expect(doctorAfterRelinquishment.pets).toHaveLength(0);
+    expect(delegateAfterRelinquishment.pets).toHaveLength(0);
+    expect(doctorAfterRelinquishment.confirmedRecordIds).toEqual([]);
+    expect(delegateAfterRelinquishment.confirmedRecordIds).toEqual([]);
   });
 
   it("shares a pet by grant, lets the Doctor draft, confirms immutably, and rotates on revocation", async () => {
@@ -139,6 +229,12 @@ describe("medical authorization repository", () => {
     expect((await delegatedDoctor.medical.snapshot()).pets).toEqual([expect.objectContaining({ petId, name: "Шарик" })]);
     await expect(doctor.medical.delegateGrant(grantId, "delegated-doctor-account", ["read"]))
       .rejects.toMatchObject({ code: "GRANT_DELEGATION_FORBIDDEN" });
+
+    await owner.medical.enableGrantDelegation(grantId);
+    await tick();
+    expect((await owner.medical.snapshot()).grants).toEqual(expect.arrayContaining([
+      expect.objectContaining({ grantId, actions: ["read", "write_unconfirmed", "delegate"] }),
+    ]));
 
     const recordId = await doctor.medical.saveRecord({ petId, title: "Осмотр", text: "Состояние стабильное" });
     await tick();

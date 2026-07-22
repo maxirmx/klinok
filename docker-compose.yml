@@ -7,7 +7,7 @@ services:
       p2p:
         condition: service_healthy
     ports:
-      - "8080:80"
+      - "${KLINOK_UI_PORT:-8080}:80"
     environment:
       KLINOK_TRUSTED_NODE: ${KLINOK_TRUSTED_NODE:-/ip4/127.0.0.1/tcp/8089/ws}
       KLINOK_AUTH_ATTESTATION_PUBLIC_KEY: ${KLINOK_AUTH_ATTESTATION_PUBLIC_KEY:-null}
@@ -20,7 +20,7 @@ services:
       context: .
       dockerfile: auth-node/Dockerfile
     environment:
-      KLINOK_PUBLIC_ORIGIN: http://localhost:8080
+      KLINOK_PUBLIC_ORIGIN: ${KLINOK_PUBLIC_ORIGIN:-http://localhost:8080}
       KLINOK_AUTH_COOKIE_SECURE: "false"
       # The auth port is internal-only and every HTTP request arrives through the UI nginx container.
       KLINOK_AUTH_TRUST_PROXY: "1"
@@ -30,6 +30,7 @@ services:
       KLINOK_BOOTSTRAP_SIGNING_PUBLIC_KEY: ${KLINOK_BOOTSTRAP_SIGNING_PUBLIC_KEY:-}
       KLINOK_P2P_TRUSTED_NODES: ${KLINOK_P2P_TRUSTED_NODES:-/dns4/p2p/tcp/8089/ws}
       KLINOK_CONTROL_DB: klinok-control-v1
+      KLINOK_MEDICAL_DB: klinok-medical-v3
       KLINOK_SMTP_HOST: mail
       KLINOK_SMTP_PORT: 1025
       KLINOK_SMTP_FROM: Клинок <noreply@klinok.local>
@@ -56,7 +57,7 @@ services:
       KLINOK_AUTH_ATTESTATION_PUBLIC_KEY: ${KLINOK_AUTH_ATTESTATION_PUBLIC_KEY:-}
       KLINOK_BOOTSTRAP_SIGNING_PUBLIC_KEY: ${KLINOK_BOOTSTRAP_SIGNING_PUBLIC_KEY:-}
     ports:
-      - "8089:8089"
+      - "${KLINOK_P2P_PORT:-8089}:8089"
     volumes:
       - p2p-v1:/data
     healthcheck:
@@ -68,7 +69,7 @@ services:
   mail:
     image: axllent/mailpit:v1.27
     ports:
-      - "8025:8025"
+      - "${KLINOK_MAILPIT_PORT:-8025}:8025"
 
 volumes:
   auth-v1:

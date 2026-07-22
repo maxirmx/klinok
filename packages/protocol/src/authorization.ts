@@ -92,6 +92,7 @@ const STATE_DEPENDENT_VERIFICATION_FAILURES = new Set([
   "DOCTOR_ROLE_REQUIRED",
   "PET_GRANT_REQUIRED",
   "GRANT_DELEGATION_FORBIDDEN",
+  "GRANT_RELINQUISHMENT_FORBIDDEN",
 ]);
 
 /**
@@ -359,10 +360,11 @@ function capabilityResult(event: SignedEvent, state: ProtocolState): Verificatio
   if (event.eventType === "grant.actions.updated") {
     const grant = state.grants.get(event.resourceId);
     const actions = event.metadata.actions as PetGrantAction[] | undefined;
-    const expectedActions = grant?.actions.filter((action) => action !== "delegate");
+    const expectedActions = grant?.actions.includes("delegate")
+      ? grant.actions.filter((action) => action !== "delegate")
+      : grant ? [...grant.actions, "delegate" as const] : undefined;
     const validUpdate = grant?.petId === petId &&
       isGrantEffectivelyActive(state, grant) &&
-      grant.actions.includes("delegate") &&
       Array.isArray(actions) &&
       actions.length === expectedActions?.length &&
       actions.every((action, index) => action === expectedActions?.[index]);
@@ -370,12 +372,32 @@ function capabilityResult(event: SignedEvent, state: ProtocolState): Verificatio
       return {
         accepted: false,
         code: "PET_GRANT_ACTIONS_UPDATE_INVALID",
-        message: "A grant action update may only disable delegation on an active grant.",
+        message: "A grant action update may only toggle delegation on an active grant.",
       };
     }
     return hasActiveRoleProof(state, event, "owner") && ownerId === event.actorAccountId
       ? { accepted: true }
       : { accepted: false, code: "OWNER_SCOPE_FORBIDDEN", message: "Only the pet Owner may perform this command." };
+  }
+  if (event.eventType === "grant.relinquished") {
+    const grant = state.grants.get(event.resourceId);
+    const valid = grant?.petId === petId && grant.granteeAccountId === event.actorAccountId &&
+      isGrantEffectivelyActive(state, grant) && event.proofIds.includes(grant.grantId) &&
+      Number(event.metadata.nextKeyVersion) === grant.petKeyVersion + 1;
+    return valid && hasActiveRoleProof(state, event, "doctor")
+      ? { accepted: true }
+      : { accepted: false, code: "GRANT_RELINQUISHMENT_FORBIDDEN", message: "Only the grant's Doctor may relinquish an active grant." };
+  }
+  if (event.eventType === "pet.key.rotated" && event.metadata.relinquishedGrantId) {
+    const grantId = String(event.metadata.relinquishedGrantId);
+    const grant = state.grants.get(grantId);
+    const relinquishment = event.parents.map((parent) => state.events.get(parent)).find((parent) =>
+      parent?.eventType === "grant.relinquished" && parent.resourceId === grantId && parent.actorAccountId === event.actorAccountId,
+    );
+    return grant?.petId === petId && grant.granteeAccountId === event.actorAccountId && grant.status === "relinquished" &&
+      relinquishment && hasActiveRoleProof(state, event, "doctor") && Number(event.metadata.keyVersion) === grant.petKeyVersion + 1
+      ? { accepted: true }
+      : { accepted: false, code: "GRANT_RELINQUISHMENT_FORBIDDEN", message: "A Doctor key rotation must be causally linked to relinquishment." };
   }
   if (["pet.updated", "pet.tombstoned", "pet.key.rotated", "grant.created", "grant.revoked", "medical.record.confirmed"].includes(event.eventType)) {
     if (event.eventType === "medical.record.confirmed" && state.confirmedRecords.has(event.resourceId)) {
