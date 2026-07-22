@@ -9,7 +9,9 @@ import {
   ENCOUNTER_SECTION_LABELS,
   encounterSummary,
   freeText,
+  generalDataMeasurements,
   isFreeTextValue,
+  isGeneralDataValue,
   isWhatHappenedValue,
   whatHappenedComment,
   whatHappenedPath,
@@ -160,6 +162,12 @@ function formatLocalDateTime(value: string) {
           </ul>
           <p v-if="whatHappenedComment(item.section.value)" class="encounter-history-comment">{{ whatHappenedComment(item.section.value) }}</p>
         </template>
+        <dl v-else-if="isGeneralDataValue(item.section.value)" class="general-data-values">
+          <div v-for="measurement in generalDataMeasurements(item.section.value)" :key="measurement.key">
+            <dt>{{ measurement.label }}</dt>
+            <dd>{{ measurement.value }}</dd>
+          </div>
+        </dl>
         <p v-else-if="isFreeTextValue(item.section.value)">{{ freeText(item.section.value) }}</p>
         <small>
           {{ item.section.authorDisplayName }}<template v-if="showAuthorAccountId"> · {{ item.section.authorAccountId }}</template>

@@ -466,6 +466,44 @@ describe("Doctor pages", () => {
     }));
   });
 
+  it("validates and saves the structured general-data template", async () => {
+    const wrapper = await mountAt("/doctor/pets/pet-1", "doctor-pet-detail");
+    await flushPromises();
+    const notEating = wrapper.findAll(".encounter-taxonomy label").find((label) => label.text() === "Не ест")!;
+    await notEating.get("input").trigger("change");
+    await wrapper.get<HTMLSelectElement>(".encounter-add-section select").setValue("general-data");
+
+    expect(wrapper.findAll(".general-data-pressure-inputs label > span").map((label) => label.text()))
+      .toEqual(["Сист.", "Диаст.", "Сред."]);
+    const inputs = wrapper.findAll<HTMLInputElement>(".general-data-fields input");
+    expect(inputs).toHaveLength(7);
+    await inputs[0]!.setValue("13.75");
+    await inputs[1]!.setValue("38.6");
+    await inputs[2]!.setValue("112");
+    await inputs[3]!.setValue("24");
+    await inputs[4]!.setValue("120");
+    await wrapper.get('button[title="Сохранить запись"]').trigger("click");
+    expect(repositoryMocks.saveEncounter).not.toHaveBeenCalled();
+    expect(wrapper.get(".general-data-pressure .field-error").text()).toContain("все три");
+
+    await inputs[5]!.setValue("80");
+    await inputs[6]!.setValue("93");
+    await wrapper.get('button[title="Сохранить запись"]').trigger("click");
+    await flushPromises();
+    expect(repositoryMocks.saveEncounter).toHaveBeenCalledWith(expect.objectContaining({
+      petId: "pet-1",
+      sections: expect.objectContaining({
+        "general-data": {
+          weightKg: 13.75,
+          temperatureC: 38.6,
+          heartRateBpm: 112,
+          respiratoryRatePerMinute: 24,
+          bloodPressure: { systolicMmHg: 120, diastolicMmHg: 80, meanMmHg: 93 },
+        },
+      }),
+    }));
+  });
+
   it("uses a small icon action to remove an optional encounter section", async () => {
     const wrapper = await mountAt("/doctor/pets/pet-1", "doctor-pet-detail");
     await flushPromises();
@@ -520,6 +558,38 @@ describe("Doctor pages", () => {
       }),
     }));
     expect(record.find(".encounter-editor-inline").exists()).toBe(false);
+  });
+
+  it("preserves a legacy free-text general-data section while editing", async () => {
+    const legacyRecord: MedicalRecordDraft = {
+      ...medicalRecord,
+      sections: {
+        ...medicalRecord.sections,
+        "general-data": {
+          kind: "general-data",
+          templateVersion: "free-text-v0",
+          value: { text: "Вес 11,8 кг; температура 38,4" },
+          authorAccountId: "doctor-1",
+          authorDisplayName: "Вера Врач",
+          updatedAt: "2026-07-21T10:00:00.000Z",
+        },
+      },
+    };
+    await setMedical(snapshot(undefined, { records: [legacyRecord] }));
+    const wrapper = await mountAt("/doctor/pets/pet-1", "doctor-pet-detail");
+    await flushPromises();
+    await wrapper.get(".medical-record-edit").trigger("click");
+    const editor = wrapper.get(".encounter-editor-inline");
+    expect(editor.get(".temporary-note").text()).toContain("старый шаблон");
+    expect(editor.get<HTMLTextAreaElement>(".encounter-section-card:not(.encounter-what-happened) textarea").element.value)
+      .toBe("Вес 11,8 кг; температура 38,4");
+    await editor.get('button[title="Сохранить запись"]').trigger("click");
+    await flushPromises();
+    expect(repositoryMocks.saveEncounter).toHaveBeenCalledWith(expect.objectContaining({
+      sections: expect.objectContaining({
+        "general-data": { text: "Вес 11,8 кг; температура 38,4" },
+      }),
+    }));
   });
 
   it("allows selections from only one general condition at a time", async () => {

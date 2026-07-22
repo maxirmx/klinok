@@ -89,10 +89,22 @@ export interface FreeTextSectionValue {
   text: string;
 }
 
+export interface GeneralDataSectionValue {
+  weightKg?: number;
+  temperatureC?: number;
+  heartRateBpm?: number;
+  respiratoryRatePerMinute?: number;
+  bloodPressure?: {
+    systolicMmHg: number;
+    diastolicMmHg: number;
+    meanMmHg: number;
+  };
+}
+
 export interface MedicalEncounterSection {
   kind: MedicalEncounterSectionKind;
-  templateVersion: "what-happened-v1" | "free-text-v0";
-  value: WhatHappenedSectionValue | FreeTextSectionValue;
+  templateVersion: "what-happened-v1" | "general-data-v1" | "free-text-v0";
+  value: WhatHappenedSectionValue | GeneralDataSectionValue | FreeTextSectionValue;
   authorAccountId: string;
   authorDisplayName: string;
   updatedAt: string;
@@ -101,7 +113,7 @@ export interface MedicalEncounterSection {
 export interface MedicalEncounterInput {
   petId: string;
   encounterDate: string;
-  sections: Partial<Record<MedicalEncounterSectionKind, WhatHappenedSectionValue | FreeTextSectionValue>>;
+  sections: Partial<Record<MedicalEncounterSectionKind, WhatHappenedSectionValue | GeneralDataSectionValue | FreeTextSectionValue>>;
   recordId?: string;
 }
 

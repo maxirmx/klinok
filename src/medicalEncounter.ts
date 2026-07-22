@@ -4,10 +4,24 @@
 
 import type {
   FreeTextSectionValue,
+  GeneralDataSectionValue,
   MedicalEncounterSectionKind,
   MedicalRecordDraft,
   WhatHappenedSectionValue,
 } from "./repositories/types";
+
+export interface GeneralDataDraft {
+  weightKg: string | number;
+  temperatureC: string | number;
+  heartRateBpm: string | number;
+  respiratoryRatePerMinute: string | number;
+  systolicMmHg: string | number;
+  diastolicMmHg: string | number;
+  meanMmHg: string | number;
+}
+
+export type GeneralDataDraftField = keyof GeneralDataDraft | "section" | "bloodPressure";
+export type GeneralDataDraftErrors = Partial<Record<GeneralDataDraftField, string>>;
 
 export interface WhatHappenedOption {
   id: string;
@@ -97,6 +111,136 @@ export function isWhatHappenedValue(value: unknown): value is WhatHappenedSectio
 
 export function isFreeTextValue(value: unknown): value is FreeTextSectionValue {
   return Boolean(value && typeof value === "object" && "text" in value && typeof (value as FreeTextSectionValue).text === "string");
+}
+
+function isPositiveFinite(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value) && value > 0;
+}
+
+function isThreeDigitInteger(value: unknown): value is number {
+  return Number.isInteger(value) && Number(value) >= 1 && Number(value) <= 999;
+}
+
+export function generalDataValidationError(value: GeneralDataSectionValue): string {
+  const hasMeasurement = value.weightKg !== undefined || value.temperatureC !== undefined ||
+    value.heartRateBpm !== undefined || value.respiratoryRatePerMinute !== undefined || value.bloodPressure !== undefined;
+  if (!hasMeasurement) return "Заполните хотя бы один показатель в разделе «Общие данные/Габитус».";
+  if (value.weightKg !== undefined && !isPositiveFinite(value.weightKg)) return "Укажите положительный вес в килограммах.";
+  if (value.temperatureC !== undefined && !isPositiveFinite(value.temperatureC)) return "Укажите положительную температуру.";
+  if (value.heartRateBpm !== undefined && !isThreeDigitInteger(value.heartRateBpm)) return "ЧСС должна быть целым числом от 1 до 999.";
+  if (value.respiratoryRatePerMinute !== undefined && !isThreeDigitInteger(value.respiratoryRatePerMinute)) return "ЧДД должна быть целым числом от 1 до 999.";
+  if (value.bloodPressure) {
+    const { systolicMmHg, diastolicMmHg, meanMmHg } = value.bloodPressure;
+    if (![systolicMmHg, diastolicMmHg, meanMmHg].every(isThreeDigitInteger)) {
+      return "Все значения АД должны быть целыми числами от 1 до 999.";
+    }
+    if (diastolicMmHg > meanMmHg || meanMmHg > systolicMmHg) {
+      return "Для АД должно выполняться: диастолическое ≤ среднее ≤ систолическое.";
+    }
+  }
+  return "";
+}
+
+export function isGeneralDataValue(value: unknown): value is GeneralDataSectionValue {
+  if (!value || typeof value !== "object" || isFreeTextValue(value)) return false;
+  return !generalDataValidationError(value as GeneralDataSectionValue);
+}
+
+export function emptyGeneralDataDraft(): GeneralDataDraft {
+  return {
+    weightKg: "",
+    temperatureC: "",
+    heartRateBpm: "",
+    respiratoryRatePerMinute: "",
+    systolicMmHg: "",
+    diastolicMmHg: "",
+    meanMmHg: "",
+  };
+}
+
+export function generalDataDraft(value?: GeneralDataSectionValue): GeneralDataDraft {
+  return {
+    weightKg: value?.weightKg === undefined ? "" : String(value.weightKg),
+    temperatureC: value?.temperatureC === undefined ? "" : String(value.temperatureC),
+    heartRateBpm: value?.heartRateBpm === undefined ? "" : String(value.heartRateBpm),
+    respiratoryRatePerMinute: value?.respiratoryRatePerMinute === undefined ? "" : String(value.respiratoryRatePerMinute),
+    systolicMmHg: value?.bloodPressure ? String(value.bloodPressure.systolicMmHg) : "",
+    diastolicMmHg: value?.bloodPressure ? String(value.bloodPressure.diastolicMmHg) : "",
+    meanMmHg: value?.bloodPressure ? String(value.bloodPressure.meanMmHg) : "",
+  };
+}
+
+function decimalDraftValue(raw: string | number, field: keyof GeneralDataDraft, label: string, errors: GeneralDataDraftErrors): number | undefined {
+  if (!String(raw).trim()) return undefined;
+  const value = Number(raw);
+  if (!Number.isFinite(value) || value <= 0) errors[field] = `Укажите положительное значение: ${label}.`;
+  return value;
+}
+
+function integerDraftValue(raw: string | number, field: keyof GeneralDataDraft, label: string, errors: GeneralDataDraftErrors): number | undefined {
+  if (!String(raw).trim()) return undefined;
+  const value = Number(raw);
+  if (!isThreeDigitInteger(value)) errors[field] = `${label}: целое число от 1 до 999.`;
+  return value;
+}
+
+export function parseGeneralDataDraft(draft: GeneralDataDraft): { value?: GeneralDataSectionValue; errors: GeneralDataDraftErrors } {
+  const errors: GeneralDataDraftErrors = {};
+  const weightKg = decimalDraftValue(draft.weightKg, "weightKg", "вес", errors);
+  const temperatureC = decimalDraftValue(draft.temperatureC, "temperatureC", "температура", errors);
+  const heartRateBpm = integerDraftValue(draft.heartRateBpm, "heartRateBpm", "ЧСС", errors);
+  const respiratoryRatePerMinute = integerDraftValue(draft.respiratoryRatePerMinute, "respiratoryRatePerMinute", "ЧДД", errors);
+  const pressureEntered = [draft.systolicMmHg, draft.diastolicMmHg, draft.meanMmHg].some((item) => String(item).trim());
+  let bloodPressure: GeneralDataSectionValue["bloodPressure"];
+  if (pressureEntered) {
+    if ([draft.systolicMmHg, draft.diastolicMmHg, draft.meanMmHg].some((item) => !String(item).trim())) {
+      errors.bloodPressure = "Заполните все три значения артериального давления.";
+    }
+    const systolicMmHg = integerDraftValue(draft.systolicMmHg, "systolicMmHg", "Систолическое АД", errors);
+    const diastolicMmHg = integerDraftValue(draft.diastolicMmHg, "diastolicMmHg", "Диастолическое АД", errors);
+    const meanMmHg = integerDraftValue(draft.meanMmHg, "meanMmHg", "Среднее АД", errors);
+    if (systolicMmHg !== undefined && diastolicMmHg !== undefined && meanMmHg !== undefined) {
+      if (diastolicMmHg > meanMmHg || meanMmHg > systolicMmHg) {
+        errors.bloodPressure = "Должно выполняться: диастолическое ≤ среднее ≤ систолическое.";
+      } else {
+        bloodPressure = { systolicMmHg, diastolicMmHg, meanMmHg };
+      }
+    }
+  }
+  if ([weightKg, temperatureC, heartRateBpm, respiratoryRatePerMinute, bloodPressure].every((item) => item === undefined)) {
+    errors.section = "Заполните хотя бы один показатель.";
+  }
+  if (Object.keys(errors).length) return { errors };
+  return {
+    value: {
+      ...(weightKg !== undefined ? { weightKg } : {}),
+      ...(temperatureC !== undefined ? { temperatureC } : {}),
+      ...(heartRateBpm !== undefined ? { heartRateBpm } : {}),
+      ...(respiratoryRatePerMinute !== undefined ? { respiratoryRatePerMinute } : {}),
+      ...(bloodPressure ? { bloodPressure } : {}),
+    },
+    errors,
+  };
+}
+
+export function generalDataMeasurements(value: GeneralDataSectionValue): Array<{ key: string; label: string; value: string }> {
+  return [
+    ...(value.weightKg === undefined ? [] : [{ key: "weight", label: "Вес", value: `${value.weightKg} кг` }]),
+    ...(value.temperatureC === undefined ? [] : [{ key: "temperature", label: "Температура", value: `${value.temperatureC} °C` }]),
+    ...(value.heartRateBpm === undefined ? [] : [{ key: "heart-rate", label: "ЧСС", value: `${value.heartRateBpm} уд/мин` }]),
+    ...(value.respiratoryRatePerMinute === undefined ? [] : [{ key: "respiratory-rate", label: "ЧДД", value: `${value.respiratoryRatePerMinute} движ/мин` }]),
+    ...(value.bloodPressure ? [{
+      key: "blood-pressure",
+      label: "АД",
+      value: `${value.bloodPressure.systolicMmHg}/${value.bloodPressure.diastolicMmHg} сред. ${value.bloodPressure.meanMmHg} мм рт. ст.`,
+    }] : []),
+  ];
+}
+
+export function sectionSearchText(value: unknown): string {
+  if (isFreeTextValue(value)) return value.text;
+  if (isGeneralDataValue(value)) return generalDataMeasurements(value).map((item) => `${item.label} ${item.value}`).join(" ");
+  return "";
 }
 
 export function whatHappenedSelectedIds(value: unknown): readonly string[] {

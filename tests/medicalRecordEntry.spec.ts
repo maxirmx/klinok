@@ -34,6 +34,20 @@ const record: MedicalRecordDraft = {
       authorDisplayName: "Анна Врач",
       updatedAt: "2026-07-21T11:00:00.000Z",
     },
+    "general-data": {
+      kind: "general-data",
+      templateVersion: "general-data-v1",
+      value: {
+        weightKg: 13.75,
+        temperatureC: 38.6,
+        heartRateBpm: 112,
+        respiratoryRatePerMinute: 24,
+        bloodPressure: { systolicMmHg: 120, diastolicMmHg: 80, meanMmHg: 93 },
+      },
+      authorAccountId: "doctor-1",
+      authorDisplayName: "Вера Врач",
+      updatedAt: "2026-07-21T10:30:00.000Z",
+    },
     outcome: {
       kind: "outcome",
       templateVersion: "free-text-v0",
@@ -117,8 +131,8 @@ describe("MedicalRecordEntry", () => {
     expect(wrapper.find(".medical-record-chevron-collapsed").exists()).toBe(true);
     expect(wrapper.find(".medical-record-chevron-expanded").exists()).toBe(true);
     expect(wrapper.findAll(".encounter-history-section h3").map((node) => node.text()))
-      .toEqual(["Что случилось", "Диагноз", "Исход"]);
-    expect(wrapper.get(".owner-encounter-sections").findAll(":scope > .encounter-history-section")).toHaveLength(3);
+      .toEqual(["Что случилось", "Общие данные/Габитус", "Диагноз", "Исход"]);
+    expect(wrapper.get(".owner-encounter-sections").findAll(":scope > .encounter-history-section")).toHaveLength(4);
     expect(wrapper.get(".owner-encounter-sections").classes()).not.toContain("owner-encounter-sections-editing");
     const summary = wrapper.get(".owner-encounter-summary");
     expect(summary.text()).toContain("21.07.2026 · Не всё хорошо");
@@ -127,6 +141,8 @@ describe("MedicalRecordEntry", () => {
     expect(wrapper.get(".encounter-history-comment").text()).toBe("Не ест со вчерашнего дня");
     expect(wrapper.text()).not.toContain("Рекомендации");
     expect(wrapper.text()).toContain("Анна Врач · doctor-2");
+    expect(wrapper.text()).toContain("13.75 кг");
+    expect(wrapper.text()).toContain("120/80 сред. 93 мм рт. ст.");
     expect(wrapper.text()).not.toContain("2026-07-21T11:00:00.000Z");
     expect(wrapper.text()).toContain("Подтверждена");
     expect(wrapper.find(".medical-record-edit").exists()).toBe(false);

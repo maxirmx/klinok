@@ -151,8 +151,10 @@ describe("medical authorization repository", () => {
     await doctor.control.initialize({ profile: { firstName: "Вера", lastName: "Врач" }, requestedRoles: ["doctor"] });
     const delegate = await client(transport, "encounter-delegate", "doctor");
     await delegate.control.initialize({ profile: { firstName: "Дина", lastName: "Врач" }, requestedRoles: ["doctor"] });
+    const lateDoctor = await client(transport, "encounter-late-doctor", "doctor");
+    await lateDoctor.control.initialize({ profile: { firstName: "Лев", lastName: "Врач" }, requestedRoles: ["doctor"] });
     await tick();
-    for (const accountId of ["encounter-doctor", "encounter-delegate"]) {
+    for (const accountId of ["encounter-doctor", "encounter-delegate", "encounter-late-doctor"]) {
       const pending = (await administrator.control.snapshot()).pendingQueue.find((request) => request.accountId === accountId)!;
       await administrator.control.decideRole({ accountId, role: "doctor", status: "approved" });
       expect(pending).toBeDefined();
@@ -161,26 +163,45 @@ describe("medical authorization repository", () => {
     const ownerRole = (await owner.control.snapshot()).roles.find((item) => item.role === "owner")!;
     const doctorRole = (await doctor.control.snapshot()).roles.find((item) => item.role === "doctor")!;
     const delegateRole = (await delegate.control.snapshot()).roles.find((item) => item.role === "doctor")!;
+    const lateDoctorRole = (await lateDoctor.control.snapshot()).roles.find((item) => item.role === "doctor")!;
     owner.control.setActiveRole("owner", ownerRole.requestId);
     doctor.control.setActiveRole("doctor", doctorRole.requestId);
     delegate.control.setActiveRole("doctor", delegateRole.requestId);
+    lateDoctor.control.setActiveRole("doctor", lateDoctorRole.requestId);
     await owner.medical.setActiveRole("owner", ownerRole.requestId);
     await doctor.medical.setActiveRole("doctor", doctorRole.requestId);
     await delegate.medical.setActiveRole("doctor", delegateRole.requestId);
+    await lateDoctor.medical.setActiveRole("doctor", lateDoctorRole.requestId);
     await owner.medical.initialize();
     await doctor.medical.initialize();
     await delegate.medical.initialize();
+    await lateDoctor.medical.initialize();
 
     const petId = await owner.medical.createPet(petInput("Буся"));
     const grantId = await owner.medical.grantDoctor(petId, "encounter-doctor", ["read", "write_unconfirmed", "delegate"]);
     await waitFor(async () => (await doctor.medical.snapshot()).pets.some((pet) => pet.petId === petId));
     const delegatedGrantId = await doctor.medical.delegateGrant(grantId, "encounter-delegate", ["read"]);
     await tick();
+    await expect(doctor.medical.saveEncounter({
+      petId,
+      encounterDate: "2026-07-21",
+      sections: {
+        "what-happened": { selectedIds: ["problem.digestive.1"], comment: "Проверка" },
+        "general-data": {},
+      },
+    })).rejects.toThrow("Заполните хотя бы один показатель");
     const recordId = await doctor.medical.saveEncounter({
       petId,
       encounterDate: "2026-07-21",
       sections: {
         "what-happened": { selectedIds: ["problem.digestive.1"], comment: "Не ест со вчерашнего дня" },
+        "general-data": {
+          weightKg: 13.75,
+          temperatureC: 38.6,
+          heartRateBpm: 112,
+          respiratoryRatePerMinute: 24,
+          bloodPressure: { systolicMmHg: 120, diastolicMmHg: 80, meanMmHg: 93 },
+        },
         diagnosis: { text: "Предварительный диагноз" },
       },
     });
@@ -193,6 +214,11 @@ describe("medical authorization repository", () => {
       value: { selectedIds: ["problem.digestive.1"], comment: "Не ест со вчерашнего дня" },
     });
     expect(record.sections.diagnosis).toMatchObject({ templateVersion: "free-text-v0", value: { text: "Предварительный диагноз" } });
+    expect(record.sections["general-data"]).toMatchObject({
+      templateVersion: "general-data-v1",
+      value: { weightKg: 13.75, bloodPressure: { systolicMmHg: 120, diastolicMmHg: 80, meanMmHg: 93 } },
+    });
+    expect((await owner.medical.snapshot()).pets.find((pet) => pet.petId === petId)?.weightKg).toBe(12.4);
     await owner.medical.confirmRecord(petId, recordId, record.revision);
     await waitFor(async () => (await doctor.medical.snapshot()).confirmedRecordIds.includes(recordId));
     const ownerConfirmed = await owner.medical.snapshot();
@@ -201,9 +227,33 @@ describe("medical authorization repository", () => {
     expect(ownerConfirmed.confirmedRecordIds).toContain(recordId);
     expect(doctorConfirmed.confirmedRecordIds).toContain(recordId);
     expect(delegateConfirmed.confirmedRecordIds).toContain(recordId);
+    expect(ownerConfirmed.pets.find((pet) => pet.petId === petId)?.weightKg).toBe(13.75);
+    expect(doctorConfirmed.pets.find((pet) => pet.petId === petId)?.weightKg).toBe(13.75);
+    expect(delegateConfirmed.pets.find((pet) => pet.petId === petId)?.weightKg).toBe(13.75);
+    expect(ownerConfirmed.confirmations.find((item) => item.recordId === recordId)?.appliedProfileWeightKg).toBe(13.75);
     expect(doctorConfirmed.confirmations).toEqual([]);
     expect(delegateConfirmed.confirmations).toEqual([]);
     expect((await administrator.medical.snapshot()).confirmedRecordIds).toEqual([]);
+    await owner.medical.grantDoctor(petId, "encounter-late-doctor", ["read"]);
+    await waitFor(async () => (await lateDoctor.medical.snapshot()).pets.some((pet) => pet.petId === petId));
+    expect((await lateDoctor.medical.snapshot()).pets.find((pet) => pet.petId === petId)?.weightKg).toBe(13.75);
+    const confirmedPet = (await owner.medical.snapshot()).pets.find((pet) => pet.petId === petId)!;
+    await owner.medical.updatePet({ ...confirmedPet, weightKg: 14.2 });
+    await waitFor(async () => (await doctor.medical.snapshot()).pets.find((pet) => pet.petId === petId)?.weightKg === 14.2);
+    const laterRecordId = await doctor.medical.saveEncounter({
+      petId,
+      encounterDate: "2026-07-20",
+      sections: {
+        "what-happened": { selectedIds: [], comment: "Подтверждается позднее" },
+        "general-data": { weightKg: 15.1 },
+      },
+    });
+    await tick();
+    expect((await owner.medical.snapshot()).pets.find((pet) => pet.petId === petId)?.weightKg).toBe(14.2);
+    const laterRecord = (await owner.medical.snapshot()).records.find((item) => item.recordId === laterRecordId)!;
+    await owner.medical.confirmRecord(petId, laterRecordId, laterRecord.revision);
+    await waitFor(async () => (await lateDoctor.medical.snapshot()).pets.find((pet) => pet.petId === petId)?.weightKg === 15.1);
+    expect((await owner.medical.snapshot()).pets.find((pet) => pet.petId === petId)?.weightKg).toBe(15.1);
     await expect(doctor.medical.saveEncounter({
       petId,
       encounterDate: "2026-07-21",
@@ -221,10 +271,17 @@ describe("medical authorization repository", () => {
     const unconfirmedRecordId = await doctor.medical.saveEncounter({
       petId,
       encounterDate: "2026-07-21",
-      sections: { "what-happened": { selectedIds: [], comment: "Удаляемый черновик" } },
+      sections: {
+        "what-happened": { selectedIds: [], comment: "Удаляемый черновик" },
+        "general-data": { text: "Вес записан в старом формате" },
+      },
     });
     await tick();
-    expect((await owner.medical.snapshot()).records.some((item) => item.recordId === unconfirmedRecordId)).toBe(true);
+    const legacyRecord = (await owner.medical.snapshot()).records.find((item) => item.recordId === unconfirmedRecordId)!;
+    expect(legacyRecord.sections["general-data"]).toMatchObject({
+      templateVersion: "free-text-v0",
+      value: { text: "Вес записан в старом формате" },
+    });
     await doctor.medical.deleteRecord(petId, unconfirmedRecordId);
     await tick();
     expect((await doctor.medical.snapshot()).records.some((item) => item.recordId === unconfirmedRecordId)).toBe(false);
