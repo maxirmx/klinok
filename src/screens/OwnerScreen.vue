@@ -16,8 +16,7 @@ import ConfirmationDialog from "../components/ConfirmationDialog.vue";
 import MedicalRecordEntry from "../components/MedicalRecordEntry.vue";
 import ModalDialog from "../components/ModalDialog.vue";
 import PetAccessManager from "../components/PetAccessManager.vue";
-import PetProfileDetails from "../components/PetProfileDetails.vue";
-import PetProfileHeader from "../components/PetProfileHeader.vue";
+import PetProfileView from "../components/PetProfileView.vue";
 import WorkspaceShell from "../components/WorkspaceShell.vue";
 import { appState, deleteDirectoryPet, logout, requireRepository, searchDoctorDirectory, syncDirectoryPet } from "../appStore";
 import {
@@ -326,16 +325,15 @@ async function selectPhoto(event: Event) {
   }
 }
 
-async function copyPetLink() {
+async function copyPetId() {
   if (!selectedPet.value) return;
   actionError.value = "";
   actionMessage.value = "";
   try {
-    const path = router.resolve(`/owner/pets/${selectedPet.value.petId}`).href;
-    await navigator.clipboard.writeText(new URL(path, window.location.origin).href);
-    actionMessage.value = "Ссылка скопирована.";
+    await navigator.clipboard.writeText(selectedPet.value.petId);
+    actionMessage.value = "ID питомца скопирован.";
   } catch {
-    actionError.value = "Не удалось скопировать ссылку.";
+    actionError.value = "Не удалось скопировать ID питомца.";
   }
 }
 
@@ -438,7 +436,7 @@ function confirmMedicalRecord(record: MedicalRecordDraft) {
     <p v-if="actionError || appState.feedback?.kind === 'error'" class="form-alert error" role="alert">{{ actionError || appState.feedback?.text }}</p>
     <p v-if="actionMessage" class="form-alert success" role="status">{{ actionMessage }}</p>
 
-    <div class="owner-section-heading owner-page-heading">
+    <div v-if="isHome || isForm || isAccess || !selectedPet" class="owner-section-heading owner-page-heading">
       <div>
         <h2>{{ pageTitle }}</h2>
         <p v-if="isHome">Профили и медицинская история ваших животных</p>
@@ -453,6 +451,25 @@ function confirmMedicalRecord(record: MedicalRecordDraft) {
       >
         <AppIcon name="plus" />
       </RouterLink>
+      <div v-else-if="isAccess && selectedPet" class="row-actions owner-page-heading-actions">
+        <button
+          class="primary-action inline owner-profile-action"
+          type="button"
+          title="Предоставить доступ"
+          aria-label="Предоставить доступ"
+          @click="openGrantDialog"
+        >
+          <AppIcon name="plus" />
+        </button>
+        <RouterLink
+          class="outline-action inline owner-profile-action"
+          :to="`/owner/pets/${selectedPet.petId}`"
+          title="Назад к информации о питомце"
+          aria-label="Назад к информации о питомце"
+        >
+          <AppIcon name="chevron-left" />
+        </RouterLink>
+      </div>
     </div>
 
     <section v-if="isHome" class="owner-home">
@@ -586,19 +603,9 @@ function confirmMedicalRecord(record: MedicalRecordDraft) {
       :pet="selectedPet"
       :rows="accessRows"
       :page-sizes="pageSizes"
+      :can-add="false"
       empty-message="Доступы и ожидающие запросы отсутствуют."
-      @add="openGrantDialog"
     >
-      <template #headerActions>
-        <RouterLink
-          class="outline-action inline owner-profile-action"
-          :to="`/owner/pets/${selectedPet.petId}`"
-          title="Назад к информации о питомце"
-          aria-label="Назад к информации о питомце"
-        >
-          <AppIcon name="chevron-left" />
-        </RouterLink>
-      </template>
       <template #rowActions="{ row }">
         <template v-if="row.status === 'requested' && row.requestId">
           <button class="primary-action inline access-icon-action" type="button" title="Предоставить доступ" aria-label="Предоставить доступ" @click="action(() => requireRepository().medical.approveAccessRequest(row.requestId!), 'Доступ предоставлен.')"><AppIcon name="check" /></button>
@@ -642,47 +649,44 @@ function confirmMedicalRecord(record: MedicalRecordDraft) {
     </PetAccessManager>
 
     <section v-else-if="selectedPet" class="owner-pet-detail">
-      <article class="panel owner-pet-profile">
-        <PetProfileHeader :pet="selectedPet" :show-details="false">
-          <template #actions>
-            <RouterLink
-              class="primary-action inline owner-profile-action"
-              :to="`/owner/pets/${selectedPet.petId}/edit`"
-              title="Редактировать"
-              aria-label="Редактировать"
-            >
-              <AppIcon name="edit" />
-            </RouterLink>
-            <RouterLink
-              class="outline-action inline owner-profile-action"
-              :to="`/owner/pets/${selectedPet.petId}/access`"
-              title="Доступ врачей"
-              aria-label="Доступ врачей"
-            >
-              <AppIcon name="user" />
-            </RouterLink>
-            <button
-              class="outline-action inline owner-profile-action"
-              type="button"
-              title="Копировать ссылку"
-              aria-label="Копировать ссылку"
-              @click="copyPetLink"
-            >
-              <AppIcon name="link" />
-            </button>
-            <button
-              class="outline-action inline danger-outline owner-profile-action"
-              type="button"
-              title="Удалить"
-              aria-label="Удалить"
-              @click="deleteConfirmation = true"
-            >
-              <AppIcon name="trash" />
-            </button>
-          </template>
-        </PetProfileHeader>
-        <PetProfileDetails :pet="selectedPet" />
-      </article>
+      <PetProfileView :pet="selectedPet">
+        <template #actions>
+          <RouterLink
+            class="primary-action inline owner-profile-action"
+            :to="`/owner/pets/${selectedPet.petId}/edit`"
+            title="Редактировать"
+            aria-label="Редактировать"
+          >
+            <AppIcon name="edit" />
+          </RouterLink>
+          <RouterLink
+            class="outline-action inline owner-profile-action"
+            :to="`/owner/pets/${selectedPet.petId}/access`"
+            title="Доступ врачей"
+            aria-label="Доступ врачей"
+          >
+            <AppIcon name="user" />
+          </RouterLink>
+          <button
+            class="outline-action inline owner-profile-action"
+            type="button"
+            title="Копировать ID питомца"
+            aria-label="Копировать ID питомца"
+            @click="copyPetId"
+          >
+            <AppIcon name="copy" />
+          </button>
+          <button
+            class="outline-action inline danger-outline owner-profile-action"
+            type="button"
+            title="Удалить"
+            aria-label="Удалить"
+            @click="deleteConfirmation = true"
+          >
+            <AppIcon name="trash" />
+          </button>
+        </template>
+      </PetProfileView>
 
       <article class="panel owner-medical-placeholder">
         <h2>Эпикриз</h2>

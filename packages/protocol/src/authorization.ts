@@ -215,9 +215,12 @@ export function isRoleApproved(state: ProtocolState, accountId: string, role: Ro
 }
 
 function hasActiveRoleProof(state: ProtocolState, event: SignedEvent, role: Role): boolean {
+  return event.activeRole === role && hasApprovedRoleProof(state, event, role);
+}
+
+function hasApprovedRoleProof(state: ProtocolState, event: SignedEvent, role: Role): boolean {
   const projection = state.roles.get(roleProjectionKey(event.actorAccountId, role));
   return projection?.request.status === "approved" &&
-    event.activeRole === role &&
     (event.proofIds.includes(projection.eventId) || event.proofIds.includes(projection.request.requestId));
 }
 
@@ -307,6 +310,11 @@ function capabilityResult(event: SignedEvent, state: ProtocolState): Verificatio
   }
   if (event.eventType === "pet.shared") {
     if (hasActiveRoleProof(state, event, "owner") && ownerId === event.actorAccountId) return { accepted: true };
+    const selfGrant = state.grants.get(String(event.metadata.grantId ?? ""));
+    if (ownerId === event.actorAccountId && selfGrant?.petId === petId && isGrantEffectivelyActive(state, selfGrant) &&
+      selfGrant.grantorAccountId === event.actorAccountId &&
+      selfGrant.granteeAccountId === event.actorAccountId && hasActiveRoleProof(state, event, "doctor") &&
+      hasApprovedRoleProof(state, event, "owner")) return { accepted: true };
     const parent = state.grants.get(String(event.metadata.parentGrantId ?? ""));
     return hasActiveRoleProof(state, event, "doctor") && parent?.granteeAccountId === event.actorAccountId &&
       isGrantEffectivelyActive(state, parent) && grantAllows(parent, "delegate") && event.proofIds.includes(parent!.grantId)
@@ -351,6 +359,7 @@ function capabilityResult(event: SignedEvent, state: ProtocolState): Verificatio
       ? { accepted: true }
       : { accepted: false, code: "PET_ACCESS_REQUEST_FORBIDDEN", message: "Only the pet Owner may reject this request." };
   }
+  let ownerDoctorSelfApproval = false;
   if (event.eventType === "grant.created" && event.metadata.requestId) {
     const requestId = String(event.metadata.requestId);
     const projection = state.grantRequests.get(requestId);
@@ -360,6 +369,13 @@ function capabilityResult(event: SignedEvent, state: ProtocolState): Verificatio
       !event.parents.includes(projection.eventId)) {
       return { accepted: false, code: "PET_ACCESS_REQUEST_TRANSITION_INVALID", message: "The linked access request cannot be approved." };
     }
+    ownerDoctorSelfApproval = ownerId === event.actorAccountId &&
+      projection.request.ownerAccountId === event.actorAccountId &&
+      projection.request.requesterAccountId === event.actorAccountId &&
+      grant.petId === petId && grant.requestId === requestId && grant.status === "active" &&
+      grant.grantorAccountId === event.actorAccountId &&
+      grant.granteeAccountId === event.actorAccountId &&
+      hasActiveRoleProof(state, event, "doctor") && hasApprovedRoleProof(state, event, "owner");
   }
   if (event.eventType === "grant.actions.updated") {
     const grant = state.grants.get(event.resourceId);
@@ -407,11 +423,11 @@ function capabilityResult(event: SignedEvent, state: ProtocolState): Verificatio
     if (event.eventType === "medical.record.confirmed" && state.confirmedRecords.has(event.resourceId)) {
       return { accepted: false, code: "RECORD_ALREADY_CONFIRMED", message: "A record revision can be confirmed only once." };
     }
-    return hasActiveRoleProof(state, event, "owner") && ownerId === event.actorAccountId
+    return ownerDoctorSelfApproval || (hasActiveRoleProof(state, event, "owner") && ownerId === event.actorAccountId)
       ? { accepted: true }
       : { accepted: false, code: "OWNER_SCOPE_FORBIDDEN", message: "Only the pet Owner may perform this command." };
   }
-  if (["medical.record.created", "medical.record.updated", "medical.addendum.created"].includes(event.eventType)) {
+  if (["medical.record.created", "medical.record.updated", "medical.record.deleted", "medical.addendum.created"].includes(event.eventType)) {
     if (!hasActiveRoleProof(state, event, "doctor")) {
       return { accepted: false, code: "DOCTOR_ROLE_REQUIRED", message: "An approved Doctor role is required." };
     }
@@ -421,7 +437,7 @@ function capabilityResult(event: SignedEvent, state: ProtocolState): Verificatio
     if (!grantAllows(grant, "write_unconfirmed") || !event.proofIds.includes(grant!.grantId)) {
       return { accepted: false, code: "PET_GRANT_REQUIRED", message: "An active pet write grant is required." };
     }
-    if (event.eventType === "medical.record.updated" && state.confirmedRecords.has(event.resourceId)) {
+    if (["medical.record.updated", "medical.record.deleted"].includes(event.eventType) && state.confirmedRecords.has(event.resourceId)) {
       return { accepted: false, code: "CONFIRMED_RECORD_IMMUTABLE", message: "Confirmed records cannot be changed." };
     }
     return { accepted: true };

@@ -30,14 +30,14 @@ const activeSection = ref(route.hash.slice(1) || "workspace-top");
 
 const navigationByRole: Record<Role, WorkspaceNavItem[]> = {
   administrator: [
-    { id: "workspace-top", label: "Пользователи", icon: "home" },
+    { id: "workspace-top", label: "Пользователи", icon: "user" },
     { id: "administrator-requests", label: "Заявки", icon: "bell" },
     { id: "administrator-accounts", label: "Аккаунты", icon: "user" },
     { id: "administrator-conflicts", label: "Конфликты", icon: "eye" },
     { id: "administrator-journal", label: "Журнал", icon: "book" },
   ],
   owner: [
-    { id: "workspace-top", label: "Питомцы", icon: "home" },
+    { id: "workspace-top", label: "Питомцы", icon: "pets" },
     { id: "owner-add-pet", label: "Добавить", icon: "plus" },
     { id: "owner-pets", label: "Питомцы", icon: "pets" },
     { id: "owner-grant-access", label: "Дать доступ", icon: "user" },
@@ -45,7 +45,7 @@ const navigationByRole: Record<Role, WorkspaceNavItem[]> = {
     { id: "owner-records", label: "Медкарта", icon: "book" },
   ],
   doctor: [
-    { id: "workspace-top", label: "Главная страница", icon: "home" },
+    { id: "workspace-top", label: "Главная страница", icon: "medical-tools" },
     { id: "doctor-request-access", label: "Запросить доступ", icon: "plus" },
     { id: "doctor-pets", label: "Мед. карты", icon: "pets" },
     { id: "doctor-new-record", label: "Новая запись", icon: "plus" },
@@ -56,7 +56,7 @@ const navigationByRole: Record<Role, WorkspaceNavItem[]> = {
 const ownerRootNavigation: WorkspacePathNavItem = {
   id: "owner-home",
   label: "Питомцы",
-  icon: "home",
+  icon: "pets",
   path: "/owner/home",
   exact: true,
 };
@@ -71,11 +71,11 @@ const ownerChildNavigation = computed<WorkspacePathNavItem[]>(() => [
   })),
 ]);
 const administratorNavigation: WorkspacePathNavItem[] = [
-  { id: "administrator-home", label: "Пользователи", icon: "home", path: "/admin/home", exact: true },
+  { id: "administrator-home", label: "Пользователи", icon: "user", path: "/admin/home", exact: true },
   { id: "administrator-audit", label: "Журнал", icon: "book", path: "/admin/audit", exact: true },
 ];
 const doctorNavigation: WorkspacePathNavItem[] = [
-  { id: "doctor-home", label: "Мед. карты", icon: "home", path: "/doctor/home", exact: true },
+  { id: "doctor-home", label: "Мед. карты", icon: "medical-tools", path: "/doctor/home", exact: true },
   { id: "doctor-request-access", label: "Запросить доступ", icon: "plus", path: "/doctor/pets/request-access", exact: true },
 ];
 const effectiveRole = computed<Role | null>(() => props.role

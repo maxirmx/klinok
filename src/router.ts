@@ -31,7 +31,6 @@ const roleByScenario: Partial<Record<string, Role>> = {
   "doctor-pet-request-access": "doctor",
   "doctor-pet-detail": "doctor",
   "doctor-pet-delegate": "doctor",
-  "doctor-pet-cancel-access": "doctor",
   "administrator-home": "administrator",
   "administrator-audit": "administrator",
 };

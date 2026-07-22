@@ -4,6 +4,7 @@
 
 import { mount } from "@vue/test-utils";
 import { describe, expect, it } from "vitest";
+import AppIcon from "../src/components/AppIcon.vue";
 import MedicalRecordEntry from "../src/components/MedicalRecordEntry.vue";
 import type { MedicalRecordDraft } from "../src/repositories/types";
 
@@ -96,9 +97,20 @@ describe("MedicalRecordEntry", () => {
 
     await wrapper.setProps({ confirmed: false });
     const edit = wrapper.get(".medical-record-edit");
-    expect(edit.text()).toBe("Редактировать");
+    expect(wrapper.get(".owner-encounter-summary").find(".medical-record-actions").exists()).toBe(false);
+    expect(wrapper.findAll(".encounter-history-section")[0]!.get(".encounter-history-heading").find(".medical-record-actions").exists()).toBe(true);
+    expect(edit.text()).toBe("");
+    expect(edit.attributes("title")).toBe("Редактировать приём");
+    expect(edit.attributes("aria-label")).toBe("Редактировать приём");
+    expect(edit.getComponent(AppIcon).props("name")).toBe("edit");
     await edit.trigger("click");
     expect(wrapper.emitted("edit")?.[0]).toEqual([record]);
+    const remove = wrapper.get(".medical-record-delete");
+    expect(remove.attributes("title")).toBe("Удалить приём");
+    expect(remove.attributes("aria-label")).toBe("Удалить приём");
+    expect(remove.getComponent(AppIcon).props("name")).toBe("trash");
+    await remove.trigger("click");
+    expect(wrapper.emitted("delete")?.[0]).toEqual([record]);
   });
 
   it("offers confirmation only for a pending detailed record", async () => {

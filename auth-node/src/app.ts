@@ -649,12 +649,14 @@ export async function buildAuthApp(options: AuthAppOptions): Promise<FastifyInst
     if (!await hasObservedRole(current.account.accountId, "doctor")) return error(reply, 403, "DOCTOR_ROLE_REQUIRED", "Требуется одобренная роль врача.");
     const ownerQuery = request.query.owner?.trim().toLocaleLowerCase("ru") ?? "";
     const petQuery = request.query.pet?.trim().toLocaleLowerCase("ru") ?? "";
-    if (!ownerQuery || !petQuery) return error(reply, 400, "PET_SEARCH_INVALID", "Укажите ФИО или ID владельца и кличку или ID питомца.");
-    const pets = (await store.listDirectoryPets()).filter((pet) =>
-      (pet.ownerDisplayName.toLocaleLowerCase("ru").includes(ownerQuery)
-        || pet.ownerAccountId.toLocaleLowerCase("ru") === ownerQuery)
-      && (pet.name.toLocaleLowerCase("ru").includes(petQuery)
-        || pet.petId.toLocaleLowerCase("ru") === petQuery));
+    if (!petQuery) return error(reply, 400, "PET_SEARCH_INVALID", "Укажите кличку или полный ID питомца.");
+    const pets = (await store.listDirectoryPets()).filter((pet) => {
+      const petIdMatches = pet.petId.toLocaleLowerCase("ru") === petQuery;
+      if (!ownerQuery) return petIdMatches;
+      const ownerMatches = pet.ownerDisplayName.toLocaleLowerCase("ru").includes(ownerQuery)
+        || pet.ownerAccountId.toLocaleLowerCase("ru") === ownerQuery;
+      return ownerMatches && (pet.name.toLocaleLowerCase("ru").includes(petQuery) || petIdMatches);
+    });
     pets.sort((left, right) => request.query.sort === "pet"
       ? left.name.localeCompare(right.name, "ru") || left.ownerDisplayName.localeCompare(right.ownerDisplayName, "ru")
       : left.ownerDisplayName.localeCompare(right.ownerDisplayName, "ru") || left.name.localeCompare(right.name, "ru"));

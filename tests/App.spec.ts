@@ -117,7 +117,11 @@ describe("operational Russian UI", () => {
     expect(statuses.text()).toContain("Электронная почта и пароль");
     expect(statuses.text()).not.toContain("Повторите электронную почту");
     expect(statuses.text()).toContain("Синхронизация данных");
-    expect(statuses.text()).toContain("Аккаунт и устройства");
+    expect(statuses.get(".account-security h2").text()).toBe("Аккаунт");
+    expect(statuses.get(".device-security h2").text()).toBe("Устройства");
+    expect(statuses.text()).not.toContain("Аккаунт и устройства");
+    expect(statuses.get(".profile-account-id").exists()).toBe(true);
+    expect(statuses.get('button[title="Копировать ID пользователя"]').attributes("aria-label")).toBe("Копировать ID пользователя");
     expect(statuses.findAll(".role-selection-title").map((node) => node.text())).toEqual(["Владелец животного", "Ветеринар", "Администратор"]);
     expect(statuses.findAll(".role-selection-card")).toHaveLength(3);
     expect(statuses.findAll('.profile-roles input[type="radio"]')).toHaveLength(3);
@@ -159,6 +163,8 @@ describe("operational Russian UI", () => {
     const bottomLabels = workspace.findAll(".workspace-bottom-nav :is(a, button) span").map((node) => node.text());
 
     expect(sidebarLabels).toEqual(["Пользователи", "Журнал"]);
+    expect(workspace.findAll(".workspace-sidebar-nav .workspace-nav-item")[0]!.getComponent(AppIcon).props("name")).toBe("user");
+    expect(workspace.findAll(".workspace-bottom-nav :is(a, button)")[0]!.getComponent(AppIcon).props("name")).toBe("user");
     expect(bottomLabels).toEqual(sidebarMenuLabels);
     expect(workspace.find(".workspace-sidebar").attributes("aria-label")).toBe("Основная навигация");
     expect(workspace.find(".workspace-bottom-nav").attributes("aria-label")).toBe("Нижняя навигация");
@@ -177,6 +183,8 @@ describe("operational Russian UI", () => {
     expect(sidebarLabels).toEqual([
       "Питомцы", "Добавить питомца",
     ]);
+    expect(owner.findAll(".workspace-sidebar-nav .workspace-nav-item")[0]!.getComponent(AppIcon).props("name")).toBe("pets");
+    expect(owner.findAll(".workspace-bottom-nav :is(a, button)")[0]!.getComponent(AppIcon).props("name")).toBe("pets");
     expect(owner.findAll(".workspace-bottom-nav :is(a, button) span").map((node) => node.text())).toEqual([
       "Питомцы", "Настройки пользователя", "Выйти",
     ]);

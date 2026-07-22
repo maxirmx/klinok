@@ -5,8 +5,11 @@
 import { flushPromises, mount } from "@vue/test-utils";
 import { createMemoryHistory, createRouter } from "vue-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import AppIcon from "../src/components/AppIcon.vue";
 import RoleStatusScreen from "../src/screens/RoleStatusScreen.vue";
 import { deleteAccount, logout, replaceLostBootstrapDevice, revokeDevice, switchRole, updateCredentials, updateProfile } from "../src/appStore";
+
+const clipboardWriteText = vi.fn().mockResolvedValue(undefined);
 
 vi.mock("../src/appStore", async () => {
   const { reactive, readonly } = await import("vue");
@@ -93,6 +96,11 @@ async function mountAt(component: object, path: string, props: Record<string, un
 }
 
 beforeEach(async () => {
+  Object.defineProperty(navigator, "clipboard", {
+    configurable: true,
+    value: { writeText: clipboardWriteText },
+  });
+  clipboardWriteText.mockClear();
   const mockedStore = await import("../src/appStore") as typeof import("../src/appStore") & {
     setMockAccountId: (accountId: string) => void;
     setMockActiveRole: (role: "owner" | "doctor" | "administrator" | null) => void;
@@ -138,9 +146,7 @@ beforeEach(async () => {
 describe("logout navigation", () => {
   it("leaves the role screen after logout on all devices", async () => {
     const { router, wrapper } = await mountAt(RoleStatusScreen, "/profile", { scenarioId: "user-profile" });
-    const button = wrapper.findAll("button").find((candidate) => candidate.text() === "Выйти на всех устройствах");
-    expect(button).toBeDefined();
-    await button!.trigger("click");
+    await wrapper.get('button[title="Выйти на всех устройствах"]').trigger("click");
     await flushPromises();
     expect(logout).toHaveBeenCalledWith(true);
     expect(router.currentRoute.value.path).toBe("/auth/login");
@@ -154,7 +160,10 @@ describe("logout navigation", () => {
     expect(wrapper.find(".workspace-sidebar-footer .workspace-nav-item.active").text()).toContain("Настройки пользователя");
     expect(wrapper.text()).toContain("Телефон Максима");
     expect(wrapper.text()).toContain("Домашний ноутбук");
-    expect(wrapper.text()).toContain("Управляйте подтверждёнными устройствами и сеансами.");
+    expect(wrapper.get(".account-security").text()).toContain("Управляйте идентификатором и сеансами аккаунта.");
+    expect(wrapper.get(".device-security").text()).toContain("Управляйте подтверждёнными устройствами.");
+    expect(wrapper.get(".profile-account-name").text()).toBe("Максим Сергеевич Иванов");
+    expect(wrapper.get(".profile-account-id").text()).toBe("account-1");
     expect(wrapper.text()).not.toContain("новое устройство подтверждается автоматически");
     expect(wrapper.text()).toContain("ID: pending-device");
     expect(wrapper.text()).toContain("Это устройство");
@@ -163,13 +172,21 @@ describe("logout navigation", () => {
     expect(wrapper.find(".workspace-account-actions").exists()).toBe(false);
     expect(wrapper.get(".workspace-bottom-nav").text()).toContain("Настройки пользователя");
     expect(wrapper.get(".workspace-bottom-nav").text()).toContain("Выйти");
-    const revokeButton = wrapper.findAll<HTMLButtonElement>("button")
-      .find((button) => button.text() === "Отозвать устройство");
-    expect(revokeButton?.element.disabled).toBe(true);
-    expect(revokeButton?.attributes("title")).toBe("Нельзя отозвать последнее действующее устройство.");
+    const revokeButton = wrapper.get<HTMLButtonElement>('button[title="Нельзя отозвать последнее действующее устройство."]');
+    expect(revokeButton.element.disabled).toBe(true);
+    await wrapper.get('button[title="Копировать ID пользователя"]').trigger("click");
+    await flushPromises();
+    expect(clipboardWriteText).toHaveBeenCalledWith("account-1");
+    expect(wrapper.get(".account-security [role='status']").text()).toContain("ID пользователя скопирован.");
+
+    const pageButtons = wrapper.findAll(".profile-layout button");
+    expect(pageButtons.length).toBeGreaterThan(0);
+    expect(pageButtons.every((button) => button.text() === "")).toBe(true);
+    expect(pageButtons.every((button) => Boolean(button.attributes("title") && button.attributes("aria-label")))).toBe(true);
+    expect(pageButtons.every((button) => button.find(".app-icon").exists())).toBe(true);
   });
 
-  it("shows current-session sync status immediately above account and device management", async () => {
+  it("shows current-session sync status immediately above separate account and device sections", async () => {
     const mockedStore = await import("../src/appStore") as typeof import("../src/appStore") & {
       setMockSync: (sync: { pendingCount: number; failedCount: number; syncing: boolean; lastError: string }) => void;
     };
@@ -177,12 +194,16 @@ describe("logout navigation", () => {
     const sections = wrapper.findAll(".profile-layout > .profile-section");
     const syncSectionIndex = sections.findIndex((section) => section.classes().includes("profile-sync-status"));
     const accountSectionIndex = sections.findIndex((section) => section.classes().includes("account-security"));
+    const deviceSectionIndex = sections.findIndex((section) => section.classes().includes("device-security"));
 
     expect(syncSectionIndex).toBeGreaterThanOrEqual(0);
     expect(accountSectionIndex).toBe(syncSectionIndex + 1);
+    expect(deviceSectionIndex).toBe(accountSectionIndex + 1);
     expect(sections[syncSectionIndex]!.text()).toContain("Синхронизация данных");
     expect(sections[syncSectionIndex]!.text()).toContain("текущего сеанса");
     expect(sections[syncSectionIndex]!.get(".sync-status").text()).toBe("Сохранено");
+    expect(sections[accountSectionIndex]!.get("h2").text()).toBe("Аккаунт");
+    expect(sections[deviceSectionIndex]!.get("h2").text()).toBe("Устройства");
 
     mockedStore.setMockSync({ pendingCount: 0, failedCount: 1, syncing: false, lastError: "" });
     await flushPromises();
@@ -191,8 +212,8 @@ describe("logout navigation", () => {
 
   it("confirms account deletion in a modal before executing it", async () => {
     const { wrapper } = await mountAt(RoleStatusScreen, "/profile", { scenarioId: "user-profile" });
-    const deleteButton = wrapper.findAll("button").find((button) => button.text() === "Удалить аккаунт");
-    await deleteButton!.trigger("click");
+    const deleteButton = wrapper.get('button[title="Удалить аккаунт"]');
+    await deleteButton.trigger("click");
 
     const dialog = wrapper.get('[role="alertdialog"]');
     expect(dialog.attributes("aria-modal")).toBe("true");
@@ -203,7 +224,7 @@ describe("logout navigation", () => {
     expect(wrapper.find('[role="alertdialog"]').exists()).toBe(false);
     expect(deleteAccount).not.toHaveBeenCalled();
 
-    await deleteButton!.trigger("click");
+    await deleteButton.trigger("click");
     await wrapper.get('[role="alertdialog"]').findAll("button")
       .find((button) => button.text() === "Удалить аккаунт")!
       .trigger("click");
@@ -217,8 +238,7 @@ describe("logout navigation", () => {
     };
     mockedStore.setMockAccountId("bootstrap-administrator");
     const { wrapper } = await mountAt(RoleStatusScreen, "/profile", { scenarioId: "user-profile" });
-    const deleteButton = wrapper.findAll<HTMLButtonElement>("button")
-      .find((button) => button.text() === "Удалить аккаунт")!;
+    const deleteButton = wrapper.get<HTMLButtonElement>('button[title="Начальный аккаунт администратора нельзя удалить."]');
 
     expect(deleteButton.element.disabled).toBe(true);
     expect(deleteButton.attributes("title")).toBe("Начальный аккаунт администратора нельзя удалить.");
@@ -279,9 +299,11 @@ describe("logout navigation", () => {
       { deviceId: "second-device", deviceName: "Рабочий ноутбук", status: "active" },
     ]);
     const { wrapper } = await mountAt(RoleStatusScreen, "/profile", { scenarioId: "user-profile" });
-    const revokeButton = wrapper.findAll("button").find((button) => button.text() === "Отозвать устройство");
-    expect((revokeButton!.element as HTMLButtonElement).disabled).toBe(false);
-    await revokeButton!.trigger("click");
+    const revokeButton = wrapper.get<HTMLButtonElement>('button[title="Отозвать устройство"]');
+    expect(revokeButton.element.disabled).toBe(false);
+    expect(revokeButton.classes()).toContain("danger-link");
+    expect(revokeButton.getComponent(AppIcon).props("name")).toBe("trash");
+    await revokeButton.trigger("click");
 
     const dialog = wrapper.get('[role="alertdialog"]');
     expect(dialog.text()).toContain("Отозвать устройство «Домашний ноутбук»?");

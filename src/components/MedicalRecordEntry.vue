@@ -34,6 +34,7 @@ const emit = defineEmits<{
   activate: [record: MedicalRecordDraft];
   confirm: [record: MedicalRecordDraft];
   edit: [record: MedicalRecordDraft];
+  delete: [record: MedicalRecordDraft];
 }>();
 
 const populatedSections = computed(() =>
@@ -106,7 +107,29 @@ function formatLocalDateTime(value: string) {
       </button>
 
       <div v-for="item in populatedSections" :key="item.kind" class="encounter-history-section">
-        <h3>{{ item.label }}</h3>
+        <div class="encounter-history-heading">
+          <h3>{{ item.label }}</h3>
+          <span v-if="item.kind === 'what-happened' && action === 'edit' && !confirmed" class="row-actions medical-record-actions">
+            <button
+              class="outline-action inline owner-profile-action medical-record-edit"
+              type="button"
+              title="Редактировать приём"
+              aria-label="Редактировать приём"
+              @click="emit('edit', record)"
+            >
+              <AppIcon name="edit" />
+            </button>
+            <button
+              class="outline-action inline danger-outline owner-profile-action medical-record-delete"
+              type="button"
+              title="Удалить приём"
+              aria-label="Удалить приём"
+              @click="emit('delete', record)"
+            >
+              <AppIcon name="trash" />
+            </button>
+          </span>
+        </div>
         <template v-if="isWhatHappenedValue(item.section.value)">
           <ul>
             <li v-for="id in whatHappenedSelectedIds(item.section.value)" :key="id">{{ whatHappenedPath(id) }}</li>
@@ -120,14 +143,6 @@ function formatLocalDateTime(value: string) {
         </small>
       </div>
 
-      <button
-        v-if="action === 'edit' && !confirmed"
-        class="outline-action inline medical-record-edit"
-        type="button"
-        @click="emit('edit', record)"
-      >
-        Редактировать
-      </button>
     </div>
   </details>
 </template>

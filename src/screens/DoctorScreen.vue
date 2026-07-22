@@ -12,8 +12,7 @@ import ConfirmationDialog from "../components/ConfirmationDialog.vue";
 import MedicalRecordEntry from "../components/MedicalRecordEntry.vue";
 import ModalDialog from "../components/ModalDialog.vue";
 import PetAccessManager from "../components/PetAccessManager.vue";
-import PetProfileDetails from "../components/PetProfileDetails.vue";
-import PetProfileHeader from "../components/PetProfileHeader.vue";
+import PetProfileView from "../components/PetProfileView.vue";
 import WhatHappenedTree from "../components/WhatHappenedTree.vue";
 import WorkspaceShell from "../components/WorkspaceShell.vue";
 import {
@@ -70,6 +69,9 @@ const delegationDialogOpen = ref(false);
 const delegationPage = ref(1);
 const delegationPageSize = ref<(typeof pageSizes)[number]>(10);
 const relinquishConfirm = ref(false);
+const relinquishTarget = ref<{ petId: string; petName: string; grantId: string } | null>(null);
+const recordDeleteConfirm = ref(false);
+const recordDeleteTarget = ref<MedicalRecordDraft | null>(null);
 const historyQuery = ref("");
 const historyFrom = ref("");
 const historyTo = ref("");
@@ -79,6 +81,7 @@ const historySort = ref<"desc" | "asc">("desc");
 const historyPage = ref(1);
 const historyPageSize = ref<(typeof pageSizes)[number]>(10);
 const expandedRecordId = ref("");
+const encounterForm = ref<HTMLFormElement | null>(null);
 const encounter = reactive({
   recordId: "",
   date: new Date().toISOString().slice(0, 10),
@@ -119,6 +122,9 @@ const delegatedAccessRows = computed<PetAccessRow[]>(() => {
 });
 const delegationPageCount = computed(() => Math.max(1, Math.ceil(delegatedAccessRows.value.length / delegationPageSize.value)));
 const optionalAvailable = computed(() => OPTIONAL_ENCOUNTER_SECTION_KINDS.filter((kind) => !encounter.optionalKinds.includes(kind)));
+const relinquishDescription = computed(() => relinquishTarget.value
+  ? `Вы и все врачи, которым вы делегировали доступ к ${relinquishTarget.value.petName}, потеряете доступ к медицинской карте`
+  : "Вы и все врачи, которым вы делегировали доступ, потеряете доступ к медицинской карте");
 
 const filteredRecords = computed(() => petRecords.value.filter((record) => {
   const confirmed = confirmedIds.value.has(record.recordId);
@@ -204,19 +210,52 @@ async function findPets() {
   petSearchResults.value = [];
   petSearchPerformed.value = false;
   await perform(async () => {
-    const result = await searchPetDirectory(petOwnerQuery.value, petNameQuery.value, 1, 50);
-    petSearchResults.value = result.items;
+    const owner = petOwnerQuery.value.trim();
+    const pet = petNameQuery.value.trim();
+    if (!owner) petSearchResults.value = [await lookupPetDirectory(pet)];
+    else {
+      const result = await searchPetDirectory(owner, pet, 1, 50);
+      petSearchResults.value = result.items;
+    }
     petSearchPerformed.value = true;
   });
 }
 
+function showAutoApprovedPet(pet: DirectoryPetDto, requestId: string): boolean {
+  const grant = appState.medical.grants.find((candidate) =>
+    candidate.requestId === requestId && candidate.petId === pet.petId && candidate.status === "active",
+  );
+  if (!grant) return false;
+  const medicalPet = appState.medical.pets.find((candidate) => candidate.petId === pet.petId);
+  const row: DirectoryPetDto = {
+    ...pet,
+    species: medicalPet?.species ?? pet.species,
+    name: medicalPet?.name ?? pet.name,
+    updatedAt: medicalPet?.updatedAt ?? pet.updatedAt,
+    permissions: grant.actions,
+    grantId: grant.grantId,
+  };
+  const existingIndex = directoryPets.value.findIndex((candidate) => candidate.petId === pet.petId);
+  if (existingIndex >= 0) directoryPets.value.splice(existingIndex, 1, row);
+  else {
+    directoryPets.value = [row, ...directoryPets.value].slice(0, homePageSize.value);
+    directoryTotal.value += 1;
+  }
+  return true;
+}
+
 async function requestAccess(pet: DirectoryPetDto) {
+  let autoApproved = false;
   const succeeded = await perform(async () => {
-    await requireRepository().medical.requestAccess(pet.petId);
+    const requestId = await requireRepository().medical.requestAccess(pet.petId);
+    autoApproved = showAutoApprovedPet(pet, requestId);
     petSearchResults.value = petSearchResults.value.filter((candidate) => candidate.petId !== pet.petId);
     if (!petSearchResults.value.length) petSearchPerformed.value = false;
-  }, "Запрос отправлен владельцу.");
-  if (succeeded) requestDialogOpen.value = false;
+  });
+  if (succeeded) {
+    successMessage.value = autoApproved ? "Доступ предоставлен автоматически." : "Запрос отправлен владельцу.";
+    requestDialogOpen.value = false;
+  }
 }
 
 function openRequestDialog() {
@@ -266,6 +305,11 @@ async function saveEncounter() {
   }, "Приём сохранён.");
 }
 
+function submitEncounter() {
+  if (encounterForm.value?.reportValidity() === false) return;
+  void saveEncounter();
+}
+
 function editRecord(record: (typeof appState.medical.records)[number]) {
   if (confirmedIds.value.has(record.recordId)) return;
   encounter.recordId = record.recordId;
@@ -275,6 +319,25 @@ function editRecord(record: (typeof appState.medical.records)[number]) {
   encounter.comment = isWhatHappenedValue(what) ? what.comment : record.text;
   encounter.optionalKinds = OPTIONAL_ENCOUNTER_SECTION_KINDS.filter((kind) => Boolean(record.sections[kind]));
   encounter.texts = Object.fromEntries(encounter.optionalKinds.map((kind) => [kind, isFreeTextValue(record.sections[kind]?.value) ? record.sections[kind]!.value.text : ""]));
+}
+
+function openRecordDelete(record: MedicalRecordDraft) {
+  recordDeleteTarget.value = record;
+  recordDeleteConfirm.value = true;
+}
+
+async function deleteMedicalRecord() {
+  const target = recordDeleteTarget.value;
+  if (!target) return;
+  const succeeded = await perform(
+    () => requireRepository().medical.deleteRecord(target.petId, target.recordId),
+    "Приём удалён.",
+  );
+  if (!succeeded) return;
+  if (encounter.recordId === target.recordId) resetEncounter();
+  if (expandedRecordId.value === target.recordId) expandedRecordId.value = "";
+  recordDeleteConfirm.value = false;
+  recordDeleteTarget.value = null;
 }
 
 async function findDoctors() {
@@ -308,13 +371,33 @@ async function delegate() {
   }, "Доступ делегирован.");
 }
 
+function openRelinquish(pet: Pick<DirectoryPetDto, "petId" | "name">) {
+  const grant = appState.medical.grants.find((candidate) =>
+    candidate.petId === pet.petId && candidate.granteeAccountId === appState.session.accountId && candidate.status === "active",
+  );
+  if (!grant) {
+    errorMessage.value = "Доступ к медицинской карте уже закрыт.";
+    return;
+  }
+  errorMessage.value = "";
+  relinquishTarget.value = { petId: pet.petId, petName: pet.name, grantId: grant.grantId };
+  relinquishConfirm.value = true;
+}
+
 async function relinquish() {
-  if (!selectedGrant.value) return;
+  const target = relinquishTarget.value;
+  if (!target) return;
+  const succeeded = await perform(() => requireRepository().medical.relinquishAccess(target.grantId));
+  if (!succeeded) return;
+  const rowIndex = directoryPets.value.findIndex((candidate) => candidate.petId === target.petId);
+  if (rowIndex >= 0) {
+    directoryPets.value.splice(rowIndex, 1);
+    directoryTotal.value = Math.max(0, directoryTotal.value - 1);
+  }
+  successMessage.value = `Вы отказались от доступа к медицинской карте ${target.petName}.`;
   relinquishConfirm.value = false;
-  await perform(async () => {
-    await requireRepository().medical.relinquishAccess(selectedGrant.value!.grantId);
-    await router.replace("/doctor/home");
-  });
+  relinquishTarget.value = null;
+  if (route.path !== "/doctor/home") await router.replace("/doctor/home");
 }
 
 function openRecord(record: MedicalRecordDraft) {
@@ -349,7 +432,18 @@ onMounted(() => { void refreshPets(); });
     <p v-if="successMessage" class="form-alert success" role="status">{{ successMessage }}</p>
 
     <section v-if="scenarioId === 'doctor-home' || scenarioId === 'doctor-pet-request-access'" class="panel doctor-page">
-      <div class="doctor-heading"><h2>Медицинские карты</h2></div>
+      <div class="doctor-heading doctor-access-heading">
+        <h2>Медицинские карты</h2>
+        <button
+          class="primary-action inline owner-profile-action"
+          type="button"
+          title="Запросить доступ"
+          aria-label="Запросить доступ"
+          @click="openRequestDialog"
+        >
+          <AppIcon name="plus" />
+        </button>
+      </div>
       <label class="administrator-search">
         <span>ФИО владельца, кличка, вид или полный ID</span>
         <span class="administrator-search-control">
@@ -361,18 +455,7 @@ onMounted(() => { void refreshPets(); });
         <table class="owner-access-table doctor-access-table">
           <thead>
             <tr>
-              <th class="owner-access-actions-header">
-                <button
-                  class="primary-action inline access-icon-action"
-                  type="button"
-                  title="Запросить доступ"
-                  aria-label="Запросить доступ"
-                  @click="openRequestDialog"
-                >
-                  <AppIcon name="plus" />
-                </button>
-                <span class="visually-hidden">Действия</span>
-              </th>
+              <th>Действия</th>
               <th :aria-sort="homeSortAria('pet')">
                 <button class="doctor-sort-button" type="button" @click="changeHomeSort('pet')">
                   Питомец
@@ -409,14 +492,15 @@ onMounted(() => { void refreshPets(); });
                   >
                     <AppIcon name="share" />
                   </RouterLink>
-                  <RouterLink
+                  <button
                     class="outline-action inline danger-outline access-icon-action"
-                    :to="`/doctor/pets/${pet.petId}/cancel-access`"
+                    type="button"
                     title="Отказаться от доступа"
                     aria-label="Отказаться от доступа"
+                    @click="openRelinquish(pet)"
                   >
                     <AppIcon name="close" />
-                  </RouterLink>
+                  </button>
                 </div>
               </td>
               <td class="owner-access-doctor" data-label="Питомец"><strong>{{ pet.species }} {{ pet.name }}</strong><small>{{ pet.petId }}</small></td>
@@ -441,9 +525,9 @@ onMounted(() => { void refreshPets(); });
         <div class="form-stack grant-access-form doctor-request-access-form">
           <p v-if="errorMessage" class="form-alert error" role="alert">{{ errorMessage }}</p>
           <form class="form-stack doctor-request-search-form" @submit.prevent="findPets">
-            <label><span>ФИО владельца, его часть или полный ID</span><input v-model="petOwnerQuery" type="search" required /></label>
-            <label><span>Кличка, её часть или полный ID питомца</span><input v-model="petNameQuery" type="search" required /></label>
-            <button class="primary-action inline access-icon-action" type="submit" :disabled="busy" :title="busy ? 'Поиск питомца…' : 'Найти питомца'" :aria-label="busy ? 'Поиск питомца…' : 'Найти питомца'"><AppIcon name="search" /></button>
+            <label class="doctor-request-owner-field"><span>ФИО владельца, его часть или полный ID (необязательно при поиске по полному ID питомца)</span><input v-model="petOwnerQuery" type="search" /></label>
+            <label class="doctor-request-pet-field"><span>Кличка, её часть или полный ID питомца</span><input v-model="petNameQuery" type="search" required /></label>
+            <button class="primary-action inline access-icon-action doctor-request-search-action" type="submit" :disabled="busy" :title="busy ? 'Поиск питомца…' : 'Найти питомца'" :aria-label="busy ? 'Поиск питомца…' : 'Найти питомца'"><AppIcon name="search" /></button>
           </form>
           <div v-for="pet in petSearchResults" :key="pet.petId" class="list-row doctor-request-result">
             <div><strong>{{ pet.species }} {{ pet.name }}</strong><small>{{ pet.petId }}</small><span>{{ pet.ownerDisplayName }}</span><small>{{ pet.ownerAccountId }}</small></div>
@@ -456,19 +540,27 @@ onMounted(() => { void refreshPets(); });
     </section>
 
     <section v-else-if="selectedPet && scenarioId === 'doctor-pet-detail'" class="doctor-page doctor-pet-detail">
-      <article class="panel owner-pet-profile">
-        <PetProfileHeader :pet="selectedPet" :show-details="false">
-          <template #actions>
-            <RouterLink v-if="canDelegate" class="outline-action inline owner-profile-action" :to="`/doctor/pets/${petId}/delegate`" title="Делегировать доступ" aria-label="Делегировать доступ"><AppIcon name="share" /></RouterLink>
-            <RouterLink class="outline-action inline danger-outline owner-profile-action" :to="`/doctor/pets/${petId}/cancel-access`" title="Отказаться от доступа" aria-label="Отказаться от доступа"><AppIcon name="close" /></RouterLink>
-          </template>
-        </PetProfileHeader>
-        <PetProfileDetails :pet="selectedPet" :owner-display-name="currentDirectoryPet?.ownerDisplayName || selectedPet.ownerAccountId" />
-      </article>
+      <PetProfileView
+        :pet="selectedPet"
+        :owner-display-name="currentDirectoryPet?.ownerDisplayName || selectedPet.ownerAccountId"
+        :owner-account-id="currentDirectoryPet?.ownerAccountId || selectedPet.ownerAccountId"
+      >
+        <template #actions>
+          <RouterLink v-if="canDelegate" class="outline-action inline owner-profile-action" :to="`/doctor/pets/${petId}/delegate`" title="Делегировать доступ" aria-label="Делегировать доступ"><AppIcon name="share" /></RouterLink>
+          <button class="outline-action inline danger-outline owner-profile-action" type="button" title="Отказаться от доступа" aria-label="Отказаться от доступа" @click="openRelinquish(selectedPet)"><AppIcon name="close" /></button>
+        </template>
+      </PetProfileView>
 
       <article class="panel">
         <h2>Эпикриз</h2>
-        <div class="doctor-history-filters"><input v-model="historyQuery" type="search" placeholder="Содержание или автор" aria-label="Поиск по истории" /><input v-model="historyFrom" type="date" aria-label="Дата с" /><input v-model="historyTo" type="date" aria-label="Дата по" /><select v-model="historySection" aria-label="Раздел"><option value="">Все разделы</option><option v-for="(label, kind) in ENCOUNTER_SECTION_LABELS" :key="kind" :value="kind">{{ label }}</option></select><select v-model="historyStatus" aria-label="Статус"><option value="">Все статусы</option><option value="confirmed">Подтверждённые</option><option value="unconfirmed">Не подтверждённые</option></select><select v-model="historySort" aria-label="Порядок"><option value="desc">Сначала новые</option><option value="asc">Сначала старые</option></select></div>
+        <div class="doctor-history-filters">
+          <input v-model="historyQuery" type="search" placeholder="Содержание или автор" aria-label="Поиск по истории" />
+          <label class="doctor-history-date-filter"><span>Дата с</span><input v-model="historyFrom" type="date" /></label>
+          <label class="doctor-history-date-filter"><span>Дата по</span><input v-model="historyTo" type="date" /></label>
+          <select v-model="historySection" aria-label="Раздел"><option value="">Все разделы</option><option v-for="(label, kind) in ENCOUNTER_SECTION_LABELS" :key="kind" :value="kind">{{ label }}</option></select>
+          <select v-model="historyStatus" aria-label="Статус"><option value="">Все статусы</option><option value="confirmed">Подтверждённые</option><option value="unconfirmed">Не подтверждённые</option></select>
+          <select v-model="historySort" aria-label="Порядок"><option value="desc">Сначала новые</option><option value="asc">Сначала старые</option></select>
+        </div>
         <MedicalRecordEntry
           v-for="record in pagedRecords"
           :key="record.recordId"
@@ -479,7 +571,21 @@ onMounted(() => { void refreshPets(); });
         />
       </article>
 
-      <article v-if="canWrite" class="panel encounter-editor"><h2>{{ encounter.recordId ? 'Редактирование приёма' : 'Сегодняшний приём' }}</h2><form class="form-stack" @submit.prevent="saveEncounter"><label><span>Дата</span><input v-model="encounter.date" type="date" required /></label><fieldset><legend>Что случилось</legend><div class="encounter-chips"><button v-for="id in encounter.selectedIds" :key="id" type="button" class="selection-chip" @click="toggleSelection(id)">{{ whatHappenedPath(id) }} ×</button></div><WhatHappenedTree :nodes="WHAT_HAPPENED_TAXONOMY" :selected="encounter.selectedIds" @toggle="toggleSelection" /><label><span>Комментарий</span><textarea v-model="encounter.comment" rows="4" /></label></fieldset><article v-for="kind in encounter.optionalKinds" :key="kind" class="encounter-section-card"><div class="doctor-heading"><h3>{{ ENCOUNTER_SECTION_LABELS[kind] }}</h3><button type="button" class="outline-action inline danger-link" @click="removeOptional(kind)">Удалить раздел</button></div><p class="temporary-note">Временный универсальный шаблон free-text-v0.</p><textarea v-model="encounter.texts[kind]" rows="4" required /></article><label v-if="optionalAvailable.length"><span>Добавить раздел</span><select @change="addOptional(($event.target as HTMLSelectElement).value as MedicalEncounterSectionKind); ($event.target as HTMLSelectElement).value = ''"><option value="">Выберите раздел</option><option v-for="kind in optionalAvailable" :key="kind" :value="kind">{{ ENCOUNTER_SECTION_LABELS[kind] }}</option></select></label><div class="row-actions"><button class="primary-action inline" :disabled="busy">Сохранить приём</button><button v-if="encounter.recordId" type="button" class="outline-action inline" @click="resetEncounter">Отмена</button></div></form></article>
+      <article v-if="canWrite" class="panel encounter-editor">
+        <form ref="encounterForm" class="form-stack" @submit.prevent="saveEncounter">
+          <div class="doctor-heading encounter-editor-heading">
+            <h2>{{ encounter.recordId ? 'Редактирование приёма' : 'Сегодняшний приём' }}</h2>
+            <div class="row-actions">
+              <button class="primary-action inline owner-profile-action" type="button" :disabled="busy" title="Сохранить приём" aria-label="Сохранить приём" @click="submitEncounter"><AppIcon name="check" /></button>
+              <button v-if="encounter.recordId" type="button" class="outline-action inline owner-profile-action" title="Отменить редактирование" aria-label="Отменить редактирование" @click="resetEncounter"><AppIcon name="close" /></button>
+            </div>
+          </div>
+          <label><span>Дата</span><input v-model="encounter.date" type="date" required /></label>
+          <fieldset><legend>Что случилось</legend><div class="encounter-chips"><button v-for="id in encounter.selectedIds" :key="id" type="button" class="selection-chip" @click="toggleSelection(id)">{{ whatHappenedPath(id) }} ×</button></div><WhatHappenedTree :nodes="WHAT_HAPPENED_TAXONOMY" :selected="encounter.selectedIds" @toggle="toggleSelection" /><label><span>Комментарий</span><textarea v-model="encounter.comment" rows="4" /></label></fieldset>
+          <article v-for="kind in encounter.optionalKinds" :key="kind" class="encounter-section-card"><div class="doctor-heading"><h3>{{ ENCOUNTER_SECTION_LABELS[kind] }}</h3><button type="button" class="outline-action inline danger-link" @click="removeOptional(kind)">Удалить раздел</button></div><p class="temporary-note">Временный универсальный шаблон free-text-v0.</p><textarea v-model="encounter.texts[kind]" rows="4" required /></article>
+          <label v-if="optionalAvailable.length"><span>Добавить раздел</span><select @change="addOptional(($event.target as HTMLSelectElement).value as MedicalEncounterSectionKind); ($event.target as HTMLSelectElement).value = ''"><option value="">Выберите раздел</option><option v-for="kind in optionalAvailable" :key="kind" :value="kind">{{ ENCOUNTER_SECTION_LABELS[kind] }}</option></select></label>
+        </form>
+      </article>
       <article v-else class="panel"><p>Доступ только для чтения: создание и изменение приёмов недоступно.</p></article>
 
       <article class="panel">
@@ -492,8 +598,8 @@ onMounted(() => { void refreshPets(); });
           :confirmed="confirmedIds.has(record.recordId)"
           :action="canWrite ? 'edit' : 'none'"
           :open="expandedRecordId === record.recordId"
-          show-author-account-id
           @edit="editRecord"
+          @delete="openRecordDelete"
         />
         <AppPaginator
           v-if="filteredRecords.length"
@@ -546,10 +652,10 @@ onMounted(() => { void refreshPets(); });
       </ModalDialog>
     </PetAccessManager>
 
-    <section v-else-if="selectedPet && scenarioId === 'doctor-pet-cancel-access'" class="panel doctor-page"><h2>Отказаться от доступа</h2><p>Вы и все врачи, которым вы делегировали доступ к {{ selectedPet.name }}, потеряете медицинскую карту. Ключ питомца будет заменён.</p><button class="primary-action inline danger-link" @click="relinquishConfirm = true">Подтвердить отказ</button></section>
     <section v-else class="owner-empty-state"><p>Питомец недоступен или данные ещё не синхронизированы.</p><RouterLink class="primary-action inline" to="/doctor/home">На главную</RouterLink></section>
 
     <ConfirmationDialog v-model="delegationConfirm" title="Подтвердить делегирование?" description="Выбранный врач получит доступ к медицинской карте." confirm-label="Делегировать" @confirm="delegate" />
-    <ConfirmationDialog v-model="relinquishConfirm" title="Отказаться от доступа?" description="Действие отзовёт вашу ветвь делегирования и заменит ключ питомца." confirm-label="Отказаться" @confirm="relinquish" />
+    <ConfirmationDialog v-model="relinquishConfirm" title="Отказаться от доступа?" :description="relinquishDescription" confirm-label="Отказаться" :busy="busy" @confirm="relinquish" />
+    <ConfirmationDialog v-model="recordDeleteConfirm" title="Удалить приём?" description="Неподтверждённая запись будет удалена без возможности восстановления." confirm-label="Удалить приём" :busy="busy" @confirm="deleteMedicalRecord" />
   </WorkspaceShell>
 </template>
