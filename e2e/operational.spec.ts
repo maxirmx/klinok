@@ -209,6 +209,8 @@ test("fresh provisioning, Doctor approval, grant, draft, and confirmation", asyn
   await doctorPage.getByText("Всё хорошо, необходимо", { exact: true }).click();
   await doctorPage.getByLabel("Контрольный осмотр", { exact: true }).check();
   await doctorPage.getByLabel("Комментарий").fill("Состояние стабильное");
+  await doctorPage.locator(".encounter-add-section select").selectOption("general-data");
+  await doctorPage.getByLabel("Вес, кг", { exact: true }).fill("14.3");
   await doctorPage.getByRole("button", { name: "Сохранить запись" }).click();
   await expect(doctorPage.locator(".medical-record-entry-details").filter({ hasText: "Всё хорошо" })).toBeVisible();
 
@@ -217,8 +219,12 @@ test("fresh provisioning, Doctor approval, grant, draft, and confirmation", asyn
   await expect(ownerRecord).toBeVisible({ timeout: replicationTimeout });
   await ownerRecord.locator("summary").click();
   await expect(ownerRecord.getByText("Состояние стабильное", { exact: true })).toBeVisible();
+  await expect(ownerRecord.getByText("14.3 кг", { exact: true })).toBeVisible();
+  const profileWeight = ownerPage.locator(".pet-profile-view-fields > div").filter({ hasText: "Вес" });
+  await expect(profileWeight).toContainText("12.4 кг");
   await ownerRecord.getByRole("button", { name: "Подтвердить запись" }).click();
   await expect(ownerRecord.getByText("Подтверждена", { exact: true })).toBeVisible();
+  await expect(profileWeight).toContainText("14.3 кг");
   await openProfileAndWaitForSync(ownerPage);
   await ownerPage.locator(".workspace-sidebar").getByRole("link", { name: "Шарик", exact: true }).click();
   await expect(ownerPage).toHaveURL(new RegExp(`/owner/pets/${petId}$`));

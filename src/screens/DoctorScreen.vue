@@ -27,9 +27,14 @@ import {
 import {
   ENCOUNTER_SECTION_LABELS,
   OPTIONAL_ENCOUNTER_SECTION_KINDS,
+  emptyGeneralDataDraft,
   encounterSummary,
+  generalDataDraft,
   isFreeTextValue,
+  isGeneralDataValue,
   isWhatHappenedValue,
+  parseGeneralDataDraft,
+  sectionSearchText,
 } from "../medicalEncounter";
 import type { PetAccessRow } from "../petAccess";
 import type { MedicalEncounterSectionKind, MedicalRecordDraft } from "../repositories/types";
@@ -89,6 +94,7 @@ const encounter = reactive({
   comment: "",
   optionalKinds: [] as MedicalEncounterSectionKind[],
   texts: {} as Partial<Record<MedicalEncounterSectionKind, string>>,
+  generalData: emptyGeneralDataDraft(),
 });
 
 const profileName = computed(() => [appState.control.profile?.firstName, appState.control.profile?.patronymic, appState.control.profile?.lastName].filter(Boolean).join(" "));
@@ -135,7 +141,7 @@ const filteredRecords = computed(() => petRecords.value.filter((record) => {
   if (historyFrom.value && record.encounterDate < historyFrom.value) return false;
   if (historyTo.value && record.encounterDate > historyTo.value) return false;
   if (historySection.value && !record.sections[historySection.value]) return false;
-  const content = `${encounterSummary(record)} ${record.authorDisplayName} ${record.authorAccountId} ${Object.values(record.sections).map((section) => section && isFreeTextValue(section.value) ? section.value.text : "").join(" ")}`.toLocaleLowerCase("ru");
+  const content = `${encounterSummary(record)} ${record.authorDisplayName} ${record.authorAccountId} ${Object.values(record.sections).map((section) => section ? sectionSearchText(section.value) : "").join(" ")}`.toLocaleLowerCase("ru");
   return !historyQuery.value.trim() || content.includes(historyQuery.value.trim().toLocaleLowerCase("ru"));
 }).sort((left, right) => (historySort.value === "desc" ? -1 : 1) * (left.encounterDate.localeCompare(right.encounterDate) || left.createdAt.localeCompare(right.createdAt))));
 const pagedRecords = computed(() => filteredRecords.value.slice((historyPage.value - 1) * historyPageSize.value, historyPage.value * historyPageSize.value));
@@ -283,6 +289,7 @@ function openRequestDialog() {
 function removeOptional(kind: MedicalEncounterSectionKind) {
   encounter.optionalKinds = encounter.optionalKinds.filter((item) => item !== kind);
   delete encounter.texts[kind];
+  if (kind === "general-data") encounter.generalData = emptyGeneralDataDraft();
 }
 
 function requestRemoveOptional(kind: MedicalEncounterSectionKind) {
@@ -305,6 +312,7 @@ function resetEncounter() {
   encounter.comment = "";
   encounter.optionalKinds = [];
   encounter.texts = {};
+  encounter.generalData = emptyGeneralDataDraft();
 }
 
 async function saveEncounter() {
@@ -313,7 +321,15 @@ async function saveEncounter() {
     const sections: Parameters<ReturnType<typeof requireRepository>["medical"]["saveEncounter"]>[0]["sections"] = {
       "what-happened": { selectedIds: [...encounter.selectedIds], comment: encounter.comment },
     };
-    for (const kind of encounter.optionalKinds) sections[kind] = { text: encounter.texts[kind] ?? "" };
+    for (const kind of encounter.optionalKinds) {
+      if (kind === "general-data" && encounter.texts[kind] === undefined) {
+        const parsed = parseGeneralDataDraft(encounter.generalData);
+        if (!parsed.value) throw new Error("Проверьте показатели в разделе «Общие данные/Габитус».");
+        sections[kind] = parsed.value;
+      } else {
+        sections[kind] = { text: encounter.texts[kind] ?? "" };
+      }
+    }
     await requireRepository().medical.saveEncounter({
       petId: petId.value,
       encounterDate: encounter.date,
@@ -332,7 +348,12 @@ function editRecord(record: (typeof appState.medical.records)[number]) {
   encounter.selectedIds = isWhatHappenedValue(what) ? [...what.selectedIds] : [];
   encounter.comment = isWhatHappenedValue(what) ? what.comment : record.text;
   encounter.optionalKinds = OPTIONAL_ENCOUNTER_SECTION_KINDS.filter((kind) => Boolean(record.sections[kind]));
-  encounter.texts = Object.fromEntries(encounter.optionalKinds.map((kind) => [kind, isFreeTextValue(record.sections[kind]?.value) ? record.sections[kind]!.value.text : ""]));
+  const generalDataValue = record.sections["general-data"]?.value;
+  encounter.generalData = isGeneralDataValue(generalDataValue) ? generalDataDraft(generalDataValue) : emptyGeneralDataDraft();
+  encounter.texts = Object.fromEntries(encounter.optionalKinds.flatMap((kind) => {
+    const value = record.sections[kind]?.value;
+    return isFreeTextValue(value) ? [[kind, value.text]] : [];
+  }));
 }
 
 function openRecordDelete(record: MedicalRecordDraft) {
@@ -564,6 +585,7 @@ onMounted(() => { void refreshPets(); });
           v-model:comment="encounter.comment"
           v-model:optional-kinds="encounter.optionalKinds"
           v-model:texts="encounter.texts"
+          v-model:general-data="encounter.generalData"
           :busy="busy"
           :editing="false"
           @save="saveEncounter"
@@ -601,6 +623,7 @@ onMounted(() => { void refreshPets(); });
                 v-model:comment="encounter.comment"
                 v-model:optional-kinds="encounter.optionalKinds"
                 v-model:texts="encounter.texts"
+                v-model:general-data="encounter.generalData"
                 :busy="busy"
                 editing
                 @save="saveEncounter"

@@ -22,7 +22,13 @@ import { EventFactory } from "./eventFactory";
 import { deletePetKey, getPetKey, putPetKey } from "./petKeyVault";
 import { loadUserKeys } from "./deviceVault";
 import { normalizePetInput, normalizePetProfile } from "../petProfile";
-import { encounterSummary, isFreeTextValue, isWhatHappenedValue } from "../medicalEncounter";
+import {
+  encounterSummary,
+  generalDataValidationError,
+  isFreeTextValue,
+  isGeneralDataValue,
+  isWhatHappenedValue,
+} from "../medicalEncounter";
 import type {
   MedicalEncounterInput,
   MedicalEncounterSection,
@@ -128,6 +134,13 @@ export class MedicalRepository {
     }
   }
 
+  private profileEventForPet(petId: string): SignedEvent | undefined {
+    return this.events.findLast((event) => !this.control.signed.state.invalidatedEvents.has(event.eventId) && event.aggregateId === petId && (
+      event.eventType.startsWith("pet.") ||
+      (event.eventType === "medical.record.confirmed" && event.metadata.updatesProfileWeight === true)
+    ));
+  }
+
   private activeCertificates(accountIds: string[]): DeviceCertificate[] {
     return [...this.control.signed.state.devices.values()].filter((device) => device.status === "active" && accountIds.includes(device.accountId));
   }
@@ -184,7 +197,7 @@ export class MedicalRepository {
     const stored = await getPetKey(this.context.accountId, pet.petId);
     if (!stored) throw new Error("Ключ питомца недоступен.");
     const normalized = normalizePetProfile(pet);
-    const parent = this.events.findLast((event) => event.aggregateId === pet.petId && event.eventType.startsWith("pet."))?.eventId;
+    const parent = this.profileEventForPet(pet.petId)?.eventId;
     const recipientIds = new Set([pet.ownerAccountId]);
     for (const grant of this.control.signed.state.grants.values()) {
       if (grant.petId === pet.petId && isGrantEffectivelyActive(this.control.signed.state, grant)) {
@@ -350,14 +363,15 @@ export class MedicalRepository {
       ...(options.proofIds ? { proofIds: options.proofIds } : {}),
       recipients: this.activeCertificates([this.context.accountId, doctorAccountId]), dataKey: stored.key,
     }));
-    const petEvent = this.events.findLast((event) => event.aggregateId === petId && event.eventType.startsWith("pet."));
-    const pet = petEvent ? await this.decrypt<PetProfile>(petEvent) : null;
+    const pet = (await this.buildSnapshot()).pets.find((candidate) => candidate.petId === petId) ?? null;
     if (pet) {
       const grantEvent = this.events.findLast((event) => event.resourceId === grantId)!;
+      const profileEvent = this.profileEventForPet(petId);
       await this.append(await this.factory.create({
         database: "medical", eventType: "pet.shared", aggregateId: petId, resourceId: petId,
         metadata: { petId, ownerAccountId: pet.ownerAccountId, keyVersion: stored.version, grantId }, cleartext: pet,
-        parents: [grantEvent.eventId], recipients: this.activeCertificates([this.context.accountId, doctorAccountId]), dataKey: stored.key,
+        parents: [...new Set([grantEvent.eventId, profileEvent?.eventId].filter((item): item is string => Boolean(item)))],
+        recipients: this.activeCertificates([this.context.accountId, doctorAccountId]), dataKey: stored.key,
         ...(options.proofIds ? { proofIds: options.proofIds } : {}),
       }));
     }
@@ -404,14 +418,17 @@ export class MedicalRepository {
       recipients: this.activeCertificates([this.context.accountId, doctorAccountId, ...(ownerAccountId ? [ownerAccountId] : [])]), dataKey: stored.key,
     });
     await this.append(delegation);
-    const petEvent = this.events.findLast((event) => event.aggregateId === parent.petId && event.eventType.startsWith("pet."));
-    const pet = petEvent ? await this.decrypt<PetProfile>(petEvent) : null;
-    if (pet) await this.append(await this.factory.create({
-      database: "medical", eventType: "pet.shared", aggregateId: parent.petId, resourceId: parent.petId,
-      metadata: { petId: parent.petId, ownerAccountId: pet.ownerAccountId, keyVersion: stored.version, grantId, parentGrantId },
-      proofIds: [this.context.roleProofId, parentGrantId], cleartext: pet, parents: [delegation.eventId],
-      recipients: this.activeCertificates([this.context.accountId, doctorAccountId, ...(ownerAccountId ? [ownerAccountId] : [])]), dataKey: stored.key,
-    }));
+    const pet = (await this.buildSnapshot()).pets.find((candidate) => candidate.petId === parent.petId) ?? null;
+    if (pet) {
+      const profileEvent = this.profileEventForPet(parent.petId);
+      await this.append(await this.factory.create({
+        database: "medical", eventType: "pet.shared", aggregateId: parent.petId, resourceId: parent.petId,
+        metadata: { petId: parent.petId, ownerAccountId: pet.ownerAccountId, keyVersion: stored.version, grantId, parentGrantId },
+        proofIds: [this.context.roleProofId, parentGrantId], cleartext: pet,
+        parents: [...new Set([delegation.eventId, profileEvent?.eventId].filter((item): item is string => Boolean(item)))],
+        recipients: this.activeCertificates([this.context.accountId, doctorAccountId, ...(ownerAccountId ? [ownerAccountId] : [])]), dataKey: stored.key,
+      }));
+    }
     return grantId;
   }
 
@@ -516,8 +533,30 @@ export class MedicalRepository {
     revocationEventIds: string[],
     relinquishedGrantId?: string,
   ): Promise<void> {
-    const currentPetEvent = this.events.findLast((event) => event.aggregateId === petId && event.eventType.startsWith("pet."));
-    const pet = currentPetEvent ? await this.decrypt<PetProfile>(currentPetEvent) : null;
+    let currentPetEvent: SignedEvent | undefined;
+    let decryptedPet: PetProfile | null = null;
+    for (let index = this.events.length - 1; index >= 0; index -= 1) {
+      const candidate = this.events[index]!;
+      if (candidate.aggregateId !== petId || !candidate.eventType.startsWith("pet.")) continue;
+      const decrypted = await this.decrypt<PetProfile>(candidate);
+      if (!decrypted) continue;
+      currentPetEvent = candidate;
+      decryptedPet = decrypted;
+      break;
+    }
+    const profileEvent = this.profileEventForPet(petId);
+    let pet = decryptedPet ? normalizePetProfile(decryptedPet) : null;
+    if (pet && currentPetEvent) {
+      const currentIndex = this.events.findIndex((event) => event.eventId === currentPetEvent.eventId);
+      for (const event of this.events.slice(currentIndex + 1)) {
+        if (this.control.signed.state.invalidatedEvents.has(event.eventId)) continue;
+        if (event.aggregateId !== petId || event.eventType !== "medical.record.confirmed" || event.metadata.updatesProfileWeight !== true) continue;
+        const confirmation = await this.decrypt<MedicalRecordConfirmation>(event);
+        if (confirmation?.appliedProfileWeightKg !== undefined) {
+          pet = { ...pet, weightKg: confirmation.appliedProfileWeightKg, updatedAt: confirmation.confirmedAt };
+        }
+      }
+    }
     if (!pet || !currentPetEvent) throw new Error("Профиль питомца недоступен для ротации ключа.");
     const nextKey = await generateDataKey();
     const activeRecipients = new Set([pet.ownerAccountId]);
@@ -537,7 +576,7 @@ export class MedicalRepository {
       },
       ...(relinquishedGrantId ? { proofIds: [this.context.roleProofId, relinquishedGrantId] } : {}),
       cleartext: { ...pet, keyVersion: stored.version + 1, updatedAt: new Date().toISOString() },
-      parents: [...new Set([currentPetEvent.eventId, ...revocationEventIds])],
+      parents: [...new Set([currentPetEvent.eventId, profileEvent?.eventId, ...revocationEventIds].filter((item): item is string => Boolean(item)))],
       recipients: this.activeCertificates([...activeRecipients]), dataKey: nextKey,
     }));
     if (!activeRecipients.has(this.context.accountId)) await deletePetKey(this.context.accountId, petId);
@@ -562,6 +601,11 @@ export class MedicalRepository {
       throw new Error("В разделе «Что случилось» выберите хотя бы один вариант или добавьте комментарий.");
     }
     for (const [kind, value] of Object.entries(input.sections)) {
+      if (kind === "general-data" && !isFreeTextValue(value)) {
+        const validationError = generalDataValidationError(value as Parameters<typeof generalDataValidationError>[0]);
+        if (validationError) throw new Error(validationError);
+        continue;
+      }
       if (kind !== "what-happened" && (!isFreeTextValue(value) || !value.text.trim())) {
         throw new Error("Заполните или удалите пустой дополнительный раздел.");
       }
@@ -575,7 +619,11 @@ export class MedicalRepository {
     const authorDisplayName = [profile?.firstName, profile?.patronymic, profile?.lastName].filter(Boolean).join(" ") || this.context.accountId;
     const sections = Object.fromEntries(Object.entries(input.sections).map(([kind, value]) => [kind, {
       kind,
-      templateVersion: kind === "what-happened" ? "what-happened-v1" : "free-text-v0",
+      templateVersion: kind === "what-happened"
+        ? "what-happened-v1"
+        : kind === "general-data" && isGeneralDataValue(value)
+          ? "general-data-v1"
+          : "free-text-v0",
       value,
       authorAccountId: this.context.accountId,
       authorDisplayName,
@@ -652,15 +700,38 @@ export class MedicalRepository {
   async confirmRecord(petId: string, recordId: string, revision: number): Promise<void> {
     const stored = await getPetKey(this.context.accountId, petId);
     if (!stored) throw new Error("Ключ питомца недоступен.");
+    const snapshot = await this.buildSnapshot();
+    const record = snapshot.records.find((candidate) => candidate.petId === petId && candidate.recordId === recordId);
+    if (!record) throw new Error("Медицинская запись не найдена.");
+    if (record.revision !== revision) throw new Error("Запись была изменена. Обновите страницу перед подтверждением.");
+    const generalDataSection = record.sections["general-data"];
+    const generalData = generalDataSection?.templateVersion === "general-data-v1" && isGeneralDataValue(generalDataSection.value)
+      ? generalDataSection.value
+      : undefined;
+    const appliedProfileWeightKg = generalData?.weightKg;
+    const confirmedAt = new Date().toISOString();
     const confirmation: MedicalRecordConfirmation = {
       confirmationId: crypto.randomUUID(), petId, recordId, recordRevision: revision,
-      ownerAccountId: this.context.accountId, confirmedAt: new Date().toISOString(),
+      ownerAccountId: this.context.accountId, confirmedAt,
+      ...(appliedProfileWeightKg !== undefined ? { appliedProfileWeightKg } : {}),
     };
+    const recipientIds = new Set([this.context.accountId]);
+    for (const grant of this.control.signed.state.grants.values()) {
+      if (grant.petId === petId && isGrantEffectivelyActive(this.control.signed.state, grant)) recipientIds.add(grant.granteeAccountId);
+    }
+    const recordEvent = this.events.findLast((event) =>
+      !this.control.signed.state.invalidatedEvents.has(event.eventId) &&
+      event.resourceId === recordId &&
+      ["medical.record.created", "medical.record.updated"].includes(event.eventType));
+    if (!recordEvent || Number(recordEvent.metadata.revision) !== revision) {
+      throw new Error("Редакция медицинской записи недоступна для подтверждения.");
+    }
+    const profileEvent = this.profileEventForPet(petId);
     await this.append(await this.factory.create({
       database: "medical", eventType: "medical.record.confirmed", aggregateId: petId, resourceId: recordId,
-      metadata: { petId, recordId, revision }, cleartext: confirmation,
-      parents: this.events.filter((event) => event.resourceId === recordId).map((event) => event.eventId).slice(-1),
-      recipients: this.activeCertificates([this.context.accountId]), dataKey: stored.key,
+      metadata: { petId, recordId, revision, updatesProfileWeight: appliedProfileWeightKg !== undefined }, cleartext: confirmation,
+      parents: [...new Set([recordEvent.eventId, profileEvent?.eventId].filter((item): item is string => Boolean(item)))],
+      recipients: this.activeCertificates([...recipientIds]), dataKey: stored.key,
     }));
   }
 
@@ -736,7 +807,17 @@ export class MedicalRepository {
       if (event.eventType === "medical.record.deleted") records.delete(event.resourceId);
       if (event.eventType === "medical.record.confirmed") {
         const confirmation = await this.decrypt<MedicalRecordConfirmation>(event);
-        if (confirmation) confirmations.push(confirmation);
+        if (confirmation) {
+          confirmations.push(confirmation);
+          if (confirmation.appliedProfileWeightKg !== undefined) {
+            const pet = pets.get(confirmation.petId);
+            if (pet) pets.set(confirmation.petId, {
+              ...pet,
+              weightKg: confirmation.appliedProfileWeightKg,
+              updatedAt: confirmation.confirmedAt,
+            });
+          }
+        }
       }
     }
     if (this.context.role === "administrator") {
@@ -763,7 +844,9 @@ export class MedicalRepository {
       grants: [...grants.values()].filter((grant) => accessiblePetIds.has(grant.petId)),
       accessRequests,
       records: accessibleRecords,
-      confirmations: confirmations.filter((confirmation) => accessiblePetIds.has(confirmation.petId)),
+      confirmations: this.context.role === "owner"
+        ? confirmations.filter((confirmation) => accessiblePetIds.has(confirmation.petId))
+        : [],
       confirmedRecordIds: accessibleRecords
         .filter((record) => this.control.signed.state.confirmedRecords.has(record.recordId))
         .map((record) => record.recordId),

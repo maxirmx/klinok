@@ -3,7 +3,15 @@
 // This file is a part of Klinok application
 
 import { describe, expect, it } from "vitest";
-import { WHAT_HAPPENED_TREE, encounterSummary, whatHappenedPath } from "../src/medicalEncounter";
+import {
+  WHAT_HAPPENED_TREE,
+  encounterSummary,
+  generalDataMeasurements,
+  isGeneralDataValue,
+  parseGeneralDataDraft,
+  sectionSearchText,
+  whatHappenedPath,
+} from "../src/medicalEncounter";
 
 describe("medical encounter templates", () => {
   it("contains stable, arbitrary-depth taxonomy identifiers including laboratory groups", () => {
@@ -34,5 +42,53 @@ describe("medical encounter templates", () => {
     });
     expect(summary).toContain("Кашляет");
     expect(summary).toContain("Три дня");
+  });
+
+  it("parses, validates, formats, and indexes structured general data", () => {
+    const parsed = parseGeneralDataDraft({
+      weightKg: "13.75",
+      temperatureC: "38.6",
+      heartRateBpm: "112",
+      respiratoryRatePerMinute: "24",
+      systolicMmHg: "120",
+      diastolicMmHg: "80",
+      meanMmHg: "93",
+    });
+    expect(parsed.errors).toEqual({});
+    expect(parsed.value).toEqual({
+      weightKg: 13.75,
+      temperatureC: 38.6,
+      heartRateBpm: 112,
+      respiratoryRatePerMinute: 24,
+      bloodPressure: { systolicMmHg: 120, diastolicMmHg: 80, meanMmHg: 93 },
+    });
+    expect(isGeneralDataValue(parsed.value)).toBe(true);
+    expect(generalDataMeasurements(parsed.value!).map((item) => item.value)).toEqual([
+      "13.75 кг",
+      "38.6 °C",
+      "112 уд/мин",
+      "24 движ/мин",
+      "120/80 сред. 93 мм рт. ст.",
+    ]);
+    expect(sectionSearchText(parsed.value)).toContain("АД 120/80 сред. 93");
+
+    expect(parseGeneralDataDraft({
+      weightKg: "",
+      temperatureC: "",
+      heartRateBpm: "",
+      respiratoryRatePerMinute: "",
+      systolicMmHg: "120",
+      diastolicMmHg: "",
+      meanMmHg: "",
+    }).errors.bloodPressure).toContain("все три");
+    expect(parseGeneralDataDraft({
+      weightKg: "",
+      temperatureC: "",
+      heartRateBpm: "",
+      respiratoryRatePerMinute: "",
+      systolicMmHg: "100",
+      diastolicMmHg: "80",
+      meanMmHg: "110",
+    }).errors.bloodPressure).toContain("диастолическое");
   });
 });

@@ -22,7 +22,7 @@ import { appState, deleteDirectoryPet, logout, requireRepository, searchDoctorDi
 import {
   ENCOUNTER_SECTION_LABELS,
   encounterSummary,
-  isFreeTextValue,
+  sectionSearchText,
 } from "../medicalEncounter";
 import {
   normalizePetInput,
@@ -115,7 +115,7 @@ const filteredPetRecords = computed(() => petRecords.value.filter((record) => {
   const query = medicalQuery.value.trim();
   if (!query) return true;
   const queryLower = query.toLocaleLowerCase("ru");
-  const content = `${encounterSummary(record)} ${record.authorDisplayName} ${record.authorAccountId} ${Object.values(record.sections).map((section) => section && isFreeTextValue(section.value) ? section.value.text : "").join(" ")}`.toLocaleLowerCase("ru");
+  const content = `${encounterSummary(record)} ${record.authorDisplayName} ${record.authorAccountId} ${Object.values(record.sections).map((section) => section ? sectionSearchText(section.value) : "").join(" ")}`.toLocaleLowerCase("ru");
   return content.includes(queryLower);
 }).sort((left, right) => (medicalSort.value === "desc" ? -1 : 1)
   * (left.encounterDate.localeCompare(right.encounterDate) || left.createdAt.localeCompare(right.createdAt))));
@@ -451,7 +451,7 @@ async function deletePet() {
 function confirmMedicalRecord(record: MedicalRecordDraft) {
   void action(
     () => requireRepository().medical.confirmRecord(record.petId, record.recordId, record.revision),
-    "Приём подтверждён.",
+    "Запись подтверждена.",
   );
 }
 </script>

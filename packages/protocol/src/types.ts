@@ -157,6 +157,7 @@ export interface MedicalRecordConfirmation {
   recordRevision: number;
   ownerAccountId: string;
   confirmedAt: string;
+  appliedProfileWeightKg?: number;
 }
 
 export interface KeyEnvelope {
