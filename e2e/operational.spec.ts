@@ -181,7 +181,7 @@ test("fresh provisioning, Doctor approval, grant, draft, and confirmation", asyn
   await doctorPage.bringToFront();
   await doctorPage.getByRole("button", { name: "Запросить доступ", exact: true }).click();
   const accessDialog = doctorPage.getByRole("dialog", { name: "Запросить доступ" });
-  await accessDialog.getByLabel("ФИО владельца, его часть или полный ID").fill("Ольга Владелец");
+  await accessDialog.getByLabel(/ФИО владельца, его часть или полный ID/).fill("Ольга Владелец");
   await accessDialog.getByLabel("Кличка, её часть или полный ID питомца").fill("Шарик");
   await accessDialog.getByRole("button", { name: "Найти питомца" }).click();
   const requestResult = accessDialog.locator(".doctor-request-result").filter({ hasText: petId });

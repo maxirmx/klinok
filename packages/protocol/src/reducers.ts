@@ -245,8 +245,9 @@ export function reconcileEffectiveEvents(events: SignedEvent[], state: ProtocolS
     const preserved = new Set((decision?.metadata.priorAuthorizedEventIds ?? []) as string[]);
     for (const event of events) {
       if (event.database !== "medical" || event.actorAccountId !== grant.granteeAccountId ||
-        String(event.metadata.petId ?? event.aggregateId) !== grant.petId || preserved.has(event.eventId)) continue;
-      if (["medical.record.created", "medical.record.updated", "medical.addendum.created", "grant.delegated"].includes(event.eventType)) {
+        String(event.metadata.petId ?? event.aggregateId) !== grant.petId ||
+        !event.proofIds.includes(grant.grantId) || preserved.has(event.eventId)) continue;
+      if (["medical.record.created", "medical.record.updated", "medical.record.deleted", "medical.addendum.created", "grant.delegated"].includes(event.eventType)) {
         state.invalidatedEvents.set(event.eventId, "GRANT_REVOKED");
       }
     }

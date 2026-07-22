@@ -695,11 +695,17 @@ dd {
 .role-selection-card.selectable.disabled { cursor: default; }
 
 .doctor-page { display: grid; gap: 20px; }
+.doctor-pet-detail { gap: 8px; }
+.doctor-pet-detail > .panel { margin: 0; }
 .doctor-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
 .doctor-heading h2, .doctor-heading h3 { margin: 0; }
  .doctor-history-filters { display: grid; grid-template-columns: minmax(220px, 1fr) minmax(180px, 260px); gap: 12px; }
 .doctor-history-filters { grid-template-columns: repeat(3, minmax(140px, 1fr)); }
+.doctor-history-date-filter { display: flex; min-width: 0; align-items: center; gap: 8px; }
+.doctor-history-date-filter > span { flex: 0 0 auto; color: var(--text-muted); font-size: 12px; font-weight: 600; white-space: nowrap; }
+.doctor-history-date-filter > input { width: auto; min-width: 0; flex: 1 1 auto; box-sizing: border-box; }
 .encounter-editor fieldset { display: grid; gap: 12px; min-width: 0; }
+.encounter-editor-heading { align-items: center; }
 .encounter-taxonomy { display: grid; gap: 8px; margin: 0; padding-left: 18px; list-style: none; }
 .encounter-taxonomy summary { cursor: pointer; font-weight: 600; padding: 5px 0; }
 .encounter-chips { display: flex; flex-wrap: wrap; gap: 6px; }
@@ -744,10 +750,15 @@ dd {
 }
 .owner-encounter-sections > .encounter-history-section { width: 100%; min-width: 0; }
 .owner-encounter-confirm { justify-self: end; }
+.encounter-history-heading { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.encounter-history-heading h3 { margin: 0; }
+.medical-record-actions { justify-self: end; }
 .owner-medical-pagination { margin-top: 16px; }
 
 @media (max-width: 760px) {
   .doctor-heading { align-items: stretch; flex-direction: column; }
+  .doctor-access-heading { align-items: center; flex-direction: row; }
+  .encounter-editor-heading { align-items: center; flex-direction: row; }
   .owner-encounter-record > .owner-encounter-summary { grid-template-columns: auto minmax(0, 1fr); }
   .owner-encounter-summary > .status-badge { grid-column: 2; justify-self: start; }
    .doctor-history-filters { grid-template-columns: 1fr; }
@@ -1189,8 +1200,7 @@ dd {
 }
 .profile-page .critical-panel { margin: 0 auto 8px; }
 .profile-page .profile-roles,
-.profile-page .profile-sync-status,
-.profile-page .account-security { grid-column: 1 / -1; }
+.profile-page .profile-sync-status { grid-column: 1 / -1; }
 .profile-section-heading {
   display: flex;
   align-items: flex-start;
@@ -1297,7 +1307,29 @@ dd {
 .profile-page :is(.list-row) { gap: 7px; padding: 7px 0; font-size: 13px; }
 .profile-page .list-row small { font-size: 11px; }
 .profile-page .row-actions { align-items: center; flex-wrap: wrap; gap: 4px; }
-.profile-page .account-actions { margin-top: 8px; }
+.profile-account-identity {
+  display: grid;
+  gap: 3px;
+  margin-bottom: 8px;
+  padding: 8px;
+  border: 1px solid #eaecf0;
+  border-radius: 7px;
+  background: #f9fafb;
+}
+.profile-account-name { color: #101828; font-size: 13px; }
+.profile-account-id-row {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.profile-account-id {
+  min-width: 0;
+  color: #475467;
+  overflow-wrap: anywhere;
+}
+.profile-account-id-row .profile-icon-action { flex: 0 0 auto; }
 .profile-page .profile-sync-status .profile-section-heading {
   align-items: center;
   margin-bottom: 0;
@@ -1308,8 +1340,7 @@ dd {
   .profile-page { padding: 0; }
   .profile-layout { grid-template-columns: 1fr; }
   .profile-page .profile-roles,
-  .profile-page .profile-sync-status,
-  .profile-page .account-security { grid-column: auto; }
+  .profile-page .profile-sync-status { grid-column: auto; }
   .profile-page .role-selection-grid.with-administrator { grid-template-columns: 1fr; }
   .profile-page .role-selection-card {
     min-height: 0;
@@ -1713,9 +1744,15 @@ dd {
 .doctor-access-table th:nth-child(4) { width: 190px; }
 .doctor-access-empty { color: var(--text-muted); text-align: center; }
 .workspace-content .doctor-request-search-form {
-  grid-template-columns: repeat(2, minmax(0, 1fr)) auto;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    "owner ."
+    "pet action";
   align-items: end;
 }
+.doctor-request-owner-field { grid-area: owner; }
+.doctor-request-pet-field { grid-area: pet; }
+.workspace-content .doctor-request-search-action { grid-area: action; }
 .doctor-request-result > div { min-width: 0; }
 .doctor-request-result small { margin-top: 2px; }
 .doctor-request-result span { margin-top: 6px; }
@@ -2054,6 +2091,26 @@ dd {
   .owner-section-heading {
     align-items: center;
   }
+  .owner-pet-profile-header {
+    grid-template-columns: 96px minmax(0, 1fr);
+    grid-template-rows: auto auto;
+    align-items: start;
+  }
+  .owner-pet-profile-header > :first-child {
+    grid-column: 1;
+    grid-row: 1;
+    width: 96px;
+    height: 96px;
+  }
+  .owner-pet-profile-details {
+    grid-column: 2;
+    grid-row: 1;
+  }
+  .owner-profile-actions {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    justify-content: flex-start;
+  }
   .owner-pet-ribbon {
     flex-direction: column;
     overflow-x: visible;
@@ -2116,6 +2173,4 @@ dd {
   .owner-access-action-list { justify-content: flex-start; }
   .owner-access-table td.is-empty { display: none; }
   .owner-access-table td.doctor-access-empty { display: block; text-align: center; }
-  .workspace-content .doctor-request-search-form { grid-template-columns: minmax(0, 1fr) auto; }
-  .workspace-content .doctor-request-search-form > label:first-child { grid-column: 1 / -1; }
 }

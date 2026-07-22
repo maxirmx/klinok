@@ -41,7 +41,6 @@ export const scenarioRegistry: ScenarioRegistryEntry[] = [
   { id: "doctor-pet-request-access", title: "Запросить доступ", role: "doctor", path: "/doctor/pets/request-access", figmaNodeId: "issue:34", component: "DoctorScreen", implemented: true },
   { id: "doctor-pet-detail", title: "Медицинская карта", role: "doctor", path: "/doctor/pets/:petId", figmaNodeId: "issue:34", component: "DoctorScreen", implemented: true },
   { id: "doctor-pet-delegate", title: "Делегировать доступ", role: "doctor", path: "/doctor/pets/:petId/delegate", figmaNodeId: "issue:34", component: "DoctorScreen", implemented: true },
-  { id: "doctor-pet-cancel-access", title: "Отказаться от доступа", role: "doctor", path: "/doctor/pets/:petId/cancel-access", figmaNodeId: "issue:34", component: "DoctorScreen", implemented: true },
   { id: "administrator-home", title: "Кабинет администратора", role: "administrator", path: "/admin/home", figmaNodeId: "issue:25", component: "AdministratorScreen", implemented: true },
   { id: "administrator-audit", title: "Кабинет администратора", role: "administrator", path: "/admin/audit", figmaNodeId: "issue:25", component: "AdministratorScreen", implemented: true },
 ];

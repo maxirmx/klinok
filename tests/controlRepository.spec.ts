@@ -115,6 +115,30 @@ describe("control repository", () => {
     expect(cleartext).not.toContain("Иванов");
   });
 
+  it("automatically approves a Doctor role requested by an Administrator", async () => {
+    const transport = new MemoryEventTransport();
+    await transport.initialize();
+    const administrator = await repositoryFor(transport, "bootstrap-administrator", "administrator");
+
+    await administrator.initialize({
+      profile: { firstName: "Начальный", lastName: "Администратор" },
+      requestedRoles: ["administrator", "doctor"],
+    });
+
+    const snapshot = await administrator.snapshot();
+    expect(snapshot.roles).toEqual(expect.arrayContaining([
+      expect.objectContaining({ role: "administrator", status: "approved" }),
+      expect.objectContaining({ role: "doctor", status: "approved" }),
+    ]));
+    expect(snapshot.pendingQueue).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({ accountId: "bootstrap-administrator", role: "doctor" }),
+    ]));
+    const doctorApproval = (await transport.list("control")).find((event) =>
+      event.aggregateId === "bootstrap-administrator" && event.eventType === "role.approved" && event.metadata.role === "doctor",
+    );
+    expect(doctorApproval?.proofIds).toContain("bootstrap-administrator-role");
+  });
+
   it("lets the bootstrap Administrator approve a pending Doctor and emits companions", async () => {
     const transport = new MemoryEventTransport();
     await transport.initialize();

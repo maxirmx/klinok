@@ -54,6 +54,60 @@ const petInput = (name = "Шарик"): PetProfileInput => ({
 });
 
 describe("medical authorization repository", () => {
+  it("automatically approves an Owner-Doctor's request for their own pet", async () => {
+    const transport = new MemoryEventTransport();
+    await transport.initialize();
+    const administrator = await client(transport, "bootstrap-administrator", "administrator");
+    await administrator.control.initialize({
+      profile: { firstName: "Начальный", lastName: "Администратор" },
+      requestedRoles: ["administrator"],
+    });
+    const ownerDoctor = await client(transport, "owner-doctor", "owner");
+    await ownerDoctor.control.initialize({
+      profile: { firstName: "Ирина", lastName: "Врач" },
+      requestedRoles: ["owner", "doctor"],
+    });
+    await tick();
+    const pendingDoctor = (await administrator.control.snapshot()).pendingQueue.find((request) =>
+      request.accountId === "owner-doctor" && request.role === "doctor",
+    )!;
+    await administrator.control.decideRole({
+      accountId: pendingDoctor.accountId,
+      role: pendingDoctor.role,
+      status: "approved",
+    });
+    await tick();
+
+    const roles = (await ownerDoctor.control.snapshot()).roles;
+    const ownerRole = roles.find((role) => role.role === "owner")!;
+    const doctorRole = roles.find((role) => role.role === "doctor")!;
+    ownerDoctor.control.setActiveRole("owner", ownerRole.requestId);
+    await ownerDoctor.medical.setActiveRole("owner", ownerRole.requestId);
+    await ownerDoctor.medical.initialize();
+    const petId = await ownerDoctor.medical.createPet(petInput("Айва"));
+
+    ownerDoctor.control.setActiveRole("doctor", doctorRole.requestId);
+    await ownerDoctor.medical.setActiveRole("doctor", doctorRole.requestId);
+    const requestId = await ownerDoctor.medical.requestAccess(petId);
+
+    const snapshot = await ownerDoctor.medical.snapshot();
+    expect(snapshot.accessRequests).toEqual(expect.arrayContaining([
+      expect.objectContaining({ requestId, petId, status: "approved" }),
+    ]));
+    expect(snapshot.grants).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        petId,
+        requestId,
+        grantorAccountId: "owner-doctor",
+        granteeAccountId: "owner-doctor",
+        status: "active",
+      }),
+    ]));
+    expect(snapshot.pets).toEqual(expect.arrayContaining([
+      expect.objectContaining({ petId, name: "Айва" }),
+    ]));
+  });
+
   it("refreshes the pet projection when switching back from administrator to owner", async () => {
     const transport = new MemoryEventTransport();
     await transport.initialize();
@@ -162,6 +216,19 @@ describe("medical authorization repository", () => {
       encounterDate: "2026-07-21",
       sections: { "what-happened": { selectedIds: [], comment: "Изменение" } },
     })).rejects.toMatchObject({ code: "CONFIRMED_RECORD_IMMUTABLE" });
+    await expect(doctor.medical.deleteRecord(petId, recordId)).rejects.toThrow("Подтверждённую медицинскую запись удалить нельзя.");
+
+    const unconfirmedRecordId = await doctor.medical.saveEncounter({
+      petId,
+      encounterDate: "2026-07-21",
+      sections: { "what-happened": { selectedIds: [], comment: "Удаляемый черновик" } },
+    });
+    await tick();
+    expect((await owner.medical.snapshot()).records.some((item) => item.recordId === unconfirmedRecordId)).toBe(true);
+    await doctor.medical.deleteRecord(petId, unconfirmedRecordId);
+    await tick();
+    expect((await doctor.medical.snapshot()).records.some((item) => item.recordId === unconfirmedRecordId)).toBe(false);
+    expect((await owner.medical.snapshot()).records.some((item) => item.recordId === unconfirmedRecordId)).toBe(false);
 
     await doctor.medical.relinquishAccess(grantId);
     await waitFor(async () => (await owner.medical.snapshot()).grants.find((grant) => grant.grantId === grantId)?.status === "relinquished");
@@ -336,8 +403,27 @@ describe("medical authorization repository", () => {
     await tick();
     expect((await owner.medical.snapshot()).accessRequests.find((request) => request.requestId === cancelledRequest)?.status).toBe("cancelled");
 
+    const repeatedGrantId = await owner.medical.grantDoctor(petId, "doctor-account", ["read", "write_unconfirmed"]);
+    await tick();
+    expect((await doctor.medical.snapshot()).pets).toEqual([
+      expect.objectContaining({ petId, keyVersion: 2 }),
+    ]);
+    await owner.medical.revokeGrant(repeatedGrantId);
+    await tick();
     await owner.medical.grantDoctor(petId, "doctor-account", ["read", "write_unconfirmed"]);
     await tick();
+    expect((await doctor.medical.snapshot()).pets).toEqual([
+      expect.objectContaining({ petId, keyVersion: 3 }),
+    ]);
+    const repeatedGrantRecordId = await doctor.medical.saveRecord({
+      petId,
+      title: "Повторный доступ",
+      text: "Запись после нескольких предоставлений доступа",
+    });
+    await tick();
+    expect((await owner.medical.snapshot()).records).toEqual(expect.arrayContaining([
+      expect.objectContaining({ recordId: repeatedGrantRecordId, petId }),
+    ]));
     await owner.medical.deletePet(petId);
     await tick();
 

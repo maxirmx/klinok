@@ -30,7 +30,7 @@ withDefaults(defineProps<{
       <p v-if="ownerDisplayName" class="owner-pet-owner"><strong>{{ ownerDisplayName }}</strong></p>
       <small v-if="ownerAccountId" class="owner-pet-owner-id">{{ ownerAccountId }}</small>
     </div>
-    <div class="row-actions owner-profile-actions">
+    <div v-if="$slots.actions" class="row-actions owner-profile-actions">
       <slot name="actions" />
     </div>
   </div>

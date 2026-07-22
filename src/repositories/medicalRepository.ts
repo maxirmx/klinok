@@ -6,6 +6,7 @@ import {
   decryptPayload,
   generateDataKey,
   isGrantEffectivelyActive,
+  roleProjectionKey,
   unwrapDataKey,
   type ActiveRoleContext,
   type DeviceCertificate,
@@ -36,6 +37,7 @@ type Listener = (snapshot: MedicalSnapshot) => void;
 type GrantDoctorOptions = {
   requestId?: string;
   granteeDisplayName?: string;
+  proofIds?: string[];
 };
 
 export class MedicalRepository {
@@ -241,6 +243,14 @@ export class MedicalRepository {
       cleartext: request,
       recipients,
     }));
+    const ownerRole = this.control.signed.state.roles.get(roleProjectionKey(this.context.accountId, "owner"));
+    if (ownerAccountId === this.context.accountId && this.context.role === "doctor" && ownerRole?.request.status === "approved") {
+      await this.grantDoctor(petId, this.context.accountId, ["read", "write_unconfirmed"], {
+        requestId: request.requestId,
+        ...(displayName ? { granteeDisplayName: displayName } : {}),
+        proofIds: [this.context.roleProofId, ownerRole.request.requestId],
+      });
+    }
     return request.requestId;
   }
 
@@ -337,6 +347,7 @@ export class MedicalRepository {
       },
       cleartext: grant,
       parents: requestProjection ? [requestProjection.eventId] : [],
+      ...(options.proofIds ? { proofIds: options.proofIds } : {}),
       recipients: this.activeCertificates([this.context.accountId, doctorAccountId]), dataKey: stored.key,
     }));
     const petEvent = this.events.findLast((event) => event.aggregateId === petId && event.eventType.startsWith("pet."));
@@ -347,6 +358,7 @@ export class MedicalRepository {
         database: "medical", eventType: "pet.shared", aggregateId: petId, resourceId: petId,
         metadata: { petId, ownerAccountId: pet.ownerAccountId, keyVersion: stored.version, grantId }, cleartext: pet,
         parents: [grantEvent.eventId], recipients: this.activeCertificates([this.context.accountId, doctorAccountId]), dataKey: stored.key,
+        ...(options.proofIds ? { proofIds: options.proofIds } : {}),
       }));
     }
     return grantId;
@@ -602,6 +614,41 @@ export class MedicalRepository {
     return recordId;
   }
 
+  async deleteRecord(petId: string, recordId: string): Promise<void> {
+    const record = (await this.buildSnapshot()).records.find((candidate) => candidate.petId === petId && candidate.recordId === recordId);
+    if (!record) throw new Error("Медицинская запись не найдена.");
+    if (this.control.signed.state.confirmedRecords.has(recordId)) {
+      throw new Error("Подтверждённую медицинскую запись удалить нельзя.");
+    }
+    const stored = await getPetKey(this.context.accountId, petId);
+    if (!stored) throw new Error("Ключ питомца недоступен.");
+    const previous = this.events.findLast((event) => event.resourceId === recordId &&
+      ["medical.record.created", "medical.record.updated"].includes(event.eventType));
+    if (!previous) throw new Error("Медицинская запись не найдена.");
+    const recipientIds = new Set([this.control.signed.state.petOwners.get(petId) ?? "", this.context.accountId]);
+    for (const grant of this.control.signed.state.grants.values()) {
+      if (grant.petId === petId && isGrantEffectivelyActive(this.control.signed.state, grant)) recipientIds.add(grant.granteeAccountId);
+    }
+    await this.append(await this.factory.create({
+      database: "medical",
+      eventType: "medical.record.deleted",
+      aggregateId: petId,
+      resourceId: recordId,
+      metadata: { petId, recordId, revision: record.revision },
+      proofIds: [
+        this.context.roleProofId,
+        ...[...this.control.signed.state.grants.values()]
+          .filter((grant) => grant.petId === petId && grant.granteeAccountId === this.context.accountId &&
+            isGrantEffectivelyActive(this.control.signed.state, grant))
+          .map((grant) => grant.grantId),
+      ],
+      cleartext: { petId, recordId, deletedAt: new Date().toISOString() },
+      parents: [previous.eventId],
+      recipients: this.activeCertificates([...recipientIds].filter(Boolean)),
+      dataKey: stored.key,
+    }));
+  }
+
   async confirmRecord(petId: string, recordId: string, revision: number): Promise<void> {
     const stored = await getPetKey(this.context.accountId, petId);
     if (!stored) throw new Error("Ключ питомца недоступен.");
@@ -686,6 +733,7 @@ export class MedicalRepository {
           records.set(record.recordId, record);
         }
       }
+      if (event.eventType === "medical.record.deleted") records.delete(event.resourceId);
       if (event.eventType === "medical.record.confirmed") {
         const confirmation = await this.decrypt<MedicalRecordConfirmation>(event);
         if (confirmation) confirmations.push(confirmation);

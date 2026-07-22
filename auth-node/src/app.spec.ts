@@ -617,6 +617,22 @@ describe("auth-node", () => {
     expect(petByIds.statusCode).toBe(200);
     expect(petByIds.json()).toMatchObject({ total: 1, items: [{ petId, ownerAccountId: owner.accountId }] });
 
+    const petByIdWithoutOwner = await app.inject({
+      method: "GET",
+      url: `/api/auth/directory/pets?pet=${encodeURIComponent(petId)}&page=1&pageSize=10`,
+      headers: { cookie: doctor.cookie },
+    });
+    expect(petByIdWithoutOwner.statusCode).toBe(200);
+    expect(petByIdWithoutOwner.json()).toMatchObject({ total: 1, items: [{ petId, ownerAccountId: owner.accountId }] });
+
+    const partialPetIdWithoutOwner = await app.inject({
+      method: "GET",
+      url: `/api/auth/directory/pets?pet=${encodeURIComponent(petId.slice(0, -1))}&page=1&pageSize=10`,
+      headers: { cookie: doctor.cookie },
+    });
+    expect(partialPetIdWithoutOwner.statusCode).toBe(200);
+    expect(partialPetIdWithoutOwner.json()).toMatchObject({ total: 0, items: [] });
+
     const petByPartialId = await app.inject({
       method: "GET",
       url: `/api/auth/directory/pets?owner=${encodeURIComponent(owner.accountId)}&pet=${encodeURIComponent(petId.slice(0, -1))}&page=1&pageSize=10`,

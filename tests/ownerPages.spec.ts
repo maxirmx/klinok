@@ -178,6 +178,7 @@ describe("Owner pages", () => {
       "Добавить питомца",
       "Шарик",
     ]);
+    expect(wrapper.findAll(".workspace-nav-tree .workspace-nav-item")[0]!.getComponent(AppIcon).props("name")).toBe("pets");
     expect(wrapper.findAll(".workspace-bottom-nav :is(a, button) span").map((node) => node.text())).toEqual([
       "Питомцы",
       "Настройки пользователя",
@@ -391,12 +392,13 @@ describe("Owner pages", () => {
     const detail = await mountAt("/owner/pets/pet-1", "owner-pet-detail");
 
     expect(detail.get(".workspace-topbar h1").text()).toBe("Кабинет владельца");
-    expect(detail.get(".owner-page-heading h2").text()).toBe("Шарик");
+    expect(detail.find(".owner-page-heading").exists()).toBe(false);
     expect(detail.text()).toContain("Любит длительные прогулки");
     expect(detail.text()).toContain("Состояние стабильное");
     expect(detail.text()).not.toContain("Анна Врач");
     expect(detail.find(".owner-access-panel").exists()).toBe(false);
-    expect(detail.find(".owner-pet-profile-details").exists()).toBe(false);
+    expect(detail.get(".owner-pet-profile-details").text()).toContain("Шарик");
+    expect(detail.get(".owner-pet-profile-details").text()).toContain("Собака · Бигль");
     expect(detail.findAll(".medical-record-entry-epicrisis")).toHaveLength(10);
     expect(detail.findAll("details.owner-encounter-record")).toHaveLength(10);
     await detail.get(".medical-record-entry-epicrisis").trigger("click");
@@ -417,13 +419,16 @@ describe("Owner pages", () => {
     expect(wrapper.get(".owner-page-heading h2").text()).toBe("Доступ врачей");
     expect(wrapper.get(".owner-pet-profile-details").text()).toContain("Шарик");
     expect(wrapper.get(".owner-pet-id").text()).toBe("pet-1");
-    expect(wrapper.get('.owner-profile-actions a[title="Назад к информации о питомце"]').attributes("href"))
+    expect(wrapper.get('.owner-page-heading a[title="Назад к информации о питомце"]').attributes("href"))
+      .toBe("/owner/pets/pet-1");
     expect(wrapper.findAll(".owner-access-table th").map((header) => header.text())).toEqual([
       "Действия", "ФИО врача", "Доступ", "Делегирование",
     ]);
-    expect(wrapper.find('.owner-page-heading button[title="Предоставить доступ"]').exists()).toBe(false);
-    expect(wrapper.get('.owner-access-actions-header button[title="Предоставить доступ"]')
+    expect(wrapper.get('.owner-page-heading button[title="Предоставить доступ"]')
       .getComponent(AppIcon).props("name")).toBe("plus");
+    expect(wrapper.findAll(".owner-page-heading-actions > *").map((action) => action.attributes("title")))
+      .toEqual(["Предоставить доступ", "Назад к информации о питомце"]);
+    expect(wrapper.find('.owner-access-table thead button[title="Предоставить доступ"]').exists()).toBe(false);
     expect(wrapper.get(".owner-access-panel .app-paginator").text()).toContain("Показаны 1–4 из 4");
     const rows = wrapper.findAll(".owner-access-table tbody tr");
     expect(rows).toHaveLength(4);
@@ -508,7 +513,7 @@ describe("Owner pages", () => {
     });
     const wrapper = await mountAt("/owner/pets/pet-1/access", "owner-pet-access");
 
-    const opener = wrapper.get('.owner-access-actions-header button[title="Предоставить доступ"]');
+    const opener = wrapper.get('.owner-page-heading button[title="Предоставить доступ"]');
     await opener.trigger("click");
     const dialog = wrapper.get('[role="dialog"]');
     expect(dialog.attributes("aria-modal")).toBe("true");
@@ -547,30 +552,31 @@ describe("Owner pages", () => {
 
     await setMedical(snapshot({ pets: [pet] }));
     const detail = await mountAt("/owner/pets/pet-1", "owner-pet-detail");
-    const ageField = detail.findAll(".owner-profile-fields > div")
-      .find((field) => field.get("dt").text() === "Возраст")!;
-    expect(ageField.get("dd").text()).toMatch(/\d+ полн(?:ый|ых) (?:год|года|лет) · дата рождения 17\.06\.2022/);
-    expect(detail.findAll(".owner-profile-fields dt").map((node) => node.text())).not.toContain("Дата рождения");
-    expect(detail.findAll(".owner-profile-fields dt").map((node) => node.text())).not.toContain("ID питомца");
+    expect(detail.get(".owner-pet-profile-details").text())
+      .toMatch(/\d+ полн(?:ый|ых) (?:год|года|лет) · дата рождения 17\.06\.2022/);
+    expect(detail.findAll(".owner-profile-fields dt").map((node) => node.text())).toEqual([
+      "Пол", "Окрас", "Номер чипа", "Клеймо", "Последняя вакцинация", "Вес",
+    ]);
 
     const actions = detail.get(".owner-profile-actions");
     const editLink = actions.get('[title="Редактировать"]');
     const accessLink = actions.get('[title="Доступ врачей"]');
-    const copyLinkButton = actions.get('button[title="Копировать ссылку"]');
+    const copyIdButton = actions.get('button[title="Копировать ID питомца"]');
     const deleteButton = actions.get('button[title="Удалить"]');
     expect(editLink.text()).toBe("");
     expect(accessLink.text()).toBe("");
-    expect(copyLinkButton.text()).toBe("");
+    expect(copyIdButton.text()).toBe("");
     expect(deleteButton.text()).toBe("");
     expect(editLink.getComponent(AppIcon).props("name")).toBe("edit");
     expect(accessLink.getComponent(AppIcon).props("name")).toBe("user");
     expect(accessLink.attributes("href")).toBe("/owner/pets/pet-1/access");
-    expect(copyLinkButton.getComponent(AppIcon).props("name")).toBe("link");
+    expect(copyIdButton.getComponent(AppIcon).props("name")).toBe("copy");
     expect(deleteButton.getComponent(AppIcon).props("name")).toBe("trash");
 
-    await copyLinkButton.trigger("click");
+    await copyIdButton.trigger("click");
     await flushPromises();
-    expect(clipboardWriteText).toHaveBeenCalledWith(new URL("/owner/pets/pet-1", window.location.origin).href);
+    expect(clipboardWriteText).toHaveBeenCalledWith("pet-1");
+    expect(detail.get('[role="status"]').text()).toBe("ID питомца скопирован.");
 
     await deleteButton.trigger("click");
     expect(detail.get('[role="alertdialog"]').text()).toContain("Удалить профиль Шарик?");
@@ -588,10 +594,8 @@ describe("Owner pages", () => {
     const detail = await mountAt("/owner/pets/pet-1", "owner-pet-detail");
     const labels = detail.findAll(".owner-profile-fields dt").map((node) => node.text());
 
-    expect(labels).toContain("Возраст");
-    expect(labels).not.toContain("Год рождения");
-    expect(labels).not.toContain("Дата рождения");
-    expect(detail.get(".owner-profile-fields").text())
+    expect(labels).toEqual(["Пол", "Окрас", "Номер чипа", "Клеймо", "Последняя вакцинация", "Вес"]);
+    expect(detail.get(".owner-pet-profile-details").text())
       .toMatch(/\d+-\d+ полн(?:ый|ых) (?:год|года|лет) · год рождения 2022/);
   });
 });

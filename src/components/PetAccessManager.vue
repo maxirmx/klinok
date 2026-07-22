@@ -62,7 +62,7 @@ const pagedRows = computed(() => props.rows.slice(
         :owner-display-name="ownerDisplayName"
         :owner-account-id="ownerAccountId"
       >
-        <template #actions><slot name="headerActions" /></template>
+        <template v-if="$slots.headerActions" #actions><slot name="headerActions" /></template>
       </PetProfileHeader>
     </article>
 
@@ -71,7 +71,7 @@ const pagedRows = computed(() => props.rows.slice(
         <table class="owner-access-table">
           <thead>
             <tr>
-              <th class="owner-access-actions-header">
+              <th :class="{ 'owner-access-actions-header': canAdd }">
                 <button
                   v-if="canAdd"
                   class="primary-action inline access-icon-action"
@@ -82,7 +82,7 @@ const pagedRows = computed(() => props.rows.slice(
                 >
                   <AppIcon name="plus" />
                 </button>
-                <span class="visually-hidden">Действия</span>
+                <span :class="{ 'visually-hidden': canAdd }">Действия</span>
               </th>
               <th>ФИО врача</th>
               <th>Доступ</th>

@@ -31,7 +31,7 @@ import {
   updateProfile,
 } from "../appStore";
 
-type FeedbackKey = "forms" | "roles" | "devices";
+type FeedbackKey = "forms" | "roles" | "account" | "devices";
 type Feedback = { kind: "success" | "error"; text: string } | null;
 type ProfileValues = { firstName: string; lastName: string; patronymic: string };
 
@@ -53,7 +53,7 @@ const recoveryText = ref("");
 const recoveryPassphrase = ref("");
 const accountDeletionConfirmation = ref(false);
 const devicePendingRevocation = ref<{ deviceId: string; deviceName: string } | null>(null);
-const feedback = reactive<Record<FeedbackKey, Feedback>>({ forms: null, roles: null, devices: null });
+const feedback = reactive<Record<FeedbackKey, Feedback>>({ forms: null, roles: null, account: null, devices: null });
 const profileDraft = reactive<ProfileValues>({ firstName: "", lastName: "", patronymic: "" });
 const savedProfile = reactive<ProfileValues>({ firstName: "", lastName: "", patronymic: "" });
 const credentialsDraft = reactive({ email: "", password: "", confirmPassword: "" });
@@ -155,6 +155,14 @@ async function signOut(all = false) {
   await router.replace("/auth/login");
 }
 
+async function copyAccountId() {
+  const accountId = appState.session.accountId;
+  if (!accountId) return;
+  await action("account", "ID пользователя скопирован.", async () => {
+    await navigator.clipboard.writeText(accountId);
+  });
+}
+
 async function action(key: FeedbackKey, success: string, task: () => Promise<unknown>) {
   feedback[key] = null;
   try {
@@ -231,7 +239,7 @@ async function activate(role: Role) {
 async function confirmAccountDeletion() {
   accountDeletionConfirmation.value = false;
   if (isBootstrapAccount.value) return;
-  await action("devices", "Аккаунт удалён.", deleteAccount);
+  await action("account", "Аккаунт удалён.", deleteAccount);
 }
 
 async function confirmDeviceRevocation() {
@@ -254,7 +262,14 @@ async function confirmDeviceRevocation() {
         <form class="form-stack" @submit.prevent="importBootstrapRecovery(recoveryText, recoveryPassphrase)">
           <label><span>Пакет восстановления</span><input type="file" accept="application/json,.json" required @change="readRecoveryFile" /></label>
           <PasswordInput v-model="recoveryPassphrase" label="Пароль пакета" required />
-          <button class="primary-action" :disabled="!recoveryText || recoveryPassphrase.length < 16">Импортировать ключи</button>
+          <button
+            class="primary-action inline profile-icon-action"
+            :disabled="!recoveryText || recoveryPassphrase.length < 16"
+            title="Импортировать ключи"
+            aria-label="Импортировать ключи"
+          >
+            <AppIcon name="upload" />
+          </button>
         </form>
       </template>
       <p v-else>Восстановление пароля не возвращает ключи P2P. Подтвердите новое устройство с уже действующего устройства. Если все ключи потеряны, обратитесь к администратору и зарегистрируйте новый аккаунт.</p>
@@ -269,11 +284,18 @@ async function confirmDeviceRevocation() {
         <form class="form-stack" @submit.prevent="action('devices', 'Утраченное устройство заменено.', () => replaceLostBootstrapDevice(recoveryText, recoveryPassphrase))">
           <label><span>Пакет восстановления</span><input type="file" accept="application/json,.json" required @change="readRecoveryFile" /></label>
           <PasswordInput v-model="recoveryPassphrase" label="Пароль пакета" required />
-          <button class="primary-action" :disabled="appState.busy || !recoveryText || recoveryPassphrase.length < 16">Заменить утраченное устройство</button>
+          <button
+            class="primary-action inline profile-icon-action"
+            :disabled="appState.busy || !recoveryText || recoveryPassphrase.length < 16"
+            title="Заменить утраченное устройство"
+            aria-label="Заменить утраченное устройство"
+          >
+            <AppIcon name="restore" />
+          </button>
         </form>
         <p v-if="feedback.devices" class="form-alert" :class="feedback.devices.kind" :role="feedback.devices.kind === 'error' ? 'alert' : 'status'">{{ feedback.devices.text }}</p>
       </template>
-      <button class="outline-action inline" @click="bootstrapApp(true)">Проверить статус</button>
+      <button class="outline-action inline profile-icon-action" title="Проверить статус" aria-label="Проверить статус" @click="bootstrapApp(true)"><AppIcon name="restore" /></button>
     </section>
 
       <div v-else class="profile-layout">
@@ -351,7 +373,7 @@ async function confirmDeviceRevocation() {
         :role="feedback.forms.kind === 'error' ? 'alert' : 'status'"
       >
         <span>{{ feedback.forms.text }}</span>
-        <button type="button" aria-label="Закрыть сообщение" @click="feedback.forms = null">
+        <button type="button" title="Закрыть сообщение" aria-label="Закрыть сообщение" @click="feedback.forms = null">
           <AppIcon name="close" />
         </button>
       </div>
@@ -376,8 +398,24 @@ async function confirmDeviceRevocation() {
             <p v-if="requests.get(role)?.reason">Причина: {{ requests.get(role)?.reason }}</p>
           </template>
           <template #actions="{ role }">
-            <button v-if="requests.get(role)?.status === 'pending'" class="outline-action inline" @click="action('roles', 'Запрос на роль отменён.', () => cancelRole(role))">Отменить запрос</button>
-            <button v-else-if="requests.get(role)?.status !== 'approved'" class="outline-action inline" @click="action('roles', 'Запрос на роль отправлен.', () => requestRole(role))">{{ requests.has(role) ? 'Отправить повторно' : 'Запросить роль' }}</button>
+            <button
+              v-if="requests.get(role)?.status === 'pending'"
+              class="outline-action inline profile-icon-action"
+              title="Отменить запрос роли"
+              aria-label="Отменить запрос роли"
+              @click="action('roles', 'Запрос на роль отменён.', () => cancelRole(role))"
+            >
+              <AppIcon name="close" />
+            </button>
+            <button
+              v-else-if="requests.get(role)?.status !== 'approved'"
+              class="outline-action inline profile-icon-action"
+              :title="requests.has(role) ? 'Отправить запрос роли повторно' : 'Запросить роль'"
+              :aria-label="requests.has(role) ? 'Отправить запрос роли повторно' : 'Запросить роль'"
+              @click="action('roles', 'Запрос на роль отправлен.', () => requestRole(role))"
+            >
+              <AppIcon :name="requests.has(role) ? 'restore' : 'plus'" />
+            </button>
           </template>
         </RoleSelectionCards>
       </section>
@@ -393,7 +431,41 @@ async function confirmDeviceRevocation() {
       </section>
 
       <section class="panel profile-section account-security">
-        <div class="profile-section-heading"><div><h2>Аккаунт и устройства</h2><p>Управляйте подтверждёнными устройствами и сеансами.</p></div></div>
+        <div class="profile-section-heading">
+          <div><h2>Аккаунт</h2><p>Управляйте идентификатором и сеансами аккаунта.</p></div>
+          <div class="profile-section-actions">
+            <button class="outline-action inline profile-icon-action" title="Выйти на всех устройствах" aria-label="Выйти на всех устройствах" @click="signOut(true)"><AppIcon name="logout" /></button>
+            <button
+              class="outline-action inline danger-link profile-icon-action"
+              :disabled="appState.busy || isBootstrapAccount"
+              :title="isBootstrapAccount ? 'Начальный аккаунт администратора нельзя удалить.' : 'Удалить аккаунт'"
+              :aria-label="isBootstrapAccount ? 'Начальный аккаунт администратора нельзя удалить.' : 'Удалить аккаунт'"
+              @click="accountDeletionConfirmation = true"
+            >
+              <AppIcon name="trash" />
+            </button>
+          </div>
+        </div>
+        <div class="profile-account-identity">
+          <strong class="profile-account-name">{{ profileName || 'Имя не указано' }}</strong>
+          <div class="profile-account-id-row">
+            <small class="profile-account-id">{{ appState.session.accountId }}</small>
+            <button
+              class="outline-action inline profile-icon-action"
+              type="button"
+              title="Копировать ID пользователя"
+              aria-label="Копировать ID пользователя"
+              @click="copyAccountId"
+            >
+              <AppIcon name="copy" />
+            </button>
+          </div>
+        </div>
+        <p v-if="feedback.account" class="form-alert" :class="feedback.account.kind" :role="feedback.account.kind === 'error' ? 'alert' : 'status'">{{ feedback.account.text }}</p>
+      </section>
+
+      <section class="panel profile-section device-security">
+        <div class="profile-section-heading"><div><h2>Устройства</h2><p>Управляйте подтверждёнными устройствами.</p></div></div>
         <p v-if="feedback.devices" class="form-alert" :class="feedback.devices.kind" :role="feedback.devices.kind === 'error' ? 'alert' : 'status'">{{ feedback.devices.text }}</p>
 
         <template v-if="!appState.session.serverKeySetAvailable && appState.session.enrollments?.some(item => item.status === 'pending' && item.ephemeralPublicKey) && appState.session.device">
@@ -402,8 +474,8 @@ async function confirmDeviceRevocation() {
           <div v-for="enrollment in appState.session.enrollments.filter(item => item.status === 'pending' && item.ephemeralPublicKey)" :key="enrollment.enrollmentId" class="list-row">
             <div><strong>{{ deviceName(enrollment) }}</strong><span>ID: {{ enrollment.deviceId }}</span><small>Запрошено {{ enrollment.createdAt }}</small></div>
             <div class="row-actions">
-              <button class="primary-action inline" @click="action('devices', 'Устройство подтверждено.', () => approveDeviceEnrollment(enrollment.enrollmentId))">Подтвердить и передать ключи</button>
-              <button class="outline-action inline danger-link" @click="action('devices', 'Запрос устройства отклонён.', () => rejectDeviceEnrollment(enrollment.enrollmentId))">Отклонить</button>
+              <button class="primary-action inline profile-icon-action" title="Подтвердить устройство и передать ключи" aria-label="Подтвердить устройство и передать ключи" @click="action('devices', 'Устройство подтверждено.', () => approveDeviceEnrollment(enrollment.enrollmentId))"><AppIcon name="check" /></button>
+              <button class="outline-action inline danger-link profile-icon-action" title="Отклонить устройство" aria-label="Отклонить устройство" @click="action('devices', 'Запрос устройства отклонён.', () => rejectDeviceEnrollment(enrollment.enrollmentId))"><AppIcon name="close" /></button>
             </div>
           </div>
         </template>
@@ -413,23 +485,13 @@ async function confirmDeviceRevocation() {
         <div v-for="device in visibleDevices" :key="device.deviceId" class="list-row">
           <div><strong>{{ deviceName(device) }}</strong><span>{{ device.deviceId === appState.session.device?.deviceId ? 'Это устройство' : 'Действующее устройство' }}</span><small>ID: {{ device.deviceId }}</small></div>
           <button
-            class="outline-action inline"
+            class="outline-action inline danger-link profile-icon-action"
             :disabled="!canRevokeDevice"
-            :title="canRevokeDevice ? undefined : 'Нельзя отозвать последнее действующее устройство.'"
+            :title="canRevokeDevice ? 'Отозвать устройство' : 'Нельзя отозвать последнее действующее устройство.'"
+            :aria-label="canRevokeDevice ? 'Отозвать устройство' : 'Нельзя отозвать последнее действующее устройство.'"
             @click="devicePendingRevocation = { deviceId: device.deviceId, deviceName: deviceName(device) }"
           >
-            Отозвать устройство
-          </button>
-        </div>
-        <div class="row-actions account-actions">
-          <button class="outline-action inline" @click="signOut(true)">Выйти на всех устройствах</button>
-          <button
-            class="outline-action inline danger-link"
-            :disabled="appState.busy || isBootstrapAccount"
-            :title="isBootstrapAccount ? 'Начальный аккаунт администратора нельзя удалить.' : undefined"
-            @click="accountDeletionConfirmation = true"
-          >
-            Удалить аккаунт
+            <AppIcon name="trash" />
           </button>
         </div>
       </section>

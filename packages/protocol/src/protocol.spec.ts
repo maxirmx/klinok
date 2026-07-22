@@ -297,12 +297,22 @@ describe("klinok protocol", () => {
       activeRole: "doctor", proofIds: ["doctor-proof", "grant-1"], metadata: { petId: "pet-1" },
     });
     await expect(verifySignedEvent(allowed, state)).resolves.toMatchObject({ accepted: true });
+    const remove = await signedFor(state, keys, {
+      database: "medical", eventType: "medical.record.deleted", aggregateId: "pet-1", resourceId: "record-2",
+      activeRole: "doctor", proofIds: ["doctor-proof", "grant-1"], metadata: { petId: "pet-1" },
+    });
+    await expect(verifySignedEvent(remove, state)).resolves.toMatchObject({ accepted: true });
     state.confirmedRecords.add("record-1");
     const edit = await signedFor(state, keys, {
       database: "medical", eventType: "medical.record.updated", aggregateId: "pet-1", resourceId: "record-1",
       activeRole: "doctor", proofIds: ["doctor-proof", "grant-1"], metadata: { petId: "pet-1" },
     });
     await expect(verifySignedEvent(edit, state)).resolves.toMatchObject({ accepted: false, code: "CONFIRMED_RECORD_IMMUTABLE" });
+    const removeConfirmed = await signedFor(state, keys, {
+      database: "medical", eventType: "medical.record.deleted", aggregateId: "pet-1", resourceId: "record-1",
+      activeRole: "doctor", proofIds: ["doctor-proof", "grant-1"], metadata: { petId: "pet-1" },
+    });
+    await expect(verifySignedEvent(removeConfirmed, state)).resolves.toMatchObject({ accepted: false, code: "CONFIRMED_RECORD_IMMUTABLE" });
   });
 
   it("allows one pending pet-access request and lets the requesting Doctor cancel it", async () => {
@@ -409,6 +419,93 @@ describe("klinok protocol", () => {
     await expect(verifySignedEvent(rejected, state)).resolves.toMatchObject({ accepted: true });
     applyAcceptedEvent(rejected, state);
     expect(state.grantRequests.get(rejectedRequest.requestId)?.request.status).toBe("rejected");
+  });
+
+  it("allows an Owner-Doctor to approve their own pet-access request only with both role proofs", async () => {
+    const { keys, state } = await actorFixture("doctor");
+    state.roles.set(roleProjectionKey("account-1", "owner"), {
+      request: {
+        requestId: "owner-proof",
+        accountId: "account-1",
+        role: "owner",
+        status: "approved",
+        profileRevision: 1,
+        requestedAt: "2026-07-10T10:00:00.000Z",
+      },
+      eventId: "owner-proof",
+      parents: [],
+    });
+    state.knownEvents.add("owner-proof");
+    state.petOwners.set("pet-1", "account-1");
+    const request = {
+      requestId: "self-request",
+      petId: "pet-1",
+      ownerAccountId: "account-1",
+      requesterAccountId: "account-1",
+      status: "pending" as const,
+      requestedAt: "2026-07-10T10:01:00.000Z",
+    };
+    const requested = await signedFor(state, keys, {
+      database: "medical",
+      eventType: "grant.requested",
+      aggregateId: request.petId,
+      resourceId: request.requestId,
+      activeRole: "doctor",
+      proofIds: ["doctor-proof"],
+      metadata: { petId: request.petId, request },
+    });
+    applyAcceptedEvent(requested, state);
+    const grant = {
+      grantId: "self-grant",
+      requestId: request.requestId,
+      petId: request.petId,
+      grantorAccountId: "account-1",
+      granteeAccountId: "account-1",
+      actions: ["read", "write_unconfirmed"] as const,
+      petKeyVersion: 1,
+      status: "active" as const,
+      createdAt: "2026-07-10T10:02:00.000Z",
+    };
+    const doctorOnly = await signedFor(state, keys, {
+      database: "medical",
+      eventType: "grant.created",
+      aggregateId: request.petId,
+      resourceId: grant.grantId,
+      activeRole: "doctor",
+      parents: [requested.eventId],
+      proofIds: ["doctor-proof"],
+      metadata: { petId: request.petId, requestId: request.requestId, grant },
+    });
+    await expect(verifySignedEvent(doctorOnly, state)).resolves.toMatchObject({
+      accepted: false,
+      code: "OWNER_SCOPE_FORBIDDEN",
+    });
+
+    const selfApproved = await signedFor(state, keys, {
+      database: "medical",
+      eventType: "grant.created",
+      aggregateId: request.petId,
+      resourceId: grant.grantId,
+      activeRole: "doctor",
+      parents: [requested.eventId],
+      proofIds: ["doctor-proof", "owner-proof"],
+      metadata: { petId: request.petId, requestId: request.requestId, grant },
+    });
+    await expect(verifySignedEvent(selfApproved, state)).resolves.toMatchObject({ accepted: true });
+    applyAcceptedEvent(selfApproved, state);
+    expect(state.grantRequests.get(request.requestId)?.request.status).toBe("approved");
+
+    const shared = await signedFor(state, keys, {
+      database: "medical",
+      eventType: "pet.shared",
+      aggregateId: request.petId,
+      resourceId: request.petId,
+      activeRole: "doctor",
+      parents: [selfApproved.eventId],
+      proofIds: ["doctor-proof", "owner-proof"],
+      metadata: { petId: request.petId, ownerAccountId: "account-1", keyVersion: 1, grantId: grant.grantId },
+    });
+    await expect(verifySignedEvent(shared, state)).resolves.toMatchObject({ accepted: true });
   });
 
   it("lets the pet Owner toggle future delegation without revoking existing child grants", async () => {
@@ -637,19 +734,24 @@ describe("klinok protocol", () => {
     });
     const causal = await signedFor(state, keys, {
       database: "medical", eventId: "causal-record", eventType: "medical.record.created", aggregateId: "pet-1", resourceId: "record-1",
-      activeRole: "doctor", metadata: { petId: "pet-1" },
+      activeRole: "doctor", proofIds: ["doctor-proof", "grant-1"], metadata: { petId: "pet-1" },
     });
     const offline = await signedFor(state, keys, {
       database: "medical", eventId: "offline-record", eventType: "medical.record.created", aggregateId: "pet-1", resourceId: "record-2",
-      activeRole: "doctor", metadata: { petId: "pet-1" },
+      activeRole: "doctor", proofIds: ["doctor-proof", "grant-1"], metadata: { petId: "pet-1" },
+    });
+    const afterRepeatedGrant = await signedFor(state, keys, {
+      database: "medical", eventId: "regranted-record", eventType: "medical.record.created", aggregateId: "pet-1", resourceId: "record-3",
+      activeRole: "doctor", proofIds: ["doctor-proof", "grant-2"], metadata: { petId: "pet-1" },
     });
     const revocation = await signedFor(state, keys, {
       database: "medical", eventId: "grant-revoked", eventType: "grant.revoked", aggregateId: "pet-1", resourceId: "grant-1",
       activeRole: "owner", metadata: { petId: "pet-1", priorAuthorizedEventIds: ["causal-record"] },
     });
-    reconcileEffectiveEvents([causal, offline, revocation], state);
+    reconcileEffectiveEvents([causal, offline, afterRepeatedGrant, revocation], state);
     expect(state.invalidatedEvents.has("causal-record")).toBe(false);
     expect(state.invalidatedEvents.get("offline-record")).toBe("GRANT_REVOKED");
+    expect(state.invalidatedEvents.has("regranted-record")).toBe(false);
   });
 
   it("lets the current Doctor relinquish access and causally rotate the pet key", async () => {

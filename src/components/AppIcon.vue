@@ -26,6 +26,9 @@ defineProps<{
     | "star"
     | "check"
     | "edit"
+    | "copy"
+    | "upload"
+    | "logout"
     | "link"
     | "trash"
     | "restore"
@@ -112,6 +115,16 @@ defineProps<{
     <g v-else-if="name === 'edit'" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.9">
       <path d="M4.5 19.5h4l10.2-10.2a2.1 2.1 0 0 0-3-3L5.5 16.5l-1 3Z" />
       <path d="m14.5 7.5 3 3" />
+    </g>
+    <g v-else-if="name === 'copy'" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.9">
+      <rect x="8" y="8" width="11" height="11" rx="1.8" />
+      <path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2" />
+    </g>
+    <g v-else-if="name === 'upload'" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.9">
+      <path d="M12 16V4M7.5 8.5 12 4l4.5 4.5M5 14v4a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-4" />
+    </g>
+    <g v-else-if="name === 'logout'" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.9">
+      <path d="M10 5H6a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h4M14 8l4 4-4 4M8 12h10" />
     </g>
     <g v-else-if="name === 'link'" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.9">
       <path d="m9.5 14.5 5-5" />

@@ -203,7 +203,10 @@ export class ControlRepository {
 
   async requestRole(role: Role, profileRevision: number): Promise<void> {
     const current = this.signed.state.roles.get(roleKey(this.context.accountId, role));
-    const status: RoleStatus = role === "owner" ? "approved" : "pending";
+    const administrator = this.signed.state.roles.get(roleKey(this.context.accountId, "administrator"));
+    const administratorApprovesOwnDoctorRole = role === "doctor" &&
+      this.context.role === "administrator" && administrator?.request.status === "approved";
+    const status: RoleStatus = role === "owner" || administratorApprovesOwnDoctorRole ? "approved" : "pending";
     const eventType = current ? "role.resubmitted" : status === "approved" ? "role.approved" : "role.requested";
     const requestId = current?.request.requestId ?? crypto.randomUUID();
     const operationId = crypto.randomUUID();
@@ -216,6 +219,7 @@ export class ControlRepository {
         profileRevision, requestedAt: new Date().toISOString(),
       },
       cleartext: { role, status, profileRevision }, recipients: this.ownRecipients().length ? this.ownRecipients() : [this.certificate],
+      ...(administratorApprovesOwnDoctorRole ? { proofIds: [administrator.request.requestId] } : {}),
     });
     await this.append(transition);
     await this.appendRoleCompanions(transition, this.ownRecipients(), { role, status, profileRevision });
