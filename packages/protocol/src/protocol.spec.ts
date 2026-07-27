@@ -25,6 +25,7 @@ import {
   encryptPayload,
   decryptPayload,
   importEncryptionPublicKey,
+  InMemorySignedEventRepository,
   type DeviceCertificate,
   type ProtocolState,
   type Role,
@@ -123,6 +124,30 @@ describe("klinok protocol", () => {
       ...input,
     }, keys.signingPrivateKey);
   }
+
+  it("retains a deferred child across imports and accepts it after its parent arrives", async () => {
+    const { keys, certificate, state } = await actorFixture();
+    const repository = new InMemorySignedEventRepository();
+    repository.state.devices.set(deviceProjectionKey(certificate.accountId, certificate.deviceId), certificate);
+    repository.state.roles.set(roleProjectionKey(certificate.accountId, "owner"), state.roles.get(roleProjectionKey(certificate.accountId, "owner"))!);
+    repository.state.knownEvents.add("owner-proof");
+    const parent = await signedFor(state, keys, { eventId: "parent-event" });
+    const child = await signedFor(state, keys, { eventId: "child-event", parents: [parent.eventId] });
+
+    const first = await repository.import([child]);
+    expect(first.accepted).toEqual([]);
+    expect(first.deferred).toEqual([expect.objectContaining({
+      event: expect.objectContaining({ eventId: child.eventId }),
+      result: expect.objectContaining({ code: "EVENT_PARENT_MISSING" }),
+    })]);
+    expect(first.conflicts).toEqual([]);
+    expect(repository.listDeferred()).toHaveLength(1);
+
+    const second = await repository.import([parent]);
+    expect(second.accepted.map((event) => event.eventId)).toEqual([parent.eventId, child.eventId]);
+    expect(repository.listDeferred()).toEqual([]);
+    expect(repository.listConflicts()).toEqual([]);
+  });
 
   function base64Url(bytes: Uint8Array): string {
     let binary = "";

@@ -48,6 +48,7 @@ async function fixture(options: {
     await store.close();
   }
   const config: AuthConfig = {
+    dataGeneration: "v2",
     host: "127.0.0.1", port: 0, dataDir, publicOrigin: "https://klinok.test", attestationKeyPath: join(dataDir, "attestation.json"), escrowKeyPath: join(dataDir, "escrow.json"), cookieSecure: true, enforceOrigin: true,
     trustProxy: options.trustProxy ?? false,
     bootstrapAccountId: "bootstrap-administrator",
@@ -55,7 +56,7 @@ async function fixture(options: {
     rateLimit: { ...DEFAULT_AUTH_RATE_LIMITS, ...options.rateLimit },
     smtp: { host: "localhost", port: 1025, secure: false, from: "test@klinok.test" },
     legal: { personalDataConsentVersion: "consent-v1", userAgreementVersion: "terms-v1" },
-    controlObserver: { enabled: false, databaseName: "klinok-control-v1", trustedNodeMultiaddrs: [] },
+    controlObserver: { enabled: false, databaseName: "klinok-control-v2", medicalDatabaseName: "klinok-medical-v4", trustedNodeMultiaddrs: [] },
   };
   const mailer = new MemoryMailer();
   const store = new AuthStore(dataDir);

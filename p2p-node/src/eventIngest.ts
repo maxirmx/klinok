@@ -28,6 +28,8 @@ export interface EventIngestServiceOptions {
   databases: Record<DatabaseKind, IngestDatabase>;
   verification: VerificationOptions;
   onPersisted?: (event: SignedEvent) => Promise<void>;
+  projectEvents?: (events: SignedEvent[]) => Promise<void>;
+  projectionStats?: () => { accepted: number; deferred: number; conflicts: number };
 }
 
 function eventId(value: unknown): string {
@@ -45,6 +47,13 @@ function notificationFailure(event: SignedEvent, reason: unknown): EventIngestRe
 }
 
 export class EventIngestService {
+  private readonly counters = {
+    persisted: 0,
+    duplicate: 0,
+    deferred: 0,
+    rejected: 0,
+  };
+
   constructor(private readonly options: EventIngestServiceOptions) {}
 
   async ingest(values: unknown[]): Promise<EventIngestResponse> {
@@ -82,8 +91,24 @@ export class EventIngestService {
         });
         if (!verification.accepted) {
           if (shouldDeferEventVerification(verification)) {
-            deferredReasons.set(item.index, verification);
-            deferred.push(item);
+            if (this.options.projectEvents) {
+              try {
+                await this.options.databases[event.database].add(event);
+                await this.options.projectEvents([event]);
+                deferredReasons.set(item.index, verification);
+                deferred.push(item);
+              } catch (reason) {
+                results[item.index] = {
+                  eventId: event.eventId,
+                  status: "deferred",
+                  code: reason && typeof reason === "object" && "code" in reason ? String(reason.code) : "EVENT_WRITE_FAILED",
+                  message: reason instanceof Error ? reason.message : "The trusted node could not persist the deferred event.",
+                };
+              }
+            } else {
+              deferredReasons.set(item.index, verification);
+              deferred.push(item);
+            }
           } else {
             results[item.index] = {
               eventId: eventId(item.value),
@@ -96,9 +121,14 @@ export class EventIngestService {
         }
         try {
           await this.options.databases[event.database].add(event);
-          if (!this.options.state.knownEvents.has(event.eventId)) applyAcceptedEvent(event, this.options.state);
+          if (this.options.projectEvents) await this.options.projectEvents([event]);
+          else if (!this.options.state.knownEvents.has(event.eventId)) applyAcceptedEvent(event, this.options.state);
           stateProgressed = true;
           try {
+            if (this.options.projectEvents) {
+              results[item.index] = { eventId: event.eventId, status: "persisted" };
+              continue;
+            }
             await this.options.onPersisted?.(event);
             results[item.index] = { eventId: event.eventId, status: "persisted" };
           } catch (reason) {
@@ -128,12 +158,25 @@ export class EventIngestService {
       remaining = deferred;
     }
 
-    return { results: results.map((result, index) => result ?? {
+    const response: EventIngestResponse = { results: results.map((result, index) => result ?? {
       eventId: eventId(values[index]),
       status: "rejected",
       code: "EVENT_REJECTED",
       message: "The event was not processed.",
     }) };
+    for (const result of response.results) this.counters[result.status] += 1;
+    return response;
+  }
+
+  metrics() {
+    return {
+      counters: { ...this.counters },
+      projection: this.options.projectionStats?.() ?? {
+        accepted: this.options.state.knownEvents.size,
+        deferred: 0,
+        conflicts: 0,
+      },
+    };
   }
 }
 
@@ -147,6 +190,8 @@ export async function handleEventIngestRequest(
   request: { method?: string; url?: string; body?: unknown },
 ): Promise<{ status: number; body: unknown }> {
   if (request.method === "GET" && request.url === "/healthz") return { status: 200, body: { status: "ok" } };
+  if (request.method === "GET" && request.url === "/readyz") return { status: 200, body: { status: "ready" } };
+  if (request.method === "GET" && request.url === "/metrics") return { status: 200, body: service.metrics() };
   if (request.method !== "POST" || request.url !== "/events") {
     return { status: 404, body: { error: { code: "NOT_FOUND", message: "Route not found." } } };
   }

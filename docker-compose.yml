@@ -13,6 +13,9 @@ services:
     ports:
       - "${KLINOK_UI_PORT:-8080}:80"
     environment:
+      KLINOK_DATA_GENERATION: v2
+      KLINOK_CONTROL_DB: klinok-control-v2
+      KLINOK_MEDICAL_DB: klinok-medical-v4
       KLINOK_TRUSTED_NODE: ${KLINOK_TRUSTED_NODE:-/ip4/127.0.0.1/tcp/8089/ws}
       KLINOK_AUTH_ATTESTATION_PUBLIC_KEY: ${KLINOK_AUTH_ATTESTATION_PUBLIC_KEY:-null}
       KLINOK_BOOTSTRAP_SIGNING_PUBLIC_KEY: ${KLINOK_BOOTSTRAP_SIGNING_PUBLIC_KEY:-null}
@@ -25,6 +28,7 @@ services:
       context: .
       dockerfile: auth-node/Dockerfile
     environment:
+      KLINOK_DATA_GENERATION: v2
       KLINOK_PUBLIC_ORIGIN: ${KLINOK_PUBLIC_ORIGIN:-http://localhost:8080}
       KLINOK_AUTH_COOKIE_SECURE: "false"
       # The auth port is internal-only and every HTTP request arrives through the UI nginx container.
@@ -35,19 +39,19 @@ services:
       KLINOK_BOOTSTRAP_ACCOUNT_ID: ${KLINOK_BOOTSTRAP_ACCOUNT_ID:-bootstrap-administrator}
       KLINOK_BOOTSTRAP_SIGNING_PUBLIC_KEY: ${KLINOK_BOOTSTRAP_SIGNING_PUBLIC_KEY:-}
       KLINOK_P2P_TRUSTED_NODES: ${KLINOK_P2P_TRUSTED_NODES:-/dns4/p2p/tcp/8089/ws}
-      KLINOK_CONTROL_DB: klinok-control-v1
-      KLINOK_MEDICAL_DB: klinok-medical-v3
+      KLINOK_CONTROL_DB: klinok-control-v2
+      KLINOK_MEDICAL_DB: klinok-medical-v4
       KLINOK_SMTP_HOST: mail
       KLINOK_SMTP_PORT: 1025
       KLINOK_SMTP_FROM: Клинок <noreply@klinok.local>
     volumes:
-      - auth-v1:/data
+      - auth-v2:/data
     networks:
       default:
         aliases:
           - auth-blue
     healthcheck:
-      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8090/healthz').then(r=>{if(!r.ok)process.exit(1)})"]
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8090/readyz').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
       interval: 5s
       timeout: 3s
       retries: 10
@@ -57,8 +61,9 @@ services:
       context: .
       dockerfile: p2p-node/Dockerfile
     environment:
-      KLINOK_CONTROL_DB: klinok-control-v1
-      KLINOK_MEDICAL_DB: klinok-medical-v3
+      KLINOK_DATA_GENERATION: v2
+      KLINOK_CONTROL_DB: klinok-control-v2
+      KLINOK_MEDICAL_DB: klinok-medical-v4
       KLINOK_P2P_ANNOUNCE: /dns4/p2p/tcp/8089/ws
       KLINOK_AUTH_ATTESTATION_PUBLIC_KEY: ${KLINOK_AUTH_ATTESTATION_PUBLIC_KEY:-}
       KLINOK_BOOTSTRAP_SIGNING_PUBLIC_KEY: ${KLINOK_BOOTSTRAP_SIGNING_PUBLIC_KEY:-}
@@ -67,9 +72,9 @@ services:
     ports:
       - "${KLINOK_P2P_PORT:-8089}:8089"
     volumes:
-      - p2p-v1:/data
+      - p2p-v2:/data
     healthcheck:
-      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8091/healthz').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8091/readyz').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
       interval: 10s
       timeout: 5s
       retries: 10
@@ -80,5 +85,5 @@ services:
       - "${KLINOK_MAILPIT_PORT:-8025}:8025"
 
 volumes:
-  auth-v1:
-  p2p-v1:
+  auth-v2:
+  p2p-v2:

@@ -8,6 +8,7 @@ import {
   deviceProjectionKey,
   exportUserKeySet,
   generateUserKeySet,
+  InMemorySignedEventRepository,
   reduceSignedEvents,
   signEvent,
   type ActiveRoleContext,
@@ -220,9 +221,44 @@ describe("trusted-node event ingestion", () => {
     ]);
   });
 
+  it("retains a deferred event across HTTP batches and projects it when dependencies arrive", async () => {
+    const events = await generatedEvents();
+    const dependent = events.find((event) => event.eventType === "profile.updated")!;
+    const projector = new InMemorySignedEventRepository("bootstrap-administrator", { requireTrustedAttestation: false });
+    const persisted: SignedEvent[] = [];
+    const ingest = new EventIngestService({
+      state: projector.state,
+      databases: {
+        control: { async add(value) { if (!persisted.some((item) => item.eventId === value.eventId)) persisted.push(value); } },
+        medical: { async add(value) { if (!persisted.some((item) => item.eventId === value.eventId)) persisted.push(value); } },
+      },
+      verification: { requireTrustedAttestation: false },
+      projectEvents: async (values) => { await projector.import(values); },
+      projectionStats: () => ({
+        accepted: projector.state.knownEvents.size,
+        deferred: projector.listDeferred().length,
+        conflicts: projector.listConflicts().length,
+      }),
+    });
+
+    expect(await ingest.ingest([dependent])).toEqual({
+      results: [expect.objectContaining({ status: "deferred", code: "EVENT_PARENT_MISSING" })],
+    });
+    expect(projector.listDeferred().map((item) => item.event.eventId)).toEqual([dependent.eventId]);
+
+    const dependencies = events.filter((event) => event.eventId !== dependent.eventId);
+    await ingest.ingest(dependencies);
+    expect(projector.listDeferred()).toEqual([]);
+    expect(projector.state.knownEvents.has(dependent.eventId)).toBe(true);
+    expect((await ingest.ingest([dependent])).results[0]?.status).toBe("duplicate");
+    expect(ingest.metrics().projection.deferred).toBe(0);
+  });
+
   it("serves health and batch ingestion through the HTTP request handler", async () => {
     const { ingest } = service();
     expect(await handleEventIngestRequest(ingest, { method: "GET", url: "/healthz" })).toEqual({ status: 200, body: { status: "ok" } });
+    expect(await handleEventIngestRequest(ingest, { method: "GET", url: "/readyz" })).toEqual({ status: 200, body: { status: "ready" } });
+    expect((await handleEventIngestRequest(ingest, { method: "GET", url: "/metrics" })).status).toBe(200);
     const response = await handleEventIngestRequest(ingest, {
       method: "POST",
       url: "/events",

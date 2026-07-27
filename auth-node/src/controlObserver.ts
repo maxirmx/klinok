@@ -3,10 +3,9 @@
 // This file is a part of Klinok application
 
 import {
-  applyAcceptedEvent,
   ACCESS_CONTROLLER_TYPES,
-  createProtocolState,
   extractSignedEvent,
+  InMemorySignedEventRepository,
   KlinokIdentityProvider,
   roleProjectionKey,
   shouldDeferEventVerification,
@@ -116,7 +115,6 @@ function observerAccessController(
         }));
         return false;
       }
-      applyAcceptedEvent(event, state);
       return true;
     },
   });
@@ -126,16 +124,40 @@ function observerAccessController(
 export class ControlPlaneObserver {
   private runtime: ObserverRuntime | null = null;
   private updateHandler: (() => void) | null = null;
-  private readonly state = createProtocolState(process.env.KLINOK_BOOTSTRAP_ACCOUNT_ID);
-  private readonly accessState = createProtocolState(process.env.KLINOK_BOOTSTRAP_ACCOUNT_ID);
+  private readonly projector: InMemorySignedEventRepository;
   private processing: Promise<void> = Promise.resolve();
+  private ready: boolean;
 
   constructor(
     private readonly config: AuthConfig,
     private readonly store: AuthStore,
     private readonly mailer: Mailer,
     private readonly authAttestationPublicKey: JsonWebKey,
-  ) {}
+  ) {
+    this.projector = new InMemorySignedEventRepository(config.bootstrapAccountId, {
+      authAttestationPublicKey,
+      bootstrapSigningPublicKey: config.bootstrapSigningPublicKey,
+      requireTrustedAttestation: true,
+    });
+    this.ready = !config.controlObserver.enabled;
+  }
+
+  private get state(): ProtocolState {
+    return this.projector.state;
+  }
+
+  isReady(): boolean {
+    return this.ready;
+  }
+
+  metrics() {
+    return {
+      ready: this.ready,
+      accepted: this.state.knownEvents.size,
+      deferred: this.projector.listDeferred().length,
+      conflicts: this.projector.listConflicts().length,
+    };
+  }
 
   async start(): Promise<void> {
     if (!this.config.controlObserver.enabled) return;
@@ -148,8 +170,9 @@ export class ControlPlaneObserver {
       import("@orbitdb/core"), import("@libp2p/websockets"), import("@libp2p/bootstrap"), import("@libp2p/identify"),
       import("@libp2p/gossipsub"), import("@chainsafe/libp2p-noise"), import("@chainsafe/libp2p-yamux"), import("@multiformats/multiaddr"), import("blockstore-level"),
     ]);
-    const controlAccess = observerAccessController(this.accessState, this.authAttestationPublicKey, this.config.bootstrapSigningPublicKey, "control");
-    const medicalAccess = observerAccessController(this.accessState, this.authAttestationPublicKey, this.config.bootstrapSigningPublicKey, "medical");
+    this.ready = false;
+    const controlAccess = observerAccessController(this.state, this.authAttestationPublicKey, this.config.bootstrapSigningPublicKey, "control");
+    const medicalAccess = observerAccessController(this.state, this.authAttestationPublicKey, this.config.bootstrapSigningPublicKey, "medical");
     useIdentityProvider(KlinokIdentityProvider);
     useAccessController(controlAccess);
     useAccessController(medicalAccess);
@@ -183,7 +206,7 @@ export class ControlPlaneObserver {
       address: controlDb.address?.toString(),
       replicated: controlReplicated,
     }));
-    const medicalDb = await orbitdb.open(this.config.controlObserver.medicalDatabaseAddress ?? this.config.controlObserver.medicalDatabaseName ?? "klinok-medical-v3", { type: "events", AccessController: medicalAccess });
+    const medicalDb = await orbitdb.open(this.config.controlObserver.medicalDatabaseAddress ?? this.config.controlObserver.medicalDatabaseName ?? "klinok-medical-v4", { type: "events", AccessController: medicalAccess });
     const medicalReplicated = await waitForDatabaseJoin(medicalDb);
     console.log(JSON.stringify({
       level: medicalReplicated ? "info" : "warn",
@@ -196,6 +219,13 @@ export class ControlPlaneObserver {
     this.updateHandler = () => void this.process();
     for (const db of this.runtime.dbs) db.events?.on?.("update", this.updateHandler);
     await this.process();
+    this.ready = true;
+    console.log(JSON.stringify({
+      level: "info",
+      event: "auth.control-observer.ready",
+      dataGeneration: this.config.dataGeneration,
+      ...this.metrics(),
+    }));
   }
 
   ingest(value: unknown): Promise<boolean> {
@@ -208,25 +238,29 @@ export class ControlPlaneObserver {
         accepted = true;
         return;
       }
-      const result = await verifySignedEvent(event, this.state, {
-        allowUnknownDevice: event.eventType === "device.attested",
-        authAttestationPublicKey: this.authAttestationPublicKey,
-        bootstrapSigningPublicKey: this.config.bootstrapSigningPublicKey,
-        requireTrustedAttestation: true,
-      });
-      if (!result.accepted) {
-        console.warn(JSON.stringify({
-          level: "warn",
-          event: "auth.control-observer.event.rejected",
-          code: result.code,
+      const projection = await this.projector.import([event]);
+      for (const acceptedEvent of projection.accepted) await this.handleAcceptedEvent(acceptedEvent);
+      if (projection.deferred.length) {
+        console.log(JSON.stringify({
+          level: "info",
+          event: "auth.control-observer.event.deferred",
+          code: projection.deferred[0]?.result.code,
           eventId: event.eventId,
           eventType: event.eventType,
         }));
         return;
       }
-      applyAcceptedEvent(event, this.state);
-      await this.handleAcceptedEvent(event);
-      accepted = true;
+      if (projection.conflicts.length) {
+        console.warn(JSON.stringify({
+          level: "warn",
+          event: "auth.control-observer.event.rejected",
+          code: projection.conflicts[0]?.result.code,
+          eventId: event.eventId,
+          eventType: event.eventType,
+        }));
+        return;
+      }
+      accepted = projection.accepted.some((candidate) => candidate.eventId === event.eventId);
     });
     return this.processing.then(() => accepted);
   }
@@ -245,35 +279,24 @@ export class ControlPlaneObserver {
         if (event) events.push(event);
       }
     }
-    events.sort((left, right) => left.createdAt.localeCompare(right.createdAt) || left.eventId.localeCompare(right.eventId));
-    const remaining = new Map(events.filter((event) => !this.state.knownEvents.has(event.eventId)).map((event) => [event.eventId, event]));
-    let progressed = true;
-    while (remaining.size && progressed) {
-      progressed = false;
-      for (const [eventId, event] of remaining) {
-        const result = await verifySignedEvent(event, this.state, {
-          allowUnknownDevice: event.eventType === "device.attested",
-          authAttestationPublicKey: this.authAttestationPublicKey,
-          bootstrapSigningPublicKey: this.config.bootstrapSigningPublicKey,
-          requireTrustedAttestation: true,
-        });
-        if (!result.accepted && result.code === "EVENT_PARENT_MISSING") continue;
-        remaining.delete(eventId);
-        progressed = true;
-        if (!result.accepted) {
-          console.warn(JSON.stringify({
-            level: "warn",
-            event: "auth.control-observer.event.rejected",
-            code: result.code,
-            eventId: event.eventId,
-            eventType: event.eventType,
-          }));
-          continue;
-        }
-        applyAcceptedEvent(event, this.state);
-        await this.handleAcceptedEvent(event);
-      }
+    const projection = await this.projector.import(events);
+    for (const event of projection.accepted) await this.handleAcceptedEvent(event);
+    for (const conflict of projection.conflicts) {
+      console.warn(JSON.stringify({
+        level: "warn",
+        event: "auth.control-observer.event.rejected",
+        code: conflict.result.code,
+        eventId: conflict.event.eventId,
+        eventType: conflict.event.eventType,
+      }));
     }
+    console.log(JSON.stringify({
+      level: "info",
+      event: "auth.control-observer.projection.updated",
+      accepted: projection.accepted.length,
+      deferred: this.projector.listDeferred().length,
+      conflicts: this.projector.listConflicts().length,
+    }));
   }
 
   private async handleAcceptedEvent(event: SignedEvent): Promise<void> {
@@ -365,5 +388,6 @@ export class ControlPlaneObserver {
     await this.runtime.orbitdb.stop();
     await this.runtime.helia.stop();
     this.runtime = null;
+    this.ready = !this.config.controlObserver.enabled;
   }
 }

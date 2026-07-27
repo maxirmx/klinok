@@ -34,7 +34,6 @@ const navigationByRole: Record<Role, WorkspaceNavItem[]> = {
     { id: "workspace-top", label: "Пользователи", icon: "user" },
     { id: "administrator-requests", label: "Заявки", icon: "bell" },
     { id: "administrator-accounts", label: "Аккаунты", icon: "user" },
-    { id: "administrator-conflicts", label: "Конфликты", icon: "eye" },
     { id: "administrator-journal", label: "Журнал", icon: "book" },
   ],
   owner: [

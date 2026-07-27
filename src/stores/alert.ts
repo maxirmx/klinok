@@ -9,7 +9,8 @@ export type AlertKind = "success" | "error";
 export type AppAlert = { kind: AlertKind; text: string };
 
 export function alertErrorText(reason: unknown, fallback = "Не удалось выполнить операцию."): string {
-  return reason instanceof Error && reason.message ? reason.message : fallback;
+  if (!(reason instanceof Error) || !reason.message) return fallback;
+  return /[А-Яа-яЁё]/.test(reason.message) ? reason.message : fallback;
 }
 
 export const useAlertStore = defineStore("alert", () => {

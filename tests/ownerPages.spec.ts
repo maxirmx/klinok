@@ -538,7 +538,7 @@ describe("Owner pages", () => {
     expect(searchButton.attributes("aria-label")).toBe("Найти врача");
     expect(searchButton.getComponent(AppIcon).props("name")).toBe("search");
 
-    await labelled(wrapper, "ФИО врача, его часть или полный ID").get("input").setValue("Ветер");
+    await labelled(wrapper, "ФИО врача, его часть или полный идентификатор").get("input").setValue("Ветер");
     await dialog.get("form").trigger("submit");
     await flushPromises();
     expect(searchDoctorDirectory).toHaveBeenCalledWith("Ветер", 1, 50);
@@ -578,7 +578,7 @@ describe("Owner pages", () => {
     const actions = detail.get(".owner-profile-actions");
     const editLink = actions.get('[title="Редактировать"]');
     const accessLink = actions.get('[title="Доступ врачей"]');
-    const copyIdButton = actions.get('button[title="Копировать ID питомца"]');
+    const copyIdButton = actions.get('button[title="Копировать идентификатор питомца"]');
     const deleteButton = actions.get('button[title="Удалить"]');
     expect(editLink.text()).toBe("");
     expect(accessLink.text()).toBe("");
@@ -593,7 +593,7 @@ describe("Owner pages", () => {
     await copyIdButton.trigger("click");
     await flushPromises();
     expect(clipboardWriteText).toHaveBeenCalledWith("pet-1");
-    expect(detail.get('[role="status"]').text()).toBe("ID питомца скопирован.");
+    expect(detail.get('[role="status"]').text()).toBe("Идентификатор питомца скопирован.");
 
     await deleteButton.trigger("click");
     expect(detail.get('[role="alertdialog"]').text()).toContain("Удалить профиль Шарик?");

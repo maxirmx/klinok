@@ -12,11 +12,11 @@ import {
   type UserKeySet,
 } from "@klinok/protocol";
 
-const DB_NAME = "klinok-identity-v1";
+const DB_NAME = "klinok-identity-v2";
 const STORE_NAME = "user-keys";
 const ENROLLMENT_STORE = "enrollment-keys";
-const DEVICE_HINT_KEY = "klinok:device-hint";
-const DEVICE_NAME_KEY = "klinok:device-name";
+const DEVICE_HINT_KEY = "klinok:v2:device-hint";
+const DEVICE_NAME_KEY = "klinok:v2:device-name";
 
 function openDb(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
@@ -182,11 +182,11 @@ export async function signBootstrapDeviceReplacement(
 }
 
 export function getLastActiveRole(accountId: string, deviceId: string): string | null {
-  return localStorage.getItem(`klinok:active-role:${accountId}:${deviceId}`);
+  return localStorage.getItem(`klinok:v2:active-role:${accountId}:${deviceId}`);
 }
 
 export function setLastActiveRole(accountId: string, deviceId: string, role: string): void {
-  localStorage.setItem(`klinok:active-role:${accountId}:${deviceId}`, role);
+  localStorage.setItem(`klinok:v2:active-role:${accountId}:${deviceId}`, role);
 }
 
 function getDeviceHint(): string | null {

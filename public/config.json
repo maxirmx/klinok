@@ -13,8 +13,9 @@
   },
   "p2p": {
     "enabled": true,
-    "controlDatabaseName": "klinok-control-v1",
-    "medicalDatabaseName": "klinok-medical-v3",
+    "dataGeneration": "v2",
+    "controlDatabaseName": "klinok-control-v2",
+    "medicalDatabaseName": "klinok-medical-v4",
     "trustedNodeMultiaddrs": ["/dns4/klinok.sw.consulting/tcp/8089/tls/ws"],
     "bootstrapAccountId": "bootstrap-administrator"
   }

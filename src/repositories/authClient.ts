@@ -14,6 +14,7 @@ import type {
   ExportedUserKeySet,
   Role,
 } from "@klinok/protocol";
+import { authErrorText } from "../russianMessages";
 
 export interface RegisterInput {
   firstName: string;
@@ -46,7 +47,8 @@ export class AuthClient {
     const body = response.status === 204 ? undefined : await response.json().catch(() => undefined) as T | AuthErrorBody | undefined;
     if (!response.ok) {
       const apiError = body && typeof body === "object" && "error" in body ? (body as AuthErrorBody).error : undefined;
-      throw new AuthClientError(apiError?.code ?? "REQUEST_FAILED", apiError?.message ?? "Сервис авторизации недоступен.", response.status);
+      const code = apiError?.code ?? "REQUEST_FAILED";
+      throw new AuthClientError(code, authErrorText(code), response.status);
     }
     return body as T;
   }

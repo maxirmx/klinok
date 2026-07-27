@@ -3,6 +3,7 @@
 // This file is a part of Klinok application
 
 export interface AuthConfig {
+  dataGeneration: string;
   host: string;
   port: number;
   dataDir: string;
@@ -103,6 +104,7 @@ function jsonWebKey(value: string | undefined): JsonWebKey | undefined {
 
 export function loadAuthConfig(env: NodeJS.ProcessEnv = process.env): AuthConfig {
   return {
+    dataGeneration: env.KLINOK_DATA_GENERATION ?? "v2",
     host: env.KLINOK_AUTH_HOST ?? "0.0.0.0",
     port: Number(env.KLINOK_AUTH_PORT ?? 8090),
     dataDir: env.KLINOK_AUTH_DATA_DIR ?? ".klinok-auth",
@@ -144,9 +146,9 @@ export function loadAuthConfig(env: NodeJS.ProcessEnv = process.env): AuthConfig
     controlObserver: {
       enabled: bool(env.KLINOK_AUTH_CONTROL_OBSERVER_ENABLED, false),
       ...(env.KLINOK_INTERNAL_EVENT_TOKEN ? { internalEventToken: env.KLINOK_INTERNAL_EVENT_TOKEN } : {}),
-      databaseName: env.KLINOK_CONTROL_DB ?? "klinok-control-v1",
+      databaseName: env.KLINOK_CONTROL_DB ?? "klinok-control-v2",
       ...(env.KLINOK_CONTROL_DB_ADDRESS ? { databaseAddress: env.KLINOK_CONTROL_DB_ADDRESS } : {}),
-      medicalDatabaseName: env.KLINOK_MEDICAL_DB ?? "klinok-medical-v3",
+      medicalDatabaseName: env.KLINOK_MEDICAL_DB ?? "klinok-medical-v4",
       ...(env.KLINOK_MEDICAL_DB_ADDRESS ? { medicalDatabaseAddress: env.KLINOK_MEDICAL_DB_ADDRESS } : {}),
       trustedNodeMultiaddrs: (env.KLINOK_P2P_TRUSTED_NODES ?? "").split(",").map((item) => item.trim()).filter(Boolean),
     },

@@ -15,8 +15,9 @@ services:
       - "80:80"
       - "443:443"
     environment:
-      KLINOK_CONTROL_DB: klinok-control-v1
-      KLINOK_MEDICAL_DB: klinok-medical-v3
+      KLINOK_DATA_GENERATION: v2
+      KLINOK_CONTROL_DB: klinok-control-v2
+      KLINOK_MEDICAL_DB: klinok-medical-v4
       KLINOK_TRUSTED_NODE: /dns4/klinok.sw.consulting/tcp/8089/tls/ws
       KLINOK_BOOTSTRAP_ACCOUNT_ID: bootstrap-administrator
       KLINOK_AUTH_ATTESTATION_PUBLIC_KEY: ${KLINOK_AUTH_ATTESTATION_PUBLIC_KEY}
@@ -29,6 +30,7 @@ services:
     image: ghcr.io/maxirmx/klinok.auth-node:latest
     restart: always
     environment:
+      KLINOK_DATA_GENERATION: v2
       KLINOK_PUBLIC_ORIGIN: https://klinok.sw.consulting
       KLINOK_AUTH_COOKIE_SECURE: "true"
       KLINOK_AUTH_DATA_DIR: /data
@@ -38,7 +40,8 @@ services:
       KLINOK_BOOTSTRAP_ACCOUNT_ID: bootstrap-administrator
       KLINOK_BOOTSTRAP_SIGNING_PUBLIC_KEY: ${KLINOK_BOOTSTRAP_SIGNING_PUBLIC_KEY}
       KLINOK_P2P_TRUSTED_NODES: /dns4/klinok.sw.consulting/tcp/8089/tls/ws
-      KLINOK_CONTROL_DB: klinok-control-v1
+      KLINOK_CONTROL_DB: klinok-control-v2
+      KLINOK_MEDICAL_DB: klinok-medical-v4
       KLINOK_SMTP_HOST: ${KLINOK_SMTP_HOST}
       KLINOK_SMTP_PORT: ${KLINOK_SMTP_PORT:-587}
       KLINOK_SMTP_SECURE: ${KLINOK_SMTP_SECURE:-true}
@@ -47,9 +50,9 @@ services:
       KLINOK_SMTP_FROM: ${KLINOK_SMTP_FROM}
       KLINOK_INTERNAL_EVENT_TOKEN: ${KLINOK_INTERNAL_EVENT_TOKEN:?KLINOK_INTERNAL_EVENT_TOKEN must be set}
     volumes:
-      - /home/maxirmx/klinok.auth.v1/data:/data:rw
+      - /home/maxirmx/klinok.auth.v2/data:/data:rw
     healthcheck:
-      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8090/healthz').then(r=>{if(!r.ok)process.exit(1)})"]
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8090/readyz').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
       interval: 15s
       timeout: 5s
       retries: 5
@@ -58,8 +61,9 @@ services:
     image: ghcr.io/maxirmx/klinok.p2p-node:latest
     restart: always
     environment:
-      KLINOK_CONTROL_DB: klinok-control-v1
-      KLINOK_MEDICAL_DB: klinok-medical-v3
+      KLINOK_DATA_GENERATION: v2
+      KLINOK_CONTROL_DB: klinok-control-v2
+      KLINOK_MEDICAL_DB: klinok-medical-v4
       KLINOK_BOOTSTRAP_ACCOUNT_ID: bootstrap-administrator
       KLINOK_AUTH_ATTESTATION_PUBLIC_KEY: ${KLINOK_AUTH_ATTESTATION_PUBLIC_KEY}
       KLINOK_BOOTSTRAP_SIGNING_PUBLIC_KEY: ${KLINOK_BOOTSTRAP_SIGNING_PUBLIC_KEY}
@@ -73,13 +77,13 @@ services:
       - "8089:8089"
     volumes:
       - /home/maxirmx/.certificate:/etc/nginx/certificate:ro
-      - /home/maxirmx/klinok.p2p.v1/data:/data:rw
+      - /home/maxirmx/klinok.p2p.v2/data:/data:rw
     networks:
       default:
         aliases:
           - p2p
     healthcheck:
-      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8091/healthz').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8091/readyz').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
       interval: 15s
       timeout: 5s
       retries: 5

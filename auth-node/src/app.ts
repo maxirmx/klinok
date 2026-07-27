@@ -2,7 +2,7 @@
 // All rights reserved.
 // This file is a part of Klinok application
 
-import { createHmac, randomBytes, randomUUID } from "node:crypto";
+import { createHash, createHmac, randomBytes, randomUUID } from "node:crypto";
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from "fastify";
 import cookie from "@fastify/cookie";
 import rateLimit from "@fastify/rate-limit";
@@ -259,7 +259,8 @@ export async function buildAuthApp(options: AuthAppOptions): Promise<FastifyInst
   await store.open();
 
   app.addHook("onClose", async () => store.close());
-  const observer = new ControlPlaneObserver(options.config, store, countedMailer, await attestation.publicJwk());
+  const attestationPublicKey = await attestation.publicJwk();
+  const observer = new ControlPlaneObserver(options.config, store, countedMailer, attestationPublicKey);
   if (options.config.controlObserver.internalEventToken) {
     app.post<{ Body: unknown }>("/internal/events", async (request, reply) => {
       if (request.headers.authorization !== `Bearer ${options.config.controlObserver.internalEventToken}`) {
@@ -272,6 +273,14 @@ export async function buildAuthApp(options: AuthAppOptions): Promise<FastifyInst
     });
   }
   await observer.start();
+  app.log.info({
+    event: "auth.trust.ready",
+    dataGeneration: options.config.dataGeneration,
+    authAttestationFingerprint: createHash("sha256").update(JSON.stringify(attestationPublicKey)).digest("hex").slice(0, 16),
+    bootstrapSigningFingerprint: options.config.bootstrapSigningPublicKey
+      ? createHash("sha256").update(JSON.stringify(options.config.bootstrapSigningPublicKey)).digest("hex").slice(0, 16)
+      : "missing",
+  });
   app.addHook("onClose", async () => observer.stop());
   app.addHook("preHandler", async (request, reply) => {
     if (!options.config.enforceOrigin || request.method === "GET" || request.url === "/healthz" || request.url === "/internal/events") return;
@@ -353,7 +362,14 @@ export async function buildAuthApp(options: AuthAppOptions): Promise<FastifyInst
   }
 
   app.get("/healthz", async () => ({ status: "ok" }));
-  app.get("/metrics", async () => ({ counters: { ...metrics } }));
+  app.get("/readyz", async (_request, reply) => observer.isReady()
+    ? { status: "ready", dataGeneration: options.config.dataGeneration }
+    : reply.code(503).send({ status: "starting", dataGeneration: options.config.dataGeneration }));
+  app.get("/metrics", async () => ({
+    counters: { ...metrics },
+    observer: observer.metrics(),
+    dataGeneration: options.config.dataGeneration,
+  }));
 
   app.post<{ Body: RegistrationBody }>("/api/auth/register", {
     config: { rateLimit: { max: options.config.rateLimit.registrationIpPerHour, timeWindow: 60 * 60_000 } },

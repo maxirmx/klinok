@@ -31,6 +31,7 @@ export interface ProjectionConflict {
 export interface ProjectionResult {
   state: ProtocolState;
   accepted: SignedEvent[];
+  deferred: ProjectionConflict[];
   conflicts: ProjectionConflict[];
 }
 
@@ -179,6 +180,7 @@ export function applyAcceptedEvent(event: SignedEvent, state: ProtocolState): vo
 
 export async function reduceSignedEvents(events: SignedEvent[], state: ProtocolState, options: VerificationOptions = {}): Promise<ProjectionResult> {
   const accepted: SignedEvent[] = [];
+  const deferred: ProjectionConflict[] = [];
   const conflicts: ProjectionConflict[] = [];
   const remaining = new Map(replayOrderedEvents(events).map((event) => [event.eventId, event]));
   const deferredResults = new Map<string, VerificationResult>();
@@ -204,7 +206,7 @@ export async function reduceSignedEvents(events: SignedEvent[], state: ProtocolS
     }
     if (!progressed) {
       for (const [eventId, event] of remaining) {
-        conflicts.push({
+        deferred.push({
           event,
           result: deferredResults.get(eventId) ?? { accepted: false, code: "EVENT_REJECTED", message: "The event was rejected." },
         });
@@ -212,8 +214,8 @@ export async function reduceSignedEvents(events: SignedEvent[], state: ProtocolS
       break;
     }
   }
-  reconcileEffectiveEvents(events, state);
-  return { state, accepted, conflicts };
+  reconcileEffectiveEvents([...state.events.values()], state);
+  return { state, accepted, deferred, conflicts };
 }
 
 export function reconcileEffectiveEvents(events: SignedEvent[], state: ProtocolState): void {
