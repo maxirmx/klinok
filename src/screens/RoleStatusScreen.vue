@@ -158,7 +158,7 @@ async function signOut(all = false) {
 async function copyAccountId() {
   const accountId = appState.session.accountId;
   if (!accountId) return;
-  await action("ID пользователя скопирован.", async () => {
+  await action("Идентификатор пользователя скопирован.", async () => {
     await navigator.clipboard.writeText(accountId);
   });
 }
@@ -258,7 +258,7 @@ async function confirmDeviceRevocation() {
     <section v-if="appState.keyRecoveryRequired" class="panel critical-panel" role="alert">
       <h2>Ключи этого аккаунта отсутствуют на устройстве</h2>
       <template v-if="appState.session.accountId === getConfig()?.p2p.bootstrapAccountId && !appState.session.devices?.length">
-        <p>Для первого устройства начального администратора загрузите офлайн-пакет, созданный командой provision.</p>
+        <p>Для первого устройства начального администратора загрузите автономный пакет, созданный при подготовке системы.</p>
         <form class="form-stack" @submit.prevent="importBootstrapRecovery(recoveryText, recoveryPassphrase)">
           <label><span>Пакет восстановления</span><input type="file" accept="application/json,.json" required @change="readRecoveryFile" /></label>
           <PasswordInput v-model="recoveryPassphrase" label="Пароль пакета" required />
@@ -272,7 +272,7 @@ async function confirmDeviceRevocation() {
           </button>
         </form>
       </template>
-      <p v-else>Восстановление пароля не возвращает ключи P2P. Подтвердите новое устройство с уже действующего устройства. Если все ключи потеряны, обратитесь к администратору и зарегистрируйте новый аккаунт.</p>
+      <p v-else>Восстановление пароля не возвращает ключи распределённого хранилища. Подтвердите новое устройство с уже действующего устройства. Если все ключи потеряны, обратитесь к администратору и зарегистрируйте новый аккаунт.</p>
     </section>
 
     <section v-else-if="appState.devicePending" class="panel profile-gate" role="status">
@@ -367,7 +367,7 @@ async function confirmDeviceRevocation() {
 
       <p v-if="formError" class="field-error profile-form-validation" role="alert">{{ formError }}</p>
 
-      <section class="panel profile-section profile-roles">
+      <section id="roles" class="panel profile-section profile-roles">
         <div class="profile-section-heading"><div><h2>Роли и доступ</h2><p>Измените активную роль или отправьте запрос на новую.</p></div></div>
         <RoleSelectionCards
           :model-value="appState.activeRole"
@@ -412,7 +412,7 @@ async function confirmDeviceRevocation() {
         <div class="profile-section-heading">
           <div>
             <h2 id="profile-sync-status-title">Синхронизация данных</h2>
-            <p>Показывается состояние текущего сеанса без ошибок из завершённых сеансов.</p>
+            <p>Показывается состояние синхронизации текущего аккаунта.</p>
           </div>
           <SyncStatus />
         </div>
@@ -441,8 +441,8 @@ async function confirmDeviceRevocation() {
             <button
               class="outline-action inline profile-icon-action"
               type="button"
-              title="Копировать ID пользователя"
-              aria-label="Копировать ID пользователя"
+              title="Копировать идентификатор пользователя"
+              aria-label="Копировать идентификатор пользователя"
               @click="copyAccountId"
             >
               <AppIcon name="copy" />
@@ -451,14 +451,14 @@ async function confirmDeviceRevocation() {
         </div>
       </section>
 
-      <section class="panel profile-section device-security">
+      <section id="devices" class="panel profile-section device-security">
         <div class="profile-section-heading"><div><h2>Устройства</h2><p>Управляйте подтверждёнными устройствами.</p></div></div>
 
         <template v-if="!appState.session.serverKeySetAvailable && appState.session.enrollments?.some(item => item.status === 'pending' && item.ephemeralPublicKey) && appState.session.device">
           <h3>Новые устройства</h3>
           <p>Подтверждайте только свои устройства. Передача ключей зашифрована для конкретного запроса.</p>
           <div v-for="enrollment in appState.session.enrollments.filter(item => item.status === 'pending' && item.ephemeralPublicKey)" :key="enrollment.enrollmentId" class="list-row">
-            <div><strong>{{ deviceName(enrollment) }}</strong><span>ID: {{ enrollment.deviceId }}</span><small>Запрошено {{ enrollment.createdAt }}</small></div>
+            <div><strong>{{ deviceName(enrollment) }}</strong><span>Идентификатор: {{ enrollment.deviceId }}</span><small>Запрошено {{ enrollment.createdAt }}</small></div>
             <div class="row-actions">
               <button class="primary-action inline profile-icon-action" title="Подтвердить устройство и передать ключи" aria-label="Подтвердить устройство и передать ключи" @click="action('Устройство подтверждено.', () => approveDeviceEnrollment(enrollment.enrollmentId))"><AppIcon name="check" /></button>
               <button class="outline-action inline danger-link profile-icon-action" title="Отклонить устройство" aria-label="Отклонить устройство" @click="action('Запрос устройства отклонён.', () => rejectDeviceEnrollment(enrollment.enrollmentId))"><AppIcon name="close" /></button>
@@ -469,7 +469,7 @@ async function confirmDeviceRevocation() {
         <p v-if="appState.session.serverKeySetAvailable">Отозванное устройство отключается, но может быть зарегистрировано снова после успешного входа в аккаунт.</p>
 
         <div v-for="device in visibleDevices" :key="device.deviceId" class="list-row">
-          <div><strong>{{ deviceName(device) }}</strong><span>{{ device.deviceId === appState.session.device?.deviceId ? 'Это устройство' : 'Действующее устройство' }}</span><small>ID: {{ device.deviceId }}</small></div>
+          <div><strong>{{ deviceName(device) }}</strong><span>{{ device.deviceId === appState.session.device?.deviceId ? 'Это устройство' : 'Действующее устройство' }}</span><small>Идентификатор: {{ device.deviceId }}</small></div>
           <button
             class="outline-action inline danger-link profile-icon-action"
             :disabled="!canRevokeDevice"

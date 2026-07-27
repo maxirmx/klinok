@@ -12,7 +12,7 @@ Klinok is a Russian-language, local-first veterinary application with operationa
 - `p2p-node/` — untrusted OrbitDB storage/transport node. It verifies signed envelopes but receives no passwords or user private keys.
 - `packages/protocol/` — shared event contracts, cryptography, authorization rules, and deterministic reducers used by browser and Node runtimes.
 
-The current databases are `klinok-control-v1` and `klinok-medical-v3`. There is no migration or runtime fallback from earlier demo data.
+The current clean-bootstrap generation is `v2`, using `klinok-control-v2` and `klinok-medical-v4`. There is no migration or runtime fallback from earlier demo data.
 
 Roles, profiles, pets, grants, and medical records are encrypted signed events in these OrbitDB databases; they are not rows in the authentication LevelDB. The browser keeps an IndexedDB cache and durable outbox. A change is shown as fully saved only after `p2p-node` acknowledges that the event was written to its persistent `/data` volume; offline changes remain visible with a pending-sync status and are retried in dependency order.
 
@@ -93,10 +93,13 @@ medical records, and P2P history. Removing `.klinok-local` also removes the gene
 mixed-development configuration and the local copy of the bootstrap recovery bundle.
 Save that recovery bundle elsewhere first if it is needed for an existing deployment.
 
-The browser stores its device identity, a cached copy of its private keys, application
-data, and the durable outbox in IndexedDB and other site storage for
-`http://localhost:8080`. Clear this storage as well after deleting the Docker volumes
-so that an old browser identity is not reused with the new deployment:
+The `v2` cutover uses new browser database and local-storage names, so data from the
+first demo generation is ignored automatically. Users do not need to clear unrelated
+site data when moving from the old demo to `v2`.
+
+For another destructive reset while keeping the same `v2` generation, clear the
+Klinok site storage so that a `v2` browser identity is not reused with a newly
+provisioned trust anchor:
 
 1. Close every open Klinok tab except one.
 2. Open `http://localhost:8080` and the browser Developer Tools.
@@ -109,10 +112,27 @@ so that an old browser identity is not reused with the new deployment:
 A new browser profile can be used instead. A private/incognito window is appropriate
 for short tests only because its device identity is deleted when the window closes.
 Browser storage does not need to be cleared for ordinary restarts or UI rebuilds.
-For an account that has completed automatic server-key migration, clearing browser
-storage is recoverable: sign in again and the new device is approved automatically.
-Legacy accounts without a server key copy still require an active old device or the
-bootstrap recovery bundle until they next sign in from an active browser.
+For a `v2` account with a server key copy, clearing browser storage is recoverable:
+sign in again and complete device enrollment.
+
+### Clean `v2` demo deployment
+
+The `v2` deployment is intentionally incompatible with the first demo generation.
+Schedule maintenance and stop UI, authentication, and P2P services together. An
+optional copy of the old authentication and P2P data may be retained for diagnostics,
+but it must not be mounted into the `v2` services.
+
+Use the `auth-v2` and `p2p-v2` volumes from `docker-compose.yml`, or the
+`klinok.auth.v2` and `klinok.p2p.v2` directories from
+`docker-compose-ghrc.yml`. Provision the bootstrap administrator exactly once, save
+the new recovery bundle offline, and provide the resulting attestation and bootstrap
+public keys to all three services. Start P2P and wait for `/readyz`, then start
+authentication and wait for `/readyz`, and finally start the UI.
+
+Verify that `/metrics` reports `dataGeneration: "v2"` and that the trust
+fingerprints in the authentication, P2P, and browser logs agree. All former demo
+users and devices must register again. Do not copy events, identities, keys, or
+credentials from the first generation into `v2`.
 
 If Compose crashes with `SIGBUS` or reports an input/output error under WSL, quit
 Docker Desktop, run `wsl --shutdown` in Windows PowerShell, and restart Docker Desktop.

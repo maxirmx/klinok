@@ -14,6 +14,8 @@ export interface P2pOperationalCounters {
   invalidSignatures: number;
   rejectedProofs: number;
   conflicts: number;
+  deferred: number;
+  accepted: number;
   syncUpdates: number;
   syncErrors: number;
   lastSyncUpdateAt?: string;
@@ -25,6 +27,8 @@ export function createP2pOperationalCounters(): P2pOperationalCounters {
     invalidSignatures: 0,
     rejectedProofs: 0,
     conflicts: 0,
+    deferred: 0,
+    accepted: 0,
     syncUpdates: 0,
     syncErrors: 0,
   };
@@ -47,6 +51,7 @@ export function registerOrbitDbEventHandlers(
   label: string,
   counters: P2pOperationalCounters,
   roleConflicts: () => number,
+  onUpdate?: () => void,
 ): () => void {
   const update = (...args: unknown[]) => {
     counters.syncUpdates += 1;
@@ -61,6 +66,7 @@ export function registerOrbitDbEventHandlers(
       entryShape: describeOrbitEntryShape(args[0]),
     }));
     logOperationalCounters(counters, roleConflicts());
+    onUpdate?.();
   };
   const error = (value: unknown) => {
     counters.syncErrors += 1;

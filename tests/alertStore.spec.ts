@@ -25,6 +25,9 @@ describe("alert store", () => {
     store.error({ unexpected: true }, "Повторите попытку.");
     expect(store.alert).toEqual({ kind: "error", text: "Повторите попытку." });
 
+    store.error(new Error("Trusted node returned HTTP 500."));
+    expect(store.alert).toEqual({ kind: "error", text: "Не удалось выполнить операцию." });
+
     store.clear();
     expect(store.alert).toBeNull();
   });

@@ -362,9 +362,9 @@ async function copyPetId() {
   alertStore.clear();
   try {
     await navigator.clipboard.writeText(selectedPet.value.petId);
-    alertStore.success("ID питомца скопирован.");
+    alertStore.success("Идентификатор питомца скопирован.");
   } catch {
-    alertStore.error("clipboard", "Не удалось скопировать ID питомца.");
+    alertStore.error("clipboard", "Не удалось скопировать идентификатор питомца.");
   }
 }
 
@@ -651,7 +651,7 @@ function confirmMedicalRecord(record: MedicalRecordDraft) {
           <p v-if="grantError" class="form-alert error" role="alert">{{ grantError }}</p>
           <form class="form-stack grant-search-form" @submit.prevent="findDoctors">
             <label>
-              <span>ФИО врача, его часть или полный ID</span>
+              <span>ФИО врача, его часть или полный идентификатор</span>
               <input v-model="doctorQuery" type="search" required />
             </label>
             <button
@@ -694,8 +694,8 @@ function confirmMedicalRecord(record: MedicalRecordDraft) {
           <button
             class="outline-action inline owner-profile-action"
             type="button"
-            title="Копировать ID питомца"
-            aria-label="Копировать ID питомца"
+            title="Копировать идентификатор питомца"
+            aria-label="Копировать идентификатор питомца"
             @click="copyPetId"
           >
             <AppIcon name="copy" />

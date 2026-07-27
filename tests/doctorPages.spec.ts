@@ -240,8 +240,8 @@ describe("Doctor pages", () => {
     const wrapper = await mountAt("/doctor/pets/request-access", "doctor-pet-request-access");
     const dialog = wrapper.get('[role="dialog"]');
     expect(dialog.findAll("label span").map((label) => label.text())).toEqual(expect.arrayContaining([
-      "ФИО владельца, его часть или полный ID (необязательно при поиске по полному ID питомца)",
-      "Кличка, её часть или полный ID питомца",
+      "ФИО владельца, его часть или полный идентификатор (необязательно при поиске по полному идентификатору питомца)",
+      "Кличка, её часть или полный идентификатор питомца",
     ]));
     expect(dialog.get('.doctor-request-owner-field input[type="search"]').attributes("required")).toBeUndefined();
     expect(dialog.get('.doctor-request-pet-field input[type="search"]').attributes()).toHaveProperty("required");

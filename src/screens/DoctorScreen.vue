@@ -472,7 +472,7 @@ onMounted(() => { void refreshPets(); });
         </button>
       </div>
       <label class="administrator-search">
-        <span>ФИО владельца, кличка, вид или полный ID</span>
+        <span>ФИО владельца, кличка, вид или полный идентификатор</span>
         <span class="administrator-search-control">
           <AppIcon name="search" />
           <input v-model="homeQuery" type="search" placeholder="Поиск" />
@@ -552,8 +552,8 @@ onMounted(() => { void refreshPets(); });
         <div class="form-stack grant-access-form doctor-request-access-form">
           <p v-if="requestError" class="form-alert error" role="alert">{{ requestError }}</p>
           <form class="form-stack doctor-request-search-form" @submit.prevent="findPets">
-            <label class="doctor-request-owner-field"><span>ФИО владельца, его часть или полный ID (необязательно при поиске по полному ID питомца)</span><input v-model="petOwnerQuery" type="search" /></label>
-            <label class="doctor-request-pet-field"><span>Кличка, её часть или полный ID питомца</span><input v-model="petNameQuery" type="search" required /></label>
+            <label class="doctor-request-owner-field"><span>ФИО владельца, его часть или полный идентификатор (необязательно при поиске по полному идентификатору питомца)</span><input v-model="petOwnerQuery" type="search" /></label>
+            <label class="doctor-request-pet-field"><span>Кличка, её часть или полный идентификатор питомца</span><input v-model="petNameQuery" type="search" required /></label>
             <button class="primary-action inline access-icon-action doctor-request-search-action" type="submit" :disabled="busy" :title="busy ? 'Поиск питомца…' : 'Найти питомца'" :aria-label="busy ? 'Поиск питомца…' : 'Найти питомца'"><AppIcon name="search" /></button>
           </form>
           <div v-for="pet in petSearchResults" :key="pet.petId" class="list-row doctor-request-result">
@@ -667,7 +667,7 @@ onMounted(() => { void refreshPets(); });
         <div class="form-stack grant-access-form">
           <p v-if="delegationError" class="form-alert error" role="alert">{{ delegationError }}</p>
           <form class="form-stack grant-search-form" @submit.prevent="findDoctors">
-            <label><span>ФИО врача, его часть или полный ID</span><input v-model="doctorQuery" required /></label>
+            <label><span>ФИО врача, его часть или полный идентификатор</span><input v-model="doctorQuery" required /></label>
             <button class="primary-action inline access-icon-action grant-search-action" type="submit" :disabled="busy" :title="busy ? 'Поиск врача…' : 'Найти врача'" :aria-label="busy ? 'Поиск врача…' : 'Найти врача'"><AppIcon name="search" /></button>
           </form>
           <div v-for="doctor in doctors" :key="doctor.accountId" class="list-row"><div><strong>{{ doctor.displayName }}</strong><span>{{ doctor.accountId }}</span></div><button class="outline-action inline access-icon-action" type="button" title="Выбрать врача" aria-label="Выбрать врача" @click="delegationTarget = doctor"><AppIcon name="check" /></button></div>

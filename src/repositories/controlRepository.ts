@@ -18,9 +18,10 @@ import {
   type UserKeySet,
 } from "@klinok/protocol";
 import { EventFactory } from "./eventFactory";
-import type { AuthorizationConflict, EventTransport } from "./eventTransport";
+import type { EventTransport } from "./eventTransport";
 import type { ControlSnapshot, RoleDecisionInput } from "./types";
 import { loadUserKeys } from "./deviceVault";
+import { localOperationErrorText } from "../russianMessages";
 
 type Listener = (snapshot: ControlSnapshot) => void;
 
@@ -120,50 +121,47 @@ export class ControlRepository {
   }
 
   private queueReload(): Promise<void> {
-    this.reloadQueue = this.reloadQueue
-      .then(() => this.disposed ? undefined : this.reloadNow())
-      .catch((reason) => {
-        if (!this.disposed) throw reason;
-      });
-    return this.reloadQueue;
+    return this.runProjectionMutation(() => this.disposed ? Promise.resolve() : this.reloadNow());
+  }
+
+  async runProjectionMutation<T>(task: () => Promise<T>): Promise<T> {
+    const operation = this.reloadQueue.then(task);
+    this.reloadQueue = operation.then(() => undefined, () => undefined);
+    return operation;
   }
 
   private async reloadNow() {
-    const remote = await this.transport.list("control");
+    const [controlEvents, medicalEvents] = await Promise.all([
+      this.transport.list("control"),
+      this.transport.list("medical"),
+    ]);
     if (this.disposed) return;
-    await this.signed.import(remote);
+    await this.signed.replace([...controlEvents, ...medicalEvents]);
     if (this.disposed) return;
     this.events = this.signed.list().filter((event) => event.database === "control");
-    for (const conflict of this.signed.conflicts.splice(0)) {
+    for (const conflict of this.signed.takeNewConflicts()) {
       if (this.disposed) return;
-      await this.transport.recordConflict({
-        eventId: conflict.event.eventId,
-        database: conflict.event.database,
-        code: conflict.result.code ?? "EVENT_REJECTED",
-        message: conflict.result.message ?? "Событие отклонено.",
-        createdAt: conflict.event.createdAt,
-      });
+      await this.transport.recordPermanentRejection(conflict.event, conflict.result.code ?? "EVENT_REJECTED");
     }
     await this.emit();
   }
 
+  async refreshProjection(): Promise<void> {
+    await this.queueReload();
+  }
+
   private async append(event: SignedEvent) {
-    try {
-      await this.signed.append(event);
-      await this.transport.append(event);
-      this.events = this.signed.list().filter((candidate) => candidate.database === "control");
-      await this.emit();
-    } catch (reason) {
-      const conflict: AuthorizationConflict = {
-        eventId: event.eventId,
-        database: event.database,
-        code: reason && typeof reason === "object" && "code" in reason ? String(reason.code) : "EVENT_REJECTED",
-        message: reason instanceof Error ? reason.message : "Событие отклонено.",
-        createdAt: event.createdAt,
-      };
-      await this.transport.recordConflict(conflict);
-      throw reason;
-    }
+    return this.runProjectionMutation(async () => {
+      try {
+        await this.signed.append(event);
+        await this.transport.append(event);
+        this.events = this.signed.list().filter((candidate) => candidate.database === "control");
+        await this.emit();
+      } catch (reason) {
+        const code = reason && typeof reason === "object" && "code" in reason ? String(reason.code) : "EVENT_REJECTED";
+        throw Object.assign(new Error(localOperationErrorText(code)), { code });
+      }
+    });
   }
 
   private ownRecipients(): DeviceCertificate[] {

@@ -166,7 +166,7 @@ describe("logout navigation", () => {
     expect(wrapper.get(".profile-account-name").text()).toBe("Максим Сергеевич Иванов");
     expect(wrapper.get(".profile-account-id").text()).toBe("account-1");
     expect(wrapper.text()).not.toContain("новое устройство подтверждается автоматически");
-    expect(wrapper.text()).toContain("ID: pending-device");
+    expect(wrapper.text()).toContain("Идентификатор: pending-device");
     expect(wrapper.text()).toContain("Это устройство");
     expect(wrapper.text()).not.toContain("Старый телефон");
     expect(wrapper.text()).not.toContain("revoked-device");
@@ -175,10 +175,10 @@ describe("logout navigation", () => {
     expect(wrapper.get(".workspace-bottom-nav").text()).toContain("Выйти");
     const revokeButton = wrapper.get<HTMLButtonElement>('button[title="Нельзя отозвать последнее действующее устройство."]');
     expect(revokeButton.element.disabled).toBe(true);
-    await wrapper.get('button[title="Копировать ID пользователя"]').trigger("click");
+    await wrapper.get('button[title="Копировать идентификатор пользователя"]').trigger("click");
     await flushPromises();
     expect(clipboardWriteText).toHaveBeenCalledWith("account-1");
-    expect(wrapper.get(".workspace-alert[role='status']").text()).toContain("ID пользователя скопирован.");
+    expect(wrapper.get(".workspace-alert[role='status']").text()).toContain("Идентификатор пользователя скопирован.");
 
     const pageButtons = wrapper.findAll(".profile-layout button");
     expect(pageButtons.length).toBeGreaterThan(0);
@@ -201,14 +201,14 @@ describe("logout navigation", () => {
     expect(accountSectionIndex).toBe(syncSectionIndex + 1);
     expect(deviceSectionIndex).toBe(accountSectionIndex + 1);
     expect(sections[syncSectionIndex]!.text()).toContain("Синхронизация данных");
-    expect(sections[syncSectionIndex]!.text()).toContain("текущего сеанса");
+    expect(sections[syncSectionIndex]!.text()).toContain("текущего аккаунта");
     expect(sections[syncSectionIndex]!.get(".sync-status").text()).toBe("Сохранено");
     expect(sections[accountSectionIndex]!.get("h2").text()).toBe("Аккаунт");
     expect(sections[deviceSectionIndex]!.get("h2").text()).toBe("Устройства");
 
     mockedStore.setMockSync({ pendingCount: 0, failedCount: 1, syncing: false, lastError: "" });
     await flushPromises();
-    expect(sections[syncSectionIndex]!.get(".sync-status").text()).toBe("Конфликты: 1");
+    expect(sections[syncSectionIndex]!.get(".sync-status").text()).toBe("Не сохранено: 1");
   });
 
   it("confirms account deletion in a modal before executing it", async () => {

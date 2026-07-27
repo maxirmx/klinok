@@ -18,8 +18,9 @@ describe("operational runtime config", () => {
 
   it("pins the versioned control and medical databases without writer overrides", () => {
     const config = createDefaultRuntimeConfig(true);
-    expect(config.p2p.controlDatabaseName).toBe("klinok-control-v1");
-    expect(config.p2p.medicalDatabaseName).toBe("klinok-medical-v3");
+    expect(config.p2p.dataGeneration).toBe("v2");
+    expect(config.p2p.controlDatabaseName).toBe("klinok-control-v2");
+    expect(config.p2p.medicalDatabaseName).toBe("klinok-medical-v4");
     expect(config.p2p.trustedNodeMultiaddrs).toEqual([DEVELOPMENT_TRUSTED_NODE_MULTIADDR]);
     expect(Object.keys(config.p2p)).not.toContain("writeIdentityIds");
     expect(Object.keys(config.p2p)).not.toContain("participantPrivateKey");

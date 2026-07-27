@@ -2,7 +2,7 @@
 // All rights reserved.
 // This file is a part of Klinok application
 
-const DB_NAME = "klinok-pet-keys-v1";
+const DB_NAME = "klinok-pet-keys-v2";
 const STORE = "keys";
 
 interface StoredPetKey { version: number; jwk: JsonWebKey }

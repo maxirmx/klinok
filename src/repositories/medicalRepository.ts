@@ -38,6 +38,7 @@ import type {
   PetProfileInput,
 } from "./types";
 import type { ControlRepository } from "./controlRepository";
+import { localOperationErrorText } from "../russianMessages";
 
 type Listener = (snapshot: MedicalSnapshot) => void;
 type GrantDoctorOptions = {
@@ -86,52 +87,29 @@ export class MedicalRepository {
   }
 
   private async reloadNow() {
-    const events = await this.transport.list("medical");
-    if (this.disposed) return;
-    await this.control.signed.import(events);
+    await this.control.refreshProjection();
     if (this.disposed) return;
     this.events = this.control.signed.list().filter((event) => event.database === "medical");
-    for (const conflict of this.control.signed.conflicts.splice(0)) {
-      if (this.disposed) return;
-      await this.transport.recordConflict({
-        eventId: conflict.event.eventId,
-        database: conflict.event.database,
-        code: conflict.result.code ?? "EVENT_REJECTED",
-        message: conflict.result.message ?? "Событие отклонено.",
-        createdAt: conflict.event.createdAt,
-      });
-    }
     for (const [eventId, code] of this.control.signed.state.invalidatedEvents) {
       if (this.disposed) return;
-      const event = this.events.find((candidate) => candidate.eventId === eventId);
-      if (event) await this.transport.recordConflict({
-        eventId,
-        database: "medical",
-        code,
-        message: "Офлайн-событие проиграло более строгому состоянию доступа.",
-        createdAt: event.createdAt,
-      });
+      void code;
       await this.transport.removeOutbox(eventId);
     }
     await this.emit();
   }
 
   private async append(event: SignedEvent) {
-    try {
-      await this.control.signed.append(event);
-      await this.transport.append(event);
-      this.events = this.control.signed.list().filter((candidate) => candidate.database === "medical");
-      await this.emit();
-    } catch (reason) {
-      await this.transport.recordConflict({
-        eventId: event.eventId,
-        database: event.database,
-        code: reason && typeof reason === "object" && "code" in reason ? String(reason.code) : "EVENT_REJECTED",
-        message: reason instanceof Error ? reason.message : "Событие отклонено.",
-        createdAt: event.createdAt,
-      });
-      throw reason;
-    }
+    return this.control.runProjectionMutation(async () => {
+      try {
+        await this.control.signed.append(event);
+        await this.transport.append(event);
+        this.events = this.control.signed.list().filter((candidate) => candidate.database === "medical");
+        await this.emit();
+      } catch (reason) {
+        const code = reason && typeof reason === "object" && "code" in reason ? String(reason.code) : "EVENT_REJECTED";
+        throw Object.assign(new Error(localOperationErrorText(code)), { code });
+      }
+    });
   }
 
   private profileEventForPet(petId: string): SignedEvent | undefined {

@@ -3,7 +3,6 @@
 // This file is a part of Klinok application
 
 import {
-  applyAcceptedEvent,
   ACCESS_CONTROLLER_TYPES,
   createProtocolState,
   describeOrbitEntryShape,
@@ -76,7 +75,6 @@ export function createDynamicAccessController(options: DynamicAccessControllerOp
         options.onRejected?.(event, result.code ?? "EVENT_REJECTED", details);
         return false;
       }
-      applyAcceptedEvent(event, state);
       return true;
     },
   });

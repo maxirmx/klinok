@@ -11,7 +11,13 @@ import {
 } from "@klinok/protocol";
 import type { AppRuntimeConfig } from "../runtimeConfig";
 import { ControlRepository } from "./controlRepository";
-import { IndexedDbEventTransport, MemoryEventTransport, type EventSyncStatus, type EventTransport } from "./eventTransport";
+import {
+  IndexedDbEventTransport,
+  MemoryEventTransport,
+  type EventSyncStatus,
+  type EventTransport,
+  type SyncNotification,
+} from "./eventTransport";
 import { MedicalRepository } from "./medicalRepository";
 import { OrbitEventTransport } from "./orbitTransport";
 
@@ -49,8 +55,8 @@ export class KlinokRepository {
       requireTrustedAttestation: options.config.p2p.enabled,
     });
     const transport = options.transport ?? (options.config.p2p.enabled
-      ? new OrbitEventTransport(options.config.p2p, context.orbitIdentityId)
-      : new IndexedDbEventTransport());
+      ? new OrbitEventTransport(options.config.p2p, context.orbitIdentityId, context.accountId)
+      : new IndexedDbEventTransport(context.accountId, options.config.p2p.dataGeneration));
     await transport.initialize();
     const control = new ControlRepository(transport, context, options.keys, options.session.device, options.config.p2p.bootstrapAccountId, signed);
     const medical = new MedicalRepository(transport, context, options.keys, options.session.device, control);
@@ -68,15 +74,13 @@ export class KlinokRepository {
   }
 
   async conflicts() {
-    const stored = await this.transport.listConflicts();
-    const roleConflicts = this.control.signed.state.roleConflicts.map((conflict) => ({
-      eventId: conflict.losingEventId,
-      database: "control" as const,
-      code: "ROLE_CONFLICT_LOST",
-      message: `Конкурирующая ветвь роли проиграла событию ${conflict.winningEventId}.`,
-      createdAt: "",
-    }));
-    return [...stored, ...roleConflicts];
+    return this.transport.listConflicts();
+  }
+
+  notifications(): Promise<SyncNotification[]> { return this.transport.listNotifications(); }
+
+  dismissNotification(notificationId: string): Promise<void> {
+    return this.transport.dismissNotification(notificationId);
   }
 
   syncStatus(): Promise<EventSyncStatus> { return this.transport.syncStatus(); }

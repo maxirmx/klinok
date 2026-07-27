@@ -18,9 +18,10 @@ import { webSockets } from "@libp2p/websockets";
 import { LevelBlockstore } from "blockstore-level";
 import { createHeliaLight } from "helia";
 import { createLibp2p } from "libp2p";
+import { createHash } from "node:crypto";
 import * as json from "multiformats/codecs/json";
 import { sha512 } from "multiformats/hashes/sha2";
-import { createProtocolState, extractSignedEvent, KlinokIdentityProvider, reduceSignedEvents, type SignedEvent } from "@klinok/protocol";
+import { extractSignedEvent, InMemorySignedEventRepository, KlinokIdentityProvider, type SignedEvent } from "@klinok/protocol";
 import { createDynamicAccessController } from "./accessController.js";
 import { getTlsFilePaths, loadOrCreateLibp2pPrivateKey, loadWebSocketTransportOptions, optionalEnv, splitEnvList } from "./config.js";
 import {
@@ -35,8 +36,9 @@ import { EventIngestService, startEventIngestServer } from "./eventIngest.js";
 const unregisterProcessErrors = registerRecoverableProcessErrorHandlers();
 useIdentityProvider(KlinokIdentityProvider);
 const dataDir = process.env.KLINOK_P2P_DATA_DIR ?? ".klinok-p2p";
-const controlDatabase = process.env.KLINOK_CONTROL_DB ?? "klinok-control-v1";
-const medicalDatabase = process.env.KLINOK_MEDICAL_DB ?? "klinok-medical-v3";
+const dataGeneration = process.env.KLINOK_DATA_GENERATION ?? "v2";
+const controlDatabase = process.env.KLINOK_CONTROL_DB ?? "klinok-control-v2";
+const medicalDatabase = process.env.KLINOK_MEDICAL_DB ?? "klinok-medical-v4";
 const controlAddress = optionalEnv("KLINOK_CONTROL_DB_ADDRESS");
 const medicalAddress = optionalEnv("KLINOK_MEDICAL_DB_ADDRESS");
 const wsPort = process.env.KLINOK_P2P_WS_PORT ?? "8089";
@@ -46,16 +48,25 @@ const tlsFiles = getTlsFilePaths();
 const privateKey = await loadOrCreateLibp2pPrivateKey({ dataDir });
 const bootstrapList = splitEnvList("KLINOK_P2P_BOOTSTRAP");
 const announce = splitEnvList("KLINOK_P2P_ANNOUNCE");
-const state = createProtocolState(process.env.KLINOK_BOOTSTRAP_ACCOUNT_ID);
 const authAttestationPublicKey = optionalEnv("KLINOK_AUTH_ATTESTATION_PUBLIC_KEY")
   ? JSON.parse(optionalEnv("KLINOK_AUTH_ATTESTATION_PUBLIC_KEY")!) as JsonWebKey
   : undefined;
 const bootstrapSigningPublicKey = optionalEnv("KLINOK_BOOTSTRAP_SIGNING_PUBLIC_KEY")
   ? JSON.parse(optionalEnv("KLINOK_BOOTSTRAP_SIGNING_PUBLIC_KEY")!) as JsonWebKey
   : undefined;
+const projector = new InMemorySignedEventRepository(process.env.KLINOK_BOOTSTRAP_ACCOUNT_ID, {
+  authAttestationPublicKey,
+  bootstrapSigningPublicKey,
+  requireTrustedAttestation: true,
+});
+const state = projector.state;
 const counters = createP2pOperationalCounters();
 const authEventUrl = optionalEnv("KLINOK_AUTH_EVENT_URL");
 const internalEventToken = optionalEnv("KLINOK_INTERNAL_EVENT_TOKEN");
+
+function trustFingerprint(key: JsonWebKey | undefined): string {
+  return key ? createHash("sha256").update(JSON.stringify(key)).digest("hex").slice(0, 16) : "missing";
+}
 
 async function notifyAuthObserver(event: SignedEvent): Promise<void> {
   if (!authEventUrl || !internalEventToken) return;
@@ -74,7 +85,6 @@ async function notifyAuthObserver(event: SignedEvent): Promise<void> {
       eventType: event.eventType,
       error: error instanceof Error ? error.message : String(error),
     }));
-    throw error;
   }
 }
 
@@ -82,29 +92,13 @@ function valueFrom(entry: unknown): SignedEvent | null {
   return extractSignedEvent(entry);
 }
 
-async function replayDatabase(db: { iterator(): AsyncIterable<unknown> }, database: "control" | "medical"): Promise<void> {
+async function databaseEvents(db: { iterator(): AsyncIterable<unknown> }, database: "control" | "medical"): Promise<SignedEvent[]> {
   const events: SignedEvent[] = [];
   for await (const entry of db.iterator()) {
     const event = valueFrom(entry);
     if (event?.database === database) events.push(event);
   }
-  const result = await reduceSignedEvents(events.filter((event) => !state.knownEvents.has(event.eventId)), state, {
-    authAttestationPublicKey,
-    bootstrapSigningPublicKey,
-    requireTrustedAttestation: true,
-  });
-  counters.conflicts += result.conflicts.length;
-  if (events.length || result.conflicts.length) {
-    console.log(JSON.stringify({
-      level: "info",
-      event: "p2p.replay.complete",
-      database,
-      events: events.length,
-      accepted: result.accepted.length,
-      conflicts: result.conflicts.length,
-    }));
-    logOperationalCounters(counters, state.roleConflicts.length);
-  }
+  return events;
 }
 
 const controlAccess = createDynamicAccessController({ state, database: "control", authAttestationPublicKey, bootstrapSigningPublicKey, requireTrustedAttestation: true, onRejected: (event, code, details) => {
@@ -149,20 +143,74 @@ const helia = withBitswap(withLibp2p(withHTTP(createHeliaLight({ blockstore, cod
 await helia.start();
 const orbitdb = await createOrbitDB({ ipfs: helia, id: identityId, directory: `${dataDir}/orbitdb` });
 const controlDb = await orbitdb.open(controlAddress ?? controlDatabase, { type: "events", AccessController: controlAccess });
-await replayDatabase(controlDb, "control");
 const medicalDb = await orbitdb.open(medicalAddress ?? medicalDatabase, { type: "events", AccessController: medicalAccess });
-await replayDatabase(medicalDb, "medical");
+let projectionQueue: Promise<void> = Promise.resolve();
+let refreshPromise: Promise<void> | null = null;
+
+function projectEvents(events: SignedEvent[], notifyObserver = true): Promise<void> {
+  projectionQueue = projectionQueue.catch(() => undefined).then(async () => {
+    const projection = await projector.import(events);
+    counters.accepted += projection.accepted.length;
+    counters.conflicts += projection.conflicts.length;
+    counters.deferred = projector.listDeferred().length;
+    if (notifyObserver) {
+      for (const event of projection.accepted) await notifyAuthObserver(event);
+    }
+    if (projection.accepted.length || projection.deferred.length || projection.conflicts.length) {
+      console.log(JSON.stringify({
+        level: "info",
+        event: "p2p.projection.updated",
+        accepted: projection.accepted.length,
+        deferred: projector.listDeferred().length,
+        conflicts: projector.listConflicts().length,
+        dataGeneration,
+      }));
+      logOperationalCounters(counters, state.roleConflicts.length);
+    }
+  });
+  return projectionQueue;
+}
+
+async function refreshProjection(): Promise<void> {
+  if (refreshPromise) return refreshPromise;
+  refreshPromise = Promise.all([
+    databaseEvents(controlDb, "control"),
+    databaseEvents(medicalDb, "medical"),
+  ]).then(([controlEvents, medicalEvents]) => projectEvents([...controlEvents, ...medicalEvents]))
+    .finally(() => { refreshPromise = null; });
+  return refreshPromise;
+}
+
+const [startupControlEvents, startupMedicalEvents] = await Promise.all([
+  databaseEvents(controlDb, "control"),
+  databaseEvents(medicalDb, "medical"),
+]);
+await projectEvents([...startupControlEvents, ...startupMedicalEvents], false);
+console.log(JSON.stringify({
+  level: "info",
+  event: "p2p.replay.complete",
+  events: startupControlEvents.length + startupMedicalEvents.length,
+  accepted: state.knownEvents.size,
+  deferred: projector.listDeferred().length,
+  conflicts: projector.listConflicts().length,
+  dataGeneration,
+}));
 const ingestServer = await startEventIngestServer({
   port: apiPort,
   service: new EventIngestService({
     state,
     databases: { control: controlDb, medical: medicalDb },
     verification: { authAttestationPublicKey, bootstrapSigningPublicKey, requireTrustedAttestation: true },
-    onPersisted: notifyAuthObserver,
+    projectEvents,
+    projectionStats: () => ({
+      accepted: state.knownEvents.size,
+      deferred: projector.listDeferred().length,
+      conflicts: projector.listConflicts().length,
+    }),
   }),
 });
-const unregisterControl = registerOrbitDbEventHandlers(controlDb, "control", counters, () => state.roleConflicts.length);
-const unregisterMedical = registerOrbitDbEventHandlers(medicalDb, "medical", counters, () => state.roleConflicts.length);
+const unregisterControl = registerOrbitDbEventHandlers(controlDb, "control", counters, () => state.roleConflicts.length, () => { void refreshProjection(); });
+const unregisterMedical = registerOrbitDbEventHandlers(medicalDb, "medical", counters, () => state.roleConflicts.length, () => { void refreshProjection(); });
 
 console.log(JSON.stringify({
   level: "info",
@@ -172,6 +220,9 @@ console.log(JSON.stringify({
   orbitIdentity: orbitdb.identity.id,
   peerId: libp2p.peerId.toString(),
   apiPort,
+  dataGeneration,
+  authAttestationFingerprint: trustFingerprint(authAttestationPublicKey),
+  bootstrapSigningFingerprint: trustFingerprint(bootstrapSigningPublicKey),
   multiaddrs: libp2p.getMultiaddrs().map((value) => value.toString()),
 }));
 

@@ -36,13 +36,21 @@ import {
 } from "./repositories/deviceVault";
 import { KlinokRepository } from "./repositories";
 import type { ControlSnapshot, MedicalSnapshot } from "./repositories/types";
-import type { EventSyncStatus } from "./repositories/eventTransport";
+import type { EventSyncStatus, SyncNotification } from "./repositories/eventTransport";
 import { reconcileDirectorySnapshot, type DirectoryPetInput } from "./directoryReconciliation";
 import { useAlertStore } from "./stores/alert";
 
 const emptyControl: ControlSnapshot = { profile: null, profiles: [], roles: [], allRoles: [], devices: [], pendingQueue: [], notifications: [], events: [] };
 const emptyMedical: MedicalSnapshot = { pets: [], grants: [], accessRequests: [], records: [], confirmations: [], confirmedRecordIds: [], events: [] };
-const emptySync: EventSyncStatus = { pendingCount: 0, failedCount: 0, syncing: false, lastError: "" };
+const emptySync: EventSyncStatus = {
+  pendingCount: 0,
+  deferredCount: 0,
+  permanentNotificationCount: 0,
+  failedCount: 0,
+  syncing: false,
+  connectionState: "connected",
+  lastError: "",
+};
 
 type AuthSuccessCode = "registration" | "verification" | "recovery" | "password-reset" | "device-approved";
 
@@ -62,6 +70,7 @@ const state = reactive({
   control: emptyControl,
   medical: emptyMedical,
   conflicts: [] as Array<{ eventId: string; code: string; message: string }>,
+  syncNotifications: [] as SyncNotification[],
   devicePending: false,
   keyRecoveryRequired: false,
   sync: emptySync,
@@ -179,6 +188,7 @@ async function connectRepository(session: AuthSessionDto) {
   await repository?.dispose();
   repository = null;
   state.sync = emptySync;
+  state.syncNotifications = [];
   if (!session.accountId || !session.device || !keys || state.keyRecoveryRequired) return;
   const accountId = session.accountId;
   const deviceId = session.device.deviceId;
@@ -239,11 +249,12 @@ async function connectRepository(session: AuthSessionDto) {
   medicalUnsubscribe = connectedRepository.medical.subscribe((snapshot) => { state.medical = snapshot; });
   syncUnsubscribe = repository.subscribeSyncStatus((status) => {
     state.sync = status;
-    if (status.failedCount) void connectedRepository.conflicts().then((conflicts) => {
-      if (repository === connectedRepository) state.conflicts = conflicts;
+    void (connectedRepository.notifications?.() ?? Promise.resolve([])).then((notifications) => {
+      if (repository === connectedRepository) state.syncNotifications = notifications;
     });
   });
   state.conflicts = await repository.conflicts();
+  state.syncNotifications = await (repository.notifications?.() ?? Promise.resolve([]));
   const directoryProfile = state.control.profile
     ? {
         firstName: state.control.profile.firstName,
@@ -328,7 +339,7 @@ export async function logout(all = false) {
     medicalUnsubscribe?.(); medicalUnsubscribe = null;
     syncUnsubscribe?.(); syncUnsubscribe = null;
     await repository?.dispose(); repository = null; keys = null;
-    state.session = { authenticated: false }; state.activeRole = null; state.control = emptyControl; state.medical = emptyMedical; state.sync = emptySync; state.repositoryConnected = false; state.busy = false;
+    state.session = { authenticated: false }; state.activeRole = null; state.control = emptyControl; state.medical = emptyMedical; state.sync = emptySync; state.syncNotifications = []; state.repositoryConnected = false; state.busy = false;
   }
 }
 
@@ -358,6 +369,7 @@ export async function revokeDevice(deviceId: string) {
   state.activeRole = null;
   state.repositoryConnected = false;
   state.sync = emptySync;
+  state.syncNotifications = [];
 }
 
 export async function deleteAccount() {
@@ -373,6 +385,7 @@ export async function deleteAccount() {
   state.activeRole = null;
   state.repositoryConnected = false;
   state.sync = emptySync;
+  state.syncNotifications = [];
 }
 
 export async function forgotPassword(email: string) {
@@ -478,6 +491,14 @@ export function requireRepository() {
   return repository;
 }
 export function getConfig() { return config; }
+
+export async function dismissSyncNotification(notificationId: string): Promise<void> {
+  const activeRepository = requireRepository();
+  await activeRepository.dismissNotification(notificationId);
+  state.syncNotifications = await activeRepository.notifications();
+  state.sync = await activeRepository.syncStatus();
+  useAlertStore().success("Уведомление закрыто.");
+}
 
 export async function importBootstrapRecovery(bundleText: string, passphrase: string) {
   state.busy = true;

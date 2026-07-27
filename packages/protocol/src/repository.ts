@@ -2,14 +2,22 @@
 // All rights reserved.
 // This file is a part of Klinok application
 
-import { applyAcceptedEvent, reconcileEffectiveEvents, reduceSignedEvents, type ProjectionConflict } from "./reducers.js";
+import {
+  applyAcceptedEvent,
+  reconcileEffectiveEvents,
+  reduceSignedEvents,
+  type ProjectionConflict,
+  type ProjectionResult,
+} from "./reducers.js";
 import { createProtocolState, verifySignedEvent } from "./authorization.js";
 import type { ProtocolState, SignedEvent, VerificationOptions } from "./types.js";
 
 export class InMemorySignedEventRepository {
-  readonly state: ProtocolState;
-  readonly conflicts: ProjectionConflict[] = [];
+  state: ProtocolState;
+  readonly deferred = new Map<string, ProjectionConflict>();
   private readonly events = new Map<string, SignedEvent>();
+  private readonly permanentConflicts = new Map<string, ProjectionConflict>();
+  private readonly newConflicts: ProjectionConflict[] = [];
   private readonly listeners = new Set<(events: SignedEvent[]) => void>();
 
   constructor(bootstrapAccountId?: string, private readonly verificationOptions: VerificationOptions = {}) {
@@ -18,6 +26,22 @@ export class InMemorySignedEventRepository {
 
   list(): SignedEvent[] {
     return [...this.events.values()];
+  }
+
+  listDeferred(): ProjectionConflict[] {
+    return [...this.deferred.values()];
+  }
+
+  listConflicts(): ProjectionConflict[] {
+    return [...this.permanentConflicts.values()];
+  }
+
+  get conflicts(): ProjectionConflict[] {
+    return this.listConflicts();
+  }
+
+  takeNewConflicts(): ProjectionConflict[] {
+    return this.newConflicts.splice(0);
   }
 
   subscribe(listener: (events: SignedEvent[]) => void): () => void {
@@ -36,12 +60,45 @@ export class InMemorySignedEventRepository {
     for (const listener of this.listeners) listener(this.list());
   }
 
-  async import(events: SignedEvent[]): Promise<void> {
-    const unseen = events.filter((event) => !this.events.has(event.eventId));
-    const projection = await reduceSignedEvents(unseen, this.state, this.verificationOptions);
-    for (const event of projection.accepted) this.events.set(event.eventId, event);
+  async import(events: SignedEvent[]): Promise<ProjectionResult> {
+    const candidates = new Map<string, SignedEvent>();
+    for (const conflict of this.deferred.values()) candidates.set(conflict.event.eventId, conflict.event);
+    for (const event of events) {
+      if (!this.events.has(event.eventId) && !this.permanentConflicts.has(event.eventId)) candidates.set(event.eventId, event);
+    }
+    const projection = await reduceSignedEvents([...candidates.values()], this.state, this.verificationOptions);
+    for (const eventId of candidates.keys()) this.deferred.delete(eventId);
+    for (const event of projection.accepted) {
+      this.events.set(event.eventId, event);
+      this.permanentConflicts.delete(event.eventId);
+    }
+    for (const conflict of projection.deferred) this.deferred.set(conflict.event.eventId, conflict);
+    for (const conflict of projection.conflicts) {
+      if (!this.permanentConflicts.has(conflict.event.eventId)) this.newConflicts.push(conflict);
+      this.permanentConflicts.set(conflict.event.eventId, conflict);
+    }
     reconcileEffectiveEvents(this.list(), this.state);
-    this.conflicts.push(...projection.conflicts);
+    if (projection.accepted.length || projection.conflicts.length) {
+      for (const listener of this.listeners) listener(this.list());
+    }
+    return projection;
+  }
+
+  async replace(events: SignedEvent[]): Promise<ProjectionResult> {
+    const replacement = new InMemorySignedEventRepository(
+      this.state.bootstrapAccountId,
+      this.verificationOptions,
+    );
+    const projection = await replacement.import(events);
+    this.state = replacement.state;
+    this.events.clear();
+    for (const [eventId, event] of replacement.events) this.events.set(eventId, event);
+    this.deferred.clear();
+    for (const [eventId, conflict] of replacement.deferred) this.deferred.set(eventId, conflict);
+    this.permanentConflicts.clear();
+    for (const [eventId, conflict] of replacement.permanentConflicts) this.permanentConflicts.set(eventId, conflict);
+    this.newConflicts.splice(0, this.newConflicts.length, ...replacement.newConflicts);
     for (const listener of this.listeners) listener(this.list());
+    return projection;
   }
 }

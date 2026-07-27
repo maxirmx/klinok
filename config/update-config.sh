@@ -7,8 +7,9 @@ set -eu
 
 CONFIG_PATH=${CONFIG_PATH:-/var/www/klinok/config.json}
 ENABLE_LOG=${ENABLE_LOG:-false}
-CONTROL_DB=${KLINOK_CONTROL_DB:-klinok-control-v1}
-MEDICAL_DB=${KLINOK_MEDICAL_DB:-klinok-medical-v3}
+DATA_GENERATION=${KLINOK_DATA_GENERATION:-v2}
+CONTROL_DB=${KLINOK_CONTROL_DB:-klinok-control-v2}
+MEDICAL_DB=${KLINOK_MEDICAL_DB:-klinok-medical-v4}
 TRUSTED_NODE=${KLINOK_TRUSTED_NODE:-/dns4/klinok.sw.consulting/tcp/8089/tls/ws}
 BOOTSTRAP_ACCOUNT_ID=${KLINOK_BOOTSTRAP_ACCOUNT_ID:-bootstrap-administrator}
 PERSONAL_DATA_VERSION=${KLINOK_PERSONAL_DATA_CONSENT_VERSION:-2026-07-10}
@@ -28,6 +29,7 @@ cat > "$CONFIG_PATH" <<EOF
   },
   "p2p": {
     "enabled": true,
+    "dataGeneration": "$DATA_GENERATION",
     "controlDatabaseName": "$CONTROL_DB",
     "medicalDatabaseName": "$MEDICAL_DB",
     "trustedNodeMultiaddrs": ["$TRUSTED_NODE"],

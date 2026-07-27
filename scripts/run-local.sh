@@ -29,9 +29,9 @@ if ! compose_version_output=$(docker compose version 2>&1); then
 fi
 
 export COMPOSE_PROJECT_NAME="${COMPOSE_PROJECT_NAME:-klinok_local}"
-export KLINOK_BOOTSTRAP_EMAIL="${KLINOK_BOOTSTRAP_EMAIL:-administrator@example.ru}"
-export KLINOK_BOOTSTRAP_PASSWORD="${KLINOK_BOOTSTRAP_PASSWORD:-bootstrap-password-2026}"
-export KLINOK_RECOVERY_PASSPHRASE="${KLINOK_RECOVERY_PASSPHRASE:-offline-recovery-passphrase-2026}"
+export KLINOK_BOOTSTRAP_EMAIL="${KLINOK_BOOTSTRAP_EMAIL:-maxirmx@sw.consulting}"
+export KLINOK_BOOTSTRAP_PASSWORD="${KLINOK_BOOTSTRAP_PASSWORD:-Password&Spaniel&26}"
+export KLINOK_RECOVERY_PASSPHRASE="${KLINOK_RECOVERY_PASSPHRASE:-Bene facta me clarum non fecerunt}"
 export KLINOK_PUBLIC_ORIGIN="http://localhost:8080"
 
 diagnose() {

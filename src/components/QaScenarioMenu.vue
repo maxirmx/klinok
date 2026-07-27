@@ -37,16 +37,16 @@ const coverageStatus = computed(() => {
 </script>
 
 <template>
-  <aside class="qa-panel" aria-label="QA сценарии">
+  <aside class="qa-panel" aria-label="Тестовые сценарии">
     <header>
       <div>
-        <strong>QA сценарии</strong>
+        <strong>Тестовые сценарии</strong>
         <span>
           {{ coverageStatus.implemented }} implemented · {{ coverageStatus.duplicate }} duplicate ·
           {{ coverageStatus.referenceOnly }} reference
         </span>
       </div>
-      <button aria-label="Закрыть QA меню" @click="$emit('close')">
+      <button aria-label="Закрыть меню тестовых сценариев" @click="$emit('close')">
         <AppIcon name="close" />
       </button>
     </header>

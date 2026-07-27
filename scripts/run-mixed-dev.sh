@@ -159,8 +159,9 @@ fs.writeFileSync(process.env.KLINOK_DEV_CONFIG, JSON.stringify({
   },
   p2p: {
     enabled: true,
-    controlDatabaseName: "klinok-control-v1",
-    medicalDatabaseName: "klinok-medical-v3",
+    dataGeneration: "v2",
+    controlDatabaseName: "klinok-control-v2",
+    medicalDatabaseName: "klinok-medical-v4",
     trustedNodeMultiaddrs: [process.env.KLINOK_TRUSTED_NODE],
     bootstrapAccountId: "bootstrap-administrator",
     authAttestationPublicKey: JSON.parse(process.env.KLINOK_AUTH_ATTESTATION_PUBLIC_KEY),

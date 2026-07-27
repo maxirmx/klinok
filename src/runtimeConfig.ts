@@ -8,8 +8,9 @@ export const RUNTIME_CONFIG_PATHS = ["/config.json"];
 
 export interface P2PClientConfig {
   enabled: boolean;
-  controlDatabaseName: "klinok-control-v1";
-  medicalDatabaseName: "klinok-medical-v3";
+  dataGeneration: string;
+  controlDatabaseName: "klinok-control-v2";
+  medicalDatabaseName: "klinok-medical-v4";
   controlDatabaseAddress?: string;
   medicalDatabaseAddress?: string;
   trustedNodeMultiaddrs: string[];
@@ -61,8 +62,9 @@ export function createDefaultRuntimeConfig(isDevelopment = import.meta.env.DEV):
     },
     p2p: {
       enabled: true,
-      controlDatabaseName: "klinok-control-v1",
-      medicalDatabaseName: "klinok-medical-v3",
+      dataGeneration: "v2",
+      controlDatabaseName: "klinok-control-v2",
+      medicalDatabaseName: "klinok-medical-v4",
       trustedNodeMultiaddrs: [isDevelopment ? DEVELOPMENT_TRUSTED_NODE_MULTIADDR : PRODUCTION_TRUSTED_NODE_MULTIADDR],
       bootstrapAccountId: "bootstrap-administrator",
     },
@@ -72,6 +74,16 @@ export function createDefaultRuntimeConfig(isDevelopment = import.meta.env.DEV):
 export const defaultRuntimeConfig = createDefaultRuntimeConfig();
 
 export function normalizeRuntimeConfig(input: AppRuntimeConfigInput, defaults = defaultRuntimeConfig): AppRuntimeConfig {
+  const dataGeneration = text(input.p2p?.dataGeneration, defaults.p2p.dataGeneration);
+  if (dataGeneration !== "v2") {
+    throw new Error("Конфигурация приложения относится к другому поколению данных. Обновите приложение и повторите попытку.");
+  }
+  if (input.p2p?.controlDatabaseName && input.p2p.controlDatabaseName !== "klinok-control-v2") {
+    throw new Error("Имя базы управляющих событий не соответствует поколению данных.");
+  }
+  if (input.p2p?.medicalDatabaseName && input.p2p.medicalDatabaseName !== "klinok-medical-v4") {
+    throw new Error("Имя базы медицинских событий не соответствует поколению данных.");
+  }
   return {
     enableLog: typeof input.enableLog === "boolean" ? input.enableLog : defaults.enableLog,
     authBaseUrl: typeof input.authBaseUrl === "string" ? input.authBaseUrl.replace(/\/$/, "") : defaults.authBaseUrl,
@@ -87,8 +99,9 @@ export function normalizeRuntimeConfig(input: AppRuntimeConfigInput, defaults = 
     },
     p2p: {
       enabled: typeof input.p2p?.enabled === "boolean" ? input.p2p.enabled : defaults.p2p.enabled,
-      controlDatabaseName: "klinok-control-v1",
-      medicalDatabaseName: "klinok-medical-v3",
+      dataGeneration,
+      controlDatabaseName: "klinok-control-v2",
+      medicalDatabaseName: "klinok-medical-v4",
       ...(input.p2p?.controlDatabaseAddress ? { controlDatabaseAddress: input.p2p.controlDatabaseAddress } : {}),
       ...(input.p2p?.medicalDatabaseAddress ? { medicalDatabaseAddress: input.p2p.medicalDatabaseAddress } : {}),
       trustedNodeMultiaddrs: strings(input.p2p?.trustedNodeMultiaddrs, defaults.p2p.trustedNodeMultiaddrs),
@@ -101,11 +114,12 @@ export function normalizeRuntimeConfig(input: AppRuntimeConfigInput, defaults = 
 
 export async function loadRuntimeConfig(): Promise<AppRuntimeConfig> {
   if (typeof fetch !== "function") return defaultRuntimeConfig;
+  let response: Response;
   try {
-    const response = await fetch(RUNTIME_CONFIG_PATHS[0], { cache: "no-store" });
-    if (!response.ok) return defaultRuntimeConfig;
-    return normalizeRuntimeConfig(await response.json() as AppRuntimeConfigInput);
+    response = await fetch(RUNTIME_CONFIG_PATHS[0], { cache: "no-store" });
   } catch {
     return defaultRuntimeConfig;
   }
+  if (!response.ok) return defaultRuntimeConfig;
+  return normalizeRuntimeConfig(await response.json() as AppRuntimeConfigInput);
 }
