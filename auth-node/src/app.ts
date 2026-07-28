@@ -420,8 +420,8 @@ export async function buildAuthApp(options: AuthAppOptions): Promise<FastifyInst
       await store.putToken({ digest: digestToken(token), accountId: account.accountId, kind: "verification", expiresAt: new Date(now().getTime() + 24 * 60 * 60_000).toISOString() });
       await countedMailer.send({
         to: email,
-        subject: "Подтверждение регистрации в Клинок",
-        text: `Подтвердите адрес: ${options.config.publicOrigin}/auth/verify-email?token=${encodeURIComponent(token)}`,
+        subject: "Подтверждение регистрации",
+        text: `Подтвердите адрес электронной почты для завершения регистрации в Клинок: ${options.config.publicOrigin}/auth/verify-email?token=${encodeURIComponent(token)}`,
       });
     }
     return reply.code(202).send({ accepted: true });

@@ -6,6 +6,7 @@
 import { computed } from "vue";
 import AppIcon from "./AppIcon.vue";
 import AppPaginator from "./AppPaginator.vue";
+import PersonIdentity from "./PersonIdentity.vue";
 import PetProfileHeader from "./PetProfileHeader.vue";
 import type { PetAccessRow } from "../petAccess";
 import type { PetProfile } from "../repositories/types";
@@ -38,7 +39,8 @@ const emit = defineEmits<{
 
 defineSlots<{
   headerActions(): unknown;
-  rowActions(props: { row: PetAccessRow }): unknown;
+  accessActions(props: { row: PetAccessRow }): unknown;
+  delegationActions(props: { row: PetAccessRow }): unknown;
   default(): unknown;
 }>();
 
@@ -62,7 +64,19 @@ const pagedRows = computed(() => props.rows.slice(
         :owner-display-name="ownerDisplayName"
         :owner-account-id="ownerAccountId"
       >
-        <template v-if="$slots.headerActions" #actions><slot name="headerActions" /></template>
+        <template v-if="canAdd || $slots.headerActions" #actions>
+          <button
+            v-if="canAdd"
+            class="primary-action inline owner-profile-action"
+            type="button"
+            :title="addLabel"
+            :aria-label="addLabel"
+            @click="emit('add')"
+          >
+            <AppIcon name="plus" />
+          </button>
+          <slot name="headerActions" />
+        </template>
       </PetProfileHeader>
     </article>
 
@@ -71,19 +85,6 @@ const pagedRows = computed(() => props.rows.slice(
         <table class="owner-access-table">
           <thead>
             <tr>
-              <th :class="{ 'owner-access-actions-header': canAdd }">
-                <button
-                  v-if="canAdd"
-                  class="primary-action inline access-icon-action"
-                  type="button"
-                  :title="addLabel"
-                  :aria-label="addLabel"
-                  @click="emit('add')"
-                >
-                  <AppIcon name="plus" />
-                </button>
-                <span :class="{ 'visually-hidden': canAdd }">Действия</span>
-              </th>
               <th>ФИО врача</th>
               <th>Доступ</th>
               <th>Делегирование</th>
@@ -91,22 +92,31 @@ const pagedRows = computed(() => props.rows.slice(
           </thead>
           <tbody>
             <tr v-for="row in pagedRows" :key="row.accountId">
-              <td class="owner-access-actions" data-label="Действия">
-                <div class="owner-access-action-list"><slot name="rowActions" :row="row" /></div>
-              </td>
               <td class="owner-access-doctor" data-label="ФИО врача">
-                <strong>{{ row.displayName }}</strong>
-                <small>{{ row.accountId }}</small>
+                <PersonIdentity :display-name="row.displayName" :account-id="row.accountId" />
               </td>
               <td data-label="Доступ">
-                <span class="status-badge" :class="row.status">{{ statusLabel(row.status) }}</span>
+                <div class="owner-access-controlled">
+                  <span class="status-badge" :class="row.status">{{ statusLabel(row.status) }}</span>
+                  <div v-if="$slots.accessActions" class="row-actions">
+                    <slot name="accessActions" :row="row" />
+                  </div>
+                </div>
               </td>
-              <td :class="{ 'is-empty': row.status !== 'granted' }" data-label="Делегирование">
-                {{ row.status === 'granted' ? row.delegationAllowed ? 'Да' : 'Нет' : '' }}
+              <td
+                :class="{ 'is-empty': row.status !== 'granted' }"
+                data-label="Делегирование"
+              >
+                <div class="owner-access-controlled">
+                  <span>{{ row.status === 'granted' ? row.delegationAllowed ? 'Да' : 'Нет' : '' }}</span>
+                  <div v-if="$slots.delegationActions" class="row-actions">
+                    <slot name="delegationActions" :row="row" />
+                  </div>
+                </div>
               </td>
             </tr>
             <tr v-if="!rows.length">
-              <td colspan="4" class="owner-access-empty">{{ emptyMessage }}</td>
+              <td colspan="3" class="owner-access-empty">{{ emptyMessage }}</td>
             </tr>
           </tbody>
         </table>

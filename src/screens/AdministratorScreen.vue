@@ -9,6 +9,7 @@ import type { AccountProfile, Role, RoleRequest, RoleStatus } from "@klinok/prot
 import AppIcon from "../components/AppIcon.vue";
 import AppPaginator from "../components/AppPaginator.vue";
 import ModalDialog from "../components/ModalDialog.vue";
+import PersonIdentity from "../components/PersonIdentity.vue";
 import WorkspaceShell from "../components/WorkspaceShell.vue";
 import { appState, decideRole, getConfig, logout } from "../appStore";
 import { useAlertStore } from "../stores/alert";
@@ -71,9 +72,7 @@ const statusLabels: Record<RoleStatus, string> = {
   pending: "Запрошена",
   approved: "Одобрена",
   rejected: "Отказ",
-  suspended: "Отозвана",
   revoked: "Отозвана",
-  expired: "Отозвана",
 };
 
 const statusClasses: Record<RoleStatus, string> = {
@@ -81,9 +80,7 @@ const statusClasses: Record<RoleStatus, string> = {
   pending: "pending",
   approved: "approved",
   rejected: "rejected",
-  suspended: "revoked",
   revoked: "revoked",
-  expired: "revoked",
 };
 
 function readPageSize(key: string): (typeof pageSizes)[number] {
@@ -177,11 +174,6 @@ const decisionTitle = computed(() => {
   return `Отозвать роль «${role}»?`;
 });
 
-const decisionDescription = computed(() => {
-  if (!decision.value) return "";
-  return `${profileName(decision.value.request.accountId)} · ${decision.value.request.accountId}`;
-});
-
 const decisionConfirmLabel = computed(() => {
   if (decision.value?.action === "approve") return "Одобрить";
   if (decision.value?.action === "restore") return "Восстановить";
@@ -230,9 +222,7 @@ function transitionAction(event: (typeof appState.control.events)[number]): Pick
   if (event.eventType === "role.restored") return { category: "restore", action: "Роль восстановлена" };
   if (event.eventType === "role.rejected") return { category: "reject", action: "В запросе отказано" };
   if (event.eventType === "role.cancelled") return { category: "revoke", action: "Запрос отозван пользователем" };
-  if (event.eventType === "role.suspended") return { category: "revoke", action: "Роль приостановлена" };
   if (event.eventType === "role.revoked") return { category: "revoke", action: "Роль отозвана" };
-  if (event.eventType === "role.expired") return { category: "revoke", action: "Срок роли истёк" };
   return null;
 }
 
@@ -350,10 +340,9 @@ watch(auditPageCount, (count) => { if (auditPage.value > count) auditPage.value 
         </p>
         <template v-else>
           <div class="administrator-table-wrap">
-            <table class="administrator-table">
+            <table class="administrator-table administrator-role-table">
               <thead>
                 <tr>
-                  <th><span class="visually-hidden">Действия</span></th>
                   <th :aria-sort="sortAria('name')">
                     <button type="button" @click="changeSort('name')">
                       ФИО
@@ -376,9 +365,26 @@ watch(auditPageCount, (count) => { if (auditPage.value > count) auditPage.value 
               </thead>
               <tbody>
                 <tr v-for="row in pagedRows" :key="row.accountId">
-                  <td class="administrator-actions" data-label="Действия">
-                    <div v-for="advancedRole in advancedRoles" :key="advancedRole" class="administrator-role-actions">
-                      <template v-if="row[advancedRole] && !isBootstrapAdministrator(row[advancedRole]!)">
+                  <td class="administrator-name" data-label="ФИО">
+                    <PersonIdentity :display-name="row.displayName" :account-id="row.accountId" />
+                  </td>
+                  <td
+                    v-for="advancedRole in advancedRoles"
+                    :key="advancedRole"
+                    class="administrator-role-cell"
+                    :data-label="roleLabels[advancedRole]"
+                  >
+                    <div v-if="row[advancedRole]" class="administrator-role-content">
+                      <span
+                        class="status-badge"
+                        :class="statusClasses[row[advancedRole]!.status]"
+                      >
+                        {{ statusLabels[row[advancedRole]!.status] }}
+                      </span>
+                      <div
+                        v-if="!isBootstrapAdministrator(row[advancedRole]!)"
+                        class="administrator-role-actions"
+                      >
                         <template v-if="row[advancedRole]?.status === 'pending'">
                           <button
                             class="primary-action inline access-icon-action"
@@ -419,21 +425,8 @@ watch(auditPageCount, (count) => { if (auditPage.value > count) auditPage.value 
                         >
                           <AppIcon name="restore" />
                         </button>
-                      </template>
+                      </div>
                     </div>
-                  </td>
-                  <td class="administrator-name" data-label="ФИО">
-                    <strong>{{ row.displayName }}</strong>
-                    <small>{{ row.accountId }}</small>
-                  </td>
-                  <td v-for="advancedRole in advancedRoles" :key="advancedRole" :data-label="roleLabels[advancedRole]">
-                    <span
-                      v-if="row[advancedRole]"
-                      class="status-badge"
-                      :class="statusClasses[row[advancedRole]!.status]"
-                    >
-                      {{ statusLabels[row[advancedRole]!.status] }}
-                    </span>
                   </td>
                 </tr>
               </tbody>
@@ -516,14 +509,18 @@ watch(auditPageCount, (count) => { if (auditPage.value > count) auditPage.value 
                 <tr v-for="row in pagedAuditRows" :key="row.eventId">
                   <td data-label="Дата и время"><time :datetime="row.createdAt">{{ formatDate(row.createdAt) }}</time></td>
                   <td class="administrator-name" data-label="Пользователь">
-                    <strong>{{ profileName(row.targetAccountId) }}</strong>
-                    <small>{{ row.targetAccountId }}</small>
+                    <PersonIdentity
+                      :display-name="profileName(row.targetAccountId)"
+                      :account-id="row.targetAccountId"
+                    />
                   </td>
                   <td data-label="Действие">{{ row.action }}</td>
                   <td data-label="Роль">{{ roleLabels[row.role] }}</td>
                   <td class="administrator-name" data-label="Администратор">
-                    <strong>{{ profileName(row.actorAccountId) }}</strong>
-                    <small>{{ row.actorAccountId }}</small>
+                    <PersonIdentity
+                      :display-name="profileName(row.actorAccountId)"
+                      :account-id="row.actorAccountId"
+                    />
                   </td>
                   <td :class="{ 'is-empty': !row.reason }" data-label="Причина">{{ row.reason }}</td>
                 </tr>
@@ -545,11 +542,17 @@ watch(auditPageCount, (count) => { if (auditPage.value > count) auditPage.value 
     <ModalDialog
       :model-value="Boolean(decision)"
       :title="decisionTitle"
-      :description="decisionDescription"
       :busy="decisionBusy"
       :role="destructiveDecision ? 'alertdialog' : 'dialog'"
       @update:model-value="decision = null"
     >
+      <template #description>
+        <PersonIdentity
+          v-if="decision"
+          :display-name="profileName(decision.request.accountId)"
+          :account-id="decision.request.accountId"
+        />
+      </template>
       <form class="form-stack administrator-decision-form" @submit.prevent="submitDecision">
         <label v-if="destructiveDecision">
           <span>Причина, необязательно</span>

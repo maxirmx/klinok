@@ -14,6 +14,7 @@ import MedicalRecordEntry from "../components/MedicalRecordEntry.vue";
 import ModalDialog from "../components/ModalDialog.vue";
 import PetAccessManager from "../components/PetAccessManager.vue";
 import PetProfileView from "../components/PetProfileView.vue";
+import PersonIdentity from "../components/PersonIdentity.vue";
 import WorkspaceShell from "../components/WorkspaceShell.vue";
 import {
   appState,
@@ -501,7 +502,7 @@ onMounted(() => { void refreshPets(); });
           <tbody>
             <tr v-for="pet in directoryPets" :key="pet.petId">
               <td class="owner-access-actions" data-label="Действия">
-                <div class="owner-access-action-list">
+                <div class="row-actions">
                   <RouterLink
                     class="primary-action inline access-icon-action"
                     :to="`/doctor/pets/${pet.petId}`"
@@ -531,7 +532,7 @@ onMounted(() => { void refreshPets(); });
                 </div>
               </td>
               <td class="owner-access-doctor" data-label="Питомец"><strong>{{ pet.species }} {{ pet.name }}</strong><small>{{ pet.petId }}</small></td>
-              <td class="owner-access-doctor" data-label="Владелец"><strong>{{ pet.ownerDisplayName }}</strong><small>{{ pet.ownerAccountId }}</small></td>
+              <td class="owner-access-doctor" data-label="Владелец"><PersonIdentity :display-name="pet.ownerDisplayName" :account-id="pet.ownerAccountId" /></td>
               <td data-label="Делегирование">{{ pet.permissions?.includes('delegate') ? 'Да' : 'Нет' }}</td>
             </tr>
             <tr v-if="!directoryPets.length"><td class="doctor-access-empty" colspan="4">Доступных питомцев не найдено.</td></tr>
@@ -557,7 +558,7 @@ onMounted(() => { void refreshPets(); });
             <button class="primary-action inline access-icon-action doctor-request-search-action" type="submit" :disabled="busy" :title="busy ? 'Поиск питомца…' : 'Найти питомца'" :aria-label="busy ? 'Поиск питомца…' : 'Найти питомца'"><AppIcon name="search" /></button>
           </form>
           <div v-for="pet in petSearchResults" :key="pet.petId" class="list-row doctor-request-result">
-            <div><strong>{{ pet.species }} {{ pet.name }}</strong><small>{{ pet.petId }}</small><span>{{ pet.ownerDisplayName }}</span><small>{{ pet.ownerAccountId }}</small></div>
+            <div><strong>{{ pet.species }} {{ pet.name }}</strong><small>{{ pet.petId }}</small><PersonIdentity :display-name="pet.ownerDisplayName" :account-id="pet.ownerAccountId" /></div>
             <button class="primary-action inline access-icon-action" type="button" :disabled="busy" title="Отправить запрос" aria-label="Отправить запрос" @click="requestAccess(pet)"><AppIcon name="check" /></button>
           </div>
           <p v-if="petSearchPerformed && !petSearchResults.length">Питомцы не найдены.</p>
@@ -670,7 +671,7 @@ onMounted(() => { void refreshPets(); });
             <label><span>ФИО врача, его часть или полный идентификатор</span><input v-model="doctorQuery" required /></label>
             <button class="primary-action inline access-icon-action grant-search-action" type="submit" :disabled="busy" :title="busy ? 'Поиск врача…' : 'Найти врача'" :aria-label="busy ? 'Поиск врача…' : 'Найти врача'"><AppIcon name="search" /></button>
           </form>
-          <div v-for="doctor in doctors" :key="doctor.accountId" class="list-row"><div><strong>{{ doctor.displayName }}</strong><span>{{ doctor.accountId }}</span></div><button class="outline-action inline access-icon-action" type="button" title="Выбрать врача" aria-label="Выбрать врача" @click="delegationTarget = doctor"><AppIcon name="check" /></button></div>
+          <div v-for="doctor in doctors" :key="doctor.accountId" class="list-row"><PersonIdentity :display-name="doctor.displayName" :account-id="doctor.accountId" /><button class="outline-action inline access-icon-action" type="button" title="Выбрать врача" aria-label="Выбрать врача" @click="delegationTarget = doctor"><AppIcon name="check" /></button></div>
           <p v-if="doctorSearchPerformed && !doctors.length">Врачи не найдены.</p>
           <form v-if="delegationTarget" class="form-stack" @submit.prevent="delegationConfirm = true">
             <strong>Выбран врач: {{ delegationTarget.displayName }}</strong>

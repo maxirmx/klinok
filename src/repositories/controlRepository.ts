@@ -242,7 +242,7 @@ export class ControlRepository {
     if (!current) throw new Error("Заявка роли не найдена.");
     const operationId = crypto.randomUUID();
     const restoring = input.status === "approved" &&
-      ["not_requested", "rejected", "suspended", "revoked", "expired"].includes(current.request.status);
+      ["not_requested", "rejected", "revoked"].includes(current.request.status);
     const recipients = [...this.signed.state.devices.values()].filter((device) =>
       device.status === "active" && (device.accountId === input.accountId || device.accountId === this.context.accountId),
     );
@@ -255,7 +255,7 @@ export class ControlRepository {
         role: input.role,
         status: input.status,
         profileRevision: current.request.profileRevision,
-        ...(["suspended", "revoked"].includes(input.status) ? {
+        ...(input.status === "revoked" ? {
           priorAuthorizedEventIds: this.signed.list()
             .filter((event) => event.database === "medical" && event.actorAccountId === input.accountId)
             .map((event) => event.eventId),

@@ -5,6 +5,7 @@
 
 import { computed } from "vue";
 import AppIcon from "./AppIcon.vue";
+import PersonIdentity from "./PersonIdentity.vue";
 import {
   ENCOUNTER_SECTION_LABELS,
   encounterSummary,
@@ -169,10 +170,14 @@ function formatLocalDateTime(value: string) {
           </div>
         </dl>
         <p v-else-if="isFreeTextValue(item.section.value)">{{ freeText(item.section.value) }}</p>
-        <small>
-          {{ item.section.authorDisplayName }}<template v-if="showAuthorAccountId"> · {{ item.section.authorAccountId }}</template>
-          · {{ formatLocalDateTime(item.section.updatedAt) }}
-        </small>
+        <div v-if="showAuthorAccountId" class="encounter-history-meta">
+          <PersonIdentity
+            :display-name="item.section.authorDisplayName"
+            :account-id="item.section.authorAccountId"
+          />
+          <small>{{ formatLocalDateTime(item.section.updatedAt) }}</small>
+        </div>
+        <small v-else>{{ item.section.authorDisplayName }} · {{ formatLocalDateTime(item.section.updatedAt) }}</small>
       </div>
 
       </template>

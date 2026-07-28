@@ -163,8 +163,8 @@ describe("logout navigation", () => {
     expect(wrapper.text()).toContain("Домашний ноутбук");
     expect(wrapper.get(".account-security").text()).toContain("Управляйте идентификатором и сеансами аккаунта.");
     expect(wrapper.get(".device-security").text()).toContain("Управляйте подтверждёнными устройствами.");
-    expect(wrapper.get(".profile-account-name").text()).toBe("Максим Сергеевич Иванов");
-    expect(wrapper.get(".profile-account-id").text()).toBe("account-1");
+    expect(wrapper.get(".profile-account-identity .person-identity-name").text()).toBe("Максим Сергеевич Иванов");
+    expect(wrapper.get(".profile-account-identity .person-identity-id").text()).toBe("account-1");
     expect(wrapper.text()).not.toContain("новое устройство подтверждается автоматически");
     expect(wrapper.text()).toContain("Идентификатор: pending-device");
     expect(wrapper.text()).toContain("Это устройство");

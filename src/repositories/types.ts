@@ -141,6 +141,6 @@ export interface MedicalSnapshot {
 export interface RoleDecisionInput {
   accountId: string;
   role: Role;
-  status: "approved" | "rejected" | "suspended" | "revoked";
+  status: "approved" | "rejected" | "revoked";
   reason?: string;
 }

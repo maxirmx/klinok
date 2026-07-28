@@ -20,13 +20,12 @@ import {
   type VerificationResult,
 } from "./types.js";
 
-const RESTRICTIVENESS: Record<Exclude<RoleStatus, "expired">, number> = {
+const RESTRICTIVENESS: Record<RoleStatus, number> = {
   not_requested: 0,
   approved: 1,
   pending: 2,
   rejected: 3,
-  suspended: 4,
-  revoked: 5,
+  revoked: 4,
 };
 
 export function createProtocolState(bootstrapAccountId = "bootstrap-administrator"): ProtocolState {
@@ -59,22 +58,17 @@ export function deviceProjectionKey(accountId: string, deviceId: string): string
 }
 
 export function chooseConcurrentRoleStatus(left: RoleStatus, right: RoleStatus): RoleStatus {
-  if (left === "expired") return right === "expired" ? left : right;
-  if (right === "expired") return left;
   return RESTRICTIVENESS[left] >= RESTRICTIVENESS[right] ? left : right;
 }
 
 export function isLegalRoleTransition(from: RoleStatus, to: RoleStatus): boolean {
-  if (to === "expired") return false;
   if (from === to) return true;
   const transitions: Record<RoleStatus, RoleStatus[]> = {
     not_requested: ["pending", "approved"],
     pending: ["approved", "rejected", "not_requested"],
-    approved: ["suspended", "revoked"],
+    approved: ["revoked"],
     rejected: ["pending", "approved"],
-    suspended: ["approved", "pending", "revoked"],
     revoked: ["pending", "approved"],
-    expired: ["approved"],
   };
   return transitions[from].includes(to);
 }
@@ -245,9 +239,6 @@ function roleEventResult(event: SignedEvent, state: ProtocolState): Verification
   if (targetAccountId === state.bootstrapAccountId && role === "administrator" && nextStatus !== "approved") {
     return { accepted: false, code: "BOOTSTRAP_PROTECTED", message: "Bootstrap Administrator is immutable." };
   }
-  if (nextStatus === "expired") {
-    return { accepted: false, code: "ROLE_EVENT_INVALID", message: "Invalid role transition metadata." };
-  }
   const current = state.roles.get(roleProjectionKey(targetAccountId, role));
   const parentRoleEvent = event.parents.map((parent) => state.events.get(parent)).find((parent) =>
     parent?.eventType.startsWith("role.") && String(parent.metadata.accountId ?? parent.aggregateId) === targetAccountId && parent.metadata.role === role,
@@ -255,7 +246,7 @@ function roleEventResult(event: SignedEvent, state: ProtocolState): Verification
   const from = parentRoleEvent ? parentRoleEvent.metadata.status as RoleStatus : current?.request.status ?? "not_requested";
   const concurrentSibling = current && current.parents.length === event.parents.length && current.parents.every((parent) => event.parents.includes(parent));
   const immediateOwnerReactivation = role === "owner" && event.actorAccountId === targetAccountId && nextStatus === "approved" &&
-    ["not_requested", "rejected", "suspended", "revoked"].includes(from);
+    ["not_requested", "rejected", "revoked"].includes(from);
   if (!concurrentSibling && !isLegalRoleTransition(from, nextStatus) && !immediateOwnerReactivation) {
     return { accepted: false, code: "ROLE_TRANSITION_INVALID", message: `${from} cannot transition to ${nextStatus}.` };
   }

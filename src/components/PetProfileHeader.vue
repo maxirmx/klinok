@@ -5,6 +5,7 @@
 
 import { petBirthSummary } from "../petProfile";
 import type { PetProfile } from "../repositories/types";
+import PersonIdentity from "./PersonIdentity.vue";
 
 withDefaults(defineProps<{
   pet: PetProfile;
@@ -27,8 +28,14 @@ withDefaults(defineProps<{
       <small class="owner-pet-id">{{ pet.petId }}</small>
       <p>{{ pet.species }} · {{ pet.breed }}</p>
       <p>{{ petBirthSummary(pet) }}</p>
-      <p v-if="ownerDisplayName" class="owner-pet-owner"><strong>{{ ownerDisplayName }}</strong></p>
-      <small v-if="ownerAccountId" class="owner-pet-owner-id">{{ ownerAccountId }}</small>
+      <PersonIdentity
+        v-if="ownerDisplayName && ownerAccountId"
+        class="owner-pet-owner"
+        :display-name="ownerDisplayName"
+        :account-id="ownerAccountId"
+      />
+      <p v-else-if="ownerDisplayName" class="owner-pet-owner"><strong>{{ ownerDisplayName }}</strong></p>
+      <small v-else-if="ownerAccountId" class="owner-pet-owner-id">{{ ownerAccountId }}</small>
     </div>
     <div v-if="$slots.actions" class="row-actions owner-profile-actions">
       <slot name="actions" />

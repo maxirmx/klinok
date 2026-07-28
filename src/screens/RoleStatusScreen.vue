@@ -9,6 +9,7 @@ import type { Role, RoleStatus } from "@klinok/protocol";
 import AppIcon from "../components/AppIcon.vue";
 import ConfirmationDialog from "../components/ConfirmationDialog.vue";
 import PasswordInput from "../components/PasswordInput.vue";
+import PersonIdentity from "../components/PersonIdentity.vue";
 import RoleSelectionCards from "../components/RoleSelectionCards.vue";
 import SyncStatus from "../components/SyncStatus.vue";
 import WorkspaceShell from "../components/WorkspaceShell.vue";
@@ -39,7 +40,7 @@ const router = useRouter();
 const alertStore = useAlertStore();
 const statuses: Record<RoleStatus, string> = {
   not_requested: "Не запрошена", pending: "Ожидает решения", approved: "Одобрена", rejected: "Отклонена",
-  suspended: "Приостановлена", revoked: "Отозвана", expired: "Истекла",
+  revoked: "Отозвана",
 };
 const requests = computed(() => new Map(appState.control.roles.map((request) => [request.role, request])));
 const roleStatuses = computed<Partial<Record<Role, RoleStatus | "not_requested">>>(() => ({
@@ -434,10 +435,12 @@ async function confirmDeviceRevocation() {
             </button>
           </div>
         </div>
-        <div class="profile-account-identity">
-          <strong class="profile-account-name">{{ profileName || 'Имя не указано' }}</strong>
-          <div class="profile-account-id-row">
-            <small class="profile-account-id">{{ appState.session.accountId }}</small>
+        <PersonIdentity
+          class="profile-account-identity"
+          :display-name="profileName || 'Имя не указано'"
+          :account-id="appState.session.accountId || ''"
+        >
+          <template #idActions>
             <button
               class="outline-action inline profile-icon-action"
               type="button"
@@ -447,8 +450,8 @@ async function confirmDeviceRevocation() {
             >
               <AppIcon name="copy" />
             </button>
-          </div>
-        </div>
+          </template>
+        </PersonIdentity>
       </section>
 
       <section id="devices" class="panel profile-section device-security">

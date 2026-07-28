@@ -164,17 +164,24 @@ describe("Administrator pages", () => {
     expect(auditLink.text()).toBe("");
     expect(auditLink.getComponent(AppIcon).props("name")).toBe("book");
     expect(wrapper.findAll(".administrator-table th").map((header) => header.text())).toEqual([
-      "Действия", "ФИО", "Ветеринар", "Администратор",
+      "ФИО", "Ветеринар", "Администратор",
     ]);
     expect(wrapper.findAll(".administrator-table tbody tr")).toHaveLength(3);
     expect(wrapper.text()).not.toContain("Ольга Владелец");
-    expect(rowFor(wrapper, "Анна Врач").text()).toContain("Запрошена");
-    expect(rowFor(wrapper, "Анна Врач").text()).toContain("Отказ");
+    const doctorRow = rowFor(wrapper, "Анна Врач");
+    expect(doctorRow.text()).toContain("Запрошена");
+    expect(doctorRow.text()).toContain("Отказ");
+    const doctorName = doctorRow.get(".person-identity");
+    expect(doctorName.get(".person-identity-name").text()).toBe("Анна Врач");
+    expect(doctorName.get(".person-identity-id").text()).toBe("doctor-1");
     expect(rowFor(wrapper, "Борис Врач").text()).toContain("Отозвана");
-    expect(rowFor(wrapper, "Начальный Администратор").findAll(".administrator-actions button")).toHaveLength(0);
-    expect(rowFor(wrapper, "Анна Врач").findAll("button").map((button) => button.attributes("title"))).toEqual([
+    expect(wrapper.find(".administrator-actions").exists()).toBe(false);
+    expect(rowFor(wrapper, "Начальный Администратор").findAll(".administrator-role-cell button")).toHaveLength(0);
+    expect(doctorRow.get('[data-label="Ветеринар"]').findAll("button").map((button) => button.attributes("title"))).toEqual([
       "Одобрить роль «Ветеринар»",
       "Отклонить запрос роли «Ветеринар»",
+    ]);
+    expect(doctorRow.get('[data-label="Администратор"]').findAll("button").map((button) => button.attributes("title"))).toEqual([
       "Восстановить роль «Администратор»",
     ]);
   });
@@ -190,6 +197,13 @@ describe("Administrator pages", () => {
 
     await wrapper.get('button[title="Отклонить запрос роли «Ветеринар»"]').trigger("click");
     const rejectDialog = wrapper.get('[role="alertdialog"]');
+    const identity = rejectDialog.get(".person-identity");
+    expect(identity.get(".person-identity-name").text()).toBe("Анна Врач");
+    expect(identity.get(".person-identity-id").text()).toBe("doctor-1");
+    expect(identity.element.children[0]).toBe(identity.get(".person-identity-name").element);
+    expect(identity.element.children[1]).toBe(identity.get(".person-identity-id-row").element);
+    expect(rejectDialog.attributes("aria-describedby"))
+      .toBe(rejectDialog.get(".modal-dialog-description").attributes("id"));
     await rejectDialog.get("textarea").setValue("Документы не подтверждены");
     await rejectDialog.get("form").trigger("submit");
     await flushPromises();

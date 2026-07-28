@@ -482,7 +482,7 @@ export async function switchRole(role: Role): Promise<void> {
 
 export async function requestRole(role: Role) { await requireRepository().control.requestRole(role, state.control.profile?.revision ?? 1); }
 export async function cancelRole(role: Role) { await requireRepository().control.cancelRole(role); }
-export async function decideRole(request: RoleRequest, status: "approved" | "rejected" | "suspended" | "revoked", reason?: string) {
+export async function decideRole(request: RoleRequest, status: "approved" | "rejected" | "revoked", reason?: string) {
   await requireRepository().control.decideRole({ accountId: request.accountId, role: request.role, status, ...(reason ? { reason } : {}) });
 }
 export function getRepository() { return repository; }
