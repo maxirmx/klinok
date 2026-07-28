@@ -2,7 +2,10 @@
 // All rights reserved.
 // This file is a part of Klinok application
 
+import { mount } from "@vue/test-utils";
+import { createMemoryHistory, createRouter } from "vue-router";
 import { describe, expect, it } from "vitest";
+import QaScenarioMenu from "../src/components/QaScenarioMenu.vue";
 import { scenarioRegistry } from "../src/scenarios";
 import { routes } from "../src/router";
 
@@ -29,5 +32,21 @@ describe("operational routes", () => {
 
   it("keeps the prototype pet-list URL as a compatibility redirect", () => {
     expect(routes.find((route) => route.path === "/owner/pets")?.redirect).toBe("/owner/home");
+  });
+
+  it("renders and filters the QA scenario menu", async () => {
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [{ path: "/auth/login", name: "auth-login", component: { template: "<div />" } }],
+    });
+    await router.push("/auth/login");
+    const wrapper = mount(QaScenarioMenu, { global: { plugins: [router] } });
+
+    expect(wrapper.get(".qa-panel").attributes("aria-label")).toBe("Тестовые сценарии");
+    expect(wrapper.findAll(".qa-row")).toHaveLength(scenarioRegistry.length);
+    await wrapper.findAll(".qa-role-filter button").find((button) => button.text() === "Врач")!.trigger("click");
+    expect(wrapper.findAll(".qa-row")).toHaveLength(scenarioRegistry.filter((entry) => entry.role === "doctor").length);
+    await wrapper.get('button[aria-label="Закрыть меню тестовых сценариев"]').trigger("click");
+    expect(wrapper.emitted("close")).toHaveLength(1);
   });
 });

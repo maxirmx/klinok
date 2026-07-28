@@ -7,6 +7,9 @@ import { createPinia, setActivePinia } from "pinia";
 
 const authMocks = vi.hoisted(() => ({
   session: vi.fn(),
+  logout: vi.fn(),
+  revokeDevice: vi.fn(),
+  deleteAccount: vi.fn(),
   syncDirectoryProfile: vi.fn(),
   syncDirectoryPet: vi.fn(),
 }));
@@ -17,6 +20,12 @@ const repositoryMocks = vi.hoisted(() => ({
   setActiveRole: vi.fn().mockResolvedValue(undefined),
   controlSnapshot: vi.fn(),
   medicalSnapshot: vi.fn(),
+  notifications: vi.fn(),
+  dismissNotification: vi.fn(),
+  syncStatus: vi.fn(),
+  syncListener: null as ((status: Record<string, unknown>) => void) | null,
+  revokeDevice: vi.fn(),
+  deleteAccount: vi.fn(),
 }));
 
 vi.mock("../src/runtimeConfig", () => ({
@@ -38,6 +47,9 @@ vi.mock("../src/repositories/authClient", () => {
   }
   class AuthClient {
     session = authMocks.session;
+    logout = authMocks.logout;
+    revokeDevice = authMocks.revokeDevice;
+    deleteAccount = authMocks.deleteAccount;
     syncDirectoryProfile = authMocks.syncDirectoryProfile;
     syncDirectoryPet = authMocks.syncDirectoryPet;
   }
@@ -57,19 +69,34 @@ vi.mock("../src/repositories", () => {
     control: {
       snapshot: repositoryMocks.controlSnapshot,
       subscribe: vi.fn().mockReturnValue(() => undefined),
+      revokeDevice: repositoryMocks.revokeDevice,
+      deleteAccount: repositoryMocks.deleteAccount,
     },
     medical: {
       snapshot: repositoryMocks.medicalSnapshot,
       subscribe: vi.fn().mockReturnValue(() => undefined),
     },
     conflicts: vi.fn().mockResolvedValue([]),
-    subscribeSyncStatus: vi.fn().mockReturnValue(() => undefined),
+    notifications: repositoryMocks.notifications,
+    dismissNotification: repositoryMocks.dismissNotification,
+    syncStatus: repositoryMocks.syncStatus,
+    subscribeSyncStatus: vi.fn((listener: (status: Record<string, unknown>) => void) => {
+      repositoryMocks.syncListener = listener;
+      return () => undefined;
+    }),
   };
   repositoryMocks.create.mockResolvedValue(repository);
   return { KlinokRepository: { create: repositoryMocks.create } };
 });
 
-import { appState, bootstrapApp } from "../src/appStore";
+import {
+  appState,
+  bootstrapApp,
+  deleteAccount,
+  dismissSyncNotification,
+  logout,
+  revokeDevice,
+} from "../src/appStore";
 import { useAlertStore } from "../src/stores/alert";
 
 beforeEach(() => {
@@ -124,6 +151,23 @@ beforeEach(() => {
     confirmedRecordIds: [],
     events: [],
   });
+  repositoryMocks.notifications.mockResolvedValue([]);
+  repositoryMocks.dismissNotification.mockResolvedValue(undefined);
+  repositoryMocks.syncStatus.mockResolvedValue({
+    pendingCount: 0,
+    deferredCount: 0,
+    permanentNotificationCount: 0,
+    failedCount: 0,
+    syncing: false,
+    connectionState: "connected",
+    lastError: "",
+  });
+  repositoryMocks.syncListener = null;
+  authMocks.logout.mockResolvedValue(undefined);
+  authMocks.revokeDevice.mockResolvedValue({ revokedDeviceIds: [] });
+  authMocks.deleteAccount.mockResolvedValue({ operationId: "delete-operation" });
+  repositoryMocks.revokeDevice.mockResolvedValue(undefined);
+  repositoryMocks.deleteAccount.mockResolvedValue(undefined);
   authMocks.syncDirectoryPet.mockResolvedValue(undefined);
 });
 
@@ -142,5 +186,64 @@ describe("app-store directory reconciliation", () => {
 
     resolveProfile();
     await vi.waitFor(() => expect(authMocks.syncDirectoryPet).toHaveBeenCalledOnce());
+  });
+
+  it("refreshes notification state from sync updates and after dismissal", async () => {
+    await bootstrapApp(true);
+    const notification = {
+      notificationId: "notification-1",
+      accountId: "owner-1",
+      operationId: "operation-1",
+      rootEventId: "event-1",
+      database: "control",
+      eventType: "profile.updated",
+      code: "EVENT_REJECTED",
+      reasonKey: "invalid",
+      diagnosticId: "diagnostic-1",
+      affectedEventIds: ["event-1"],
+      createdAt: "2026-07-22T00:00:00.000Z",
+      action: "return",
+    };
+    repositoryMocks.notifications.mockResolvedValue([notification]);
+    repositoryMocks.syncListener?.({
+      pendingCount: 0,
+      deferredCount: 0,
+      permanentNotificationCount: 1,
+      failedCount: 1,
+      syncing: false,
+      connectionState: "connected",
+      lastError: "",
+    });
+    await vi.waitFor(() => expect(appState.syncNotifications).toEqual([notification]));
+
+    repositoryMocks.notifications.mockResolvedValue([]);
+    await dismissSyncNotification(notification.notificationId);
+    expect(repositoryMocks.dismissNotification).toHaveBeenCalledWith(notification.notificationId);
+    expect(appState.syncNotifications).toEqual([]);
+    expect(useAlertStore().alert?.text).toBe("Уведомление закрыто.");
+  });
+
+  it("clears repository and synchronization state on logout", async () => {
+    await bootstrapApp(true);
+    await logout();
+
+    expect(authMocks.logout).toHaveBeenCalledOnce();
+    expect(repositoryMocks.dispose).toHaveBeenCalled();
+    expect(appState.repositoryConnected).toBe(false);
+    expect(appState.syncNotifications).toEqual([]);
+  });
+
+  it("clears synchronization state after revoking the current device or deleting the account", async () => {
+    await bootstrapApp(true);
+    await revokeDevice("device-1");
+    expect(repositoryMocks.revokeDevice).toHaveBeenCalledWith("device-1");
+    expect(authMocks.revokeDevice).toHaveBeenCalledWith("device-1");
+    expect(appState.syncNotifications).toEqual([]);
+
+    await bootstrapApp(true);
+    await deleteAccount();
+    expect(authMocks.deleteAccount).toHaveBeenCalled();
+    expect(repositoryMocks.deleteAccount).toHaveBeenCalledWith("delete-operation");
+    expect(appState.syncNotifications).toEqual([]);
   });
 });

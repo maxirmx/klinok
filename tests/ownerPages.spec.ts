@@ -603,6 +603,11 @@ describe("Owner pages", () => {
     expect(clipboardWriteText).toHaveBeenCalledWith("pet-1");
     expect(detail.get('[role="status"]').text()).toBe("Идентификатор питомца скопирован.");
 
+    clipboardWriteText.mockRejectedValueOnce(new Error("clipboard denied"));
+    await copyIdButton.trigger("click");
+    await flushPromises();
+    expect(detail.get('[role="alert"]').text()).toBe("Не удалось скопировать идентификатор питомца.");
+
     await deleteButton.trigger("click");
     expect(detail.get('[role="alertdialog"]').text()).toContain("Удалить профиль Шарик?");
     await detail.get('[role="alertdialog"]').findAll("button")
