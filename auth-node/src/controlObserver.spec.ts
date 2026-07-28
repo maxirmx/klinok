@@ -3,7 +3,7 @@
 // This file is a part of Klinok application
 
 import { describe, expect, it } from "vitest";
-import { roleStatusMailText } from "./controlObserver.js";
+import { roleRequestMailText, roleStatusMailText } from "./controlObserver.js";
 
 describe("role status email", () => {
   it("confirms an approved Doctor role in Russian", () => {
@@ -19,13 +19,28 @@ describe("role status email", () => {
   });
 
   it.each([
-    ["not_requested", "Роль «Врач» не запрошена."],
+    ["not_requested", "Запрос роли «Врач» отменён."],
     ["pending", "Ваша заявка на роль «Врач» ожидает подтверждения."],
     ["rejected", "Ваша заявка на роль «Врач» отклонена."],
-    ["suspended", "Ваша роль «Врач» приостановлена."],
     ["revoked", "Ваша роль «Врач» отозвана."],
-    ["expired", "Срок действия вашей роли «Врач» истёк."],
   ])("localizes the %s transition", (status, expected) => {
     expect(roleStatusMailText("doctor", status)).toBe(expected);
+  });
+});
+
+describe("new role request email", () => {
+  it("uses the requester's full name and localized Administrator role", () => {
+    expect(roleRequestMailText("Анна Сергеевна Иванова", "administrator"))
+      .toBe("Пользователь Анна Сергеевна Иванова запросил роль «Администратор».");
+  });
+
+  it("uses the localized Doctor role", () => {
+    expect(roleRequestMailText("Иван Петров", "doctor"))
+      .toBe("Пользователь Иван Петров запросил роль «Врач».");
+  });
+
+  it("does not expose the account ID when the profile is unavailable", () => {
+    expect(roleRequestMailText(null, "administrator"))
+      .toBe("Пользователь с неуказанным ФИО запросил роль «Администратор».");
   });
 });

@@ -196,8 +196,8 @@ describe("Doctor pages", () => {
     expect(cells[0]!.attributes("data-label")).toBe("Действия");
     expect(cells[1]!.get("strong").text()).toBe("Собака Буся");
     expect(cells[1]!.get("small").text()).toBe("pet-1");
-    expect(cells[2]!.get("strong").text()).toBe("Ольга Владелец");
-    expect(cells[2]!.get("small").text()).toBe("owner-1");
+    expect(cells[2]!.get(".person-identity-name").text()).toBe("Ольга Владелец");
+    expect(cells[2]!.get(".person-identity-id").text()).toBe("owner-1");
     expect(cells[3]!.attributes("data-label")).toBe("Делегирование");
     expect(cells[3]!.text()).toBe("Да");
     expect(cells[0]!.findAll("[title]").map((button) => button.attributes("title"))).toEqual([
@@ -257,8 +257,8 @@ describe("Doctor pages", () => {
     const result = dialog.get(".doctor-request-result");
     expect(result.text()).toContain("Кошка Буся");
     expect(result.text()).toContain("pet-2");
-    expect(result.text()).toContain("Ольга Петровна Владелец");
-    expect(result.text()).toContain("owner-2");
+    expect(result.get(".person-identity-name").text()).toBe("Ольга Петровна Владелец");
+    expect(result.get(".person-identity-id").text()).toBe("owner-2");
     expect(result.get('button[title="Отправить запрос"]').getComponent(AppIcon).props("name")).toBe("check");
     await result.get('button[title="Отправить запрос"]').trigger("click");
     await flushPromises();
@@ -414,14 +414,16 @@ describe("Doctor pages", () => {
     await flushPromises();
     expect(wrapper.get(".owner-pet-id").text()).toBe("pet-1");
     expect(wrapper.get(".owner-pet-owner").text()).toContain("Ольга Петровна Владелец");
-    expect(wrapper.get(".owner-pet-owner-id").text()).toBe("owner-1");
+    expect(wrapper.get(".owner-pet-owner .person-identity-id").text()).toBe("owner-1");
     expect(wrapper.get(".owner-access-table tbody tr").text()).toContain("Анна Врач");
     expect(wrapper.get(".owner-access-table tbody tr").text()).toContain("Предоставлен");
-    await wrapper.get('.owner-access-actions-header button[title="Делегировать доступ"]').trigger("click");
+    await wrapper.get('.owner-pet-profile button[title="Делегировать доступ"]').trigger("click");
     const dialog = wrapper.get('[role="dialog"]');
     await dialog.get('input[required]').setValue("Пётр");
     await dialog.get("form").trigger("submit");
     await flushPromises();
+    expect(dialog.get(".list-row .person-identity-name").text()).toBe("Пётр Врач");
+    expect(dialog.get(".list-row .person-identity-id").text()).toBe("doctor-2");
     await dialog.get('.list-row button[title="Выбрать врача"]').trigger("click");
 
     expect(wrapper.text()).not.toContain("Создание неподтверждённых приёмов");
@@ -683,7 +685,7 @@ describe("Doctor pages", () => {
     expect(profile.text()).toContain("15.04.2026 · Рабикан");
     expect(profile.text()).toContain("11.8 кг");
     expect(profile.text()).toContain("Ольга Петровна Владелец");
-    expect(profile.get(".owner-pet-owner-id").text()).toBe("owner-1");
+    expect(profile.get(".owner-pet-owner .person-identity-id").text()).toBe("owner-1");
     expect(profile.text()).toContain("Боится громких звуков");
     expect(wrapper.findAll(".doctor-history-date-filter > span").map((label) => label.text()))
       .toEqual(["Дата с", "Дата по"]);

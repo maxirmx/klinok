@@ -439,7 +439,7 @@ describe("Owner pages", () => {
     expect(wrapper.get('.owner-page-heading a[title="Назад к информации о питомце"]').attributes("href"))
       .toBe("/owner/pets/pet-1");
     expect(wrapper.findAll(".owner-access-table th").map((header) => header.text())).toEqual([
-      "Действия", "ФИО врача", "Доступ", "Делегирование",
+      "ФИО врача", "Доступ", "Делегирование",
     ]);
     expect(wrapper.get('.owner-page-heading button[title="Предоставить доступ"]')
       .getComponent(AppIcon).props("name")).toBe("plus");
@@ -454,10 +454,16 @@ describe("Owner pages", () => {
     const grantedWithoutDelegationRow = rows.find((row) => row.text().includes("Галина Врач"))!;
     const revokedRow = rows.find((row) => row.text().includes("Виктор Врач"))!;
     expect(requestedRow.text()).toContain("doctor-1");
+    expect(requestedRow.get(".person-identity-name").text()).toBe("Анна Врач");
+    expect(requestedRow.get(".person-identity-id").text()).toBe("doctor-1");
     expect(requestedRow.text()).toContain("Запрошен");
+    expect(requestedRow.find('td[data-label="Действия"]').exists()).toBe(false);
+    expect(requestedRow.get('td[data-label="Доступ"]').findAll("button")).toHaveLength(2);
     expect(requestedRow.get('td[data-label="Делегирование"]').text()).toBe("");
     expect(grantedRow.text()).toContain("Предоставлен");
     expect(grantedRow.get('td[data-label="Делегирование"]').text()).toBe("Да");
+    expect(grantedRow.get('td[data-label="Доступ"] button').attributes("title")).toBe("Отозвать доступ");
+    expect(grantedRow.get('td[data-label="Делегирование"] button').attributes("title")).toBe("Отключить делегирование");
     expect(grantedRow.get('button[title="Отключить делегирование"]').classes()).toContain("danger-outline");
     expect(grantedRow.get('button[title="Отключить делегирование"]').getComponent(AppIcon).props("name")).toBe("share");
     expect(grantedWithoutDelegationRow.text()).toContain("Предоставлен");
@@ -465,7 +471,7 @@ describe("Owner pages", () => {
     expect(grantedWithoutDelegationRow.get('button[title="Разрешить делегирование"]')
       .getComponent(AppIcon).props("name")).toBe("share");
     expect(grantedWithoutDelegationRow.findAll("button").map((button) => button.attributes("title")))
-      .toEqual(["Разрешить делегирование", "Отозвать доступ"]);
+      .toEqual(["Отозвать доступ", "Разрешить делегирование"]);
     expect(revokedRow.text()).toContain("Отозван");
     expect(revokedRow.get('td[data-label="Делегирование"]').text()).toBe("");
 
@@ -542,7 +548,9 @@ describe("Owner pages", () => {
     await dialog.get("form").trigger("submit");
     await flushPromises();
     expect(searchDoctorDirectory).toHaveBeenCalledWith("Ветер", 1, 50);
-    expect(dialog.get(".list-row").text()).toContain("Мария Ветеринар");
+    const doctorIdentity = dialog.get(".list-row .person-identity");
+    expect(doctorIdentity.get(".person-identity-name").text()).toBe("Мария Ветеринар");
+    expect(doctorIdentity.get(".person-identity-id").text()).toBe("doctor-4");
     const selectButton = dialog.get('.list-row button[title="Выбрать врача"]');
     expect(selectButton.getComponent(AppIcon).props("name")).toBe("check");
     await selectButton.trigger("click");

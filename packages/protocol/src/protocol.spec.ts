@@ -70,7 +70,7 @@ describe("klinok protocol", () => {
   });
 
   it("selects the more restrictive concurrent role status", () => {
-    expect(chooseConcurrentRoleStatus("approved", "suspended")).toBe("suspended");
+    expect(chooseConcurrentRoleStatus("approved", "revoked")).toBe("revoked");
     expect(chooseConcurrentRoleStatus("rejected", "pending")).toBe("rejected");
   });
 
@@ -690,7 +690,7 @@ describe("klinok protocol", () => {
       parents: [],
     });
 
-    for (const status of ["not_requested", "pending", "rejected", "suspended", "revoked", "expired"] as const) {
+    for (const status of ["not_requested", "pending", "rejected", "revoked"] as const) {
       const transition = await signedFor(state, keys, {
         eventType: status === "not_requested" ? "role.cancelled" : `role.${status}`,
         aggregateId: state.bootstrapAccountId,
@@ -742,13 +742,13 @@ describe("klinok protocol", () => {
     });
     applyAcceptedEvent(rejected, state);
     expect(state.roles.get(roleProjectionKey("account-1", "doctor"))?.request.status).toBe("rejected");
-    const suspended = await signedFor(state, keys, {
-      eventType: "role.suspended", aggregateId: "account-1", resourceId: "doctor-request", activeRole: "administrator",
-      parents: [approved.eventId], metadata: { accountId: "account-1", requestId: "doctor-request", role: "doctor", status: "suspended", profileRevision: 1 },
+    const revoked = await signedFor(state, keys, {
+      eventType: "role.revoked", aggregateId: "account-1", resourceId: "doctor-request", activeRole: "administrator",
+      parents: [approved.eventId], metadata: { accountId: "account-1", requestId: "doctor-request", role: "doctor", status: "revoked", profileRevision: 1 },
     });
-    expect((await verifySignedEvent(suspended, state)).accepted).toBe(true);
-    applyAcceptedEvent(suspended, state);
-    expect(state.roles.get(roleProjectionKey("account-1", "doctor"))?.request.status).toBe("suspended");
+    expect((await verifySignedEvent(revoked, state)).accepted).toBe(true);
+    applyAcceptedEvent(revoked, state);
+    expect(state.roles.get(roleProjectionKey("account-1", "doctor"))?.request.status).toBe("revoked");
   });
 
   it("keeps causal records but invalidates an offline sibling after grant revocation", async () => {

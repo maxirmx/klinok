@@ -30,6 +30,16 @@ interface ObserverRuntime {
   helia: { stop(): Promise<unknown> };
 }
 
+const roleLabels: Record<Role, string> = {
+  administrator: "Администратор",
+  doctor: "Врач",
+  owner: "Владелец",
+};
+
+function roleLabel(role: unknown): string {
+  return roleLabels[role as Role] ?? String(role);
+}
+
 function valueFrom(entry: unknown): SignedEvent | null {
   return extractSignedEvent(entry);
 }
@@ -50,22 +60,20 @@ async function waitForDatabaseJoin(database: ObserverRuntime["dbs"][number], tim
 }
 
 export function roleStatusMailText(role: unknown, status: unknown): string {
-  const roleLabels: Record<Role, string> = {
-    administrator: "Администратор",
-    doctor: "Врач",
-    owner: "Владелец",
-  };
-  const roleLabel = roleLabels[role as Role] ?? String(role);
+  const localizedRole = roleLabel(role);
   const messages: Record<RoleStatus, string> = {
-    not_requested: `Роль «${roleLabel}» не запрошена.`,
-    pending: `Ваша заявка на роль «${roleLabel}» ожидает подтверждения.`,
-    approved: `Ваша роль «${roleLabel}» подтверждена.`,
-    rejected: `Ваша заявка на роль «${roleLabel}» отклонена.`,
-    suspended: `Ваша роль «${roleLabel}» приостановлена.`,
-    revoked: `Ваша роль «${roleLabel}» отозвана.`,
-    expired: `Срок действия вашей роли «${roleLabel}» истёк.`,
+    not_requested: `Запрос роли «${localizedRole}» отменён.`,
+    pending: `Ваша заявка на роль «${localizedRole}» ожидает подтверждения.`,
+    approved: `Ваша роль «${localizedRole}» подтверждена.`,
+    rejected: `Ваша заявка на роль «${localizedRole}» отклонена.`,
+    revoked: `Ваша роль «${localizedRole}» отозвана.`,
   };
-  return messages[status as RoleStatus] ?? `Статус роли «${roleLabel}» изменён.`;
+  return messages[status as RoleStatus] ?? `Статус роли «${localizedRole}» изменён.`;
+}
+
+export function roleRequestMailText(displayName: string | null | undefined, role: unknown): string {
+  const requesterName = displayName?.trim() || "с неуказанным ФИО";
+  return `Пользователь ${requesterName} запросил роль «${roleLabel(role)}».`;
 }
 
 function observerAccessController(
@@ -304,7 +312,7 @@ export class ControlPlaneObserver {
       await this.store.putObservedRole(
         String(event.metadata.accountId ?? event.aggregateId),
         event.metadata.role as "administrator" | "doctor" | "owner",
-        event.metadata.status as "not_requested" | "pending" | "approved" | "rejected" | "suspended" | "revoked" | "expired",
+        event.metadata.status as RoleStatus,
       );
     }
     if (event.eventType.startsWith("pet.") && event.metadata.ownerAccountId) {
@@ -329,11 +337,23 @@ export class ControlPlaneObserver {
         await this.store.deleteCredentialAccount({ ...account, pendingOperations });
         account = null;
       } else if (pendingOperations.length !== account.pendingOperations.length || setupComplete) {
+        const updatedAt = new Date().toISOString();
+        if (setupComplete && account.setup) {
+          const { firstName, lastName, patronymic } = account.setup.profile;
+          await this.store.putDirectoryProfile({
+            accountId: account.accountId,
+            firstName,
+            lastName,
+            ...(patronymic ? { patronymic } : {}),
+            displayName: [firstName, patronymic, lastName].filter(Boolean).join(" "),
+            updatedAt,
+          });
+        }
         account = {
           ...account,
           pendingOperations,
           ...(setupComplete ? { setup: undefined } : {}),
-          updatedAt: new Date().toISOString(),
+          updatedAt,
         };
         await this.store.putAccount(account);
       }
@@ -350,7 +370,7 @@ export class ControlPlaneObserver {
     if (account) {
       await this.mailer.send({
         to: account.email,
-        subject: "Статус роли в Клинок изменён",
+        subject: "Статус роли изменён",
         text: roleStatusMailText(event.metadata.role, event.metadata.status),
       });
       console.log(JSON.stringify({
@@ -372,10 +392,17 @@ export class ControlPlaneObserver {
       }));
     }
     if (event.metadata.status === "pending") {
+      const requesterProfile = await this.store.getDirectoryProfile(accountId);
       for (const projection of this.state.roles.values()) {
         if (projection.request.role !== "administrator" || projection.request.status !== "approved") continue;
         const administrator = await this.store.getAccount(projection.request.accountId);
-        if (administrator) await this.mailer.send({ to: administrator.email, subject: "Новая заявка на роль", text: `Аккаунт ${accountId} запросил роль ${String(event.metadata.role)}.` });
+        if (administrator) {
+          await this.mailer.send({
+            to: administrator.email,
+            subject: "Новая заявка на роль",
+            text: roleRequestMailText(requesterProfile?.displayName, event.metadata.role),
+          });
+        }
       }
     }
     await this.store.putMarker(`mail:${event.eventId}`);

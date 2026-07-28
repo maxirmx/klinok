@@ -140,7 +140,11 @@ describe("MedicalRecordEntry", () => {
     expect(summary.get(".medical-record-condition-problem").text()).toBe("Не всё хорошо");
     expect(wrapper.get(".encounter-history-comment").text()).toBe("Не ест со вчерашнего дня");
     expect(wrapper.text()).not.toContain("Рекомендации");
-    expect(wrapper.text()).toContain("Анна Врач · doctor-2");
+    const authorIdentity = wrapper.findAll(".person-identity")
+      .find((identity) => identity.text().includes("Анна Врач"))!;
+    expect(authorIdentity.get(".person-identity-name").text()).toBe("Анна Врач");
+    expect(authorIdentity.get(".person-identity-id").text()).toBe("doctor-2");
+    expect(authorIdentity.text()).not.toContain("·");
     expect(wrapper.text()).toContain("13.75 кг");
     expect(wrapper.text()).toContain("120/80 сред. 93 мм рт. ст.");
     expect(wrapper.text()).not.toContain("2026-07-21T11:00:00.000Z");

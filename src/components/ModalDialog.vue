@@ -80,11 +80,14 @@ onBeforeUnmount(() => {
       :role="role"
       aria-modal="true"
       :aria-labelledby="titleId"
-      :aria-describedby="description ? descriptionId : undefined"
+      :aria-describedby="description || $slots.description ? descriptionId : undefined"
       @keydown="handleKeydown"
     >
       <h2 :id="titleId">{{ title }}</h2>
-      <p v-if="description" :id="descriptionId">{{ description }}</p>
+      <div v-if="$slots.description" :id="descriptionId" class="modal-dialog-description">
+        <slot name="description" />
+      </div>
+      <p v-else-if="description" :id="descriptionId">{{ description }}</p>
       <slot />
     </section>
   </div>

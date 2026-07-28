@@ -46,8 +46,9 @@ describe("PetProfileView", () => {
     expect(summary.get(".owner-pet-id").text()).toBe("pet-1");
     expect(summary.text()).toContain("Собака · Бигль");
     expect(summary.text()).toMatch(/\d+ полн(?:ый|ых) (?:год|года|лет) · дата рождения 17\.06\.2022/);
-    expect(summary.text()).toContain("Ольга Петровна Владелец");
-    expect(summary.get(".owner-pet-owner-id").text()).toBe("owner-1");
+    const ownerIdentity = summary.get(".owner-pet-owner");
+    expect(ownerIdentity.get(".person-identity-name").text()).toBe("Ольга Петровна Владелец");
+    expect(ownerIdentity.get(".person-identity-id").text()).toBe("owner-1");
 
     expect(wrapper.findAll(".pet-profile-view-fields dt").map((node) => node.text())).toEqual([
       "Пол", "Окрас", "Номер чипа", "Клеймо", "Последняя вакцинация", "Вес",
@@ -78,7 +79,7 @@ describe("PetProfileView", () => {
     expect(wrapper.find("img").exists()).toBe(false);
     expect(wrapper.get(".owner-pet-placeholder").text()).toBe("С");
     expect(wrapper.find(".owner-pet-owner").exists()).toBe(false);
-    expect(wrapper.find(".owner-pet-owner-id").exists()).toBe(false);
+    expect(wrapper.find(".person-identity").exists()).toBe(false);
     expect(wrapper.get(".pet-profile-view-fields").text()).toContain("Не указан");
     expect(wrapper.get(".pet-profile-view-fields").text()).toContain("Нет");
     expect(wrapper.get(".pet-profile-view-fields").text()).toContain("Не указана");

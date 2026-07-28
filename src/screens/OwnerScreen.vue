@@ -17,6 +17,7 @@ import MedicalRecordEntry from "../components/MedicalRecordEntry.vue";
 import ModalDialog from "../components/ModalDialog.vue";
 import PetAccessManager from "../components/PetAccessManager.vue";
 import PetProfileView from "../components/PetProfileView.vue";
+import PersonIdentity from "../components/PersonIdentity.vue";
 import WorkspaceShell from "../components/WorkspaceShell.vue";
 import { appState, deleteDirectoryPet, logout, requireRepository, searchDoctorDirectory, syncDirectoryPet } from "../appStore";
 import {
@@ -630,16 +631,28 @@ function confirmMedicalRecord(record: MedicalRecordDraft) {
       :can-add="false"
       empty-message="Доступы и ожидающие запросы отсутствуют."
     >
-      <template #rowActions="{ row }">
+      <template #accessActions="{ row }">
         <template v-if="row.status === 'requested' && row.requestId">
           <button class="primary-action inline access-icon-action" type="button" title="Предоставить доступ" aria-label="Предоставить доступ" @click="action(() => requireRepository().medical.approveAccessRequest(row.requestId!), 'Доступ предоставлен.')"><AppIcon name="check" /></button>
           <button class="outline-action inline danger-outline access-icon-action" type="button" title="Отклонить запрос" aria-label="Отклонить запрос" @click="action(() => requireRepository().medical.rejectAccessRequest(row.requestId!), 'Запрос отклонён.')"><AppIcon name="close" /></button>
         </template>
         <template v-else-if="row.status === 'granted' && row.grantId">
-          <button class="outline-action inline access-icon-action" :class="{ 'danger-outline': row.delegationAllowed }" type="button" :title="row.delegationAllowed ? 'Отключить делегирование' : 'Разрешить делегирование'" :aria-label="row.delegationAllowed ? 'Отключить делегирование' : 'Разрешить делегирование'" @click="row.delegationAllowed ? action(() => requireRepository().medical.disableGrantDelegation(row.grantId!), 'Делегирование отключено.') : action(() => requireRepository().medical.enableGrantDelegation(row.grantId!), 'Делегирование разрешено.')"><AppIcon name="share" /></button>
           <button class="outline-action inline danger-outline access-icon-action" type="button" title="Отозвать доступ" aria-label="Отозвать доступ" @click="action(() => requireRepository().medical.revokeGrant(row.grantId!), 'Доступ отозван.')"><AppIcon name="close" /></button>
         </template>
         <button v-else class="primary-action inline access-icon-action" type="button" title="Предоставить доступ повторно" aria-label="Предоставить доступ повторно" @click="regrantAccess(row)"><AppIcon name="check" /></button>
+      </template>
+      <template #delegationActions="{ row }">
+        <button
+          v-if="row.status === 'granted' && row.grantId"
+          class="outline-action inline access-icon-action"
+          :class="{ 'danger-outline': row.delegationAllowed }"
+          type="button"
+          :title="row.delegationAllowed ? 'Отключить делегирование' : 'Разрешить делегирование'"
+          :aria-label="row.delegationAllowed ? 'Отключить делегирование' : 'Разрешить делегирование'"
+          @click="row.delegationAllowed ? action(() => requireRepository().medical.disableGrantDelegation(row.grantId!), 'Делегирование отключено.') : action(() => requireRepository().medical.enableGrantDelegation(row.grantId!), 'Делегирование разрешено.')"
+        >
+          <AppIcon name="share" />
+        </button>
       </template>
 
       <ModalDialog
@@ -664,7 +677,7 @@ function confirmMedicalRecord(record: MedicalRecordDraft) {
               <AppIcon name="search" />
             </button>
           </form>
-          <div v-for="doctor in doctorResults" :key="doctor.accountId" class="list-row"><div><strong>{{ doctor.displayName }}</strong><span>{{ doctor.accountId }}</span></div><button class="outline-action inline access-icon-action" type="button" title="Выбрать врача" aria-label="Выбрать врача" @click="selectedDoctor = doctor"><AppIcon name="check" /></button></div>
+          <div v-for="doctor in doctorResults" :key="doctor.accountId" class="list-row"><PersonIdentity :display-name="doctor.displayName" :account-id="doctor.accountId" /><button class="outline-action inline access-icon-action" type="button" title="Выбрать врача" aria-label="Выбрать врача" @click="selectedDoctor = doctor"><AppIcon name="check" /></button></div>
           <p v-if="doctorSearchPerformed && !doctorResults.length">Врачи не найдены.</p>
           <form v-if="selectedDoctor" class="form-stack" @submit.prevent="grantDoctor"><strong>Выбран врач: {{ selectedDoctor.displayName }}</strong><label class="check-row"><input v-model="grantDelegate" type="checkbox" /><span>Разрешить врачу делегирование</span></label><div class="confirmation-dialog-actions"><button class="outline-action inline access-icon-action" type="button" :disabled="grantBusy" title="Отмена" aria-label="Отмена" @click="grantDialogOpen = false"><AppIcon name="close" /></button><button class="primary-action inline access-icon-action" type="submit" :disabled="grantBusy" :title="grantBusy ? 'Предоставление доступа…' : 'Предоставить доступ'" :aria-label="grantBusy ? 'Предоставление доступа…' : 'Предоставить доступ'"><AppIcon name="check" /></button></div></form>
           <div v-else class="confirmation-dialog-actions"><button class="outline-action inline access-icon-action" type="button" :disabled="grantBusy" title="Отмена" aria-label="Отмена" @click="grantDialogOpen = false"><AppIcon name="close" /></button></div>

@@ -121,7 +121,7 @@ describe("operational Russian UI", () => {
     expect(statuses.get(".account-security h2").text()).toBe("Аккаунт");
     expect(statuses.get(".device-security h2").text()).toBe("Устройства");
     expect(statuses.text()).not.toContain("Аккаунт и устройства");
-    expect(statuses.get(".profile-account-id").exists()).toBe(true);
+    expect(statuses.get(".profile-account-identity .person-identity-id").exists()).toBe(true);
     expect(statuses.get('button[title="Копировать идентификатор пользователя"]').attributes("aria-label")).toBe("Копировать идентификатор пользователя");
     expect(statuses.findAll(".role-selection-title").map((node) => node.text())).toEqual(["Владелец животного", "Ветеринар", "Администратор"]);
     expect(statuses.findAll(".role-selection-card")).toHaveLength(3);

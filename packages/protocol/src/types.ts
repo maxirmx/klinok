@@ -10,9 +10,7 @@ export const ROLE_STATUSES = [
   "pending",
   "approved",
   "rejected",
-  "suspended",
   "revoked",
-  "expired",
 ] as const;
 export type RoleStatus = (typeof ROLE_STATUSES)[number];
 
