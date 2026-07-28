@@ -25,10 +25,16 @@ vi.mock("../src/appStore", async () => {
   });
   return {
     appState: readonly(state),
-    dismissSyncNotification: vi.fn().mockResolvedValue(undefined),
+    dismissSyncNotification: vi.fn().mockImplementation(async (notificationId: string) => {
+      state.syncNotifications = state.syncNotifications.filter((item) => item.notificationId !== notificationId);
+      state.sync.permanentNotificationCount = state.syncNotifications.length;
+    }),
     setMockSyncNotifications: (notifications: SyncNotification[]) => {
       state.syncNotifications = notifications;
       state.sync.permanentNotificationCount = notifications.length;
+    },
+    setMockSync: (sync: Partial<typeof state.sync>) => {
+      Object.assign(state.sync, sync);
     },
   };
 });
@@ -57,6 +63,21 @@ async function setNotifications(notifications: SyncNotification[]) {
   store.setMockSyncNotifications(notifications);
 }
 
+async function setSync(sync: Partial<{
+  permanentNotificationCount: number;
+  failedCount: number;
+  connectionState: "connected" | "disconnected" | "error";
+  pendingCount: number;
+  deferredCount: number;
+  syncing: boolean;
+  lastError: string;
+}>) {
+  const store = await import("../src/appStore") as typeof import("../src/appStore") & {
+    setMockSync: (value: typeof sync) => void;
+  };
+  store.setMockSync(sync);
+}
+
 async function mountStatus() {
   const router = createRouter({
     history: createMemoryHistory(),
@@ -64,17 +85,26 @@ async function mountStatus() {
   });
   await router.push("/");
   await router.isReady();
-  return mount(SyncStatus, { global: { plugins: [router] } });
+  return { wrapper: mount(SyncStatus, { global: { plugins: [router] } }), router };
 }
 
 beforeEach(async () => {
   vi.clearAllMocks();
+  await setSync({
+    permanentNotificationCount: 0,
+    failedCount: 0,
+    connectionState: "connected",
+    pendingCount: 0,
+    deferredCount: 0,
+    syncing: false,
+    lastError: "",
+  });
   await setNotifications(Array.from({ length: 11 }, (_, index) => notification(index + 1)));
 });
 
 describe("SyncStatus", () => {
   it("clamps the current page when a larger page size reduces the page count", async () => {
-    const wrapper = await mountStatus();
+    const { wrapper } = await mountStatus();
     await wrapper.get('button[aria-label="Открыть уведомления о синхронизации"]').trigger("click");
     await wrapper.get('button[aria-label="Страница 3"]').trigger("click");
 
@@ -87,5 +117,48 @@ describe("SyncStatus", () => {
     expect(wrapper.find(".app-paginator").exists()).toBe(false);
     expect(wrapper.findAll(".sync-notification")).toHaveLength(11);
     expect(wrapper.text()).not.toContain("Новых уведомлений нет.");
+  });
+
+  it("navigates to a notification action and closes an empty notification dialog", async () => {
+    await setNotifications([{
+      ...notification(1),
+      action: "permissions",
+      relatedRoute: "/profile#roles",
+    }]);
+    const { wrapper, router } = await mountStatus();
+    router.addRoute({ path: "/profile", component: { template: "<div />" } });
+    await wrapper.get('button[aria-label="Открыть уведомления о синхронизации"]').trigger("click");
+    await wrapper.get(".sync-notification-actions .outline-action").trigger("click");
+    await flushPromises();
+    expect(router.currentRoute.value.fullPath).toBe("/profile#roles");
+
+    await router.push("/");
+    await wrapper.get('button[aria-label="Открыть уведомления о синхронизации"]').trigger("click");
+    await wrapper.get(".sync-notification-actions .primary-action").trigger("click");
+    await flushPromises();
+    expect(wrapper.text()).not.toContain("Уведомления о синхронизации");
+  });
+
+  it("ignores notifications without an action and supports closing the dialog", async () => {
+    await setNotifications([notification(1)]);
+    const { wrapper, router } = await mountStatus();
+    await wrapper.get('button[aria-label="Открыть уведомления о синхронизации"]').trigger("click");
+    await wrapper.get(".confirmation-dialog-actions button").trigger("click");
+    await flushPromises();
+    expect(router.currentRoute.value.fullPath).toBe("/");
+    expect(wrapper.text()).not.toContain("Уведомления о синхронизации");
+  });
+
+  it.each([
+    [{ connectionState: "disconnected" as const }, "Нет соединения"],
+    [{ connectionState: "error" as const }, "Ошибка синхронизации"],
+    [{ deferredCount: 2 }, "Ожидает связанных данных: 2"],
+    [{ pendingCount: 3 }, "Ожидает сохранения: 3"],
+    [{ syncing: true }, "Ожидает сохранения"],
+  ])("renders each transient synchronization state", async (sync, label) => {
+    await setNotifications([]);
+    await setSync(sync);
+    const { wrapper } = await mountStatus();
+    expect(wrapper.get(".sync-status").text()).toBe(label);
   });
 });

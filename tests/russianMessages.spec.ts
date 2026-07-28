@@ -17,6 +17,8 @@ describe("русские пользовательские сообщения", (
     expect(syncReasonKeyForCode("DEVICE_UNKNOWN")).toBe("device");
     expect(syncReasonKeyForCode("EVENT_PARENT_MISSING")).toBe("parent");
     expect(syncReasonKeyForCode("ROLE_DECISION_FORBIDDEN")).toBe("permission");
+    expect(syncReasonKeyForCode("EVENT_TOO_LARGE")).toBe("size");
+    expect(syncReasonKeyForCode("DATABASE_MISMATCH")).toBe("invalid");
     expect(syncOperationText("medical.record.created")).toBe("Создание медицинской записи");
     expect(syncActionText("device")).toBe("Настроить устройство");
     expect(syncNotificationText({ reasonKey: "unknown", diagnosticId: "diagnostic-1" }))

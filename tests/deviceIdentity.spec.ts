@@ -8,8 +8,10 @@ import {
   clearDeviceId,
   getDeviceId,
   getDeviceName,
+  getLastActiveRole,
   getOrCreateDeviceId,
   getOrCreateDeviceName,
+  setLastActiveRole,
   setDeviceName,
   signBootstrapDeviceReplacement,
 } from "../src/repositories/deviceVault";
@@ -43,6 +45,12 @@ describe("local device identity", () => {
     setDeviceName("Домашний ноутбук");
     expect(getDeviceName()).toBe("Домашний ноутбук");
     expect(getOrCreateDeviceName()).toBe("Домашний ноутбук");
+  });
+
+  it("stores the last role independently for each account and device", () => {
+    expect(getLastActiveRole("account", "device")).toBeNull();
+    setLastActiveRole("account", "device", "doctor");
+    expect(getLastActiveRole("account", "device")).toBe("doctor");
   });
 
   it("signs a bootstrap replacement payload with the recovered private key", async () => {

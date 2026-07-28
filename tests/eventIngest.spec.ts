@@ -206,6 +206,18 @@ describe("trusted-node event ingestion", () => {
     expect(await ingest.ingest([firstEvent])).toEqual({
       results: [expect.objectContaining({ eventId: firstEvent.eventId, status: "deferred", code: "EVENT_WRITE_FAILED" })],
     });
+
+    const codedFailure = new EventIngestService({
+      state: createProtocolState("bootstrap-administrator"),
+      databases: {
+        control: { async add() { throw { code: "STORAGE_BUSY" }; } },
+        medical: { async add() { throw { code: "STORAGE_BUSY" }; } },
+      },
+      verification: { requireTrustedAttestation: false },
+    });
+    expect(await codedFailure.ingest([firstEvent])).toEqual({
+      results: [expect.objectContaining({ status: "deferred", code: "STORAGE_BUSY" })],
+    });
   });
 
   it("defers missing authorization state but rejects permanent verification failures", async () => {
