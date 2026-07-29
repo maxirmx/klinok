@@ -158,7 +158,7 @@ describe("logout navigation", () => {
     expect(wrapper.findAll(".workspace-sidebar-nav .workspace-nav-item span").map((node) => node.text())).toEqual([
       "Питомцы", "Добавить питомца",
     ]);
-    expect(wrapper.find(".workspace-sidebar-footer .workspace-nav-item.active").text()).toContain("Настройки пользователя");
+    expect(wrapper.find(".workspace-sidebar-footer .workspace-nav-item.active").text()).toContain("Настройки");
     expect(wrapper.text()).toContain("Телефон Максима");
     expect(wrapper.text()).toContain("Домашний ноутбук");
     expect(wrapper.get(".account-security").text()).toContain("Управляйте идентификатором и сеансами аккаунта.");

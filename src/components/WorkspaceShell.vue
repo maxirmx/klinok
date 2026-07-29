@@ -188,7 +188,7 @@ function selectPath(path: string) {
       <div class="workspace-sidebar-footer">
         <button class="workspace-nav-item workspace-settings-nav-item" :class="{ active: settings }" type="button" @click="router.push('/profile')">
           <AppIcon name="settings" />
-          <span>Настройки пользователя</span>
+          <span>Настройки</span>
         </button>
         <button class="workspace-nav-item danger-link" type="button" @click="emit('signOut')">
           <AppIcon name="close" />
@@ -279,8 +279,8 @@ function selectPath(path: string) {
           class="workspace-settings-nav-item"
           :class="{ active: settings }"
           type="button"
-          title="Настройки пользователя"
-          aria-label="Настройки пользователя"
+          title="Настройки"
+          aria-label="Настройки"
           @click="router.push('/profile')"
         >
           <AppIcon name="settings" />

@@ -98,7 +98,7 @@ async function newPage(context: BrowserContext, label: string): Promise<Page> {
 
 async function openProfileAndWaitForSync(page: Page) {
   if (new URL(page.url()).pathname !== "/profile") {
-    await page.locator(".workspace-sidebar").getByRole("button", { name: "Настройки пользователя" }).click();
+    await page.locator(".workspace-sidebar").getByRole("button", { name: "Настройки" }).click();
   }
   await expect(page).toHaveURL(/\/profile$/);
   await expect(page.locator(".profile-sync-status .sync-status"))

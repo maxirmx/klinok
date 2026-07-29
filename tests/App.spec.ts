@@ -114,7 +114,7 @@ describe("operational Russian UI", () => {
 
   it("renders accessible profile settings and Administrator queue surfaces", async () => {
     const statuses = await mountScreen(RoleStatusScreen, "/profile", { scenarioId: "user-profile" });
-    expect(statuses.text()).toContain("Настройки пользователя");
+    expect(statuses.text()).toContain("Настройки");
     expect(statuses.text()).toContain("Электронная почта и пароль");
     expect(statuses.text()).not.toContain("Повторите электронную почту");
     expect(statuses.text()).toContain("Синхронизация данных");
@@ -168,7 +168,7 @@ describe("operational Russian UI", () => {
     expect(bottomLabels).toEqual(["Пользователи", "Журнал", "Настройки", "Выйти"]);
     expect(workspace.find(".workspace-sidebar").attributes("aria-label")).toBe("Основная навигация");
     expect(workspace.find(".workspace-bottom-nav").attributes("aria-label")).toBe("Нижняя навигация");
-    expect(workspace.text()).toContain("Настройки пользователя");
+    expect(workspace.text()).toContain("Настройки");
 
     const target = workspace.findAll(".workspace-sidebar-nav .workspace-nav-item")[1]!;
     await target.trigger("click");
