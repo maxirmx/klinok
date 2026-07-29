@@ -236,8 +236,9 @@ Never deploy either backend service with ephemeral storage. Do not run `docker c
 Back up the deployment, select a tested immutable image tag, and then update the containers:
 
 ```sh
-docker compose --env-file klinok.env -f docker-compose-ghrc.yml pull
-docker compose --env-file klinok.env -f docker-compose-ghrc.yml up -d
+./scripts/update-cloud.sh
 ```
 
-Verify health, login, email delivery, and P2P synchronization after every update. The current `auth-node` design is intended for one instance; do not horizontally scale it until LevelDB and the in-memory rate-limit counters are replaced with shared services.
+The update script validates the Compose configuration and pulls every configured image before changing the running deployment. It then gracefully recreates `p2p-blue`, `auth-blue`, and `ui-blue` in dependency order, waiting for each backend to become healthy and the UI container to run before continuing. Docker gives each replaced container up to 30 seconds to stop cleanly. Override the defaults with `KLINOK_COMPOSE_FILE`, `KLINOK_ENV_FILE`, `COMPOSE_PROJECT_NAME`, `KLINOK_HEALTH_TIMEOUT`, or `KLINOK_STOP_TIMEOUT` when needed.
+
+Verify login, email delivery, and P2P synchronization after every update. The current `auth-node` design is intended for one instance, so an auth update can cause a brief authentication interruption; do not horizontally scale it until LevelDB and the in-memory rate-limit counters are replaced with shared services.

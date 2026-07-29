@@ -171,7 +171,7 @@ describe("logout navigation", () => {
     expect(wrapper.text()).not.toContain("Старый телефон");
     expect(wrapper.text()).not.toContain("revoked-device");
     expect(wrapper.find(".workspace-account-actions").exists()).toBe(false);
-    expect(wrapper.get(".workspace-bottom-nav").text()).toContain("Настройки пользователя");
+    expect(wrapper.get(".workspace-bottom-nav").text()).toContain("Настройки");
     expect(wrapper.get(".workspace-bottom-nav").text()).toContain("Выйти");
     const revokeButton = wrapper.get<HTMLButtonElement>('button[title="Нельзя отозвать последнее действующее устройство."]');
     expect(revokeButton.element.disabled).toBe(true);

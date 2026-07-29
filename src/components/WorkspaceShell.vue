@@ -108,7 +108,10 @@ function selectPath(path: string) {
 </script>
 
 <template>
-  <section class="workspace-shell">
+  <section
+    class="workspace-shell"
+    :class="effectiveRole ? `role-${effectiveRole}` : ''"
+  >
     <aside class="workspace-sidebar" aria-label="Основная навигация">
       <a
         class="workspace-brand"
@@ -183,8 +186,8 @@ function selectPath(path: string) {
       </nav>
 
       <div class="workspace-sidebar-footer">
-        <button class="workspace-nav-item" :class="{ active: settings }" type="button" @click="router.push('/profile')">
-          <AppIcon name="user" />
+        <button class="workspace-nav-item workspace-settings-nav-item" :class="{ active: settings }" type="button" @click="router.push('/profile')">
+          <AppIcon name="settings" />
           <span>Настройки пользователя</span>
         </button>
         <button class="workspace-nav-item danger-link" type="button" @click="emit('signOut')">
@@ -209,49 +212,87 @@ function selectPath(path: string) {
         <slot />
       </div>
 
-      <nav class="workspace-bottom-nav" aria-label="Нижняя навигация">
+      <nav
+        class="workspace-bottom-nav"
+        :class="effectiveRole ? `role-${effectiveRole}` : ''"
+        aria-label="Нижняя навигация"
+      >
         <template v-if="effectiveRole === 'owner'">
-          <a
+          <button
+            class="workspace-role-nav-item"
             :class="{ active: pathActive(ownerRootNavigation.path, ownerRootNavigation.exact) }"
-            :href="ownerRootNavigation.path"
-            @click.prevent="selectPath(ownerRootNavigation.path)"
+            type="button"
+            :title="ownerRootNavigation.label"
+            :aria-label="ownerRootNavigation.label"
+            @click="selectPath(ownerRootNavigation.path)"
           >
             <AppIcon :name="ownerRootNavigation.icon" />
             <span>{{ ownerRootNavigation.label }}</span>
-          </a>
+          </button>
         </template>
         <template v-else-if="effectiveRole === 'administrator'">
-          <a
+          <button
             v-for="item in administratorNavigation"
             :key="item.id"
+            class="workspace-role-nav-item"
             :class="{ active: pathActive(item.path, item.exact) }"
-            :href="item.path"
-            @click.prevent="selectPath(item.path)"
+            type="button"
+            :title="item.label"
+            :aria-label="item.label"
+            @click="selectPath(item.path)"
           >
             <AppIcon :name="item.icon" />
             <span>{{ item.label }}</span>
-          </a>
+          </button>
         </template>
         <template v-else-if="effectiveRole === 'doctor'">
-          <a v-for="item in doctorNavigation" :key="item.id" :class="{ active: pathActive(item.path, item.exact) }" :href="item.path" @click.prevent="selectPath(item.path)"><AppIcon :name="item.icon" /><span>{{ item.label }}</span></a>
-        </template>
-        <template v-else>
-          <a
-            v-for="item in navigation"
+          <button
+            v-for="item in doctorNavigation"
             :key="item.id"
-            :class="{ active: !settings && activeSection === item.id }"
-            :href="settings && effectiveRole ? `${roleHomePath(effectiveRole)}#${item.id}` : `#${item.id}`"
-            @click.prevent="selectSection(item.id)"
+            class="workspace-role-nav-item"
+            :class="{ active: pathActive(item.path, item.exact) }"
+            type="button"
+            :title="item.label"
+            :aria-label="item.label"
+            @click="selectPath(item.path)"
           >
             <AppIcon :name="item.icon" />
             <span>{{ item.label }}</span>
-          </a>
+          </button>
         </template>
-        <button :class="{ active: settings }" type="button" @click="router.push('/profile')">
-          <AppIcon name="user" />
-          <span>Настройки пользователя</span>
+        <template v-else>
+          <button
+            v-for="item in navigation"
+            :key="item.id"
+            class="workspace-role-nav-item"
+            :class="{ active: !settings && activeSection === item.id }"
+            type="button"
+            :title="item.label"
+            :aria-label="item.label"
+            @click="selectSection(item.id)"
+          >
+            <AppIcon :name="item.icon" />
+            <span>{{ item.label }}</span>
+          </button>
+        </template>
+        <button
+          class="workspace-settings-nav-item"
+          :class="{ active: settings }"
+          type="button"
+          title="Настройки пользователя"
+          aria-label="Настройки пользователя"
+          @click="router.push('/profile')"
+        >
+          <AppIcon name="settings" />
+          <span>Настройки</span>
         </button>
-        <button class="danger-link" type="button" @click="emit('signOut')">
+        <button
+          class="danger-link"
+          type="button"
+          title="Выйти"
+          aria-label="Выйти"
+          @click="emit('signOut')"
+        >
           <AppIcon name="close" />
           <span>Выйти</span>
         </button>

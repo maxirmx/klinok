@@ -157,16 +157,15 @@ describe("operational Russian UI", () => {
       role: "administrator",
     });
     const sidebarLabels = workspace.findAll(".workspace-sidebar-nav .workspace-nav-item span").map((node) => node.text());
-    const sidebarMenuLabels = [
-      ...sidebarLabels,
-      ...workspace.findAll(".workspace-sidebar-footer .workspace-nav-item span").map((node) => node.text()),
-    ];
     const bottomLabels = workspace.findAll(".workspace-bottom-nav :is(a, button) span").map((node) => node.text());
 
     expect(sidebarLabels).toEqual(["Пользователи", "Журнал"]);
     expect(workspace.findAll(".workspace-sidebar-nav .workspace-nav-item")[0]!.getComponent(AppIcon).props("name")).toBe("user");
+    expect(workspace.get(".workspace-sidebar-footer .workspace-settings-nav-item").getComponent(AppIcon).props("name"))
+      .toBe("settings");
     expect(workspace.findAll(".workspace-bottom-nav :is(a, button)")[0]!.getComponent(AppIcon).props("name")).toBe("user");
-    expect(bottomLabels).toEqual(sidebarMenuLabels);
+    expect(workspace.findAll(".workspace-bottom-nav :is(a, button)")[2]!.getComponent(AppIcon).props("name")).toBe("settings");
+    expect(bottomLabels).toEqual(["Пользователи", "Журнал", "Настройки", "Выйти"]);
     expect(workspace.find(".workspace-sidebar").attributes("aria-label")).toBe("Основная навигация");
     expect(workspace.find(".workspace-bottom-nav").attributes("aria-label")).toBe("Нижняя навигация");
     expect(workspace.text()).toContain("Настройки пользователя");
@@ -185,9 +184,11 @@ describe("operational Russian UI", () => {
       "Питомцы", "Добавить питомца",
     ]);
     expect(owner.findAll(".workspace-sidebar-nav .workspace-nav-item")[0]!.getComponent(AppIcon).props("name")).toBe("pets");
+    expect(owner.get(".workspace-sidebar-footer .workspace-settings-nav-item").getComponent(AppIcon).props("name"))
+      .toBe("settings");
     expect(owner.findAll(".workspace-bottom-nav :is(a, button)")[0]!.getComponent(AppIcon).props("name")).toBe("pets");
     expect(owner.findAll(".workspace-bottom-nav :is(a, button) span").map((node) => node.text())).toEqual([
-      "Питомцы", "Настройки пользователя", "Выйти",
+      "Питомцы", "Настройки", "Выйти",
     ]);
     expect(owner.text()).toContain("Мои питомцы");
   });

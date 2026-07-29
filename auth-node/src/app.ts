@@ -571,7 +571,7 @@ export async function buildAuthApp(options: AuthAppOptions): Promise<FastifyInst
       await store.putToken({ digest: digestToken(token), accountId: account.accountId, kind: "password_reset", expiresAt: new Date(now().getTime() + 30 * 60_000).toISOString() });
       await countedMailer.send({
         to: account.email,
-        subject: "Восстановление доступа к Клинок",
+        subject: "Восстановление доступа",
         text: `Сбросьте пароль: ${options.config.publicOrigin}/auth/reset-password?token=${encodeURIComponent(token)}`,
       });
     }

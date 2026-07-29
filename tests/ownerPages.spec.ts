@@ -180,11 +180,26 @@ describe("Owner pages", () => {
       "Шарик",
     ]);
     expect(wrapper.findAll(".workspace-nav-tree .workspace-nav-item")[0]!.getComponent(AppIcon).props("name")).toBe("pets");
-    expect(wrapper.findAll(".workspace-bottom-nav :is(a, button) span").map((node) => node.text())).toEqual([
+    const bottomNavigationItems = wrapper.findAll(".workspace-bottom-nav :is(a, button)");
+    expect(bottomNavigationItems.map((item) => item.get("span").text())).toEqual([
+      "Питомцы",
+      "Настройки",
+      "Выйти",
+    ]);
+    expect(bottomNavigationItems.map((item) => item.attributes("title"))).toEqual([
       "Питомцы",
       "Настройки пользователя",
       "Выйти",
     ]);
+    expect(bottomNavigationItems.map((item) => item.attributes("aria-label"))).toEqual([
+      "Питомцы",
+      "Настройки пользователя",
+      "Выйти",
+    ]);
+    expect(bottomNavigationItems.every((item) => item.element.tagName === "BUTTON")).toBe(true);
+    expect(bottomNavigationItems.every((item) => item.attributes("href") === undefined)).toBe(true);
+    expect(bottomNavigationItems[1]!.getComponent(AppIcon).props("name")).toBe("settings");
+    expect(wrapper.get(".workspace-bottom-nav").classes()).toContain("role-owner");
     expect(wrapper.get(".owner-pet-card").text()).toContain("Шарик");
     expect(wrapper.get(".owner-pet-card").text()).toContain("Бигль");
     expect(wrapper.get(".owner-pet-card").text()).toMatch(/\d+ полн(?:ый|ых) (?:год|года|лет)/);

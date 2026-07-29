@@ -192,6 +192,12 @@ describe("Doctor pages", () => {
     expect(table.findAll("th").map((header) => header.text())).toEqual([
       "Действия", "Питомец", "Владелец", "Делегирование",
     ]);
+    expect(table.findAll("col").map((column) => column.classes()[0])).toEqual([
+      "doctor-access-actions-column",
+      "doctor-access-pet-column",
+      "doctor-access-owner-column",
+      "doctor-access-delegation-column",
+    ]);
     const cells = table.get("tbody tr").findAll("td");
     expect(cells[0]!.attributes("data-label")).toBe("Действия");
     expect(cells[1]!.get("strong").text()).toBe("Собака Буся");
@@ -445,6 +451,12 @@ describe("Doctor pages", () => {
   it("saves a structured encounter with the mandatory taxonomy section", async () => {
     const wrapper = await mountAt("/doctor/pets/pet-1", "doctor-pet-detail");
     await flushPromises();
+    const backLink = wrapper.get('.owner-pet-profile a[title="Назад к медицинским картам"]');
+    expect(backLink.attributes("href")).toBe("/doctor/home");
+    expect(backLink.attributes("aria-label")).toBe("Назад к медицинским картам");
+    expect(backLink.getComponent(AppIcon).props("name")).toBe("chevron-left");
+    expect(wrapper.findAll(".owner-pet-profile .owner-profile-actions > *")[0]!.attributes("title"))
+      .toBe("Назад к медицинским картам");
     const save = wrapper.get<HTMLButtonElement>('.encounter-editor-heading button[title="Сохранить запись"]');
     expect(save.element.disabled).toBe(true);
     const dateField = wrapper.get(".encounter-date-field");
