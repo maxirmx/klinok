@@ -158,7 +158,7 @@ describe("logout navigation", () => {
     expect(wrapper.findAll(".workspace-sidebar-nav .workspace-nav-item span").map((node) => node.text())).toEqual([
       "Питомцы", "Добавить питомца",
     ]);
-    expect(wrapper.find(".workspace-sidebar-footer .workspace-nav-item.active").text()).toContain("Настройки пользователя");
+    expect(wrapper.find(".workspace-sidebar-footer .workspace-nav-item.active").text()).toContain("Настройки");
     expect(wrapper.text()).toContain("Телефон Максима");
     expect(wrapper.text()).toContain("Домашний ноутбук");
     expect(wrapper.get(".account-security").text()).toContain("Управляйте идентификатором и сеансами аккаунта.");
@@ -171,7 +171,7 @@ describe("logout navigation", () => {
     expect(wrapper.text()).not.toContain("Старый телефон");
     expect(wrapper.text()).not.toContain("revoked-device");
     expect(wrapper.find(".workspace-account-actions").exists()).toBe(false);
-    expect(wrapper.get(".workspace-bottom-nav").text()).toContain("Настройки пользователя");
+    expect(wrapper.get(".workspace-bottom-nav").text()).toContain("Настройки");
     expect(wrapper.get(".workspace-bottom-nav").text()).toContain("Выйти");
     const revokeButton = wrapper.get<HTMLButtonElement>('button[title="Нельзя отозвать последнее действующее устройство."]');
     expect(revokeButton.element.disabled).toBe(true);

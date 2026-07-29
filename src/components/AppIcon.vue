@@ -15,6 +15,7 @@ defineProps<{
     | "chevron-left"
     | "chevron-down"
     | "search"
+    | "settings"
     | "filter"
     | "close"
     | "moon"
@@ -75,6 +76,10 @@ defineProps<{
     <g v-else-if="name === 'search'" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.9">
       <circle cx="10.7" cy="10.7" r="6.2" />
       <path d="m15.3 15.3 4.2 4.2" />
+    </g>
+    <g v-else-if="name === 'settings'" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8">
+      <circle cx="12" cy="12" r="3.2" />
+      <path d="M9.7 3.8h4.6l.6 2.2c.5.2 1 .5 1.4.8l2.2-.6 2.3 4-1.6 1.6v.4l1.6 1.6-2.3 4-2.2-.6c-.4.3-.9.6-1.4.8l-.6 2.2H9.7L9.1 18c-.5-.2-1-.5-1.4-.8l-2.2.6-2.3-4 1.6-1.6v-.4l-1.6-1.6 2.3-4 2.2.6c.4-.3.9-.6 1.4-.8l.6-2.2Z" />
     </g>
     <path v-else-if="name === 'filter'" fill="currentColor" d="M4.4 5.7c0-.9.7-1.6 1.6-1.6h12c.9 0 1.6.7 1.6 1.6v1.1c0 .5-.2.9-.6 1.2l-4.6 3.2V16c0 .5-.3.9-.7 1.1l-3.2 1.4c-.9.4-1.9-.3-1.9-1.3v-6L5 8c-.4-.3-.6-.7-.6-1.2V5.7Z" />
     <g v-else-if="name === 'close'" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="2">

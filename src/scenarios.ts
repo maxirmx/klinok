@@ -31,7 +31,7 @@ export const scenarioRegistry: ScenarioRegistryEntry[] = [
   { id: "auth-verify", title: "Подтверждение почты", role: "auth", path: "/auth/verify-email", figmaNodeId: "issue:25", component: "AuthScreen", implemented: true },
   { id: "auth-forgot", title: "Восстановление пароля", role: "auth", path: "/auth/forgot-password", figmaNodeId: "issue:25", component: "AuthScreen", implemented: true },
   { id: "auth-reset", title: "Новый пароль", role: "auth", path: "/auth/reset-password", figmaNodeId: "issue:25", component: "AuthScreen", implemented: true },
-  { id: "user-profile", title: "Настройки пользователя", role: "shared", path: "/profile", figmaNodeId: "issue:25", component: "RoleStatusScreen", implemented: true },
+  { id: "user-profile", title: "Настройки", role: "shared", path: "/profile", figmaNodeId: "issue:25", component: "RoleStatusScreen", implemented: true },
   { id: "owner-home", title: "Кабинет владельца", role: "owner", path: "/owner/home", figmaNodeId: "issue:25", component: "OwnerScreen", implemented: true },
   { id: "owner-pet-create", title: "Кабинет владельца", role: "owner", path: "/owner/pets/new", figmaNodeId: "owner-pages", component: "OwnerScreen", implemented: true },
   { id: "owner-pet-detail", title: "Кабинет владельца", role: "owner", path: "/owner/pets/:petId", figmaNodeId: "owner-pages", component: "OwnerScreen", implemented: true },

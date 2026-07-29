@@ -180,11 +180,26 @@ describe("Owner pages", () => {
       "Шарик",
     ]);
     expect(wrapper.findAll(".workspace-nav-tree .workspace-nav-item")[0]!.getComponent(AppIcon).props("name")).toBe("pets");
-    expect(wrapper.findAll(".workspace-bottom-nav :is(a, button) span").map((node) => node.text())).toEqual([
+    const bottomNavigationItems = wrapper.findAll(".workspace-bottom-nav :is(a, button)");
+    expect(bottomNavigationItems.map((item) => item.get("span").text())).toEqual([
       "Питомцы",
-      "Настройки пользователя",
+      "Настройки",
       "Выйти",
     ]);
+    expect(bottomNavigationItems.map((item) => item.attributes("title"))).toEqual([
+      "Питомцы",
+      "Настройки",
+      "Выйти",
+    ]);
+    expect(bottomNavigationItems.map((item) => item.attributes("aria-label"))).toEqual([
+      "Питомцы",
+      "Настройки",
+      "Выйти",
+    ]);
+    expect(bottomNavigationItems.every((item) => item.element.tagName === "BUTTON")).toBe(true);
+    expect(bottomNavigationItems.every((item) => item.attributes("href") === undefined)).toBe(true);
+    expect(bottomNavigationItems[1]!.getComponent(AppIcon).props("name")).toBe("settings");
+    expect(wrapper.get(".workspace-bottom-nav").classes()).toContain("role-owner");
     expect(wrapper.get(".owner-pet-card").text()).toContain("Шарик");
     expect(wrapper.get(".owner-pet-card").text()).toContain("Бигль");
     expect(wrapper.get(".owner-pet-card").text()).toMatch(/\d+ полн(?:ый|ых) (?:год|года|лет)/);
@@ -462,12 +477,14 @@ describe("Owner pages", () => {
     expect(requestedRow.get('td[data-label="Делегирование"]').text()).toBe("");
     expect(grantedRow.text()).toContain("Предоставлен");
     expect(grantedRow.get('td[data-label="Делегирование"]').text()).toBe("Да");
+    expect(grantedRow.get(".delegation-badge").classes()).toContain("enabled");
     expect(grantedRow.get('td[data-label="Доступ"] button').attributes("title")).toBe("Отозвать доступ");
     expect(grantedRow.get('td[data-label="Делегирование"] button').attributes("title")).toBe("Отключить делегирование");
     expect(grantedRow.get('button[title="Отключить делегирование"]').classes()).toContain("danger-outline");
     expect(grantedRow.get('button[title="Отключить делегирование"]').getComponent(AppIcon).props("name")).toBe("share");
     expect(grantedWithoutDelegationRow.text()).toContain("Предоставлен");
     expect(grantedWithoutDelegationRow.get('td[data-label="Делегирование"]').text()).toBe("Нет");
+    expect(grantedWithoutDelegationRow.get(".delegation-badge").classes()).toContain("disabled");
     expect(grantedWithoutDelegationRow.get('button[title="Разрешить делегирование"]')
       .getComponent(AppIcon).props("name")).toBe("share");
     expect(grantedWithoutDelegationRow.findAll("button").map((button) => button.attributes("title")))

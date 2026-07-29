@@ -254,7 +254,7 @@ async function confirmDeviceRevocation() {
 </script>
 
 <template>
-  <WorkspaceShell :role="appState.activeRole" title="Настройки пользователя" :profile-name="profileName" settings @sign-out="signOut()">
+  <WorkspaceShell :role="appState.activeRole" title="Настройки" :profile-name="profileName" settings @sign-out="signOut()">
     <div class="profile-page">
     <section v-if="appState.keyRecoveryRequired" class="panel critical-panel" role="alert">
       <h2>Ключи этого аккаунта отсутствуют на устройстве</h2>

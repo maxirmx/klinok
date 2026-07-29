@@ -1,7 +1,7 @@
 {
   "name": "klinok",
   "private": true,
-  "version": "0.9.0",
+  "version": "0.9.1",
   "type": "module",
   "workspaces": [
     "auth-node",
@@ -73,15 +73,15 @@
     "@typescript-eslint/parser": "^8.61.0",
     "@vitejs/plugin-vue": "^6.0.7",
     "@vitest/coverage-v8": "^4.1.9",
-    "@vue/test-utils": "^2.4.11",
-    "eslint": "^9.39.4",
-    "eslint-plugin-vue": "^9.33.0",
+    "@vue/test-utils": "^2.4.0",
+    "eslint": "^10.8.0",
+    "eslint-plugin-vue": "^10.10.0",
     "fake-indexeddb": "^6.2.5",
     "jsdom": "^28.1.0",
     "typescript": "^5.8.3",
     "vite": "^8.0.16",
     "vitest": "^4.1.9",
     "vue-eslint-parser": "^10.4.1",
-    "vue-tsc": "^2.2.10"
+    "vue-tsc": "^3.3.8"
   }
 }

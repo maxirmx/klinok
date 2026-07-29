@@ -481,6 +481,12 @@ onMounted(() => { void refreshPets(); });
       </label>
       <div class="owner-access-table-wrap">
         <table class="owner-access-table doctor-access-table">
+          <colgroup>
+            <col class="doctor-access-actions-column" />
+            <col class="doctor-access-pet-column" />
+            <col class="doctor-access-owner-column" />
+            <col class="doctor-access-delegation-column" />
+          </colgroup>
           <thead>
             <tr>
               <th>Действия</th>
@@ -574,6 +580,14 @@ onMounted(() => { void refreshPets(); });
         :owner-account-id="currentDirectoryPet?.ownerAccountId || selectedPet.ownerAccountId"
       >
         <template #actions>
+          <RouterLink
+            class="outline-action inline owner-profile-action"
+            to="/doctor/home"
+            title="Назад к медицинским картам"
+            aria-label="Назад к медицинским картам"
+          >
+            <AppIcon name="chevron-left" />
+          </RouterLink>
           <RouterLink v-if="canDelegate" class="outline-action inline owner-profile-action" :to="`/doctor/pets/${petId}/delegate`" title="Делегировать доступ" aria-label="Делегировать доступ"><AppIcon name="share" /></RouterLink>
           <button class="outline-action inline danger-outline owner-profile-action" type="button" title="Отказаться от доступа" aria-label="Отказаться от доступа" @click="openRelinquish(selectedPet)"><AppIcon name="close" /></button>
         </template>
