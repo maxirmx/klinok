@@ -39,6 +39,8 @@ coverage/
 .klinok-p2p/
 .klinok-auth/
 .klinok-local/
+klinok.env
+bootstrap-recovery.bundle.json
 
 # Local Figma/design handoff extracts
 .design-reference/

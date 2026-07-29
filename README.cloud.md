@@ -2,6 +2,18 @@
 
 The deployment model that best fits the current architecture is a single persistent Linux VM running Docker Compose. Avoid an autoscaling container platform for now: `auth-node` uses LevelDB and in-memory rate limits, while `p2p-node` requires persistent OrbitDB storage and a stable peer identity.
 
+For the `klinok.sw.consulting` deployment, the bootstrap can be run from the repository root after DNS, the host firewall, Docker Compose, and TLS files `/srv/klinok/certificate/s.crt` and `/srv/klinok/certificate/s.key` are ready:
+
+```sh
+export KLINOK_BOOTSTRAP_EMAIL='administrator@example.com'
+export KLINOK_BOOTSTRAP_PASSWORD='a-long-unique-password'
+export KLINOK_RECOVERY_PASSPHRASE='a-separate-long-offline-passphrase'
+
+./scripts/bootstrap-cloud.sh
+```
+
+The script validates the certificate, prepares `/srv/klinok`, pulls the GHCR images, provisions or reuses the bootstrap Administrator, writes the protected `klinok.env`, exports `bootstrap-recovery.bundle.json`, starts the services in dependency order, and verifies HTTPS locally with the production hostname. SMTP defaults to the `klinok@sw.consulting` mailbox at `mail.nic.ru` over implicit TLS on port `465`; any `KLINOK_SMTP_*` value can be overridden in the environment. Move the recovery bundle to encrypted offline storage immediately after bootstrap and keep its passphrase separately. Use `KLINOK_IMAGE_TAG` to select an immutable release tag instead of the default `latest`.
+
 ## Deployment layout
 
 ```text
@@ -31,8 +43,8 @@ Provision a Linux VM with:
 Create persistent directories for the service data and TLS certificate:
 
 ```text
-/srv/klinok/auth/data
-/srv/klinok/p2p/data
+/srv/klinok/auth.v2/data
+/srv/klinok/p2p.v2/data
 /srv/klinok/certificate
 ```
 
@@ -40,14 +52,14 @@ The P2P container runs as a non-root Node user. It must be able to write its dat
 
 ## 2. Customize the production Compose configuration
 
-[`docker-compose-ghrc.yml`](docker-compose-ghrc.yml) is the production template, but currently hard-codes:
+[`docker-compose-ghrc.yml`](docker-compose-ghrc.yml) is the production template. Its defaults are:
 
 - `klinok.sw.consulting`;
-- `/home/maxirmx/...` storage paths;
+- `/srv/klinok/...` storage and certificate paths;
 - `latest` container tags;
 - certificate names `s.crt` and `s.key`.
 
-Replace these values with the deployment hostname and `/srv/klinok` paths. Prefer an immutable release tag over `latest`.
+The bootstrap script records overrides in `klinok.env`. Prefer an immutable `KLINOK_IMAGE_TAG` over `latest`.
 
 The UI [`config/nginx.conf`](config/nginx.conf) also hard-codes `klinok.sw.consulting`. For another hostname, either rebuild the UI image after changing the file or mount a customized configuration into the container.
 
@@ -69,12 +81,12 @@ This allows authentication rate limiting to use the client address supplied by t
 Configure the production SMTP service through the Compose environment:
 
 ```env
-KLINOK_SMTP_HOST=smtp.example.com
-KLINOK_SMTP_PORT=587
-KLINOK_SMTP_SECURE=false
-KLINOK_SMTP_USER=...
-KLINOK_SMTP_PASSWORD=...
-KLINOK_SMTP_FROM="Клинок <noreply@example.com>"
+KLINOK_SMTP_HOST=mail.nic.ru
+KLINOK_SMTP_PORT=465
+KLINOK_SMTP_SECURE=true
+KLINOK_SMTP_USER=klinok@sw.consulting
+KLINOK_SMTP_PASSWORD=Klinok$123
+KLINOK_SMTP_FROM="Клинок <klinok@sw.consulting>"
 ```
 
 Port `587` normally uses STARTTLS with `KLINOK_SMTP_SECURE=false`. Implicit TLS on port `465` normally uses `KLINOK_SMTP_SECURE=true`. Follow the SMTP provider's requirements.
@@ -82,7 +94,7 @@ Port `587` normally uses STARTTLS with `KLINOK_SMTP_SECURE=false`. Implicit TLS 
 Protect the runtime environment file:
 
 ```sh
-chmod 600 .env
+chmod 600 klinok.env
 ```
 
 If the GHCR packages are private, authenticate before pulling them:
@@ -102,7 +114,7 @@ export KLINOK_BOOTSTRAP_EMAIL='administrator@example.com'
 export KLINOK_BOOTSTRAP_PASSWORD='a-long-unique-password'
 export KLINOK_RECOVERY_PASSPHRASE='a-separate-long-offline-passphrase'
 
-docker compose -f docker-compose.yml run --rm --no-deps -T \
+docker compose --env-file klinok.env -f docker-compose-ghrc.yml run --rm --no-deps -T \
   -e KLINOK_BOOTSTRAP_EMAIL \
   -e KLINOK_BOOTSTRAP_PASSWORD \
   -e KLINOK_RECOVERY_PASSPHRASE \
@@ -120,7 +132,7 @@ This creates:
 Extract the authentication attestation public key:
 
 ```sh
-docker compose -f docker-compose.yml run --rm --no-deps -T \
+docker compose --env-file klinok.env -f docker-compose-ghrc.yml run --rm --no-deps -T \
   auth-blue node -e \
   "const fs=require('fs');process.stdout.write(JSON.stringify(JSON.parse(fs.readFileSync('/data/provisioned/auth-attestation-public-key.json'))))"
 ```
@@ -128,12 +140,12 @@ docker compose -f docker-compose.yml run --rm --no-deps -T \
 Extract the bootstrap signing public key:
 
 ```sh
-docker compose -f docker-compose.yml run --rm --no-deps -T \
+docker compose --env-file klinok.env -f docker-compose-ghrc.yml run --rm --no-deps -T \
   auth-blue node -e \
   "const fs=require('fs');process.stdout.write(JSON.stringify(JSON.parse(fs.readFileSync('/data/provisioned/bootstrap-public-anchor.json')).signingPublicKey))"
 ```
 
-Store the compact JSON results in the protected `.env` file:
+Store the compact JSON results in the protected `klinok.env` file:
 
 ```env
 KLINOK_AUTH_ATTESTATION_PUBLIC_KEY={"kty":"EC",...}
@@ -147,7 +159,7 @@ Copy the recovery bundle to secure offline storage:
 ```sh
 umask 077
 
-docker compose -f docker-compose.yml run --rm --no-deps -T \
+docker compose --env-file klinok.env -f docker-compose-ghrc.yml run --rm --no-deps -T \
   auth-blue node -e \
   "const fs=require('fs');process.stdout.write(fs.readFileSync('/data/provisioned/bootstrap-recovery.bundle.json','utf8'))" \
   > bootstrap-recovery.bundle.json
@@ -164,17 +176,17 @@ unset KLINOK_BOOTSTRAP_EMAIL KLINOK_BOOTSTRAP_PASSWORD KLINOK_RECOVERY_PASSPHRAS
 Pull the configured image versions and start the trusted P2P node first:
 
 ```sh
-docker compose --env-file klinok.env -f docker-compose.yml pull
-docker compose --env-file klinok.env -f docker-compose.yml up -d p2p-blue
-docker compose --env-file klinok.env -f docker-compose.yml ps
+docker compose --env-file klinok.env -f docker-compose-ghrc.yml pull
+docker compose --env-file klinok.env -f docker-compose-ghrc.yml up -d p2p-blue
+docker compose --env-file klinok.env -f docker-compose-ghrc.yml ps
 ```
 
 Wait until `p2p-blue` is healthy, and then start authentication and the UI:
 
 ```sh
-docker compose --env-file klinok.env -f docker-compose.yml up -d auth-blue
-docker compose --env-file klinok.env -f docker-compose.yml up -d ui-blue
-docker compose --env-file klinok.env -f docker-compose.yml ps
+docker compose --env-file klinok.env -f docker-compose-ghrc.yml up -d auth-blue
+docker compose --env-file klinok.env -f docker-compose-ghrc.yml up -d ui-blue
+docker compose --env-file klinok.env -f docker-compose-ghrc.yml ps
 ```
 
 The resulting startup order is:
@@ -203,7 +215,7 @@ Confirm that:
 Use service logs when troubleshooting:
 
 ```sh
-docker compose --env-file .env -f docker-compose-ghrc.yml logs --tail=200 ui-blue auth-blue p2p-blue
+docker compose --env-file klinok.env -f docker-compose-ghrc.yml logs --tail=200 ui-blue auth-blue p2p-blue
 ```
 
 ## 6. Backups and recovery
@@ -224,8 +236,8 @@ Never deploy either backend service with ephemeral storage. Do not run `docker c
 Back up the deployment, select a tested immutable image tag, and then update the containers:
 
 ```sh
-docker compose --env-file .env -f docker-compose-ghrc.yml pull
-docker compose --env-file .env -f docker-compose-ghrc.yml up -d
+docker compose --env-file klinok.env -f docker-compose-ghrc.yml pull
+docker compose --env-file klinok.env -f docker-compose-ghrc.yml up -d
 ```
 
 Verify health, login, email delivery, and P2P synchronization after every update. The current `auth-node` design is intended for one instance; do not horizontally scale it until LevelDB and the in-memory rate-limit counters are replaced with shared services.
