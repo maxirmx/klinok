@@ -1,7 +1,7 @@
 {
   "name": "klinok",
   "private": true,
-  "version": "0.9.1",
+  "version": "0.9.2",
   "type": "module",
   "workspaces": [
     "auth-node",
@@ -59,7 +59,8 @@
     "vue-router": "^4.6.4"
   },
   "overrides": {
-    "glob": "^13.0.6"
+    "glob": "^13.0.6",
+    "minimatch": "^10.2.6"
   },
   "allowScripts": {
     "classic-level@3.0.0": true,
