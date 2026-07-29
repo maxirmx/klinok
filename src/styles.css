@@ -1888,7 +1888,7 @@ dd {
   padding: 11px 12px;
   border-bottom: 1px solid var(--line);
   text-align: left;
-  vertical-align: middle;
+  vertical-align: top;
 }
 .owner-access-table th {
   background: var(--brand-bg-neutral);
@@ -1901,7 +1901,7 @@ dd {
 .owner-access-table tbody tr:last-child td { border-bottom: 0; }
 .owner-access-controlled {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 8px;
 }
@@ -1920,6 +1920,12 @@ dd {
 .owner-access-doctor small { margin-top: 3px; color: var(--text-muted); font-size: 10px; }
 .status-badge.granted { background: #dcfae6; color: #067647; }
 .status-badge.requested { background: #fef0c7; color: #93370d; }
+.status-badge.delegation-badge {
+  padding: 3px 6px;
+  font-size: 9.5px;
+}
+.status-badge.delegation-badge.enabled { background: #dcfae6; color: #067647; }
+.status-badge.delegation-badge.disabled { background: #fee4e2; color: #b42318; }
 .grant-access-form,
 .grant-access-form .form-stack { gap: 7px; }
 .grant-access-form {
@@ -2367,6 +2373,7 @@ dd {
   .owner-access-table td {
     display: grid;
     grid-template-columns: minmax(104px, .45fr) minmax(0, 1fr);
+    align-items: start;
     gap: 10px;
     border-bottom: 1px solid var(--line);
   }

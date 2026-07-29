@@ -462,12 +462,14 @@ describe("Owner pages", () => {
     expect(requestedRow.get('td[data-label="Делегирование"]').text()).toBe("");
     expect(grantedRow.text()).toContain("Предоставлен");
     expect(grantedRow.get('td[data-label="Делегирование"]').text()).toBe("Да");
+    expect(grantedRow.get(".delegation-badge").classes()).toContain("enabled");
     expect(grantedRow.get('td[data-label="Доступ"] button').attributes("title")).toBe("Отозвать доступ");
     expect(grantedRow.get('td[data-label="Делегирование"] button').attributes("title")).toBe("Отключить делегирование");
     expect(grantedRow.get('button[title="Отключить делегирование"]').classes()).toContain("danger-outline");
     expect(grantedRow.get('button[title="Отключить делегирование"]').getComponent(AppIcon).props("name")).toBe("share");
     expect(grantedWithoutDelegationRow.text()).toContain("Предоставлен");
     expect(grantedWithoutDelegationRow.get('td[data-label="Делегирование"]').text()).toBe("Нет");
+    expect(grantedWithoutDelegationRow.get(".delegation-badge").classes()).toContain("disabled");
     expect(grantedWithoutDelegationRow.get('button[title="Разрешить делегирование"]')
       .getComponent(AppIcon).props("name")).toBe("share");
     expect(grantedWithoutDelegationRow.findAll("button").map((button) => button.attributes("title")))

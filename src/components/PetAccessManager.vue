@@ -108,7 +108,13 @@ const pagedRows = computed(() => props.rows.slice(
                 data-label="Делегирование"
               >
                 <div class="owner-access-controlled">
-                  <span>{{ row.status === 'granted' ? row.delegationAllowed ? 'Да' : 'Нет' : '' }}</span>
+                  <span
+                    v-if="row.status === 'granted'"
+                    class="status-badge delegation-badge"
+                    :class="row.delegationAllowed ? 'enabled' : 'disabled'"
+                  >
+                    {{ row.delegationAllowed ? 'Да' : 'Нет' }}
+                  </span>
                   <div v-if="$slots.delegationActions" class="row-actions">
                     <slot name="delegationActions" :row="row" />
                   </div>
