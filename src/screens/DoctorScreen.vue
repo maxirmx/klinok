@@ -5,7 +5,7 @@
 
 import { computed, onMounted, reactive, ref, watch } from "vue";
 import { RouterLink, useRoute, useRouter } from "vue-router";
-import type { DirectoryPetDto, DirectoryProfileDto, PetGrantAction } from "@klinok/protocol";
+import type { DirectoryPetDto, DirectoryProfileDto, PetAccessRequest, PetGrantAction } from "@klinok/protocol";
 import AppIcon from "../components/AppIcon.vue";
 import AppPaginator from "../components/AppPaginator.vue";
 import ConfirmationDialog from "../components/ConfirmationDialog.vue";
@@ -55,6 +55,12 @@ const homeSortDirection = ref<SortDirection>("asc");
 const homePage = ref(1);
 const storedPageSize = Number(localStorage.getItem("klinok:doctor-pets-page-size"));
 const homePageSize = ref<(typeof pageSizes)[number]>(pageSizes.includes(storedPageSize as never) ? storedPageSize as never : 10);
+const pendingRequestPage = ref(1);
+const storedPendingRequestPageSize = Number(localStorage.getItem("klinok:doctor-pending-requests-page-size"));
+const pendingRequestPageSize = ref<(typeof pageSizes)[number]>(
+  pageSizes.includes(storedPendingRequestPageSize as never) ? storedPendingRequestPageSize as never : 10,
+);
+const pendingRequestPets = reactive(new Map<string, DirectoryPetDto | null>());
 const directoryPets = ref<DirectoryPetDto[]>([]);
 const selectedDirectoryPet = ref<DirectoryPetDto | null>(null);
 const directoryTotal = ref(0);
@@ -110,6 +116,18 @@ const petRecords = computed(() => appState.medical.records.filter((record) => re
 const currentDirectoryPet = computed(() => selectedDirectoryPet.value?.petId === petId.value
   ? selectedDirectoryPet.value
   : directoryPets.value.find((pet) => pet.petId === petId.value));
+const pendingRequests = computed<PetAccessRequest[]>(() => appState.medical.accessRequests
+  .filter((request) =>
+    request.requesterAccountId === appState.session.accountId && request.status === "pending",
+  )
+  .sort((left, right) => right.requestedAt.localeCompare(left.requestedAt)));
+const pendingRequestPageCount = computed(() =>
+  Math.max(1, Math.ceil(pendingRequests.value.length / pendingRequestPageSize.value)),
+);
+const pagedPendingRequests = computed(() => pendingRequests.value.slice(
+  (pendingRequestPage.value - 1) * pendingRequestPageSize.value,
+  pendingRequestPage.value * pendingRequestPageSize.value,
+));
 const delegatedAccessRows = computed<PetAccessRow[]>(() => {
   if (!selectedGrant.value) return [];
   return appState.medical.grants
@@ -215,6 +233,26 @@ async function refreshSelectedDirectoryPet(id: string) {
   }
 }
 
+async function hydratePendingRequestPets(requests: PetAccessRequest[]) {
+  await Promise.all(requests.map(async (request) => {
+    if (pendingRequestPets.has(request.petId)) return;
+    try {
+      pendingRequestPets.set(request.petId, await lookupPetDirectory(request.petId));
+    } catch {
+      if (!pendingRequestPets.has(request.petId)) pendingRequestPets.set(request.petId, null);
+    }
+  }));
+}
+
+function formatRequestDate(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return new Intl.DateTimeFormat("ru-RU", {
+    dateStyle: "short",
+    timeStyle: "short",
+  }).format(date);
+}
+
 function changeHomeSort(field: HomeSortField) {
   if (homeSort.value === field) homeSortDirection.value = homeSortDirection.value === "asc" ? "desc" : "asc";
   else {
@@ -271,6 +309,7 @@ async function requestAccess(pet: DirectoryPetDto) {
   const succeeded = await performModal(requestError, async () => {
     const requestId = await requireRepository().medical.requestAccess(pet.petId);
     autoApproved = showAutoApprovedPet(pet, requestId);
+    if (!autoApproved) pendingRequestPets.set(pet.petId, pet);
     petSearchResults.value = petSearchResults.value.filter((candidate) => candidate.petId !== pet.petId);
     if (!petSearchResults.value.length) petSearchPerformed.value = false;
   }, "Не удалось отправить запрос.");
@@ -278,6 +317,13 @@ async function requestAccess(pet: DirectoryPetDto) {
     alertStore.success(autoApproved ? "Доступ предоставлен автоматически." : "Запрос отправлен владельцу.");
     requestDialogOpen.value = false;
   }
+}
+
+async function cancelPendingRequest(requestId: string) {
+  await perform(
+    () => requireRepository().medical.cancelAccessRequest(requestId),
+    "Запрос на доступ отозван.",
+  );
 }
 
 function openRequestDialog() {
@@ -442,6 +488,14 @@ watch([homeQuery, homeSort, homeSortDirection, homePageSize], () => {
   else homePage.value = 1;
 });
 watch(homePage, () => { void refreshPets(); });
+watch(pendingRequests, (requests) => { void hydratePendingRequestPets(requests); }, { immediate: true });
+watch(pendingRequestPageSize, (value) => {
+  localStorage.setItem("klinok:doctor-pending-requests-page-size", String(value));
+  pendingRequestPage.value = 1;
+});
+watch(pendingRequestPageCount, (pageCount) => {
+  if (pendingRequestPage.value > pageCount) pendingRequestPage.value = pageCount;
+});
 watch(petId, (id) => { void refreshSelectedDirectoryPet(id); }, { immediate: true });
 watch(() => props.scenarioId, (scenarioId) => {
   if (scenarioId === "doctor-pet-request-access") openRequestDialog();
@@ -460,6 +514,76 @@ onMounted(() => { void refreshPets(); });
 <template>
   <WorkspaceShell role="doctor" title="Кабинет врача" :profile-name="profileName" @sign-out="signOut">
     <section v-if="scenarioId === 'doctor-home' || scenarioId === 'doctor-pet-request-access'" class="panel doctor-page">
+      <section class="doctor-pending-requests" aria-labelledby="doctor-pending-requests-title">
+        <div class="doctor-heading">
+          <h2 id="doctor-pending-requests-title">Ожидающие запросы</h2>
+        </div>
+        <div class="owner-access-table-wrap doctor-pending-request-table-wrap">
+          <table class="owner-access-table doctor-pending-request-table">
+            <colgroup>
+              <col class="doctor-pending-request-actions-column" />
+              <col class="doctor-pending-request-pet-column" />
+              <col class="doctor-pending-request-owner-column" />
+              <col class="doctor-pending-request-date-column" />
+            </colgroup>
+            <thead>
+              <tr>
+                <th>Действия</th>
+                <th>Питомец</th>
+                <th>Владелец</th>
+                <th>Дата запроса</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="request in pagedPendingRequests" :key="request.requestId">
+                <td class="owner-access-actions" data-label="Действия">
+                  <div class="row-actions">
+                    <button
+                      class="outline-action inline danger-outline access-icon-action"
+                      type="button"
+                      :disabled="busy"
+                      title="Отозвать запрос на доступ"
+                      aria-label="Отозвать запрос на доступ"
+                      @click="cancelPendingRequest(request.requestId)"
+                    >
+                      <AppIcon name="close" />
+                    </button>
+                  </div>
+                </td>
+                <td class="owner-access-doctor" data-label="Питомец">
+                  <strong>
+                    {{ pendingRequestPets.get(request.petId)
+                      ? `${pendingRequestPets.get(request.petId)!.species} ${pendingRequestPets.get(request.petId)!.name}`
+                      : 'Данные питомца недоступны' }}
+                  </strong>
+                  <small>{{ request.petId }}</small>
+                </td>
+                <td class="owner-access-doctor" data-label="Владелец">
+                  <PersonIdentity
+                    :display-name="pendingRequestPets.get(request.petId)?.ownerDisplayName || 'ФИО не указано'"
+                    :account-id="request.ownerAccountId"
+                  />
+                </td>
+                <td data-label="Дата запроса">{{ formatRequestDate(request.requestedAt) }}</td>
+              </tr>
+              <tr v-if="!pendingRequests.length">
+                <td class="doctor-access-empty" colspan="4">Ожидающих запросов нет.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <AppPaginator
+          v-if="pendingRequests.length"
+          v-model:page="pendingRequestPage"
+          v-model:page-size="pendingRequestPageSize"
+          class="doctor-pending-request-pagination"
+          :total-items="pendingRequests.length"
+          :page-sizes="pageSizes"
+          page-size-label="Запросов на странице"
+          aria-label="Навигация по ожидающим запросам"
+        />
+      </section>
+
       <div class="doctor-heading doctor-access-heading">
         <h2>Медицинские карты</h2>
         <button
