@@ -2,7 +2,7 @@
 // All rights reserved.
 // This file is a part of Klinok application
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   createProtocolState,
   deviceProjectionKey,
@@ -218,6 +218,34 @@ describe("trusted-node event ingestion", () => {
     expect(await codedFailure.ingest([firstEvent])).toEqual({
       results: [expect.objectContaining({ status: "deferred", code: "STORAGE_BUSY" })],
     });
+  });
+
+  it("defers acknowledgement until auth observer notification succeeds", async () => {
+    const firstEvent = (await generatedEvents())[0]!;
+    const onPersisted = vi.fn()
+      .mockRejectedValueOnce(new Error("auth unavailable"))
+      .mockResolvedValueOnce(undefined);
+    const ingest = new EventIngestService({
+      state: createProtocolState("bootstrap-administrator"),
+      databases: {
+        control: { async add() {} },
+        medical: { async add() {} },
+      },
+      verification: { requireTrustedAttestation: false },
+      onPersisted,
+    });
+
+    expect(await ingest.ingest([firstEvent])).toEqual({
+      results: [expect.objectContaining({
+        eventId: firstEvent.eventId,
+        status: "deferred",
+        code: "EVENT_NOTIFICATION_FAILED",
+      })],
+    });
+    expect(await ingest.ingest([firstEvent])).toEqual({
+      results: [expect.objectContaining({ eventId: firstEvent.eventId, status: "duplicate" })],
+    });
+    expect(onPersisted).toHaveBeenCalledTimes(2);
   });
 
   it("defers missing authorization state but rejects permanent verification failures", async () => {

@@ -106,6 +106,8 @@ export interface AuthAppOptions {
   now?: () => Date;
 }
 
+const INTERNAL_EVENT_BODY_LIMIT = 1024 * 1024;
+
 function error(reply: FastifyReply, statusCode: number, code: string, message: string): FastifyReply {
   return reply.code(statusCode).send({ error: { code, message } } satisfies AuthErrorBody);
 }
@@ -262,7 +264,9 @@ export async function buildAuthApp(options: AuthAppOptions): Promise<FastifyInst
   const attestationPublicKey = await attestation.publicJwk();
   const observer = new ControlPlaneObserver(options.config, store, countedMailer, attestationPublicKey);
   if (options.config.controlObserver.internalEventToken) {
-    app.post<{ Body: unknown }>("/internal/events", async (request, reply) => {
+    app.post<{ Body: unknown }>("/internal/events", {
+      bodyLimit: INTERNAL_EVENT_BODY_LIMIT,
+    }, async (request, reply) => {
       if (request.headers.authorization !== `Bearer ${options.config.controlObserver.internalEventToken}`) {
         return error(reply, 403, "INTERNAL_EVENT_FORBIDDEN", "Internal event authentication failed.");
       }

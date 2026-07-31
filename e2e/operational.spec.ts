@@ -3,6 +3,7 @@
 // This file is a part of Klinok application
 
 import { expect, test, type APIRequestContext, type BrowserContext, type Page } from "@playwright/test";
+import { Buffer } from "node:buffer";
 import { execFile as execFileCallback } from "node:child_process";
 import { promisify } from "node:util";
 
@@ -96,6 +97,38 @@ async function newPage(context: BrowserContext, label: string): Promise<Page> {
   return page;
 }
 
+async function attachLargePetPhoto(page: Page): Promise<void> {
+  const base64 = await page.evaluate(() => {
+    const canvas = document.createElement("canvas");
+    canvas.width = 512;
+    canvas.height = 512;
+    const context = canvas.getContext("2d");
+    if (!context) throw new Error("Canvas is unavailable.");
+    const pixels = context.createImageData(canvas.width, canvas.height);
+    let value = 0x12345678;
+    for (let index = 0; index < pixels.data.length; index += 4) {
+      value ^= value << 13;
+      value ^= value >>> 17;
+      value ^= value << 5;
+      pixels.data[index] = value & 0xff;
+      pixels.data[index + 1] = (value >>> 8) & 0xff;
+      pixels.data[index + 2] = (value >>> 16) & 0xff;
+      pixels.data[index + 3] = 0xff;
+    }
+    context.putImageData(pixels, 0, 0);
+    return canvas.toDataURL("image/png").split(",")[1]!;
+  });
+  await page.locator('input[type="file"][accept*="image/png"]').setInputFiles({
+    name: "pet-photo.png",
+    mimeType: "image/png",
+    buffer: Buffer.from(base64, "base64"),
+  });
+  const preview = page.getByAltText("Предпросмотр фотографии питомца");
+  await expect(preview).toBeVisible();
+  const processedLength = await preview.evaluate((image) => (image as HTMLImageElement).src.length);
+  expect(processedLength).toBeGreaterThan(64 * 1024);
+}
+
 async function openProfileAndWaitForSync(page: Page) {
   if (new URL(page.url()).pathname !== "/profile") {
     await page.locator(".workspace-sidebar").getByRole("button", { name: "Настройки" }).click();
@@ -181,6 +214,7 @@ test("fresh provisioning, Doctor approval, grant, draft, and confirmation", asyn
   await ownerPage.getByLabel("Окрас").fill("трёхцветный");
   await ownerPage.getByLabel("Вес, кг").fill("12.4");
   await ownerPage.getByLabel("Заметки").fill("Первичная заметка");
+  await attachLargePetPhoto(ownerPage);
   await ownerPage.getByRole("button", { name: "Сохранить питомца" }).click();
   await expect(ownerPage).toHaveURL(/\/owner\/pets\/[0-9a-f-]+$/i);
   const petId = new URL(ownerPage.url()).pathname.split("/").at(-1)!;

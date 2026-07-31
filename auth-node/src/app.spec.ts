@@ -20,6 +20,7 @@ async function fixture(options: {
   trustProxy?: AuthConfig["trustProxy"];
   rateLimit?: Partial<AuthRateLimitConfig>;
   bootstrap?: boolean;
+  internalEventToken?: string;
 } = {}) {
   const dataDir = await mkdtemp(join(tmpdir(), "klinok-auth-test-"));
   let bootstrapKeys: UserKeySet | undefined;
@@ -56,7 +57,13 @@ async function fixture(options: {
     rateLimit: { ...DEFAULT_AUTH_RATE_LIMITS, ...options.rateLimit },
     smtp: { host: "localhost", port: 1025, secure: false, from: "test@klinok.test" },
     legal: { personalDataConsentVersion: "consent-v1", userAgreementVersion: "terms-v1" },
-    controlObserver: { enabled: false, databaseName: "klinok-control-v2", medicalDatabaseName: "klinok-medical-v4", trustedNodeMultiaddrs: [] },
+    controlObserver: {
+      enabled: false,
+      ...(options.internalEventToken ? { internalEventToken: options.internalEventToken } : {}),
+      databaseName: "klinok-control-v2",
+      medicalDatabaseName: "klinok-medical-v4",
+      trustedNodeMultiaddrs: [],
+    },
   };
   const mailer = new MemoryMailer();
   const store = new AuthStore(dataDir);
@@ -88,6 +95,20 @@ async function verifiedLogin(
 afterEach(async () => Promise.all(apps.splice(0).map((app) => app.close())));
 
 describe("auth-node", () => {
+  it("accepts internal observer events larger than the public request limit", async () => {
+    const internalEventToken = "internal-event-test-token";
+    const { app } = await fixture({ internalEventToken });
+    const response = await app.inject({
+      method: "POST",
+      url: "/internal/events",
+      headers: { authorization: `Bearer ${internalEventToken}` },
+      payload: { padding: "x".repeat(200 * 1024) },
+    });
+
+    expect(response.statusCode).toBe(422);
+    expect(response.json().error.code).toBe("INTERNAL_EVENT_REJECTED");
+  });
+
   it("binds one installation ID to separate certificates for different accounts", async () => {
     const { app, mailer } = await fixture();
     const first = await verifiedLogin(app, mailer);
