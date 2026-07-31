@@ -140,6 +140,48 @@ beforeEach(async () => {
 });
 
 describe("Administrator pages", () => {
+  it("shows pending counters and filters the table to actionable users", async () => {
+    const pendingDoctor = role("doctor-1", "doctor", "pending");
+    await setState({
+      profiles: [
+        profile("doctor-1", "Анна", "Врач"),
+        profile("doctor-2", "Борис", "Врач"),
+      ],
+      roles: [pendingDoctor, role("doctor-2", "doctor", "approved")],
+    });
+    const wrapper = await mountAt("/admin/home", "administrator-home");
+
+    const desktopUsers = wrapper.get('.workspace-sidebar-nav a[href="/admin/home"]');
+    expect(desktopUsers.get(".pending-count-badge").text()).toBe("1");
+    expect(desktopUsers.attributes("aria-label")).toBe("Пользователи. Ожидают решения: 1");
+    const mobileUsers = wrapper.get('.workspace-bottom-nav button[aria-label="Пользователи. Ожидают решения: 1"]');
+    expect(mobileUsers.get(".pending-count-badge").text()).toBe("1");
+
+    const pendingFilter = wrapper.findAll(".administrator-role-filters button")[1]!;
+    const allFilter = wrapper.findAll(".administrator-role-filters button")[0]!;
+    expect(wrapper.get(".administrator-user-filters").element.children).toHaveLength(2);
+    expect(allFilter.text()).toBe("Все");
+    expect(allFilter.classes()).toEqual(expect.arrayContaining(["active", "neutral"]));
+    expect(pendingFilter.text()).toContain("Требуют решения");
+    expect(pendingFilter.classes()).toContain("pending");
+    expect(pendingFilter.get(".pending-count-badge").text()).toBe("1");
+    await pendingFilter.trigger("click");
+    expect(wrapper.findAll(".administrator-table tbody tr")).toHaveLength(1);
+    expect(wrapper.get(".administrator-table tbody tr").text()).toContain("Анна Врач");
+
+    await setState({
+      profiles: [
+        profile("doctor-1", "Анна", "Врач"),
+        profile("doctor-2", "Борис", "Врач"),
+      ],
+      roles: [{ ...pendingDoctor, status: "approved" }, role("doctor-2", "doctor", "approved")],
+    });
+    await flushPromises();
+    expect(wrapper.find(".workspace-sidebar-nav .pending-count-badge").exists()).toBe(false);
+    expect(pendingFilter.attributes("disabled")).toBeDefined();
+    expect(wrapper.findAll(".administrator-table tbody tr")).toHaveLength(2);
+  });
+
   it("groups advanced roles, maps statuses, excludes owner-only users, and protects bootstrap", async () => {
     await setState({
       profiles: [

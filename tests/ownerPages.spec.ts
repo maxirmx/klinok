@@ -164,6 +164,46 @@ beforeEach(async () => {
 });
 
 describe("Owner pages", () => {
+  it("shows access and medical approvals by pet and hides them after resolution", async () => {
+    const pendingAccess = {
+      requestId: "request-1",
+      petId: pet.petId,
+      ownerAccountId: pet.ownerAccountId,
+      requesterAccountId: "doctor-1",
+      requesterDisplayName: "Анна Врач",
+      status: "pending" as const,
+      requestedAt: "2026-07-17T10:00:00.000Z",
+    };
+    await setMedical(snapshot({ pets: [pet], accessRequests: [pendingAccess], records: [medicalRecord] }));
+    const wrapper = await mountAt("/owner/home", "owner-home");
+
+    const rootNavigation = wrapper.get('.workspace-nav-tree > li > .workspace-nav-item, .workspace-nav-tree > li > a');
+    expect(rootNavigation.get(".pending-count-badge").text()).toBe("2");
+    expect(rootNavigation.attributes("aria-label")).toBe("Питомцы. Ожидают решения: 2");
+    const petNavigation = wrapper.get('.workspace-nav-tree a[href="/owner/pets/pet-1"]');
+    expect(petNavigation.get(".pending-count-badge").text()).toBe("2");
+    expect(wrapper.get('.workspace-bottom-nav button[title="Питомцы. Ожидают решения: 2"] .pending-count-badge').text()).toBe("2");
+
+    expect(wrapper.find(".owner-pending-approvals").exists()).toBe(false);
+    expect(wrapper.get(".owner-pet-card-approvals").findAll(".owner-pet-card-approval").map((badge) => badge.text()))
+      .toEqual(["Доступ: 1", "Медкарта: 1"]);
+
+    wrapper.unmount();
+    const detail = await mountAt("/owner/pets/pet-1", "owner-pet-detail");
+    expect(detail.get('a[href="/owner/pets/pet-1/access"]').attributes("title"))
+      .toBe("Доступ врачей. Ожидают решения: 1");
+    expect(detail.get(".owner-medical-heading .pending-count-badge").text()).toBe("1");
+
+    await setMedical(snapshot({
+      pets: [pet],
+      accessRequests: [{ ...pendingAccess, status: "approved" }],
+      records: [medicalRecord],
+      confirmedRecordIds: [medicalRecord.recordId],
+    }));
+    await flushPromises();
+    expect(detail.find(".pending-count-badge").exists()).toBe(false);
+  });
+
   it("renders the pet ribbon and nested route navigation", async () => {
     await setMedical(snapshot({ pets: [pet] }));
     const wrapper = await mountAt("/owner/home", "owner-home");
@@ -236,11 +276,19 @@ describe("Owner pages", () => {
     expect(wrapper.find(".owner-encounter-confirm").exists()).toBe(false);
   });
 
-  it("offers exactly four sex values and creates a complete profile with notes", async () => {
+  it("offers fixed species and sex values and creates a complete profile with notes", async () => {
     const wrapper = await mountAt("/owner/pets/new", "owner-pet-create");
     expect(wrapper.get(".workspace-topbar h1").text()).toBe("Кабинет владельца");
     expect(wrapper.get(".owner-section-heading h2").text()).toBe("Добавить питомца");
-    expect(wrapper.findAll<HTMLSelectElement>('select option').slice(1).map((option) => option.text())).toEqual([
+    const speciesField = labelled(wrapper, "Вид");
+    expect(speciesField.find("input").exists()).toBe(false);
+    expect(speciesField.get<HTMLSelectElement>("select").element.value).toBe("Собака");
+    expect(speciesField.findAll("option").map((option) => option.text())).toEqual([
+      "Собака",
+      "Кошка",
+      "Другое",
+    ]);
+    expect(labelled(wrapper, "Пол").findAll("option").slice(1).map((option) => option.text())).toEqual([
       "Интактный самец",
       "Интактная самка",
       "Кастрированный самец",
@@ -248,7 +296,7 @@ describe("Owner pages", () => {
     ]);
 
     await labelled(wrapper, "Кличка").get("input").setValue("Боня");
-    await labelled(wrapper, "Вид").get("input").setValue("Кошка");
+    await speciesField.get("select").setValue("Кошка");
     await labelled(wrapper, "Порода").get("input").setValue("Сибирская");
     await labelled(wrapper, "Пол").get("select").setValue("Кастрированная самка");
     await wrapper.get('input[aria-label="Точная дата рождения"]').setValue("2021-05-10");
@@ -288,6 +336,7 @@ describe("Owner pages", () => {
   it("treats a legacy sex as empty and drops unsupported fields on edit", async () => {
     const legacyPet = {
       ...pet,
+      species: "Хомяк",
       sex: "Кобель",
       color: undefined,
       weightKg: undefined,
@@ -299,7 +348,8 @@ describe("Owner pages", () => {
 
     expect(wrapper.get(".workspace-topbar h1").text()).toBe("Кабинет владельца");
     expect(wrapper.get(".owner-section-heading h2").text()).toBe("Редактировать: Шарик");
-    expect(wrapper.get<HTMLSelectElement>("select").element.value).toBe("");
+    expect(labelled(wrapper, "Вид").get<HTMLSelectElement>("select").element.value).toBe("Другое");
+    expect(labelled(wrapper, "Пол").get<HTMLSelectElement>("select").element.value).toBe("");
     const birthModeRadios = wrapper.findAll<HTMLInputElement>('.owner-birth-selector input[type="radio"]');
     expect(birthModeRadios).toHaveLength(2);
     expect(birthModeRadios[0]!.element.checked).toBe(true);
@@ -320,6 +370,7 @@ describe("Owner pages", () => {
     await flushPromises();
 
     const saved = repositoryMocks.updatePet.mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(saved.species).toBe("Другое");
     expect(saved.sex).toBe("Интактный самец");
     expect(saved).not.toHaveProperty("legacyOptionalField");
   });

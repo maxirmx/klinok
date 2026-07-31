@@ -4,6 +4,7 @@
 // This file is a part of Klinok application
 
 import { computed } from "vue";
+import AccessStatusField from "./AccessStatusField.vue";
 import AppIcon from "./AppIcon.vue";
 import AppPaginator from "./AppPaginator.vue";
 import PersonIdentity from "./PersonIdentity.vue";
@@ -43,12 +44,6 @@ defineSlots<{
   delegationActions(props: { row: PetAccessRow }): unknown;
   default(): unknown;
 }>();
-
-function statusLabel(status: PetAccessRow["status"]): string {
-  if (status === "granted") return "Предоставлен";
-  if (status === "requested") return "Запрошен";
-  return "Отозван";
-}
 
 const pagedRows = computed(() => props.rows.slice(
   (props.page - 1) * props.pageSize,
@@ -96,29 +91,25 @@ const pagedRows = computed(() => props.rows.slice(
                 <PersonIdentity :display-name="row.displayName" :account-id="row.accountId" />
               </td>
               <td data-label="Доступ">
-                <div class="owner-access-controlled">
-                  <span class="status-badge" :class="row.status">{{ statusLabel(row.status) }}</span>
-                  <div v-if="$slots.accessActions" class="row-actions">
+                <AccessStatusField :status="row.status">
+                  <template v-if="$slots.accessActions">
                     <slot name="accessActions" :row="row" />
-                  </div>
-                </div>
+                  </template>
+                </AccessStatusField>
               </td>
               <td
                 :class="{ 'is-empty': row.status !== 'granted' }"
                 data-label="Делегирование"
               >
-                <div class="owner-access-controlled">
-                  <span
-                    v-if="row.status === 'granted'"
-                    class="status-badge delegation-badge"
-                    :class="row.delegationAllowed ? 'enabled' : 'disabled'"
-                  >
-                    {{ row.delegationAllowed ? 'Да' : 'Нет' }}
-                  </span>
-                  <div v-if="$slots.delegationActions" class="row-actions">
+                <AccessStatusField
+                  :status="row.status"
+                  kind="delegation"
+                  :delegation-allowed="row.delegationAllowed"
+                >
+                  <template v-if="$slots.delegationActions">
                     <slot name="delegationActions" :row="row" />
-                  </div>
-                </div>
+                  </template>
+                </AccessStatusField>
               </td>
             </tr>
             <tr v-if="!rows.length">

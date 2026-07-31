@@ -23,6 +23,7 @@ import * as json from "multiformats/codecs/json";
 import { sha512 } from "multiformats/hashes/sha2";
 import { extractSignedEvent, InMemorySignedEventRepository, KlinokIdentityProvider, type SignedEvent } from "@klinok/protocol";
 import { createDynamicAccessController } from "./accessController.js";
+import { AuthObserverNotifier } from "./authObserverNotifier.js";
 import { getTlsFilePaths, loadOrCreateLibp2pPrivateKey, loadWebSocketTransportOptions, optionalEnv, splitEnvList } from "./config.js";
 import {
   createP2pOperationalCounters,
@@ -63,29 +64,29 @@ const state = projector.state;
 const counters = createP2pOperationalCounters();
 const authEventUrl = optionalEnv("KLINOK_AUTH_EVENT_URL");
 const internalEventToken = optionalEnv("KLINOK_INTERNAL_EVENT_TOKEN");
+const authObserverNotifier = new AuthObserverNotifier({
+  url: authEventUrl,
+  token: internalEventToken,
+  onFailure: ({ event: signedEvent, attempt, maxAttempts, retrying, error }) => {
+    console.error(JSON.stringify({
+      level: "error",
+      event: "p2p.auth-observer.notification.failed",
+      eventId: signedEvent.eventId,
+      eventType: signedEvent.eventType,
+      attempt,
+      maxAttempts,
+      retrying,
+      error: error.message,
+    }));
+  },
+});
 
 function trustFingerprint(key: JsonWebKey | undefined): string {
   return key ? createHash("sha256").update(JSON.stringify(key)).digest("hex").slice(0, 16) : "missing";
 }
 
 async function notifyAuthObserver(event: SignedEvent): Promise<void> {
-  if (!authEventUrl || !internalEventToken) return;
-  try {
-    const response = await fetch(authEventUrl, {
-      method: "POST",
-      headers: { authorization: `Bearer ${internalEventToken}`, "content-type": "application/json" },
-      body: JSON.stringify(event),
-    });
-    if (!response.ok) throw new Error(`Auth observer responded with HTTP ${response.status}.`);
-  } catch (error) {
-    console.error(JSON.stringify({
-      level: "error",
-      event: "p2p.auth-observer.notification.failed",
-      eventId: event.eventId,
-      eventType: event.eventType,
-      error: error instanceof Error ? error.message : String(error),
-    }));
-  }
+  await authObserverNotifier.notify(event);
 }
 
 function valueFrom(entry: unknown): SignedEvent | null {
@@ -154,7 +155,14 @@ function projectEvents(events: SignedEvent[], notifyObserver = true): Promise<vo
     counters.conflicts += projection.conflicts.length;
     counters.deferred = projector.listDeferred().length;
     if (notifyObserver) {
-      for (const event of projection.accepted) await notifyAuthObserver(event);
+      for (const event of projection.accepted) {
+        try {
+          await notifyAuthObserver(event);
+        } catch {
+          // Browser-originated events are also delivered through /events, whose
+          // acknowledgement remains deferred until observer notification succeeds.
+        }
+      }
     }
     if (projection.accepted.length || projection.deferred.length || projection.conflicts.length) {
       console.log(JSON.stringify({
@@ -201,7 +209,8 @@ const ingestServer = await startEventIngestServer({
     state,
     databases: { control: controlDb, medical: medicalDb },
     verification: { authAttestationPublicKey, bootstrapSigningPublicKey, requireTrustedAttestation: true },
-    projectEvents,
+    projectEvents: (events) => projectEvents(events, false),
+    onPersisted: notifyAuthObserver,
     projectionStats: () => ({
       accepted: state.knownEvents.size,
       deferred: projector.listDeferred().length,
