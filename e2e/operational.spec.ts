@@ -207,7 +207,7 @@ test("fresh provisioning, Doctor approval, grant, draft, and confirmation", asyn
   await ownerPage.locator(".workspace-sidebar").getByRole("link", { name: "Добавить питомца" }).click();
   await expect(ownerPage).toHaveURL(/\/owner\/pets\/new/);
   await ownerPage.getByLabel("Кличка").fill("Шарик");
-  await ownerPage.getByLabel("Вид").fill("Собака");
+  await ownerPage.getByLabel("Вид").selectOption("Собака");
   await ownerPage.getByLabel("Порода").fill("Бигль");
   await ownerPage.getByLabel("Пол").selectOption("Интактный самец");
   await ownerPage.getByLabel("Точная дата рождения", { exact: true }).fill("2022-06-17");
