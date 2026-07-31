@@ -8,9 +8,9 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { exportUserKeySet, generateUserKeySet, stableSerialize, type UserKeySet } from "@klinok/protocol";
 import { buildAuthApp } from "./app.js";
-import { MemoryMailer } from "./mailer.js";
+import { MemoryMailer, type MailMessage } from "./mailer.js";
 import { DEFAULT_AUTH_RATE_LIMITS, type AuthConfig, type AuthRateLimitConfig } from "./config.js";
-import { hashPassword } from "./security.js";
+import { digestToken, hashPassword } from "./security.js";
 import { AuthStore } from "./store.js";
 
 const apps: Array<{ close(): Promise<void> }> = [];
@@ -21,6 +21,7 @@ async function fixture(options: {
   rateLimit?: Partial<AuthRateLimitConfig>;
   bootstrap?: boolean;
   internalEventToken?: string;
+  mailer?: MemoryMailer;
 } = {}) {
   const dataDir = await mkdtemp(join(tmpdir(), "klinok-auth-test-"));
   let bootstrapKeys: UserKeySet | undefined;
@@ -65,7 +66,7 @@ async function fixture(options: {
       trustedNodeMultiaddrs: [],
     },
   };
-  const mailer = new MemoryMailer();
+  const mailer = options.mailer ?? new MemoryMailer();
   const store = new AuthStore(dataDir);
   const app = await buildAuthApp({ config, store, mailer, now: options.now });
   apps.push(app);
@@ -76,6 +77,20 @@ const registration = {
   firstName: "Иван", lastName: "Иванов", email: " User@Example.COM ", password: "correct horse battery",
   ageConfirmed: true, personalDataConsentVersion: "consent-v1", userAgreementVersion: "terms-v1", requestedRoles: ["owner"],
 };
+
+class FailOnceMailer extends MemoryMailer {
+  attempts = 0;
+  failedMessage?: MailMessage;
+
+  override async send(message: MailMessage): Promise<void> {
+    this.attempts += 1;
+    if (this.attempts === 1) {
+      this.failedMessage = message;
+      throw Object.assign(new Error("SMTP recipient rejected"), { code: "EENVELOPE", responseCode: 550 });
+    }
+    await super.send(message);
+  }
+}
 
 async function verifiedLogin(
   app: Awaited<ReturnType<typeof buildAuthApp>>,
@@ -178,6 +193,57 @@ describe("auth-node", () => {
     expect(duplicate.statusCode).toBe(202);
     expect(first.json()).toEqual(duplicate.json());
     expect(mailer.messages).toHaveLength(1);
+  });
+
+  it("rolls back a pending registration after SMTP failure and retries with a new verification email", async () => {
+    const mailer = new FailOnceMailer();
+    const { app, store } = await fixture({ mailer });
+
+    const failed = await app.inject({ method: "POST", url: "/api/auth/register", headers: { origin: "https://klinok.test" }, payload: registration });
+    expect(failed.statusCode).toBe(503);
+    expect(failed.json()).toEqual({
+      error: {
+        code: "EMAIL_DELIVERY_FAILED",
+        message: "Письмо для подтверждения не отправлено. Проверьте адрес электронной почты и повторите регистрацию. Если адрес верен, повторите попытку позже.",
+      },
+    });
+    expect(await store.getAccountByEmail("user@example.com")).toBeNull();
+    const failedToken = decodeURIComponent(mailer.failedMessage!.text.match(/token=([^\s]+)/)![1]!);
+    expect(await store.getToken("verification", digestToken(failedToken))).toBeNull();
+
+    const retried = await app.inject({ method: "POST", url: "/api/auth/register", headers: { origin: "https://klinok.test" }, payload: registration });
+    expect(retried.statusCode).toBe(202);
+    expect(retried.json()).toEqual({ accepted: true });
+    expect(mailer.attempts).toBe(2);
+    expect(mailer.messages).toHaveLength(1);
+    expect(await store.getAccountByEmail("user@example.com")).toMatchObject({
+      credentialStatus: "pending_verification",
+      verificationState: "pending",
+    });
+  });
+
+  it.each([
+    ["refused", false],
+    ["fails", true],
+  ] as const)("returns a structured delivery error without SMTP details when registration rollback is %s", async (_label, rollbackFails) => {
+    const mailer = new FailOnceMailer();
+    const { app, store } = await fixture({ mailer });
+    const rollback = vi.spyOn(store, "rollbackPendingRegistration");
+    if (rollbackFails) rollback.mockRejectedValue(new Error("LevelDB unavailable"));
+    else rollback.mockResolvedValue(false);
+
+    const failed = await app.inject({ method: "POST", url: "/api/auth/register", headers: { origin: "https://klinok.test" }, payload: registration });
+
+    expect(failed.statusCode).toBe(503);
+    expect(failed.json()).toEqual({
+      error: {
+        code: "EMAIL_DELIVERY_FAILED",
+        message: "Письмо для подтверждения не отправлено. Проверьте адрес электронной почты и повторите регистрацию. Если адрес верен, повторите попытку позже.",
+      },
+    });
+    expect(failed.body).not.toContain("SMTP recipient rejected");
+    expect(failed.body).not.toContain("LevelDB unavailable");
+    expect(rollback).toHaveBeenCalledOnce();
   });
 
   it("rejects cross-origin mutations", async () => {

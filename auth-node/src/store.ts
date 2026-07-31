@@ -85,7 +85,8 @@ export class AuthStore {
 
   private async get<T>(key: string): Promise<T | null> {
     try {
-      return await this.db.get(key) as T;
+      const value = await this.db.get(key) as T | undefined;
+      return value ?? null;
     } catch (error) {
       if (isNotFound(error)) return null;
       throw error;
@@ -124,6 +125,33 @@ export class AuthStore {
 
   async getToken(kind: SingleUseTokenRecord["kind"], digest: string): Promise<SingleUseTokenRecord | null> {
     return this.get<SingleUseTokenRecord>(`token:${kind}:${digest}`);
+  }
+
+  async rollbackPendingRegistration(accountId: string, email: string, verificationTokenDigest: string): Promise<boolean> {
+    const account = await this.getAccount(accountId);
+    const emailOwner = await this.get<string>(`email:${email}`);
+    const token = await this.getToken("verification", verificationTokenDigest);
+    const isUnmodifiedPendingRegistration = account?.accountId === accountId &&
+      account.email === email &&
+      account.credentialStatus === "pending_verification" &&
+      account.verificationState === "pending" &&
+      !account.immutableBootstrap &&
+      account.devices.length === 0 &&
+      account.enrollments.length === 0 &&
+      account.pendingOperations.length === 0 &&
+      account.sessionDigests.length === 0 &&
+      emailOwner === accountId &&
+      token?.accountId === accountId &&
+      token.kind === "verification" &&
+      !token.usedAt;
+    if (!isUnmodifiedPendingRegistration) return false;
+
+    await this.db.batch()
+      .del(`token:verification:${verificationTokenDigest}`)
+      .del(`email:${email}`)
+      .del(`account:${accountId}`)
+      .write();
+    return true;
   }
 
   async useToken(token: SingleUseTokenRecord, usedAt: string): Promise<void> {

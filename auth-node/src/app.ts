@@ -387,8 +387,9 @@ export async function buildAuthApp(options: AuthAppOptions): Promise<FastifyInst
       body.userAgreementVersion === options.config.legal.userAgreementVersion;
     if (!valid) return error(reply, 400, "REGISTRATION_INVALID", "Проверьте регистрационные данные и согласия.");
 
-    const emailLimit = await registrationByEmail(request, privateLimiterKey("registration-email", email));
-    if (rateLimitExceeded(emailLimit)) return reply.code(202).send({ accepted: true });
+    const emailLimitKey = privateLimiterKey("registration-email", email);
+    const emailLimit = await registrationByEmail(request, emailLimitKey, false);
+    if (rateLimitExhausted(emailLimit)) return reply.code(202).send({ accepted: true });
 
     const existing = await store.getAccountByEmail(email);
     if (!existing) {
@@ -421,12 +422,33 @@ export async function buildAuthApp(options: AuthAppOptions): Promise<FastifyInst
       };
       await store.createAccount(account);
       const token = createOpaqueToken();
-      await store.putToken({ digest: digestToken(token), accountId: account.accountId, kind: "verification", expiresAt: new Date(now().getTime() + 24 * 60 * 60_000).toISOString() });
-      await countedMailer.send({
-        to: email,
-        subject: "Подтверждение регистрации",
-        text: `Подтвердите адрес электронной почты для завершения регистрации в Клинок: ${options.config.publicOrigin}/auth/verify-email?token=${encodeURIComponent(token)}`,
-      });
+      const tokenDigest = digestToken(token);
+      await store.putToken({ digest: tokenDigest, accountId: account.accountId, kind: "verification", expiresAt: new Date(now().getTime() + 24 * 60 * 60_000).toISOString() });
+      try {
+        await countedMailer.send({
+          to: email,
+          subject: "Подтверждение регистрации",
+          text: `Подтвердите адрес электронной почты для завершения регистрации в Клинок: ${options.config.publicOrigin}/auth/verify-email?token=${encodeURIComponent(token)}`,
+        });
+      } catch (smtpFailure) {
+        try {
+          const rolledBack = await store.rollbackPendingRegistration(account.accountId, email, tokenDigest);
+          if (rolledBack) {
+            request.log.error({ err: smtpFailure, accountId: account.accountId }, "Verification email delivery failed; pending registration rolled back");
+          } else {
+            request.log.error({ err: smtpFailure, accountId: account.accountId }, "Verification email delivery failed; pending registration rollback was refused");
+          }
+        } catch (rollbackFailure) {
+          request.log.error({ err: smtpFailure, rollbackFailure, accountId: account.accountId }, "Verification email delivery failed; pending registration rollback also failed");
+        }
+        return error(
+          reply,
+          503,
+          "EMAIL_DELIVERY_FAILED",
+          "Письмо для подтверждения не отправлено. Проверьте адрес электронной почты и повторите регистрацию. Если адрес верен, повторите попытку позже.",
+        );
+      }
+      await registrationByEmail(request, emailLimitKey);
     }
     return reply.code(202).send({ accepted: true });
   });
