@@ -141,6 +141,27 @@ function deviceCertificate(event: SignedEvent): DeviceCertificate | undefined {
     : undefined;
 }
 
+function samePublicKey(left: JsonWebKey, right: JsonWebKey): boolean {
+  return stableSerialize(left) === stableSerialize(right);
+}
+
+function trustedBootstrapSigningKey(
+  certificate: DeviceCertificate,
+  state: ProtocolState,
+  pinnedSigningPublicKey: JsonWebKey,
+): boolean {
+  if (samePublicKey(certificate.signingPublicKey, pinnedSigningPublicKey)) return true;
+  const activeBootstrapDevices = [...state.devices.values()].filter((device) =>
+    device.accountId === state.bootstrapAccountId && device.status === "active",
+  );
+  const latestVersion = Math.max(0, ...activeBootstrapDevices.map((device) => device.userKeyVersion));
+  return certificate.userKeyVersion === latestVersion && activeBootstrapDevices.some((device) =>
+    device.userKeyVersion === latestVersion
+    && samePublicKey(certificate.signingPublicKey, device.signingPublicKey)
+    && samePublicKey(certificate.encryptionPublicKey, device.encryptionPublicKey),
+  );
+}
+
 async function trustedCertificateResult(
   certificate: DeviceCertificate,
   options: VerificationOptions,
@@ -488,7 +509,7 @@ export async function verifySignedEvent(
       return { accepted: false, code: "SIGNATURE_INVALID", message: "The enrollment event signature is invalid." };
     }
     if (event.actorAccountId === state.bootstrapAccountId && options.bootstrapSigningPublicKey &&
-      stableSerialize(certificate.signingPublicKey) !== stableSerialize(options.bootstrapSigningPublicKey)) {
+      !trustedBootstrapSigningKey(certificate, state, options.bootstrapSigningPublicKey)) {
       return { accepted: false, code: "BOOTSTRAP_ANCHOR_MISMATCH", message: "Bootstrap device does not match the pinned trust anchor." };
     }
   }

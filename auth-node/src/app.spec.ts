@@ -422,6 +422,16 @@ describe("auth-node", () => {
     const relogin = await app.inject({ method: "POST", url: "/api/auth/login", headers: { origin: "https://klinok.test" }, payload: { email: registration.email, password: registration.password, deviceId: "device-1" } });
     const rebound = await app.inject({ method: "GET", url: "/api/auth/session", headers: { cookie: relogin.headers["set-cookie"]! } });
     expect(rebound.json().device).toMatchObject({ deviceId: "device-1", userKeyVersion: 2 });
+    expect(rebound.json().enrollments).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        deviceId: "device-1",
+        status: "active",
+        userKeyVersion: 2,
+        signingPublicKey: rotatedKeySet.signingPublicKey,
+        encryptionPublicKey: rotatedKeySet.encryptionPublicKey,
+      }),
+      expect.objectContaining({ deviceId: "device-2", status: "revoked" }),
+    ]));
     const reboundKeys = await app.inject({ method: "GET", url: "/api/auth/user-key-set", headers: { cookie: relogin.headers["set-cookie"]! } });
     expect(reboundKeys.json().userKeySet).toEqual(rotatedKeySet);
   });

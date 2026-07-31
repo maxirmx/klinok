@@ -1133,9 +1133,23 @@ export async function buildAuthApp(options: AuthAppOptions): Promise<FastifyInst
       if (device.deviceId === request.params.id || (rotatedCertificate && device.deviceId !== rotatedCertificate.deviceId)) return { ...device, status: "revoked" as const };
       return device;
     });
+    const revokedEnrollmentDeviceIds = new Set(rotatedCertificate ? revokedDeviceIds : [request.params.id]);
+    const enrollments = current.account.enrollments.map((enrollment) => {
+      if (rotatedCertificate && enrollment.deviceId === rotatedCertificate.deviceId) return {
+        ...enrollment,
+        status: "active" as const,
+        signingPublicKey: rotatedCertificate.signingPublicKey,
+        encryptionPublicKey: rotatedCertificate.encryptionPublicKey,
+        userKeyVersion: rotatedCertificate.userKeyVersion,
+      };
+      return revokedEnrollmentDeviceIds.has(enrollment.deviceId)
+        ? { ...enrollment, status: "revoked" as const }
+        : enrollment;
+    });
     await store.revokeAccountSessions({
       ...current.account,
       devices,
+      enrollments,
       ...(canRotate ? { encryptedUserKeySet: await escrow.encrypt(current.account.accountId, nextKeySet!) } : {}),
     });
     metrics.sessionsRevoked += current.account.sessionDigests.length;
