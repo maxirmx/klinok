@@ -30,7 +30,7 @@ watch([() => unreadNotifications.value.length, pageSize], ([notificationCount, s
 const status = computed(() => {
   if (!appState.repositoryConnected) return {
     kind: "error",
-    label: "Нет соединения",
+    label: "Хранилище не подключено",
     title: "Подключение к хранилищу не установлено.",
     actionable: false,
   };

@@ -38,6 +38,7 @@ import { KlinokRepository } from "./repositories";
 import type { ControlSnapshot, MedicalSnapshot } from "./repositories/types";
 import type { EventSyncStatus, SyncNotification } from "./repositories/eventTransport";
 import { reconcileDirectorySnapshot, type DirectoryPetInput } from "./directoryReconciliation";
+import { logInitializationError } from "./diagnostics";
 import { useAlertStore } from "./stores/alert";
 
 const emptyControl: ControlSnapshot = { profile: null, profiles: [], roles: [], allRoles: [], devices: [], pendingQueue: [], notifications: [], events: [] };
@@ -282,19 +283,28 @@ export async function bootstrapApp(force = false) {
   if (state.initialized && !force) return;
   state.busy = true;
   if (useAlertStore().alert?.kind === "error") setAuthFeedback(null);
+  let stage = "runtime-config.load";
   try {
     config = await loadRuntimeConfig();
+    stage = "auth-client.create";
     auth = new AuthClient(config.authBaseUrl);
+    stage = "auth-session.load";
     let session = await auth.session();
-    if (session.authenticated) session = await ensureDevice(session);
+    if (session.authenticated) {
+      stage = "device.ensure";
+      session = await ensureDevice(session);
+    }
     state.session = session;
+    stage = "repository.connect";
     await connectRepository(session);
+    stage = "session-state.apply";
     if (!session.authenticated) {
       state.activeRole = null;
       state.control = emptyControl;
       state.medical = emptyMedical;
     }
   } catch (reason) {
+    logInitializationError("app.bootstrap.failed", stage, reason);
     setAuthFeedback({ kind: "error", reason });
   } finally {
     state.initialized = true;
