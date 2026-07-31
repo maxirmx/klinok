@@ -15,6 +15,7 @@ import AppPaginator from "../components/AppPaginator.vue";
 import ConfirmationDialog from "../components/ConfirmationDialog.vue";
 import MedicalRecordEntry from "../components/MedicalRecordEntry.vue";
 import ModalDialog from "../components/ModalDialog.vue";
+import PendingCountBadge from "../components/PendingCountBadge.vue";
 import PetAccessManager from "../components/PetAccessManager.vue";
 import PetProfileView from "../components/PetProfileView.vue";
 import PersonIdentity from "../components/PersonIdentity.vue";
@@ -30,6 +31,7 @@ import {
   petBirthSummary,
   preparePetPhoto,
 } from "../petProfile";
+import { ownerPendingApprovals } from "../pendingApprovals";
 import type { PetAccessRow } from "../petAccess";
 import type { MedicalEncounterSectionKind, MedicalRecordDraft, PetProfile, PetProfileInput } from "../repositories/types";
 import { useAlertStore } from "../stores/alert";
@@ -80,6 +82,10 @@ const isCreate = computed(() => props.scenarioId === "owner-pet-create");
 const isEdit = computed(() => props.scenarioId === "owner-pet-edit");
 const isAccess = computed(() => props.scenarioId === "owner-pet-access");
 const isForm = computed(() => isCreate.value || isEdit.value);
+const pendingApprovals = computed(() => ownerPendingApprovals(appState.medical));
+const selectedPetPending = computed(() => selectedPet.value
+  ? pendingApprovals.value.byPet[selectedPet.value.petId]
+  : undefined);
 const pageSizes = [10, 20, 50] as const;
 const medicalPage = ref(1);
 const medicalPageSize = ref<(typeof pageSizes)[number]>(10);
@@ -509,6 +515,20 @@ function confirmMedicalRecord(record: MedicalRecordDraft) {
             <strong>{{ pet.name }}</strong>
             <small>{{ pet.species }} · {{ pet.breed }}</small>
             <small>{{ petBirthSummary(pet) }}</small>
+            <span
+              v-if="pendingApprovals.byPet[pet.petId]?.total"
+              class="owner-pet-card-approvals"
+              aria-label="Ожидают решения"
+            >
+              <span v-if="pendingApprovals.byPet[pet.petId]?.accessRequests" class="status-badge pending owner-pet-card-approval">
+                <AppIcon name="user" />
+                Доступ: {{ pendingApprovals.byPet[pet.petId]!.accessRequests }}
+              </span>
+              <span v-if="pendingApprovals.byPet[pet.petId]?.medicalRecords" class="status-badge pending owner-pet-card-approval">
+                <AppIcon name="book" />
+                Медкарта: {{ pendingApprovals.byPet[pet.petId]!.medicalRecords }}
+              </span>
+            </span>
           </span>
         </RouterLink>
       </div>
@@ -699,10 +719,11 @@ function confirmMedicalRecord(record: MedicalRecordDraft) {
           <RouterLink
             class="outline-action inline owner-profile-action"
             :to="`/owner/pets/${selectedPet.petId}/access`"
-            title="Доступ врачей"
-            aria-label="Доступ врачей"
+            :title="selectedPetPending?.accessRequests ? `Доступ врачей. Ожидают решения: ${selectedPetPending.accessRequests}` : 'Доступ врачей'"
+            :aria-label="selectedPetPending?.accessRequests ? `Доступ врачей. Ожидают решения: ${selectedPetPending.accessRequests}` : 'Доступ врачей'"
           >
             <AppIcon name="user" />
+            <PendingCountBadge :count="selectedPetPending?.accessRequests ?? 0" />
           </RouterLink>
           <button
             class="outline-action inline owner-profile-action"
@@ -725,8 +746,13 @@ function confirmMedicalRecord(record: MedicalRecordDraft) {
         </template>
       </PetProfileView>
 
-      <article class="panel owner-medical-placeholder owner-medical-record">
-        <h2>Медицинская карта</h2>
+      <article id="medical-records" class="panel owner-medical-placeholder owner-medical-record">
+        <div class="owner-medical-heading">
+          <h2 :aria-label="selectedPetPending?.medicalRecords ? `Медицинская карта. Ожидают подтверждения: ${selectedPetPending.medicalRecords}` : 'Медицинская карта'">
+            Медицинская карта
+          </h2>
+          <PendingCountBadge :count="selectedPetPending?.medicalRecords ?? 0" />
+        </div>
         <div class="medical-record-filters">
           <input v-model="medicalQuery" type="search" placeholder="Содержание или автор" aria-label="Поиск по истории" />
           <label class="medical-record-date-filter"><span>Дата с</span><input v-model="medicalFrom" type="date" /></label>

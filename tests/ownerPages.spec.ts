@@ -164,6 +164,46 @@ beforeEach(async () => {
 });
 
 describe("Owner pages", () => {
+  it("shows access and medical approvals by pet and hides them after resolution", async () => {
+    const pendingAccess = {
+      requestId: "request-1",
+      petId: pet.petId,
+      ownerAccountId: pet.ownerAccountId,
+      requesterAccountId: "doctor-1",
+      requesterDisplayName: "Анна Врач",
+      status: "pending" as const,
+      requestedAt: "2026-07-17T10:00:00.000Z",
+    };
+    await setMedical(snapshot({ pets: [pet], accessRequests: [pendingAccess], records: [medicalRecord] }));
+    const wrapper = await mountAt("/owner/home", "owner-home");
+
+    const rootNavigation = wrapper.get('.workspace-nav-tree > li > .workspace-nav-item, .workspace-nav-tree > li > a');
+    expect(rootNavigation.get(".pending-count-badge").text()).toBe("2");
+    expect(rootNavigation.attributes("aria-label")).toBe("Питомцы. Ожидают решения: 2");
+    const petNavigation = wrapper.get('.workspace-nav-tree a[href="/owner/pets/pet-1"]');
+    expect(petNavigation.get(".pending-count-badge").text()).toBe("2");
+    expect(wrapper.get('.workspace-bottom-nav button[title="Питомцы. Ожидают решения: 2"] .pending-count-badge').text()).toBe("2");
+
+    expect(wrapper.find(".owner-pending-approvals").exists()).toBe(false);
+    expect(wrapper.get(".owner-pet-card-approvals").findAll(".owner-pet-card-approval").map((badge) => badge.text()))
+      .toEqual(["Доступ: 1", "Медкарта: 1"]);
+
+    wrapper.unmount();
+    const detail = await mountAt("/owner/pets/pet-1", "owner-pet-detail");
+    expect(detail.get('a[href="/owner/pets/pet-1/access"]').attributes("title"))
+      .toBe("Доступ врачей. Ожидают решения: 1");
+    expect(detail.get(".owner-medical-heading .pending-count-badge").text()).toBe("1");
+
+    await setMedical(snapshot({
+      pets: [pet],
+      accessRequests: [{ ...pendingAccess, status: "approved" }],
+      records: [medicalRecord],
+      confirmedRecordIds: [medicalRecord.recordId],
+    }));
+    await flushPromises();
+    expect(detail.find(".pending-count-badge").exists()).toBe(false);
+  });
+
   it("renders the pet ribbon and nested route navigation", async () => {
     await setMedical(snapshot({ pets: [pet] }));
     const wrapper = await mountAt("/owner/home", "owner-home");

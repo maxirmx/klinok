@@ -1053,6 +1053,21 @@ dd {
 .status-badge.approved { background: #dcfae6; color: #067647; }
 .status-badge.pending { background: #fef0c7; color: #93370d; }
 .status-badge.rejected, .status-badge.revoked { background: #fee4e2; color: #b42318; }
+.pending-count-badge {
+  display: inline-flex;
+  min-width: 20px;
+  height: 20px;
+  align-items: center;
+  justify-content: center;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: #fef0c7;
+  color: #93370d;
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1;
+  white-space: nowrap;
+}
 .sync-status { display: inline-flex; align-items: center; gap: 7px; min-height: 30px; color: #344054; font-size: .8rem; font-weight: 700; white-space: nowrap; }
 .sync-status > span { width: 8px; height: 8px; flex: 0 0 8px; border-radius: 50%; background: #17b26a; }
 .sync-status.pending > span { background: #f79009; }
@@ -1173,6 +1188,7 @@ dd {
 }
 .workspace-bottom-nav::-webkit-scrollbar { display: none; }
 .workspace-bottom-nav :is(a, button) {
+  position: relative;
   display: grid;
   min-width: 68px;
   flex: 1 0 68px;
@@ -1197,6 +1213,11 @@ dd {
 }
 .workspace-bottom-nav button { border: 0; background: transparent; font-family: inherit; }
 .workspace-bottom-nav .app-icon { width: 25px; height: 25px; }
+.workspace-bottom-nav .pending-count-badge {
+  position: absolute;
+  top: 3px;
+  left: calc(50% + 7px);
+}
 .workspace-bottom-nav :is(a, button).active { background: var(--brand-bg-sky); color: var(--brand-sky); }
 .workspace-bottom-nav.role-owner .workspace-role-nav-item { color: var(--brand-orange); }
 .workspace-bottom-nav.role-doctor .workspace-role-nav-item { color: var(--role-doctor); }
@@ -1251,6 +1272,7 @@ dd {
     text-align: left;
   }
   .workspace-nav-item .app-icon { width: 22px; height: 22px; flex: 0 0 auto; }
+  .workspace-nav-item .pending-count-badge { margin-left: auto; }
   .workspace-nav-item:hover { background: var(--brand-sky-soft); color: var(--accent); }
   .workspace-nav-item.active { background: var(--brand-bg-sky); color: var(--brand-sky); }
   .workspace-shell.role-owner .workspace-sidebar-nav .workspace-nav-item { color: var(--brand-orange); }
@@ -1660,6 +1682,17 @@ dd {
 }
 .owner-pet-card-copy strong { font-size: 17px; }
 .owner-pet-card-copy small { color: var(--text-muted); line-height: 1.35; }
+.owner-pet-card-approvals { display: flex; align-items: flex-start; gap: 5px; flex-wrap: wrap; margin-top: 5px; }
+.owner-pet-card-approval { align-items: center; gap: 4px; padding: 4px 7px; font-size: 10px; }
+.owner-pet-card-approval .app-icon { width: 13px; height: 13px; }
+.owner-profile-action:has(.pending-count-badge) { position: relative; }
+.owner-profile-action > .pending-count-badge {
+  position: absolute;
+  top: -7px;
+  right: -7px;
+}
+.owner-medical-heading { display: flex; align-items: center; gap: 9px; }
+.owner-pet-detail .owner-medical-heading h2 { margin: 0; }
 .owner-empty-state {
   display: grid;
   width: min(100%, 680px);
@@ -2064,6 +2097,48 @@ dd {
   max-width: 420px;
   gap: 5px;
 }
+.administrator-user-filters {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.administrator-user-filters .administrator-search { width: min(100%, 420px); flex: 1 1 320px; }
+.administrator-role-filters { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.administrator-role-filters button {
+  display: inline-flex;
+  min-height: 34px;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 10px;
+  border: 1px solid #d0d5dd;
+  border-radius: 999px;
+  background: #fff;
+  color: var(--text-soft);
+  font: inherit;
+  font-size: .78rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+.administrator-role-filters button.active {
+  border-color: #fec84b;
+  background: #fffcf5;
+  color: #93370d;
+}
+.administrator-role-filters button.pending,
+.administrator-role-filters button.active.pending {
+  border-color: #fef0c7;
+  background: #fef0c7;
+  color: #93370d;
+}
+.administrator-role-filters button.active.neutral {
+  border-color: #d0d5dd;
+  background: #f2f4f7;
+  color: #344054;
+}
+.administrator-role-filters button:disabled { cursor: default; opacity: .55; }
+.administrator-role-filters button:focus-visible,
+.owner-pending-link:focus-visible { outline: 3px solid rgba(247, 144, 9, .25); outline-offset: 2px; }
 .administrator-search > span:first-child {
   color: var(--text-soft);
   font-size: 12px;
@@ -2312,6 +2387,8 @@ dd {
   .administrator-heading {
     align-items: center;
   }
+  .administrator-user-filters { display: grid; align-items: stretch; }
+  .administrator-user-filters .administrator-search { width: 100%; }
   .administrator-search { max-width: none; }
   .administrator-audit-filters { grid-template-columns: 1fr; }
   .administrator-table-wrap {

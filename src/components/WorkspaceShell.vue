@@ -10,12 +10,15 @@ import packageJson from "../../package.json";
 import AppIcon from "./AppIcon.vue";
 import AppAlert from "./AppAlert.vue";
 import BrandLogo from "./BrandLogo.vue";
+import PendingCountBadge from "./PendingCountBadge.vue";
 import { appState } from "../appStore";
+import { administratorPendingRequestCount, ownerPendingApprovals } from "../pendingApprovals";
 import { roleHomePath } from "../roleNavigation";
 
 type WorkspaceIcon = "home" | "pets" | "plus" | "user" | "book" | "bell" | "eye" | "medical-tools";
 type WorkspaceNavItem = { id: string; label: string; icon: WorkspaceIcon };
 type WorkspacePathNavItem = WorkspaceNavItem & { path: string; exact: boolean };
+type WorkspacePendingNavItem = WorkspacePathNavItem & { pendingCount: number };
 
 const props = defineProps<{
   role: Role | null;
@@ -60,14 +63,17 @@ const ownerRootNavigation: WorkspacePathNavItem = {
   path: "/owner/home",
   exact: true,
 };
-const ownerChildNavigation = computed<WorkspacePathNavItem[]>(() => [
-  { id: "owner-add-pet", label: "Добавить питомца", icon: "plus", path: "/owner/pets/new", exact: true },
+const ownerPending = computed(() => ownerPendingApprovals(appState.medical));
+const administratorPendingCount = computed(() => administratorPendingRequestCount(appState.control));
+const ownerChildNavigation = computed<WorkspacePendingNavItem[]>(() => [
+  { id: "owner-add-pet", label: "Добавить питомца", icon: "plus", path: "/owner/pets/new", exact: true, pendingCount: 0 },
   ...appState.medical.pets.map((pet) => ({
     id: `owner-pet-${pet.petId}`,
     label: pet.name,
     icon: "pets" as const,
     path: `/owner/pets/${pet.petId}`,
     exact: false,
+    pendingCount: ownerPending.value.byPet[pet.petId]?.total ?? 0,
   })),
 ]);
 const administratorNavigation: WorkspacePathNavItem[] = [
@@ -105,6 +111,14 @@ function pathActive(path: string, exact = false) {
 function selectPath(path: string) {
   void router.push(path);
 }
+
+function pendingNavigationLabel(label: string, count: number): string {
+  return count ? `${label}. Ожидают решения: ${count}` : label;
+}
+
+function administratorItemPendingCount(item: WorkspacePathNavItem): number {
+  return item.id === "administrator-home" ? administratorPendingCount.value : 0;
+}
 </script>
 
 <template>
@@ -129,10 +143,12 @@ function selectPath(path: string) {
               class="workspace-nav-item"
               :class="{ active: pathActive(ownerRootNavigation.path, ownerRootNavigation.exact) }"
               :href="ownerRootNavigation.path"
+              :aria-label="pendingNavigationLabel(ownerRootNavigation.label, ownerPending.total)"
               @click.prevent="selectPath(ownerRootNavigation.path)"
             >
               <AppIcon :name="ownerRootNavigation.icon" />
               <span>{{ ownerRootNavigation.label }}</span>
+              <PendingCountBadge :count="ownerPending.total" />
             </a>
             <ul>
               <li v-for="item in ownerChildNavigation" :key="item.id">
@@ -140,10 +156,12 @@ function selectPath(path: string) {
                   class="workspace-nav-item owner-child"
                   :class="{ active: pathActive(item.path, item.exact) }"
                   :href="item.path"
+                  :aria-label="pendingNavigationLabel(item.label, item.pendingCount)"
                   @click.prevent="selectPath(item.path)"
                 >
                   <AppIcon :name="item.icon" />
                   <span>{{ item.label }}</span>
+                  <PendingCountBadge :count="item.pendingCount" />
                 </a>
               </li>
             </ul>
@@ -158,10 +176,12 @@ function selectPath(path: string) {
           class="workspace-nav-item"
           :class="{ active: pathActive(item.path, item.exact) }"
           :href="item.path"
+          :aria-label="pendingNavigationLabel(item.label, administratorItemPendingCount(item))"
           @click.prevent="selectPath(item.path)"
         >
           <AppIcon :name="item.icon" />
           <span>{{ item.label }}</span>
+          <PendingCountBadge :count="administratorItemPendingCount(item)" />
         </a>
       </nav>
 
@@ -222,12 +242,13 @@ function selectPath(path: string) {
             class="workspace-role-nav-item"
             :class="{ active: pathActive(ownerRootNavigation.path, ownerRootNavigation.exact) }"
             type="button"
-            :title="ownerRootNavigation.label"
-            :aria-label="ownerRootNavigation.label"
+            :title="pendingNavigationLabel(ownerRootNavigation.label, ownerPending.total)"
+            :aria-label="pendingNavigationLabel(ownerRootNavigation.label, ownerPending.total)"
             @click="selectPath(ownerRootNavigation.path)"
           >
             <AppIcon :name="ownerRootNavigation.icon" />
             <span>{{ ownerRootNavigation.label }}</span>
+            <PendingCountBadge :count="ownerPending.total" />
           </button>
         </template>
         <template v-else-if="effectiveRole === 'administrator'">
@@ -237,12 +258,13 @@ function selectPath(path: string) {
             class="workspace-role-nav-item"
             :class="{ active: pathActive(item.path, item.exact) }"
             type="button"
-            :title="item.label"
-            :aria-label="item.label"
+            :title="pendingNavigationLabel(item.label, administratorItemPendingCount(item))"
+            :aria-label="pendingNavigationLabel(item.label, administratorItemPendingCount(item))"
             @click="selectPath(item.path)"
           >
             <AppIcon :name="item.icon" />
             <span>{{ item.label }}</span>
+            <PendingCountBadge :count="administratorItemPendingCount(item)" />
           </button>
         </template>
         <template v-else-if="effectiveRole === 'doctor'">

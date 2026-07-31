@@ -9,9 +9,11 @@ import type { AccountProfile, Role, RoleRequest, RoleStatus } from "@klinok/prot
 import AppIcon from "../components/AppIcon.vue";
 import AppPaginator from "../components/AppPaginator.vue";
 import ModalDialog from "../components/ModalDialog.vue";
+import PendingCountBadge from "../components/PendingCountBadge.vue";
 import PersonIdentity from "../components/PersonIdentity.vue";
 import WorkspaceShell from "../components/WorkspaceShell.vue";
 import { appState, decideRole, getConfig, logout } from "../appStore";
+import { administratorPendingRequestCount } from "../pendingApprovals";
 import { useAlertStore } from "../stores/alert";
 
 type AdvancedRole = Extract<Role, "doctor" | "administrator">;
@@ -48,6 +50,7 @@ const auditPageSizeKey = "klinok:admin-audit-page-size";
 const isAudit = computed(() => props.scenarioId === "administrator-audit");
 
 const search = ref("");
+const pendingOnly = ref(false);
 const sortField = ref<SortField>("name");
 const sortDirection = ref<SortDirection>("asc");
 const page = ref(1);
@@ -115,6 +118,11 @@ const administratorRows = computed<AdministratorRow[]>(() => {
   }
   return [...grouped.values()];
 });
+const pendingRoleCount = computed(() => administratorPendingRequestCount(appState.control));
+
+function rowHasPendingRole(row: AdministratorRow): boolean {
+  return advancedRoles.some((role) => row[role]?.status === "pending");
+}
 
 function compareText(left: string, right: string): number {
   return left.localeCompare(right, "ru", { sensitivity: "base" });
@@ -123,6 +131,7 @@ function compareText(left: string, right: string): number {
 const filteredRows = computed(() => {
   const query = normalize(search.value);
   return administratorRows.value
+    .filter((row) => !pendingOnly.value || rowHasPendingRole(row))
     .filter((row) => !query || [row.displayName, row.accountId].some((value) => normalize(value).includes(query)))
     .sort((left, right) => {
       if (sortField.value !== "name") {
@@ -294,7 +303,8 @@ async function signOut() {
   await router.replace("/auth/login");
 }
 
-watch([search, sortField, sortDirection, pageSize], () => { page.value = 1; });
+watch([search, pendingOnly, sortField, sortDirection, pageSize], () => { page.value = 1; });
+watch(pendingRoleCount, (count) => { if (!count) pendingOnly.value = false; });
 watch([auditSearch, auditRole, auditAction, auditPageSize], () => { auditPage.value = 1; });
 watch(pageSize, (value) => localStorage.setItem(cabinetPageSizeKey, String(value)));
 watch(auditPageSize, (value) => localStorage.setItem(auditPageSizeKey, String(value)));
@@ -326,17 +336,43 @@ watch(auditPageCount, (count) => { if (auditPage.value > count) auditPage.value 
           </RouterLink>
         </div>
 
-        <label class="administrator-search">
-          <span>ФИО или идентификатор</span>
-          <span class="administrator-search-control">
-            <AppIcon name="search" />
-            <input v-model="search" type="search" placeholder="Поиск" />
-          </span>
-        </label>
+        <div class="administrator-user-filters">
+          <label class="administrator-search">
+            <span>ФИО или идентификатор</span>
+            <span class="administrator-search-control">
+              <AppIcon name="search" />
+              <input v-model="search" type="search" placeholder="Поиск" />
+            </span>
+          </label>
+
+          <div class="administrator-role-filters" role="group" aria-label="Фильтр пользователей по ожидающим решениям">
+            <button
+              type="button"
+              class="neutral"
+              :class="{ active: !pendingOnly }"
+              :aria-pressed="!pendingOnly"
+              @click="pendingOnly = false"
+            >
+              Все
+            </button>
+            <button
+              type="button"
+              class="pending"
+              :class="{ active: pendingOnly }"
+              :aria-label="`Требуют решения: ${pendingRoleCount}`"
+              :aria-pressed="pendingOnly"
+              :disabled="!pendingRoleCount"
+              @click="pendingOnly = true"
+            >
+              Требуют решения
+              <PendingCountBadge :count="pendingRoleCount" />
+            </button>
+          </div>
+        </div>
 
         <p v-if="!administratorRows.length" class="administrator-empty">Запросов расширенных ролей пока нет.</p>
         <p v-else-if="!filteredRows.length" class="administrator-empty">
-          Пользователи с таким ФИО или идентификатором не найдены.
+          {{ pendingOnly ? "Ожидающие решения по выбранным условиям не найдены." : "Пользователи с таким ФИО или идентификатором не найдены." }}
         </p>
         <template v-else>
           <div class="administrator-table-wrap">
