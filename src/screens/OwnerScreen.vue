@@ -36,6 +36,9 @@ import type { PetAccessRow } from "../petAccess";
 import type { MedicalEncounterSectionKind, MedicalRecordDraft, PetProfile, PetProfileInput } from "../repositories/types";
 import { useAlertStore } from "../stores/alert";
 
+const PET_SPECIES = ["Собака", "Кошка", "Другое"] as const;
+type PetSpecies = (typeof PET_SPECIES)[number];
+
 const props = defineProps<{ role: "owner"; scenarioId: string }>();
 const route = useRoute();
 const router = useRouter();
@@ -54,7 +57,7 @@ const grantDelegate = ref(false);
 const birthMode = ref<"date" | "year">("date");
 const draft = reactive({
   name: "",
-  species: "Собака",
+  species: "Собака" as PetSpecies,
   breed: "",
   sex: "" as PetSex | "",
   photoDataUrl: "",
@@ -237,7 +240,7 @@ function hydrateDraft(pet: PetProfile | null) {
   }
   Object.assign(draft, {
     name: pet.name,
-    species: pet.species,
+    species: PET_SPECIES.includes(pet.species as PetSpecies) ? pet.species as PetSpecies : "Другое",
     breed: pet.breed,
     sex: pet.sex ?? "",
     photoDataUrl: pet.photoDataUrl ?? "",
@@ -590,7 +593,12 @@ function confirmMedicalRecord(record: MedicalRecordDraft) {
 
         <div class="owner-form-grid">
           <label><span>Кличка</span><input v-model="draft.name" required /></label>
-          <label><span>Вид</span><input v-model="draft.species" list="pet-species" required /><datalist id="pet-species"><option value="Собака" /><option value="Кошка" /></datalist></label>
+          <label>
+            <span>Вид</span>
+            <select v-model="draft.species" required>
+              <option v-for="species in PET_SPECIES" :key="species" :value="species">{{ species }}</option>
+            </select>
+          </label>
           <label><span>Порода</span><input v-model="draft.breed" required /></label>
           <label>
             <span>Пол</span>
