@@ -36,6 +36,9 @@ vi.mock("../src/appStore", async () => {
     setMockSync: (sync: Partial<typeof state.sync>) => {
       Object.assign(state.sync, sync);
     },
+    setMockRepositoryConnected: (connected: boolean) => {
+      state.repositoryConnected = connected;
+    },
   };
 });
 
@@ -78,6 +81,13 @@ async function setSync(sync: Partial<{
   store.setMockSync(sync);
 }
 
+async function setRepositoryConnected(connected: boolean) {
+  const store = await import("../src/appStore") as typeof import("../src/appStore") & {
+    setMockRepositoryConnected: (value: boolean) => void;
+  };
+  store.setMockRepositoryConnected(connected);
+}
+
 async function mountStatus() {
   const router = createRouter({
     history: createMemoryHistory(),
@@ -90,6 +100,7 @@ async function mountStatus() {
 
 beforeEach(async () => {
   vi.clearAllMocks();
+  await setRepositoryConnected(true);
   await setSync({
     permanentNotificationCount: 0,
     failedCount: 0,
@@ -103,6 +114,22 @@ beforeEach(async () => {
 });
 
 describe("SyncStatus", () => {
+  it("distinguishes an unavailable repository from an offline connection", async () => {
+    await setNotifications([]);
+    await setRepositoryConnected(false);
+    const { wrapper } = await mountStatus();
+
+    expect(wrapper.get(".sync-status").text()).toBe("Хранилище не подключено");
+    expect(wrapper.get(".sync-status").attributes("title")).toBe("Подключение к хранилищу не установлено.");
+
+    await setRepositoryConnected(true);
+    await setSync({ connectionState: "disconnected" });
+    await wrapper.vm.$nextTick();
+
+    expect(wrapper.get(".sync-status").text()).toBe("Нет соединения");
+    expect(wrapper.get(".sync-status").attributes("title")).toBe("Изменения останутся на устройстве до восстановления соединения.");
+  });
+
   it("clamps the current page when a larger page size reduces the page count", async () => {
     const { wrapper } = await mountStatus();
     await wrapper.get('button[aria-label="Открыть уведомления о синхронизации"]').trigger("click");

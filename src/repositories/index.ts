@@ -10,6 +10,7 @@ import {
   type UserKeySet,
 } from "@klinok/protocol";
 import type { AppRuntimeConfig } from "../runtimeConfig";
+import { logInitializationError } from "../diagnostics";
 import { ControlRepository } from "./controlRepository";
 import {
   IndexedDbEventTransport,
@@ -41,29 +42,42 @@ export class KlinokRepository {
     initialRole: Role;
     transport?: EventTransport;
   }): Promise<KlinokRepository> {
-    const context: ActiveRoleContext = {
-      accountId: options.session.accountId,
-      deviceId: options.session.device.deviceId,
-      orbitIdentityId: options.session.device.orbitIdentityId,
-      role: options.initialRole,
-      roleProofId: `setup:${options.initialRole}`,
-      userKeyVersion: options.keys.version,
-    };
-    const signed = new InMemorySignedEventRepository(options.config.p2p.bootstrapAccountId, {
-      authAttestationPublicKey: options.config.p2p.authAttestationPublicKey,
-      bootstrapSigningPublicKey: options.config.p2p.bootstrapSigningPublicKey,
-      requireTrustedAttestation: options.config.p2p.enabled,
-    });
-    const transport = options.transport ?? (options.config.p2p.enabled
-      ? new OrbitEventTransport(options.config.p2p, context.orbitIdentityId, context.accountId)
-      : new IndexedDbEventTransport(context.accountId, options.config.p2p.dataGeneration));
-    await transport.initialize();
-    const control = new ControlRepository(transport, context, options.keys, options.session.device, options.config.p2p.bootstrapAccountId, signed);
-    const medical = new MedicalRepository(transport, context, options.keys, options.session.device, control);
-    const enrollment = options.session.enrollments?.find((candidate) => candidate.deviceId === options.session.device.deviceId);
-    await control.initialize(options.session.setup, enrollment?.operationId);
-    await medical.initialize();
-    return new KlinokRepository(transport, control, medical);
+    let stage = "context.create";
+    try {
+      const context: ActiveRoleContext = {
+        accountId: options.session.accountId,
+        deviceId: options.session.device.deviceId,
+        orbitIdentityId: options.session.device.orbitIdentityId,
+        role: options.initialRole,
+        roleProofId: `setup:${options.initialRole}`,
+        userKeyVersion: options.keys.version,
+      };
+      stage = "verifier.create";
+      const signed = new InMemorySignedEventRepository(options.config.p2p.bootstrapAccountId, {
+        authAttestationPublicKey: options.config.p2p.authAttestationPublicKey,
+        bootstrapSigningPublicKey: options.config.p2p.bootstrapSigningPublicKey,
+        requireTrustedAttestation: options.config.p2p.enabled,
+      });
+      stage = "transport.create";
+      const transport = options.transport ?? (options.config.p2p.enabled
+        ? new OrbitEventTransport(options.config.p2p, context.orbitIdentityId, context.accountId)
+        : new IndexedDbEventTransport(context.accountId, options.config.p2p.dataGeneration));
+      stage = "transport.initialize";
+      await transport.initialize();
+      stage = "control.create";
+      const control = new ControlRepository(transport, context, options.keys, options.session.device, options.config.p2p.bootstrapAccountId, signed);
+      stage = "medical.create";
+      const medical = new MedicalRepository(transport, context, options.keys, options.session.device, control);
+      const enrollment = options.session.enrollments?.find((candidate) => candidate.deviceId === options.session.device.deviceId);
+      stage = "control.initialize";
+      await control.initialize(options.session.setup, enrollment?.operationId);
+      stage = "medical.initialize";
+      await medical.initialize();
+      return new KlinokRepository(transport, control, medical);
+    } catch (reason) {
+      logInitializationError("repository.create.failed", stage, reason);
+      throw reason;
+    }
   }
 
   static memoryTransport() { return new MemoryEventTransport(); }

@@ -246,4 +246,27 @@ describe("app-store directory reconciliation", () => {
     expect(repositoryMocks.deleteAccount).toHaveBeenCalledWith("delete-operation");
     expect(appState.syncNotifications).toEqual([]);
   });
+
+  it("logs the bootstrap stage and preserves the original repository error", async () => {
+    const originalError = Object.assign(new Error("Bootstrap device does not match the pinned trust anchor."), {
+      code: "BOOTSTRAP_ANCHOR_MISMATCH",
+    });
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    repositoryMocks.create.mockRejectedValueOnce(originalError);
+
+    await bootstrapApp(true);
+
+    const call = consoleError.mock.calls.find(([entry]) => String(entry).includes("app.bootstrap.failed"));
+    expect(call?.[1]).toBe(originalError);
+    expect(JSON.parse(String(call?.[0]))).toMatchObject({
+      level: "error",
+      event: "app.bootstrap.failed",
+      stage: "repository.connect",
+      errorName: "Error",
+      errorMessage: "Bootstrap device does not match the pinned trust anchor.",
+      errorCode: "BOOTSTRAP_ANCHOR_MISMATCH",
+    });
+    expect(appState.repositoryConnected).toBe(false);
+    consoleError.mockRestore();
+  });
 });
