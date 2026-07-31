@@ -12,3 +12,13 @@ export interface PetAccessRow {
   grantId?: string;
   requestId?: string;
 }
+
+export function petAccessStatusLabel(status: PetAccessRowStatus): string {
+  if (status === "granted") return "Предоставлен";
+  if (status === "requested") return "Запрошен";
+  return "Отозван";
+}
+
+export function delegationStatusLabel(allowed: boolean): string {
+  return allowed ? "Да" : "Нет";
+}

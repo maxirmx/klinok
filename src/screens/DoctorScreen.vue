@@ -5,7 +5,13 @@
 
 import { computed, onMounted, reactive, ref, watch } from "vue";
 import { RouterLink, useRoute, useRouter } from "vue-router";
-import type { DirectoryPetDto, DirectoryProfileDto, PetAccessRequest, PetGrantAction } from "@klinok/protocol";
+import type {
+  DirectoryPetDto,
+  DirectoryProfileDto,
+  PetAccessRequest,
+  PetGrantAction,
+} from "@klinok/protocol";
+import AccessStatusField from "../components/AccessStatusField.vue";
 import AppIcon from "../components/AppIcon.vue";
 import AppPaginator from "../components/AppPaginator.vue";
 import ConfirmationDialog from "../components/ConfirmationDialog.vue";
@@ -44,26 +50,34 @@ import { useAlertStore } from "../stores/alert";
 const props = defineProps<{ role: "doctor"; scenarioId: string }>();
 type HomeSortField = "owner" | "pet";
 type SortDirection = "asc" | "desc";
+type HomeAccessFilter = "all" | "active" | "pending" | "revoked";
+interface DoctorHomeAccessRow {
+  petId: string;
+  ownerAccountId: string;
+  ownerDisplayName: string;
+  species: string;
+  name: string;
+  status: PetAccessRow["status"];
+  permissions?: readonly PetGrantAction[];
+  grantId?: string;
+  requestId?: string;
+}
 const route = useRoute();
 const router = useRouter();
 const alertStore = useAlertStore();
 const busy = ref(false);
 const pageSizes = [10, 20, 50] as const;
 const homeQuery = ref("");
+const homeFilter = ref<HomeAccessFilter>("all");
 const homeSort = ref<HomeSortField>("owner");
 const homeSortDirection = ref<SortDirection>("asc");
 const homePage = ref(1);
 const storedPageSize = Number(localStorage.getItem("klinok:doctor-pets-page-size"));
 const homePageSize = ref<(typeof pageSizes)[number]>(pageSizes.includes(storedPageSize as never) ? storedPageSize as never : 10);
-const pendingRequestPage = ref(1);
-const storedPendingRequestPageSize = Number(localStorage.getItem("klinok:doctor-pending-requests-page-size"));
-const pendingRequestPageSize = ref<(typeof pageSizes)[number]>(
-  pageSizes.includes(storedPendingRequestPageSize as never) ? storedPendingRequestPageSize as never : 10,
-);
-const pendingRequestPets = reactive(new Map<string, DirectoryPetDto | null>());
+const accessPets = reactive(new Map<string, DirectoryPetDto | null>());
 const directoryPets = ref<DirectoryPetDto[]>([]);
 const selectedDirectoryPet = ref<DirectoryPetDto | null>(null);
-const directoryTotal = ref(0);
+let petsRefreshId = 0;
 const requestDialogOpen = ref(props.scenarioId === "doctor-pet-request-access");
 const requestError = ref("");
 const petOwnerQuery = ref("");
@@ -121,12 +135,85 @@ const pendingRequests = computed<PetAccessRequest[]>(() => appState.medical.acce
     request.requesterAccountId === appState.session.accountId && request.status === "pending",
   )
   .sort((left, right) => right.requestedAt.localeCompare(left.requestedAt)));
-const pendingRequestPageCount = computed(() =>
-  Math.max(1, Math.ceil(pendingRequests.value.length / pendingRequestPageSize.value)),
-);
-const pagedPendingRequests = computed(() => pendingRequests.value.slice(
-  (pendingRequestPage.value - 1) * pendingRequestPageSize.value,
-  pendingRequestPage.value * pendingRequestPageSize.value,
+const revokedGrants = computed(() => {
+  const latestByPet = new Map<string, (typeof appState.medical.grants)[number]>();
+  for (const grant of appState.medical.grants) {
+    if (grant.granteeAccountId !== appState.session.accountId || grant.status === "active") continue;
+    const current = latestByPet.get(grant.petId);
+    const timestamp = grant.revokedAt ?? grant.createdAt;
+    if (!current || timestamp > (current.revokedAt ?? current.createdAt)) latestByPet.set(grant.petId, grant);
+  }
+  return [...latestByPet.values()];
+});
+const homeRows = computed<DoctorHomeAccessRow[]>(() => {
+  const rows = new Map<string, DoctorHomeAccessRow>();
+
+  for (const pet of directoryPets.value) {
+    rows.set(pet.petId, {
+      petId: pet.petId,
+      ownerAccountId: pet.ownerAccountId,
+      ownerDisplayName: pet.ownerDisplayName,
+      species: pet.species,
+      name: pet.name,
+      status: "granted",
+      permissions: pet.permissions,
+      ...(pet.grantId ? { grantId: pet.grantId } : {}),
+    });
+  }
+
+  for (const request of pendingRequests.value) {
+    if (rows.has(request.petId)) continue;
+    const pet = accessPets.get(request.petId);
+    rows.set(request.petId, {
+      petId: request.petId,
+      ownerAccountId: pet?.ownerAccountId ?? request.ownerAccountId,
+      ownerDisplayName: pet?.ownerDisplayName || "ФИО не указано",
+      species: pet?.species ?? "",
+      name: pet?.name ?? "Данные питомца недоступны",
+      status: "requested",
+      requestId: request.requestId,
+    });
+  }
+
+  for (const grant of revokedGrants.value) {
+    if (rows.has(grant.petId)) continue;
+    const pet = accessPets.get(grant.petId);
+    const medicalPet = appState.medical.pets.find((candidate) => candidate.petId === grant.petId);
+    rows.set(grant.petId, {
+      petId: grant.petId,
+      ownerAccountId: pet?.ownerAccountId ?? medicalPet?.ownerAccountId ?? grant.grantorAccountId,
+      ownerDisplayName: pet?.ownerDisplayName || "ФИО не указано",
+      species: pet?.species ?? medicalPet?.species ?? "",
+      name: pet?.name ?? medicalPet?.name ?? "Данные питомца недоступны",
+      status: "revoked",
+      grantId: grant.grantId,
+    });
+  }
+
+  const query = homeQuery.value.trim().toLocaleLowerCase("ru");
+  const direction = homeSortDirection.value === "asc" ? 1 : -1;
+  return [...rows.values()]
+    .filter((row) => {
+      if (homeFilter.value === "active" && row.status !== "granted") return false;
+      if (homeFilter.value === "pending" && row.status !== "requested") return false;
+      if (homeFilter.value === "revoked" && row.status !== "revoked") return false;
+      if (!query) return true;
+      return [
+        row.petId,
+        row.ownerAccountId,
+        row.ownerDisplayName,
+        row.species,
+        row.name,
+      ].some((value) => value.toLocaleLowerCase("ru").includes(query));
+    })
+    .sort((left, right) => direction * (homeSort.value === "pet"
+      ? left.name.localeCompare(right.name, "ru") || left.ownerDisplayName.localeCompare(right.ownerDisplayName, "ru")
+      : left.ownerDisplayName.localeCompare(right.ownerDisplayName, "ru") || left.name.localeCompare(right.name, "ru")));
+});
+const homePageCount = computed(() => Math.max(1, Math.ceil(homeRows.value.length / homePageSize.value)));
+const pagedHomeRows = computed(() => homeRows.value.slice(
+  (homePage.value - 1) * homePageSize.value,
+  homePage.value * homePageSize.value,
 ));
 const delegatedAccessRows = computed<PetAccessRow[]>(() => {
   if (!selectedGrant.value) return [];
@@ -200,16 +287,24 @@ async function signOut() {
 }
 
 async function refreshPets() {
+  const refreshId = ++petsRefreshId;
   try {
-    const result = await loadDoctorPets(
-      homeQuery.value,
-      homePage.value,
-      homePageSize.value,
-      homeSort.value,
-      homeSortDirection.value,
-    );
-    directoryPets.value = result.items;
-    directoryTotal.value = result.total;
+    const pets = new Map<string, DirectoryPetDto>();
+    let page = 1;
+    let pageCount = 1;
+    do {
+      const result = await loadDoctorPets(
+        homeQuery.value,
+        page,
+        50,
+        homeSort.value,
+        homeSortDirection.value,
+      );
+      result.items.forEach((pet) => pets.set(pet.petId, pet));
+      pageCount = result.pageCount;
+      page += 1;
+    } while (page <= pageCount);
+    if (refreshId === petsRefreshId) directoryPets.value = [...pets.values()];
   } catch {
     const direction = homeSortDirection.value === "asc" ? 1 : -1;
     const pets = appState.medical.pets.map((pet) => {
@@ -218,8 +313,7 @@ async function refreshPets() {
     }).sort((left, right) => direction * (homeSort.value === "pet"
       ? left.name.localeCompare(right.name, "ru") || left.ownerDisplayName.localeCompare(right.ownerDisplayName, "ru")
       : left.ownerDisplayName.localeCompare(right.ownerDisplayName, "ru") || left.name.localeCompare(right.name, "ru")));
-    directoryTotal.value = pets.length;
-    directoryPets.value = pets.slice((homePage.value - 1) * homePageSize.value, homePage.value * homePageSize.value);
+    if (refreshId === petsRefreshId) directoryPets.value = pets;
   }
 }
 
@@ -233,24 +327,15 @@ async function refreshSelectedDirectoryPet(id: string) {
   }
 }
 
-async function hydratePendingRequestPets(requests: PetAccessRequest[]) {
-  await Promise.all(requests.map(async (request) => {
-    if (pendingRequestPets.has(request.petId)) return;
+async function hydrateAccessPets(petIds: string[]) {
+  await Promise.all(petIds.map(async (petId) => {
+    if (accessPets.has(petId)) return;
     try {
-      pendingRequestPets.set(request.petId, await lookupPetDirectory(request.petId));
+      accessPets.set(petId, await lookupPetDirectory(petId));
     } catch {
-      if (!pendingRequestPets.has(request.petId)) pendingRequestPets.set(request.petId, null);
+      if (!accessPets.has(petId)) accessPets.set(petId, null);
     }
   }));
-}
-
-function formatRequestDate(value: string): string {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return new Intl.DateTimeFormat("ru-RU", {
-    dateStyle: "short",
-    timeStyle: "short",
-  }).format(date);
 }
 
 function changeHomeSort(field: HomeSortField) {
@@ -297,10 +382,7 @@ function showAutoApprovedPet(pet: DirectoryPetDto, requestId: string): boolean {
   };
   const existingIndex = directoryPets.value.findIndex((candidate) => candidate.petId === pet.petId);
   if (existingIndex >= 0) directoryPets.value.splice(existingIndex, 1, row);
-  else {
-    directoryPets.value = [row, ...directoryPets.value].slice(0, homePageSize.value);
-    directoryTotal.value += 1;
-  }
+  else directoryPets.value = [row, ...directoryPets.value];
   return true;
 }
 
@@ -309,7 +391,7 @@ async function requestAccess(pet: DirectoryPetDto) {
   const succeeded = await performModal(requestError, async () => {
     const requestId = await requireRepository().medical.requestAccess(pet.petId);
     autoApproved = showAutoApprovedPet(pet, requestId);
-    if (!autoApproved) pendingRequestPets.set(pet.petId, pet);
+    if (!autoApproved) accessPets.set(pet.petId, pet);
     petSearchResults.value = petSearchResults.value.filter((candidate) => candidate.petId !== pet.petId);
     if (!petSearchResults.value.length) petSearchPerformed.value = false;
   }, "Не удалось отправить запрос.");
@@ -472,29 +554,30 @@ async function relinquish() {
   const succeeded = await perform(() => requireRepository().medical.relinquishAccess(target.grantId));
   if (!succeeded) return;
   const rowIndex = directoryPets.value.findIndex((candidate) => candidate.petId === target.petId);
-  if (rowIndex >= 0) {
-    directoryPets.value.splice(rowIndex, 1);
-    directoryTotal.value = Math.max(0, directoryTotal.value - 1);
-  }
+  if (rowIndex >= 0) directoryPets.value.splice(rowIndex, 1);
   alertStore.success(`Вы отказались от доступа к медицинской карте ${target.petName}.`);
   relinquishConfirm.value = false;
   relinquishTarget.value = null;
   if (route.path !== "/doctor/home") await router.replace("/doctor/home");
 }
 
-watch([homeQuery, homeSort, homeSortDirection, homePageSize], () => {
+watch([homeQuery, homeSort, homeSortDirection], () => {
   localStorage.setItem("klinok:doctor-pets-page-size", String(homePageSize.value));
-  if (homePage.value === 1) void refreshPets();
-  else homePage.value = 1;
+  homePage.value = 1;
+  void refreshPets();
 });
-watch(homePage, () => { void refreshPets(); });
-watch(pendingRequests, (requests) => { void hydratePendingRequestPets(requests); }, { immediate: true });
-watch(pendingRequestPageSize, (value) => {
-  localStorage.setItem("klinok:doctor-pending-requests-page-size", String(value));
-  pendingRequestPage.value = 1;
+watch([homeFilter, homePageSize], () => {
+  localStorage.setItem("klinok:doctor-pets-page-size", String(homePageSize.value));
+  homePage.value = 1;
 });
-watch(pendingRequestPageCount, (pageCount) => {
-  if (pendingRequestPage.value > pageCount) pendingRequestPage.value = pageCount;
+watch([pendingRequests, revokedGrants], ([requests, grants]) => {
+  void hydrateAccessPets([
+    ...requests.map((request) => request.petId),
+    ...grants.map((grant) => grant.petId),
+  ]);
+}, { immediate: true });
+watch(homePageCount, (pageCount) => {
+  if (homePage.value > pageCount) homePage.value = pageCount;
 });
 watch(petId, (id) => { void refreshSelectedDirectoryPet(id); }, { immediate: true });
 watch(() => props.scenarioId, (scenarioId) => {
@@ -514,78 +597,8 @@ onMounted(() => { void refreshPets(); });
 <template>
   <WorkspaceShell role="doctor" title="Кабинет врача" :profile-name="profileName" @sign-out="signOut">
     <section v-if="scenarioId === 'doctor-home' || scenarioId === 'doctor-pet-request-access'" class="panel doctor-page">
-      <section class="doctor-pending-requests" aria-labelledby="doctor-pending-requests-title">
-        <div class="doctor-heading">
-          <h2 id="doctor-pending-requests-title">Ожидающие запросы</h2>
-        </div>
-        <div class="owner-access-table-wrap doctor-pending-request-table-wrap">
-          <table class="owner-access-table doctor-pending-request-table">
-            <colgroup>
-              <col class="doctor-pending-request-actions-column" />
-              <col class="doctor-pending-request-pet-column" />
-              <col class="doctor-pending-request-owner-column" />
-              <col class="doctor-pending-request-date-column" />
-            </colgroup>
-            <thead>
-              <tr>
-                <th>Действия</th>
-                <th>Питомец</th>
-                <th>Владелец</th>
-                <th>Дата запроса</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="request in pagedPendingRequests" :key="request.requestId">
-                <td class="owner-access-actions" data-label="Действия">
-                  <div class="row-actions">
-                    <button
-                      class="outline-action inline danger-outline access-icon-action"
-                      type="button"
-                      :disabled="busy"
-                      title="Отозвать запрос на доступ"
-                      aria-label="Отозвать запрос на доступ"
-                      @click="cancelPendingRequest(request.requestId)"
-                    >
-                      <AppIcon name="close" />
-                    </button>
-                  </div>
-                </td>
-                <td class="owner-access-doctor" data-label="Питомец">
-                  <strong>
-                    {{ pendingRequestPets.get(request.petId)
-                      ? `${pendingRequestPets.get(request.petId)!.species} ${pendingRequestPets.get(request.petId)!.name}`
-                      : 'Данные питомца недоступны' }}
-                  </strong>
-                  <small>{{ request.petId }}</small>
-                </td>
-                <td class="owner-access-doctor" data-label="Владелец">
-                  <PersonIdentity
-                    :display-name="pendingRequestPets.get(request.petId)?.ownerDisplayName || 'ФИО не указано'"
-                    :account-id="request.ownerAccountId"
-                  />
-                </td>
-                <td data-label="Дата запроса">{{ formatRequestDate(request.requestedAt) }}</td>
-              </tr>
-              <tr v-if="!pendingRequests.length">
-                <td class="doctor-access-empty" colspan="4">Ожидающих запросов нет.</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-        <AppPaginator
-          v-if="pendingRequests.length"
-          v-model:page="pendingRequestPage"
-          v-model:page-size="pendingRequestPageSize"
-          class="doctor-pending-request-pagination"
-          :total-items="pendingRequests.length"
-          :page-sizes="pageSizes"
-          page-size-label="Запросов на странице"
-          aria-label="Навигация по ожидающим запросам"
-        />
-      </section>
-
       <div class="doctor-heading doctor-access-heading">
-        <h2>Медицинские карты</h2>
+        <h2>Доступ к медицинским картам</h2>
         <button
           class="primary-action inline owner-profile-action"
           type="button"
@@ -596,24 +609,34 @@ onMounted(() => { void refreshPets(); });
           <AppIcon name="plus" />
         </button>
       </div>
-      <label class="administrator-search">
-        <span>ФИО владельца, кличка, вид или полный идентификатор</span>
-        <span class="administrator-search-control">
-          <AppIcon name="search" />
-          <input v-model="homeQuery" type="search" placeholder="Поиск" />
-        </span>
-      </label>
+      <div class="doctor-access-filters">
+        <label class="doctor-access-global-filter">
+          <span>Показывать</span>
+          <select v-model="homeFilter" aria-label="Показывать">
+            <option value="all">Все</option>
+            <option value="active">Медицинские карты</option>
+            <option value="pending">Ожидающие запросы</option>
+            <option value="revoked">Отозванные</option>
+          </select>
+        </label>
+        <label class="administrator-search">
+          <span>ФИО владельца, кличка, вид или полный идентификатор</span>
+          <span class="administrator-search-control">
+            <AppIcon name="search" />
+            <input v-model="homeQuery" type="search" placeholder="Поиск" />
+          </span>
+        </label>
+      </div>
       <div class="owner-access-table-wrap">
         <table class="owner-access-table doctor-access-table">
           <colgroup>
-            <col class="doctor-access-actions-column" />
             <col class="doctor-access-pet-column" />
             <col class="doctor-access-owner-column" />
+            <col class="doctor-access-status-column" />
             <col class="doctor-access-delegation-column" />
           </colgroup>
           <thead>
             <tr>
-              <th>Действия</th>
               <th :aria-sort="homeSortAria('pet')">
                 <button class="doctor-sort-button" type="button" @click="changeHomeSort('pet')">
                   Питомец
@@ -626,46 +649,90 @@ onMounted(() => { void refreshPets(); });
                   <AppIcon name="chevron-down" :class="{ descending: homeSort === 'owner' && homeSortDirection === 'desc' }" />
                 </button>
               </th>
+              <th>Доступ</th>
               <th>Делегирование</th>
             </tr>
           </thead>
           <tbody>
-            <tr v-for="pet in directoryPets" :key="pet.petId">
-              <td class="owner-access-actions" data-label="Действия">
-                <div class="row-actions">
-                  <RouterLink
-                    class="primary-action inline access-icon-action"
-                    :to="`/doctor/pets/${pet.petId}`"
-                    title="Открыть медицинскую карту"
-                    aria-label="Открыть медицинскую карту"
+            <tr v-for="row in pagedHomeRows" :key="row.petId">
+              <td class="owner-access-doctor doctor-access-pet" data-label="Питомец">
+                <div class="owner-access-controlled">
+                  <div class="doctor-access-pet-identity">
+                    <RouterLink
+                      v-if="row.status === 'granted'"
+                      class="doctor-access-pet-link"
+                      :to="`/doctor/pets/${row.petId}`"
+                    >
+                      <strong>{{ [row.species, row.name].filter(Boolean).join(' ') }}</strong>
+                    </RouterLink>
+                    <strong v-else>{{ [row.species, row.name].filter(Boolean).join(' ') }}</strong>
+                    <small>{{ row.petId }}</small>
+                  </div>
+                  <div v-if="row.status === 'granted'" class="row-actions">
+                    <RouterLink
+                      class="primary-action inline access-icon-action"
+                      :to="`/doctor/pets/${row.petId}`"
+                      title="Открыть медицинскую карту"
+                      aria-label="Открыть медицинскую карту"
+                    >
+                      <AppIcon name="eye" />
+                    </RouterLink>
+                  </div>
+                </div>
+              </td>
+              <td class="owner-access-doctor" data-label="Владелец">
+                <PersonIdentity :display-name="row.ownerDisplayName" :account-id="row.ownerAccountId" />
+              </td>
+              <td data-label="Доступ">
+                <AccessStatusField :status="row.status">
+                  <button
+                    v-if="row.status === 'requested' && row.requestId"
+                    class="outline-action inline danger-outline access-icon-action"
+                    type="button"
+                    :disabled="busy"
+                    title="Отозвать запрос на доступ"
+                    aria-label="Отозвать запрос на доступ"
+                    @click="cancelPendingRequest(row.requestId)"
                   >
-                    <AppIcon name="eye" />
-                  </RouterLink>
+                    <AppIcon name="close" />
+                  </button>
+                  <button
+                    v-else-if="row.status === 'granted'"
+                    class="outline-action inline danger-outline access-icon-action"
+                    type="button"
+                    :disabled="busy"
+                    title="Отказаться от доступа"
+                    aria-label="Отказаться от доступа"
+                    @click="openRelinquish(row)"
+                  >
+                    <AppIcon name="close" />
+                  </button>
+                </AccessStatusField>
+              </td>
+              <td
+                :class="{ 'is-empty': row.status !== 'granted' }"
+                data-label="Делегирование"
+              >
+                <AccessStatusField
+                  :status="row.status"
+                  kind="delegation"
+                  :delegation-allowed="row.permissions?.includes('delegate')"
+                >
                   <RouterLink
-                    v-if="pet.permissions?.includes('delegate')"
+                    v-if="row.status === 'granted' && row.permissions?.includes('delegate')"
                     class="outline-action inline access-icon-action"
-                    :to="`/doctor/pets/${pet.petId}/delegate`"
+                    :to="`/doctor/pets/${row.petId}/delegate`"
                     title="Делегировать доступ"
                     aria-label="Делегировать доступ"
                   >
                     <AppIcon name="share" />
                   </RouterLink>
-                  <button
-                    class="outline-action inline danger-outline access-icon-action"
-                    type="button"
-                    title="Отказаться от доступа"
-                    aria-label="Отказаться от доступа"
-                    @click="openRelinquish(pet)"
-                  >
-                    <AppIcon name="close" />
-                  </button>
-                </div>
+                </AccessStatusField>
               </td>
-              <td class="owner-access-doctor" data-label="Питомец"><strong>{{ pet.species }} {{ pet.name }}</strong><small>{{ pet.petId }}</small></td>
-              <td class="owner-access-doctor" data-label="Владелец"><PersonIdentity :display-name="pet.ownerDisplayName" :account-id="pet.ownerAccountId" /></td>
-              <td data-label="Делегирование">{{ pet.permissions?.includes('delegate') ? 'Да' : 'Нет' }}</td>
             </tr>
-            <tr v-if="!directoryPets.length"><td class="doctor-access-empty" colspan="4">Доступных питомцев не найдено.</td></tr>
+            <tr v-if="!homeRows.length">
+              <td class="doctor-access-empty" colspan="4">Доступы по выбранным условиям не найдены.</td>
+            </tr>
           </tbody>
         </table>
       </div>
@@ -673,10 +740,10 @@ onMounted(() => { void refreshPets(); });
         v-model:page="homePage"
         v-model:page-size="homePageSize"
         class="doctor-access-pagination"
-        :total-items="directoryTotal"
+        :total-items="homeRows.length"
         :page-sizes="pageSizes"
-        page-size-label="Питомцев на странице"
-        aria-label="Навигация по питомцам"
+        page-size-label="Строк на странице"
+        aria-label="Навигация по доступам"
       />
 
       <ModalDialog v-model="requestDialogOpen" title="Запросить доступ" :busy="busy">
