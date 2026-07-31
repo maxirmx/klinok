@@ -25,7 +25,9 @@ describe("русские пользовательские сообщения", (
       .toBe("Не удалось сохранить изменение. Локальные данные возвращены в предыдущее состояние. Код диагностики: diagnostic-1.");
   });
 
-  it("uses a Russian fallback for unknown authentication errors", () => {
+  it("maps known authentication errors and uses a Russian fallback for unknown codes", () => {
+    expect(authErrorText("EMAIL_DELIVERY_FAILED"))
+      .toBe("Письмо для подтверждения не отправлено. Проверьте адрес электронной почты и повторите регистрацию. Если адрес верен, повторите попытку позже.");
     expect(authErrorText("UNRECOGNIZED_BACKEND_CODE"))
       .toBe("Сервис не смог выполнить операцию. Повторите попытку позже.");
   });
