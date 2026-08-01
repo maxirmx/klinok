@@ -5,26 +5,24 @@
 
 import { computed, ref, watch } from "vue";
 import { useRouter } from "vue-router";
-import type { AccountProfile, Role, RoleRequest, RoleStatus } from "@klinok/protocol";
+import type { AccountProfile, DirectoryUserDto, Role, RoleRequest, RoleStatus } from "@klinok/protocol";
 import AppIcon from "../components/AppIcon.vue";
 import AppPaginator from "../components/AppPaginator.vue";
 import ModalDialog from "../components/ModalDialog.vue";
 import PendingCountBadge from "../components/PendingCountBadge.vue";
 import PersonIdentity from "../components/PersonIdentity.vue";
 import WorkspaceShell from "../components/WorkspaceShell.vue";
-import { appState, decideRole, getConfig, logout } from "../appStore";
+import { appState, decideRole, getConfig, loadAdministratorUsers, logout } from "../appStore";
 import { administratorPendingRequestCount } from "../pendingApprovals";
 import { useAlertStore } from "../stores/alert";
 
 type AdvancedRole = Extract<Role, "doctor" | "administrator">;
-type SortField = "name" | AdvancedRole;
+type SortField = "name" | Role;
 type SortDirection = "asc" | "desc";
 type DecisionAction = "approve" | "reject" | "revoke" | "restore";
 type AuditCategory = "request" | "approve" | "restore" | "reject" | "revoke" | "bootstrap";
 
-type AdministratorRow = {
-  accountId: string;
-  displayName: string;
+type AdministratorRow = DirectoryUserDto & {
   doctor?: RoleRequest;
   administrator?: RoleRequest;
 };
@@ -43,6 +41,7 @@ type AuditRow = {
 const props = defineProps<{ role: "administrator"; scenarioId: string }>();
 const router = useRouter();
 const alertStore = useAlertStore();
+const displayedRoles: Role[] = ["owner", "doctor", "administrator"];
 const advancedRoles: AdvancedRole[] = ["doctor", "administrator"];
 const pageSizes = [10, 20, 50] as const;
 const cabinetPageSizeKey = "klinok:admin-role-table-page-size";
@@ -55,6 +54,10 @@ const sortField = ref<SortField>("name");
 const sortDirection = ref<SortDirection>("asc");
 const page = ref(1);
 const pageSize = ref(readPageSize(cabinetPageSizeKey));
+const users = ref<DirectoryUserDto[]>([]);
+const userTotal = ref(0);
+const usersLoading = ref(false);
+let usersRefreshId = 0;
 const decision = ref<{ request: RoleRequest; action: DecisionAction } | null>(null);
 const decisionReason = ref("");
 const decisionBusy = ref(false);
@@ -65,13 +68,14 @@ const auditAction = ref<AuditCategory | "">("");
 const auditPage = ref(1);
 const auditPageSize = ref(readPageSize(auditPageSizeKey));
 
-const roleLabels: Record<AdvancedRole, string> = {
+const roleLabels: Record<Role, string> = {
+  owner: "Владелец",
   doctor: "Ветеринар",
   administrator: "Администратор",
 };
 
 const statusLabels: Record<RoleStatus, string> = {
-  not_requested: "Отозвана",
+  not_requested: "Не запрошена",
   pending: "Запрошена",
   approved: "Одобрена",
   rejected: "Отказ",
@@ -79,7 +83,7 @@ const statusLabels: Record<RoleStatus, string> = {
 };
 
 const statusClasses: Record<RoleStatus, string> = {
-  not_requested: "revoked",
+  not_requested: "not-requested",
   pending: "pending",
   approved: "approved",
   rejected: "rejected",
@@ -106,51 +110,25 @@ function normalize(value: string): string {
 }
 
 const administratorRows = computed<AdministratorRow[]>(() => {
-  const grouped = new Map<string, AdministratorRow>();
-  for (const request of appState.control.allRoles) {
-    if (request.role !== "doctor" && request.role !== "administrator") continue;
-    const row = grouped.get(request.accountId) ?? {
-      accountId: request.accountId,
-      displayName: profileName(request.accountId),
+  const requests = new Map(appState.control.allRoles
+    .filter((request): request is RoleRequest & { role: AdvancedRole } => advancedRoles.includes(request.role as AdvancedRole))
+    .map((request) => [`${request.accountId}:${request.role}`, request]));
+  return users.value.map((user) => {
+    const doctor = requests.get(`${user.accountId}:doctor`);
+    const administrator = requests.get(`${user.accountId}:administrator`);
+    return {
+      ...user,
+      roleStatuses: {
+        ...user.roleStatuses,
+        ...(doctor ? { doctor: doctor.status } : {}),
+        ...(administrator ? { administrator: administrator.status } : {}),
+      },
+      doctor,
+      administrator,
     };
-    row[request.role] = request;
-    grouped.set(request.accountId, row);
-  }
-  return [...grouped.values()];
+  });
 });
 const pendingRoleCount = computed(() => administratorPendingRequestCount(appState.control));
-
-function rowHasPendingRole(row: AdministratorRow): boolean {
-  return advancedRoles.some((role) => row[role]?.status === "pending");
-}
-
-function compareText(left: string, right: string): number {
-  return left.localeCompare(right, "ru", { sensitivity: "base" });
-}
-
-const filteredRows = computed(() => {
-  const query = normalize(search.value);
-  return administratorRows.value
-    .filter((row) => !pendingOnly.value || rowHasPendingRole(row))
-    .filter((row) => !query || [row.displayName, row.accountId].some((value) => normalize(value).includes(query)))
-    .sort((left, right) => {
-      if (sortField.value !== "name") {
-        const leftStatus = left[sortField.value];
-        const rightStatus = right[sortField.value];
-        if (!leftStatus && !rightStatus) return compareText(left.displayName, right.displayName);
-        if (!leftStatus) return 1;
-        if (!rightStatus) return -1;
-      }
-      const result = sortField.value === "name"
-        ? compareText(left.displayName, right.displayName)
-        : compareText(statusLabels[left[sortField.value]!.status], statusLabels[right[sortField.value]!.status]);
-      const directed = sortDirection.value === "asc" ? result : -result;
-      return directed || compareText(left.displayName, right.displayName);
-    });
-});
-
-const pageCount = computed(() => Math.max(1, Math.ceil(filteredRows.value.length / pageSize.value)));
-const pagedRows = computed(() => filteredRows.value.slice((page.value - 1) * pageSize.value, page.value * pageSize.value));
 
 function changeSort(field: SortField) {
   if (sortField.value === field) sortDirection.value = sortDirection.value === "asc" ? "desc" : "asc";
@@ -167,6 +145,34 @@ function sortAria(field: SortField): "ascending" | "descending" | "none" {
 
 function isBootstrapAdministrator(request: RoleRequest): boolean {
   return request.role === "administrator" && request.accountId === getConfig()?.p2p.bootstrapAccountId;
+}
+
+function requestFor(row: AdministratorRow, role: Role): RoleRequest | undefined {
+  return role === "owner" ? undefined : row[role];
+}
+
+async function refreshUsers() {
+  if (isAudit.value) return;
+  const refreshId = ++usersRefreshId;
+  usersLoading.value = true;
+  try {
+    const result = await loadAdministratorUsers(
+      search.value,
+      pendingOnly.value,
+      page.value,
+      pageSize.value,
+      sortField.value,
+      sortDirection.value,
+    );
+    if (refreshId !== usersRefreshId) return;
+    users.value = result.items;
+    userTotal.value = result.total;
+    if (page.value !== result.page) page.value = result.page;
+  } catch (reason) {
+    if (refreshId === usersRefreshId) alertStore.error(reason, "Не удалось загрузить список пользователей.");
+  } finally {
+    if (refreshId === usersRefreshId) usersLoading.value = false;
+  }
 }
 
 function openDecision(request: RoleRequest, action: DecisionAction) {
@@ -217,6 +223,7 @@ async function submitDecision() {
           : "Роль отозвана.");
     decision.value = null;
     decisionReason.value = "";
+    await refreshUsers();
   } catch (reason) {
     alertStore.error(reason, "Операция не выполнена.");
   } finally {
@@ -303,12 +310,32 @@ async function signOut() {
   await router.replace("/auth/login");
 }
 
-watch([search, pendingOnly, sortField, sortDirection, pageSize], () => { page.value = 1; });
+watch([search, pendingOnly, sortField, sortDirection, page, pageSize, isAudit], (current, previous) => {
+  localStorage.setItem(cabinetPageSizeKey, String(pageSize.value));
+  if (isAudit.value) {
+    usersRefreshId += 1;
+    usersLoading.value = false;
+    return;
+  }
+
+  if (previous) {
+    const [prevSearch, prevPendingOnly, prevSortField, prevSortDirection, , prevPageSize] = previous;
+    const shouldResetPage = current[0] !== prevSearch
+      || current[1] !== prevPendingOnly
+      || current[2] !== prevSortField
+      || current[3] !== prevSortDirection
+      || current[5] !== prevPageSize;
+    if (shouldResetPage && page.value !== 1) {
+      page.value = 1;
+      return;
+    }
+  }
+
+  void refreshUsers();
+}, { immediate: true });
 watch(pendingRoleCount, (count) => { if (!count) pendingOnly.value = false; });
 watch([auditSearch, auditRole, auditAction, auditPageSize], () => { auditPage.value = 1; });
-watch(pageSize, (value) => localStorage.setItem(cabinetPageSizeKey, String(value)));
 watch(auditPageSize, (value) => localStorage.setItem(auditPageSizeKey, String(value)));
-watch(pageCount, (count) => { if (page.value > count) page.value = count; });
 watch(auditPageCount, (count) => { if (auditPage.value > count) auditPage.value = count; });
 </script>
 
@@ -323,8 +350,8 @@ watch(auditPageCount, (count) => { if (auditPage.value > count) auditPage.value 
       <article class="panel administrator-panel">
         <div class="administrator-heading">
           <div>
-            <h2>Ветеринары и администраторы</h2>
-            <p>Управляйте правами ветеринаров и администраторов.</p>
+            <h2>Пользователи</h2>
+            <p>Просматривайте пользователей и управляйте расширенными ролями.</p>
           </div>
           <RouterLink
             class="outline-action inline administrator-audit-link administrator-icon-action"
@@ -370,8 +397,9 @@ watch(auditPageCount, (count) => { if (auditPage.value > count) auditPage.value 
           </div>
         </div>
 
-        <p v-if="!administratorRows.length" class="administrator-empty">Запросов расширенных ролей пока нет.</p>
-        <p v-else-if="!filteredRows.length" class="administrator-empty">
+        <p v-if="usersLoading && !administratorRows.length" class="administrator-empty">Загрузка пользователей…</p>
+        <p v-else-if="!administratorRows.length && !search && !pendingOnly" class="administrator-empty">Пользователей пока нет.</p>
+        <p v-else-if="!administratorRows.length" class="administrator-empty">
           {{ pendingOnly ? "Ожидающие решения по выбранным условиям не найдены." : "Пользователи с таким ФИО или идентификатором не найдены." }}
         </p>
         <template v-else>
@@ -383,6 +411,12 @@ watch(auditPageCount, (count) => { if (auditPage.value > count) auditPage.value 
                     <button type="button" @click="changeSort('name')">
                       ФИО
                       <AppIcon name="chevron-down" :class="{ descending: sortField === 'name' && sortDirection === 'desc' }" />
+                    </button>
+                  </th>
+                  <th :aria-sort="sortAria('owner')">
+                    <button type="button" @click="changeSort('owner')">
+                      Владелец
+                      <AppIcon name="chevron-down" :class="{ descending: sortField === 'owner' && sortDirection === 'desc' }" />
                     </button>
                   </th>
                   <th :aria-sort="sortAria('doctor')">
@@ -400,54 +434,54 @@ watch(auditPageCount, (count) => { if (auditPage.value > count) auditPage.value 
                 </tr>
               </thead>
               <tbody>
-                <tr v-for="row in pagedRows" :key="row.accountId">
+                <tr v-for="row in administratorRows" :key="row.accountId">
                   <td class="administrator-name" data-label="ФИО">
                     <PersonIdentity :display-name="row.displayName" :account-id="row.accountId" />
                   </td>
                   <td
-                    v-for="advancedRole in advancedRoles"
-                    :key="advancedRole"
+                    v-for="displayedRole in displayedRoles"
+                    :key="displayedRole"
                     class="administrator-role-cell"
-                    :data-label="roleLabels[advancedRole]"
+                    :data-label="roleLabels[displayedRole]"
                   >
-                    <div v-if="row[advancedRole]" class="administrator-role-content">
+                    <div class="administrator-role-content">
                       <span
                         class="status-badge"
-                        :class="statusClasses[row[advancedRole]!.status]"
+                        :class="statusClasses[row.roleStatuses[displayedRole]]"
                       >
-                        {{ statusLabels[row[advancedRole]!.status] }}
+                        {{ statusLabels[row.roleStatuses[displayedRole]] }}
                       </span>
                       <div
-                        v-if="!isBootstrapAdministrator(row[advancedRole]!)"
+                        v-if="requestFor(row, displayedRole) && !isBootstrapAdministrator(requestFor(row, displayedRole)!)"
                         class="administrator-role-actions"
                       >
-                        <template v-if="row[advancedRole]?.status === 'pending'">
+                        <template v-if="requestFor(row, displayedRole)?.status === 'pending'">
                           <button
                             class="primary-action inline access-icon-action"
                             type="button"
-                            :title="`Одобрить роль «${roleLabels[advancedRole]}»`"
-                            :aria-label="`Одобрить роль «${roleLabels[advancedRole]}»`"
-                            @click="openDecision(row[advancedRole]!, 'approve')"
+                            :title="`Одобрить роль «${roleLabels[displayedRole]}»`"
+                            :aria-label="`Одобрить роль «${roleLabels[displayedRole]}»`"
+                            @click="openDecision(requestFor(row, displayedRole)!, 'approve')"
                           >
                             <AppIcon name="check" />
                           </button>
                           <button
                             class="outline-action inline danger-outline access-icon-action"
                             type="button"
-                            :title="`Отклонить запрос роли «${roleLabels[advancedRole]}»`"
-                            :aria-label="`Отклонить запрос роли «${roleLabels[advancedRole]}»`"
-                            @click="openDecision(row[advancedRole]!, 'reject')"
+                            :title="`Отклонить запрос роли «${roleLabels[displayedRole]}»`"
+                            :aria-label="`Отклонить запрос роли «${roleLabels[displayedRole]}»`"
+                            @click="openDecision(requestFor(row, displayedRole)!, 'reject')"
                           >
                             <AppIcon name="close" />
                           </button>
                         </template>
                         <button
-                          v-else-if="row[advancedRole]?.status === 'approved'"
+                          v-else-if="requestFor(row, displayedRole)?.status === 'approved'"
                           class="outline-action inline danger-outline access-icon-action"
                           type="button"
-                          :title="`Отозвать роль «${roleLabels[advancedRole]}»`"
-                          :aria-label="`Отозвать роль «${roleLabels[advancedRole]}»`"
-                          @click="openDecision(row[advancedRole]!, 'revoke')"
+                          :title="`Отозвать роль «${roleLabels[displayedRole]}»`"
+                          :aria-label="`Отозвать роль «${roleLabels[displayedRole]}»`"
+                          @click="openDecision(requestFor(row, displayedRole)!, 'revoke')"
                         >
                           <AppIcon name="close" />
                         </button>
@@ -455,9 +489,9 @@ watch(auditPageCount, (count) => { if (auditPage.value > count) auditPage.value 
                           v-else
                           class="primary-action inline access-icon-action"
                           type="button"
-                          :title="`Восстановить роль «${roleLabels[advancedRole]}»`"
-                          :aria-label="`Восстановить роль «${roleLabels[advancedRole]}»`"
-                          @click="openDecision(row[advancedRole]!, 'restore')"
+                          :title="`Восстановить роль «${roleLabels[displayedRole]}»`"
+                          :aria-label="`Восстановить роль «${roleLabels[displayedRole]}»`"
+                          @click="openDecision(requestFor(row, displayedRole)!, 'restore')"
                         >
                           <AppIcon name="restore" />
                         </button>
@@ -472,7 +506,7 @@ watch(auditPageCount, (count) => { if (auditPage.value > count) auditPage.value 
           <AppPaginator
             v-model:page="page"
             v-model:page-size="pageSize"
-            :total-items="filteredRows.length"
+            :total-items="userTotal"
             :page-sizes="pageSizes"
           />
         </template>

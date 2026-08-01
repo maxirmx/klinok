@@ -2208,12 +2208,13 @@ dd {
 .administrator-table th:nth-child(3),
 .administrator-table th:nth-child(4) { width: 142px; }
 .administrator-role-table {
-  min-width: 760px;
+  min-width: 900px;
   table-layout: fixed;
 }
-.administrator-role-table th:first-child { width: 34%; }
+.administrator-role-table th:first-child { width: 31%; }
 .administrator-role-table th:nth-child(2),
-.administrator-role-table th:nth-child(3) { width: 33%; }
+.administrator-role-table th:nth-child(3),
+.administrator-role-table th:nth-child(4) { width: 23%; }
 .administrator-table tbody tr:last-child td { border-bottom: 0; }
 .administrator-table th button,
 .doctor-access-table th .doctor-sort-button {

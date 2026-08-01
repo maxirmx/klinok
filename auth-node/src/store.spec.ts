@@ -31,6 +31,25 @@ describe("AuthStore markers", () => {
   });
 });
 
+describe("AuthStore role projections", () => {
+  it("enumerates observed role statuses without changing their storage format", async () => {
+    const dataDir = await mkdtemp(join(tmpdir(), "klinok-auth-store-test-"));
+    const store = new AuthStore(dataDir);
+    stores.push({ dataDir, store });
+    await store.open();
+
+    await store.putObservedRole("account-1", "owner", "approved");
+    await store.putObservedRole("account-1", "doctor", "pending");
+    await store.putObservedRole("account-2", "administrator", "revoked");
+
+    expect(await store.listObservedRoles()).toEqual(expect.arrayContaining([
+      { accountId: "account-1", role: "owner", status: "approved" },
+      { accountId: "account-1", role: "doctor", status: "pending" },
+      { accountId: "account-2", role: "administrator", status: "revoked" },
+    ]));
+  });
+});
+
 describe("AuthStore pending registrations", () => {
   it("removes an unchanged account, email index, and verification token", async () => {
     const dataDir = await mkdtemp(join(tmpdir(), "klinok-auth-store-test-"));

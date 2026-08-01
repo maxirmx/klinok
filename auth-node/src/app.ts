@@ -21,6 +21,7 @@ import {
   type DirectoryPageDto,
   type DirectoryPetDto,
   type DirectoryProfileDto,
+  type DirectoryUserDto,
   type DoctorPetAccessDto,
   type ExportedUserKeySet,
   type RegistrationSetupDto,
@@ -693,6 +694,67 @@ export async function buildAuthApp(options: AuthAppOptions): Promise<FastifyInst
       ? left.accountId.localeCompare(right.accountId)
       : left.displayName.localeCompare(right.displayName, "ru") || left.accountId.localeCompare(right.accountId));
     return reply.header("Cache-Control", "no-store").send(directoryPage(approved, request.query.page, request.query.pageSize));
+  });
+
+  app.get<{ Querystring: {
+    query?: string;
+    pendingOnly?: string;
+    sort?: string;
+    direction?: string;
+    page?: string;
+    pageSize?: string;
+  } }>("/api/auth/directory/users", {
+    config: { rateLimit: { max: options.config.rateLimit.sessionIpPerMinute, timeWindow: 60_000 } },
+  }, async (request, reply) => {
+    const current = await authenticated(request, reply, false);
+    if (!current) return;
+    const isBootstrapAdministrator = current.account.immutableBootstrap === true
+      && current.account.accountId === options.config.bootstrapAccountId;
+    if (!isBootstrapAdministrator && !await hasObservedRole(current.account.accountId, "administrator")) {
+      return error(reply, 403, "ADMINISTRATOR_ROLE_REQUIRED", "Требуется подтверждённая роль администратора.");
+    }
+
+    const query = request.query.query?.trim().toLocaleLowerCase("ru") ?? "";
+    const roleStatuses = new Map<string, DirectoryUserDto["roleStatuses"]>();
+    for (const observed of await store.listObservedRoles()) {
+      const statuses = roleStatuses.get(observed.accountId) ?? {
+        owner: "not_requested",
+        doctor: "not_requested",
+        administrator: "not_requested",
+      };
+      statuses[observed.role] = observed.status;
+      roleStatuses.set(observed.accountId, statuses);
+    }
+
+    const users: DirectoryUserDto[] = [];
+    for (const profile of await store.listDirectoryProfiles()) {
+      if (query && !profile.displayName.toLocaleLowerCase("ru").includes(query)
+        && !profile.accountId.toLocaleLowerCase("ru").includes(query)) continue;
+      const account = await store.getAccount(profile.accountId);
+      if (!account || account.credentialStatus === "deleted") continue;
+      const statuses = roleStatuses.get(profile.accountId) ?? {
+        owner: "not_requested",
+        doctor: "not_requested",
+        administrator: "not_requested",
+      };
+      if (request.query.pendingOnly === "true"
+        && statuses.doctor !== "pending" && statuses.administrator !== "pending") continue;
+      users.push({ ...profile, roleStatuses: statuses });
+    }
+
+    const sort = ["owner", "doctor", "administrator"].includes(request.query.sort ?? "")
+      ? request.query.sort as Role
+      : "name";
+    const direction = request.query.direction === "desc" ? -1 : 1;
+    users.sort((left, right) => {
+      const result = sort === "name"
+        ? left.displayName.localeCompare(right.displayName, "ru", { sensitivity: "base" })
+        : left.roleStatuses[sort].localeCompare(right.roleStatuses[sort]);
+      return direction * result
+        || left.displayName.localeCompare(right.displayName, "ru", { sensitivity: "base" })
+        || left.accountId.localeCompare(right.accountId);
+    });
+    return reply.header("Cache-Control", "no-store").send(directoryPage(users, request.query.page, request.query.pageSize));
   });
 
   app.get<{ Querystring: { owner?: string; pet?: string; sort?: string; page?: string; pageSize?: string } }>("/api/auth/directory/pets", {

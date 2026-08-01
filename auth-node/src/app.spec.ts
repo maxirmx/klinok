@@ -618,6 +618,169 @@ describe("auth-node", () => {
     expect(response.json().error.code).toBe("BOOTSTRAP_REPLACEMENT_FORBIDDEN");
   });
 
+  it("serves every initialized, non-deleted user only to administrators", async () => {
+    const { app, mailer, store } = await fixture();
+    const administrator = await verifiedLogin(app, mailer, {
+      ...registration,
+      firstName: "Анна",
+      lastName: "Администратор",
+      email: "directory-administrator@example.com",
+      requestedRoles: ["administrator"],
+    });
+    const owner = await verifiedLogin(app, mailer, {
+      ...registration,
+      firstName: "Ольга",
+      lastName: "Владелец",
+      email: "directory-owner-list@example.com",
+    });
+    const unapprovedAdministrator = await app.inject({
+      method: "GET",
+      url: "/api/auth/directory/users",
+      headers: { cookie: administrator.cookie },
+    });
+    expect(unapprovedAdministrator.statusCode).toBe(403);
+    expect(unapprovedAdministrator.json().error.code).toBe("ADMINISTRATOR_ROLE_REQUIRED");
+    await store.putObservedRole(administrator.accountId, "administrator", "approved");
+    await store.putObservedRole(owner.accountId, "owner", "approved");
+
+    const createdAt = "2026-07-10T10:00:00.000Z";
+    async function addUser(index: number, credentialStatus: "active" | "deleted" = "active", withProfile = true) {
+      const accountId = `directory-user-${String(index).padStart(2, "0")}`;
+      await store.createAccount({
+        accountId,
+        email: `${accountId}@example.com`,
+        passwordHash: "unused",
+        credentialStatus,
+        verificationState: "verified",
+        createdAt,
+        updatedAt: createdAt,
+        failureTimes: [],
+        devices: [],
+        enrollments: [],
+        pendingOperations: [],
+        sessionDigests: [],
+      });
+      if (withProfile) await store.putDirectoryProfile({
+        accountId,
+        firstName: `Имя${String(index).padStart(2, "0")}`,
+        lastName: "Пользователь",
+        displayName: `Имя${String(index).padStart(2, "0")} Пользователь`,
+        updatedAt: createdAt,
+      });
+      return accountId;
+    }
+
+    await store.putDirectoryProfile({
+      accountId: administrator.accountId,
+      firstName: "Анна",
+      lastName: "Администратор",
+      displayName: "Анна Администратор",
+      updatedAt: createdAt,
+    });
+    await store.putDirectoryProfile({
+      accountId: owner.accountId,
+      firstName: "Ольга",
+      lastName: "Владелец",
+      displayName: "Ольга Владелец",
+      updatedAt: createdAt,
+    });
+    const pendingDoctorId = await addUser(1);
+    await store.putObservedRole(pendingDoctorId, "doctor", "pending");
+    for (let index = 2; index <= 10; index += 1) await addUser(index);
+    const deletedId = await addUser(11, "deleted");
+    const uninitializedId = await addUser(12, "active", false);
+
+    const unauthenticated = await app.inject({ method: "GET", url: "/api/auth/directory/users" });
+    expect(unauthenticated.statusCode).toBe(401);
+    const forbidden = await app.inject({
+      method: "GET",
+      url: "/api/auth/directory/users",
+      headers: { cookie: owner.cookie },
+    });
+    expect(forbidden.statusCode).toBe(403);
+    expect(forbidden.json().error.code).toBe("ADMINISTRATOR_ROLE_REQUIRED");
+
+    const firstPage = await app.inject({
+      method: "GET",
+      url: "/api/auth/directory/users?page=1&pageSize=10&sort=name&direction=asc",
+      headers: { cookie: administrator.cookie },
+    });
+    expect(firstPage.statusCode).toBe(200);
+    expect(firstPage.headers["cache-control"]).toBe("no-store");
+    expect(firstPage.json()).toMatchObject({ total: 12, page: 1, pageSize: 10, pageCount: 2 });
+    expect(firstPage.json().items).toHaveLength(10);
+    expect(JSON.stringify(firstPage.json())).not.toContain(deletedId);
+    expect(JSON.stringify(firstPage.json())).not.toContain(uninitializedId);
+    const secondPage = await app.inject({
+      method: "GET",
+      url: "/api/auth/directory/users?page=2&pageSize=10&sort=name&direction=asc",
+      headers: { cookie: administrator.cookie },
+    });
+    expect(secondPage.json()).toMatchObject({ total: 12, page: 2, pageSize: 10, pageCount: 2 });
+    expect(secondPage.json().items).toHaveLength(2);
+    expect(JSON.stringify(secondPage.json())).not.toContain(deletedId);
+    expect(JSON.stringify(secondPage.json())).not.toContain(uninitializedId);
+    const ownerSorted = await app.inject({
+      method: "GET",
+      url: "/api/auth/directory/users?pageSize=10&sort=owner&direction=asc",
+      headers: { cookie: administrator.cookie },
+    });
+    expect(ownerSorted.json().items[0].accountId).toBe(owner.accountId);
+
+    const ownerResult = await app.inject({
+      method: "GET",
+      url: `/api/auth/directory/users?query=${encodeURIComponent(owner.accountId)}&pageSize=10`,
+      headers: { cookie: administrator.cookie },
+    });
+    expect(ownerResult.json()).toMatchObject({
+      total: 1,
+      items: [{
+        accountId: owner.accountId,
+        displayName: "Ольга Владелец",
+        roleStatuses: { owner: "approved", doctor: "not_requested", administrator: "not_requested" },
+      }],
+    });
+
+    const pendingOnly = await app.inject({
+      method: "GET",
+      url: "/api/auth/directory/users?pendingOnly=true&sort=doctor&direction=desc&pageSize=10",
+      headers: { cookie: administrator.cookie },
+    });
+    expect(pendingOnly.json()).toMatchObject({
+      total: 1,
+      items: [{ accountId: pendingDoctorId, roleStatuses: { doctor: "pending" } }],
+    });
+  });
+
+  it("recognizes the immutable bootstrap account as an administrator before role projection catches up", async () => {
+    const { app, store } = await fixture({ bootstrap: true });
+    const login = await app.inject({
+      method: "POST",
+      url: "/api/auth/login",
+      headers: { origin: "https://klinok.test" },
+      payload: { email: "administrator@example.ru", password: "bootstrap-password-2026" },
+    });
+    expect(login.statusCode).toBe(200);
+    await store.putDirectoryProfile({
+      accountId: "bootstrap-administrator",
+      firstName: "Начальный",
+      lastName: "Администратор",
+      displayName: "Начальный Администратор",
+      updatedAt: "2026-07-10T10:00:00.000Z",
+    });
+
+    const users = await app.inject({
+      method: "GET",
+      url: "/api/auth/directory/users",
+      headers: { cookie: login.headers["set-cookie"]! },
+    });
+    expect(users.statusCode).toBe(200);
+    expect(users.json()).toMatchObject({
+      total: 1,
+      items: [{ accountId: "bootstrap-administrator", displayName: "Начальный Администратор" }],
+    });
+  });
+
   it("serves role-filtered doctor and pet directory views without caching", async () => {
     const { app, mailer, store } = await fixture();
     const owner = await verifiedLogin(app, mailer, { ...registration, email: "directory-owner@example.com" });

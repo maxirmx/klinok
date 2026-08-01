@@ -146,7 +146,7 @@ describe("operational Russian UI", () => {
     expect(statuses.findAll<HTMLInputElement>('.credentials-form input[type="password"]').every((input) => input.attributes("minlength") === "6")).toBe(true);
     expect(statuses.findAll<HTMLInputElement>('.credentials-form input[type="password"]').every((input) => input.element.value === "")).toBe(true);
     const administrator = await mountScreen(AdministratorScreen, "/admin/home", { scenarioId: "administrator-home", role: "administrator" });
-    expect(administrator.text()).toContain("Ветеринары и администраторы");
+    expect(administrator.get(".administrator-heading h2").text()).toBe("Пользователи");
     expect(administrator.get(".administrator-audit-link").attributes("title")).toBe("Открыть журнал действий");
     expect(administrator.text()).not.toContain("Конфликты авторизации");
   });

@@ -10,6 +10,7 @@ import {
   type DirectoryPageDto,
   type DirectoryPetDto,
   type DirectoryProfileDto,
+  type DirectoryUserDto,
   type DoctorPetAccessDto,
   type ExportedUserKeySet,
   type Role,
@@ -440,6 +441,10 @@ export async function updateProfile(input: { firstName: string; lastName: string
 
 export function searchDoctorDirectory(query = "", page = 1, pageSize = 20, sort = "name"): Promise<DirectoryPageDto<DirectoryProfileDto>> {
   return auth.searchDoctors(query, page, pageSize, sort);
+}
+
+export function loadAdministratorUsers(query = "", pendingOnly = false, page = 1, pageSize = 20, sort = "name", direction = "asc"): Promise<DirectoryPageDto<DirectoryUserDto>> {
+  return auth.searchUsers(query, pendingOnly, page, pageSize, sort, direction);
 }
 
 export function lookupPetDirectory(petId: string): Promise<DirectoryPetDto> {

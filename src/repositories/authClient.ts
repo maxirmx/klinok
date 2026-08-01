@@ -11,6 +11,7 @@ import type {
   DirectoryPageDto,
   DirectoryPetDto,
   DirectoryProfileDto,
+  DirectoryUserDto,
   DoctorPetAccessDto,
   ExportedUserKeySet,
   Role,
@@ -140,6 +141,18 @@ export class AuthClient {
   searchDoctors(query = "", page = 1, pageSize = 20, sort = "name") {
     const params = new URLSearchParams({ query, page: String(page), pageSize: String(pageSize), sort });
     return this.request<DirectoryPageDto<DirectoryProfileDto>>(`/api/auth/directory/doctors?${params}`);
+  }
+
+  searchUsers(query = "", pendingOnly = false, page = 1, pageSize = 20, sort = "name", direction = "asc") {
+    const params = new URLSearchParams({
+      query,
+      pendingOnly: String(pendingOnly),
+      page: String(page),
+      pageSize: String(pageSize),
+      sort,
+      direction,
+    });
+    return this.request<DirectoryPageDto<DirectoryUserDto>>(`/api/auth/directory/users?${params}`);
   }
 
   lookupDirectoryPet(petId: string) {

@@ -129,6 +129,10 @@ export interface DirectoryProfileDto {
   updatedAt: string;
 }
 
+export interface DirectoryUserDto extends DirectoryProfileDto {
+  roleStatuses: Record<Role, RoleStatus>;
+}
+
 export interface DirectoryPetDto {
   petId: string;
   ownerAccountId: string;
