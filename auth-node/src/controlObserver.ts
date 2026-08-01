@@ -325,6 +325,15 @@ export class ControlPlaneObserver {
       const grant = this.state.grants.get(event.resourceId);
       if (grant) await this.store.putObservedGrant(grant);
     }
+    if (["grant.requested", "grant.request.cancelled", "grant.request.rejected"].includes(event.eventType)) {
+      const projection = this.state.grantRequests.get(event.resourceId);
+      if (projection) await this.store.putObservedAccessRequest(projection.request);
+    }
+    if (event.eventType === "grant.created") {
+      const requestId = String(event.metadata.requestId ?? "");
+      const projection = requestId ? this.state.grantRequests.get(requestId) : undefined;
+      if (projection) await this.store.putObservedAccessRequest(projection.request);
+    }
     const accountId = String(event.metadata.accountId ?? event.aggregateId);
     let account = await this.store.getAccount(accountId);
     if (account) {

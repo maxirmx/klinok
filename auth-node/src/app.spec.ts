@@ -5,7 +5,7 @@
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { exportUserKeySet, generateUserKeySet, stableSerialize, type UserKeySet } from "@klinok/protocol";
 import { buildAuthApp } from "./app.js";
 import { MemoryMailer, type MailMessage } from "./mailer.js";
@@ -809,6 +809,231 @@ describe("auth-node", () => {
     const petSearchDenied = await app.inject({ method: "GET", url: "/api/auth/directory/pets?owner=Ольга&pet=Буся", headers: { cookie: owner.cookie } });
     expect(petSearchDenied.statusCode).toBe(403);
     expect(petSearchDenied.json().error.code).toBe("DOCTOR_ROLE_REQUIRED");
+  });
+
+  it("serves one filtered, sorted, deduplicated page of the current Doctor's accesses", async () => {
+    const { app, mailer, store } = await fixture();
+    const doctor = await verifiedLogin(app, mailer, {
+      ...registration,
+      firstName: "Вера",
+      lastName: "Врач",
+      email: "unified-access-doctor@example.com",
+      requestedRoles: ["doctor"],
+    });
+    await store.putObservedRole(doctor.accountId, "doctor", "approved");
+
+    const pets = Array.from({ length: 12 }, (_, index) => {
+      const number = String(index + 1).padStart(2, "0");
+      const reverseNumber = String(12 - index).padStart(2, "0");
+      return {
+        petId: `pet-access-${number}`,
+        ownerAccountId: `owner-${number}`,
+        ownerDisplayName: `Владелец ${reverseNumber}`,
+        species: index % 2 === 0 ? "Кошка" : "Собака",
+        name: `Питомец ${number}`,
+        updatedAt: `2026-07-${number}T10:00:00.000Z`,
+      };
+    });
+    for (const pet of pets) {
+      await store.putDirectoryPet(pet);
+      await store.putObservedPetOwner(pet.petId, pet.ownerAccountId);
+    }
+
+    for (const pet of pets.slice(0, 3)) {
+      await store.putObservedGrant({
+        grantId: `active-${pet.petId}`,
+        petId: pet.petId,
+        grantorAccountId: pet.ownerAccountId,
+        granteeAccountId: doctor.accountId,
+        actions: ["read", "write_unconfirmed"],
+        petKeyVersion: 1,
+        status: "active",
+        createdAt: "2026-07-20T10:00:00.000Z",
+      });
+    }
+    const delegatedPet = pets[3]!;
+    await store.putObservedGrant({
+      grantId: "active-parent",
+      petId: delegatedPet.petId,
+      grantorAccountId: delegatedPet.ownerAccountId,
+      granteeAccountId: "delegating-doctor",
+      actions: ["read", "delegate"],
+      petKeyVersion: 1,
+      status: "active",
+      createdAt: "2026-07-20T10:00:00.000Z",
+    });
+    await store.putObservedGrant({
+      grantId: "active-child",
+      parentGrantId: "active-parent",
+      petId: delegatedPet.petId,
+      grantorAccountId: "delegating-doctor",
+      granteeAccountId: doctor.accountId,
+      actions: ["read"],
+      petKeyVersion: 1,
+      status: "active",
+      createdAt: "2026-07-20T10:01:00.000Z",
+    });
+
+    for (const pet of pets.slice(4, 8)) {
+      await store.putObservedAccessRequest({
+        requestId: `pending-${pet.petId}`,
+        petId: pet.petId,
+        ownerAccountId: pet.ownerAccountId,
+        requesterAccountId: doctor.accountId,
+        status: "pending",
+        requestedAt: "2026-07-21T10:00:00.000Z",
+      });
+    }
+    for (const pet of pets.slice(8)) {
+      await store.putObservedGrant({
+        grantId: `revoked-${pet.petId}`,
+        petId: pet.petId,
+        grantorAccountId: pet.ownerAccountId,
+        granteeAccountId: doctor.accountId,
+        actions: ["read"],
+        petKeyVersion: 1,
+        status: "revoked",
+        createdAt: "2026-07-18T10:00:00.000Z",
+        revokedAt: "2026-07-22T10:00:00.000Z",
+      });
+    }
+    await store.putObservedAccessRequest({
+      requestId: "pending-over-revoked",
+      petId: pets[8]!.petId,
+      ownerAccountId: pets[8]!.ownerAccountId,
+      requesterAccountId: doctor.accountId,
+      status: "pending",
+      requestedAt: "2026-07-23T10:00:00.000Z",
+    });
+    await store.putObservedGrant({
+      grantId: "old-revoked-active-pet",
+      petId: pets[0]!.petId,
+      grantorAccountId: pets[0]!.ownerAccountId,
+      granteeAccountId: doctor.accountId,
+      actions: ["read"],
+      petKeyVersion: 1,
+      status: "revoked",
+      createdAt: "2026-07-10T10:00:00.000Z",
+      revokedAt: "2026-07-11T10:00:00.000Z",
+    });
+    await store.putObservedAccessRequest({
+      requestId: "old-pending-active-pet",
+      petId: pets[0]!.petId,
+      ownerAccountId: pets[0]!.ownerAccountId,
+      requesterAccountId: doctor.accountId,
+      status: "pending",
+      requestedAt: "2026-07-12T10:00:00.000Z",
+    });
+    await store.putObservedAccessRequest({
+      requestId: "other-doctor-request",
+      petId: pets[1]!.petId,
+      ownerAccountId: pets[1]!.ownerAccountId,
+      requesterAccountId: "other-doctor",
+      status: "pending",
+      requestedAt: "2026-07-24T10:00:00.000Z",
+    });
+
+    const getAccesses = (params: Record<string, string> = {}) => app.inject({
+      method: "GET",
+      url: `/api/auth/directory/my-pet-accesses?${new URLSearchParams(params)}`,
+      headers: { cookie: doctor.cookie },
+    });
+    const listPets = vi.spyOn(store, "listDirectoryPets");
+    const getPet = vi.spyOn(store, "getDirectoryPet");
+    const secondPage = await getAccesses({ page: "2", pageSize: "10", sort: "owner", direction: "asc" });
+    expect(secondPage.statusCode).toBe(200);
+    expect(secondPage.headers["cache-control"]).toBe("no-store");
+    expect(secondPage.json()).toMatchObject({ page: 2, pageSize: 10, total: 12, pageCount: 2 });
+    expect(secondPage.json().items).toHaveLength(2);
+    expect(listPets).toHaveBeenCalledTimes(1);
+    expect(getPet).not.toHaveBeenCalled();
+    listPets.mockRestore();
+    getPet.mockRestore();
+
+    const granted = await getAccesses({ status: "granted", pageSize: "50" });
+    const requested = await getAccesses({ status: "requested", pageSize: "50" });
+    const revoked = await getAccesses({ status: "revoked", pageSize: "50" });
+    expect(granted.json().total).toBe(4);
+    expect(requested.json().total).toBe(5);
+    expect(revoked.json().total).toBe(3);
+    expect(granted.json().items.find((item: { petId: string }) => item.petId === pets[0]!.petId)).toMatchObject({
+      status: "granted",
+      grantId: `active-${pets[0]!.petId}`,
+      permissions: ["read", "write_unconfirmed"],
+    });
+    expect(requested.json().items.find((item: { petId: string }) => item.petId === pets[8]!.petId)).toMatchObject({
+      status: "requested",
+      requestId: "pending-over-revoked",
+    });
+
+    const byOwner = await getAccesses({ query: "владелец 07", pageSize: "50" });
+    const byOwnerId = await getAccesses({ query: pets[5]!.ownerAccountId, pageSize: "50" });
+    const byName = await getAccesses({ query: "питомец 06", pageSize: "50" });
+    const bySpecies = await getAccesses({ query: "кошка", pageSize: "50" });
+    const byPetId = await getAccesses({ query: pets[5]!.petId, pageSize: "50" });
+    const byPartialPetId = await getAccesses({ query: pets[5]!.petId.slice(0, -1), pageSize: "50" });
+    expect(byOwner.json().items.map((item: { petId: string }) => item.petId)).toEqual([pets[5]!.petId]);
+    expect(byOwnerId.json().items.map((item: { petId: string }) => item.petId)).toEqual([pets[5]!.petId]);
+    expect(byName.json().items.map((item: { petId: string }) => item.petId)).toEqual([pets[5]!.petId]);
+    expect(bySpecies.json().total).toBe(6);
+    expect(byPetId.json().items.map((item: { petId: string }) => item.petId)).toEqual([pets[5]!.petId]);
+    expect(byPartialPetId.json().total).toBe(0);
+
+    const ownerAscending = await getAccesses({ pageSize: "50", sort: "owner", direction: "asc" });
+    const petAscending = await getAccesses({ pageSize: "50", sort: "pet", direction: "asc" });
+    const petDescending = await getAccesses({ pageSize: "50", sort: "pet", direction: "desc" });
+    expect(ownerAscending.json().items[0].petId).toBe(pets[11]!.petId);
+    expect(petAscending.json().items[0].petId).toBe(pets[0]!.petId);
+    expect(petDescending.json().items[0].petId).toBe(pets[11]!.petId);
+
+    const transitioningPet = pets[4]!;
+    const transitionRequest = {
+      requestId: `pending-${transitioningPet.petId}`,
+      petId: transitioningPet.petId,
+      ownerAccountId: transitioningPet.ownerAccountId,
+      requesterAccountId: doctor.accountId,
+      status: "pending" as const,
+      requestedAt: "2026-07-21T10:00:00.000Z",
+    };
+    await store.putObservedGrant({
+      grantId: "transition-grant",
+      requestId: transitionRequest.requestId,
+      petId: transitioningPet.petId,
+      grantorAccountId: transitioningPet.ownerAccountId,
+      granteeAccountId: doctor.accountId,
+      actions: ["read"],
+      petKeyVersion: 1,
+      status: "active",
+      createdAt: "2026-07-25T10:00:00.000Z",
+    });
+    expect((await getAccesses({ query: transitioningPet.petId })).json().items[0]).toMatchObject({ status: "granted", grantId: "transition-grant" });
+    await store.putObservedAccessRequest({ ...transitionRequest, status: "approved", decidedAt: "2026-07-25T10:00:00.000Z" });
+    await store.putObservedGrant({
+      grantId: "transition-grant",
+      requestId: transitionRequest.requestId,
+      petId: transitioningPet.petId,
+      grantorAccountId: transitioningPet.ownerAccountId,
+      granteeAccountId: doctor.accountId,
+      actions: ["read"],
+      petKeyVersion: 1,
+      status: "revoked",
+      createdAt: "2026-07-25T10:00:00.000Z",
+      revokedAt: "2026-07-26T10:00:00.000Z",
+    });
+    expect((await getAccesses({ query: transitioningPet.petId })).json().items[0]).toMatchObject({ status: "revoked", grantId: "transition-grant" });
+
+    await store.putObservedGrant({
+      grantId: "active-parent",
+      petId: delegatedPet.petId,
+      grantorAccountId: delegatedPet.ownerAccountId,
+      granteeAccountId: "delegating-doctor",
+      actions: ["read", "delegate"],
+      petKeyVersion: 1,
+      status: "revoked",
+      createdAt: "2026-07-20T10:00:00.000Z",
+      revokedAt: "2026-07-27T10:00:00.000Z",
+    });
+    expect((await getAccesses({ query: delegatedPet.petId })).json().items[0]).toMatchObject({ status: "revoked", grantId: "active-child" });
   });
 
   it("replaces lost bootstrap devices only with a fresh recovery-key proof", async () => {

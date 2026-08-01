@@ -10,6 +10,7 @@ import {
   type DirectoryPageDto,
   type DirectoryPetDto,
   type DirectoryProfileDto,
+  type DoctorPetAccessDto,
   type ExportedUserKeySet,
   type Role,
   type RoleRequest,
@@ -449,8 +450,8 @@ export function searchPetDirectory(owner = "", pet = "", page = 1, pageSize = 20
   return auth.searchDirectoryPets(owner, pet, page, pageSize, sort);
 }
 
-export function loadDoctorPets(query = "", page = 1, pageSize = 20, sort = "owner", direction = "asc"): Promise<DirectoryPageDto<DirectoryPetDto>> {
-  return auth.getMyDirectoryPets(query, page, pageSize, sort, direction);
+export function loadDoctorPetAccesses(query = "", status: DoctorPetAccessDto["status"] | "all" = "all", page = 1, pageSize = 20, sort = "owner", direction = "asc"): Promise<DirectoryPageDto<DoctorPetAccessDto>> {
+  return auth.getMyPetAccesses(query, status, page, pageSize, sort, direction);
 }
 
 async function syncDirectoryPetWithClient(client: AuthClient, pet: DirectoryPetInput): Promise<void> {
