@@ -155,6 +155,16 @@ export class AuthClient {
     return this.request<DirectoryPageDto<DirectoryUserDto>>(`/api/auth/directory/users?${params}`);
   }
 
+  updateDirectoryUserProfile(
+    accountId: string,
+    profile: Pick<DirectoryProfileDto, "firstName" | "lastName" | "patronymic">,
+  ) {
+    return this.request<{ operationId: string; profile: DirectoryProfileDto }>(
+      `/api/auth/directory/users/${encodeURIComponent(accountId)}/profile`,
+      { method: "PATCH", body: JSON.stringify(profile) },
+    );
+  }
+
   lookupDirectoryPet(petId: string) {
     return this.request<DirectoryPetDto>(`/api/auth/directory/pets/${encodeURIComponent(petId)}`);
   }

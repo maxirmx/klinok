@@ -236,6 +236,10 @@ export async function buildAuthApp(options: AuthAppOptions): Promise<FastifyInst
     return await store.getObservedRole(accountId, role) === "approved";
   }
 
+  function isBootstrapAdministratorAccount(account: AuthAccount): boolean {
+    return account.immutableBootstrap === true && account.accountId === options.config.bootstrapAccountId;
+  }
+
   function directoryPage<T>(items: T[], rawPage: unknown, rawPageSize: unknown): DirectoryPageDto<T> {
     const pageSize = [10, 20, 50].includes(Number(rawPageSize)) ? Number(rawPageSize) : 20;
     const pageCount = Math.max(1, Math.ceil(items.length / pageSize));
@@ -708,10 +712,9 @@ export async function buildAuthApp(options: AuthAppOptions): Promise<FastifyInst
   }, async (request, reply) => {
     const current = await authenticated(request, reply, false);
     if (!current) return;
-    const isBootstrapAdministrator = current.account.immutableBootstrap === true
-      && current.account.accountId === options.config.bootstrapAccountId;
-    if (!isBootstrapAdministrator && !await hasObservedRole(current.account.accountId, "administrator")) {
-      return error(reply, 403, "ADMINISTRATOR_ROLE_REQUIRED", "Требуется подтверждённая роль администратора.");
+    if (!isBootstrapAdministratorAccount(current.account)
+      && !await hasObservedRole(current.account.accountId, "administrator")) {
+      return error(reply, 403, "ADMINISTRATOR_ROLE_REQUIRED", "Требуется одобренная роль администратора.");
     }
 
     const query = request.query.query?.trim().toLocaleLowerCase("ru") ?? "";
@@ -755,6 +758,67 @@ export async function buildAuthApp(options: AuthAppOptions): Promise<FastifyInst
         || left.accountId.localeCompare(right.accountId);
     });
     return reply.header("Cache-Control", "no-store").send(directoryPage(users, request.query.page, request.query.pageSize));
+  });
+
+  app.patch<{
+    Params: { accountId: string };
+    Body: Partial<Pick<DirectoryProfileDto, "firstName" | "lastName" | "patronymic">>;
+  }>("/api/auth/directory/users/:accountId/profile", {
+    config: { rateLimit: { max: options.config.rateLimit.mutationIpPerMinute, timeWindow: 60_000 } },
+  }, async (request, reply) => {
+    const current = await authenticated(request, reply);
+    if (!current) return;
+    if (!isBootstrapAdministratorAccount(current.account)) {
+      return error(reply, 403, "BOOTSTRAP_ADMINISTRATOR_REQUIRED", "Изменять профили других пользователей может только начальный администратор.");
+    }
+    if (!await allowAccountMutation(request, reply, current.account.accountId)) return;
+
+    const target = await store.getAccount(request.params.accountId);
+    const existingProfile = await store.getDirectoryProfile(request.params.accountId);
+    if (!target || target.credentialStatus === "deleted" || !existingProfile) {
+      return error(reply, 404, "DIRECTORY_USER_NOT_FOUND", "Пользователь не найден в каталоге.");
+    }
+    const body = request.body;
+    if (!body || typeof body.firstName !== "string" || typeof body.lastName !== "string"
+      || (body.patronymic !== undefined && typeof body.patronymic !== "string")) {
+      return error(reply, 400, "DIRECTORY_PROFILE_INVALID", "Имя и фамилия обязательны.");
+    }
+    const firstName = body.firstName.trim();
+    const lastName = body.lastName.trim();
+    const patronymic = body.patronymic?.trim();
+    if (!firstName || !lastName) return error(reply, 400, "DIRECTORY_PROFILE_INVALID", "Имя и фамилия обязательны.");
+    const payload = {
+      firstName,
+      lastName,
+      ...(patronymic ? { patronymic } : {}),
+    };
+    const existingOperation = target.pendingOperations.find((operation) =>
+      operation.kind === "profile" && stableSerialize(operation.payload) === stableSerialize(payload));
+    const operation = existingOperation ?? {
+      operationId: randomUUID(),
+      kind: "profile" as const,
+      createdAt: now().toISOString(),
+      payload,
+    };
+    const profileMatches = existingProfile.firstName === firstName
+      && existingProfile.lastName === lastName
+      && (existingProfile.patronymic ?? "") === (patronymic ?? "");
+    const profile: DirectoryProfileDto = {
+      accountId: target.accountId,
+      ...payload,
+      displayName: [firstName, patronymic, lastName].filter(Boolean).join(" "),
+      updatedAt: profileMatches ? existingProfile.updatedAt : now().toISOString(),
+    };
+    await store.putAccountAndDirectoryProfile({
+      ...target,
+      ...(target.setup ? { setup: { ...target.setup, profile: payload } } : {}),
+      pendingOperations: [
+        ...target.pendingOperations.filter((candidate) => candidate.kind !== "profile"),
+        operation,
+      ],
+      updatedAt: now().toISOString(),
+    }, profile);
+    return reply.header("Cache-Control", "no-store").send({ operationId: operation.operationId, profile });
   });
 
   app.get<{ Querystring: { owner?: string; pet?: string; sort?: string; page?: string; pageSize?: string } }>("/api/auth/directory/pets", {

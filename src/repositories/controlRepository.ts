@@ -191,11 +191,18 @@ export class ControlRepository {
   async updateProfile(profile: AccountProfile, operationId?: string): Promise<void> {
     if (operationId && this.events.some((event) => event.eventType === "profile.updated" && event.operationId === operationId)) return;
     const parent = this.events.findLast((event) => event.eventType === "profile.updated" && event.aggregateId === profile.accountId)?.eventId;
+    const recipients = this.profileRecipients(profile.accountId);
+    if (profile.accountId !== this.context.accountId && !recipients.some((device) => device.accountId === profile.accountId)) {
+      throw Object.assign(new Error("The target account has no active profile encryption recipient."), {
+        code: "PROFILE_RECIPIENT_UNAVAILABLE",
+      });
+    }
     await this.append(await this.factory.create({
       database: "control", eventType: "profile.updated", aggregateId: profile.accountId,
       ...(operationId ? { operationId } : {}),
       metadata: { accountId: profile.accountId, revision: profile.revision }, cleartext: profile,
-      parents: parent ? [parent] : [this.latestDeviceEventId()].filter(Boolean), recipients: this.profileRecipients().length ? this.profileRecipients() : [this.certificate],
+      parents: parent ? [parent] : [this.latestDeviceEventId()].filter(Boolean),
+      recipients: recipients.length ? recipients : [this.certificate],
     }));
   }
 

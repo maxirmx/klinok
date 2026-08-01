@@ -447,6 +447,27 @@ export function loadAdministratorUsers(query = "", pendingOnly = false, page = 1
   return auth.searchUsers(query, pendingOnly, page, pageSize, sort, direction);
 }
 
+export async function updateAdministratorUserProfile(
+  accountId: string,
+  input: Pick<DirectoryProfileDto, "firstName" | "lastName" | "patronymic">,
+): Promise<DirectoryProfileDto> {
+  if (state.session.accountId !== config?.p2p.bootstrapAccountId || state.activeRole !== "administrator") {
+    throw new Error("Изменять профили других пользователей может только начальный администратор.");
+  }
+  const activeRepository = requireRepository();
+  const result = await auth.updateDirectoryUserProfile(accountId, input);
+  const current = state.control.profiles.find((profile) => profile.accountId === accountId);
+  await activeRepository.control.updateProfile({
+    accountId,
+    revision: (current?.revision ?? 0) + 1,
+    firstName: result.profile.firstName,
+    lastName: result.profile.lastName,
+    ...(result.profile.patronymic ? { patronymic: result.profile.patronymic } : {}),
+    updatedAt: result.profile.updatedAt,
+  }, result.operationId);
+  return result.profile;
+}
+
 export function lookupPetDirectory(petId: string): Promise<DirectoryPetDto> {
   return auth.lookupDirectoryPet(petId);
 }

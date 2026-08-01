@@ -39,6 +39,25 @@ describe("auth client", () => {
     expect(fetchMock.mock.calls[0][0]).toBe("/api/auth/directory/users?query=%D0%98%D0%B2%D0%B0%D0%BD&pendingOnly=true&page=2&pageSize=10&sort=owner&direction=desc");
   });
 
+  it("edits a directory user profile through an encoded CSRF-protected PATCH", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ authenticated: true, csrfToken: "csrf" }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        operationId: "profile-operation",
+        profile: { accountId: "user/1", firstName: "Анна", lastName: "Иванова", displayName: "Анна Иванова", updatedAt: "2026-07-12T00:00:00.000Z" },
+      }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const client = new AuthClient();
+    await client.session();
+    const result = await client.updateDirectoryUserProfile("user/1", { firstName: "Анна", lastName: "Иванова" });
+
+    expect(result.operationId).toBe("profile-operation");
+    expect(fetchMock.mock.calls[1][0]).toBe("/api/auth/directory/users/user%2F1/profile");
+    expect(fetchMock.mock.calls[1][1]).toMatchObject({ method: "PATCH", credentials: "include" });
+    expect((fetchMock.mock.calls[1][1].headers as Headers).get("X-CSRF-Token")).toBe("csrf");
+    expect(JSON.parse(fetchMock.mock.calls[1][1].body as string)).toEqual({ firstName: "Анна", lastName: "Иванова" });
+  });
+
   it("sends all unified doctor-access page parameters", async () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ items: [], page: 1, pageSize: 10, total: 0, pageCount: 1 }), { status: 200 }));
     vi.stubGlobal("fetch", fetchMock);

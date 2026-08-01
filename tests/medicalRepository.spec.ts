@@ -445,7 +445,7 @@ describe("medical authorization repository", () => {
     expect(updated).not.toHaveProperty("legacyOptionalField");
 
     await owner.medical.revokeGrant(grantId);
-    await tick();
+    await waitFor(() => doctor.control.signed.state.grants.get(grantId)?.status === "revoked");
     const rejectedRequest = await doctor.medical.requestAccess(petId);
     await waitFor(() =>
       owner.control.signed.state.grantRequests.get(rejectedRequest)?.request.status === "pending",
