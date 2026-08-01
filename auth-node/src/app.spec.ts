@@ -781,6 +781,132 @@ describe("auth-node", () => {
     });
   });
 
+  it("lets only the immutable bootstrap administrator persist directory profile edits", async () => {
+    const fixedNow = new Date("2026-07-12T12:00:00.000Z");
+    const { app, mailer, store } = await fixture({ bootstrap: true, now: () => fixedNow });
+    const bootstrapLogin = await app.inject({
+      method: "POST",
+      url: "/api/auth/login",
+      headers: { origin: "https://klinok.test" },
+      payload: { email: "administrator@example.ru", password: "bootstrap-password-2026" },
+    });
+    const bootstrap = {
+      cookie: bootstrapLogin.headers["set-cookie"]!,
+      csrf: bootstrapLogin.json().csrfToken as string,
+    };
+    const administrator = await verifiedLogin(app, mailer, {
+      ...registration,
+      email: "ordinary-administrator@example.com",
+      requestedRoles: ["administrator"],
+    });
+    await store.putObservedRole(administrator.accountId, "administrator", "approved");
+    const target = await verifiedLogin(app, mailer, {
+      ...registration,
+      firstName: "Старое",
+      lastName: "Имя",
+      email: "profile-target@example.com",
+    });
+    await store.putDirectoryProfile({
+      accountId: target.accountId,
+      firstName: "Старое",
+      lastName: "Имя",
+      displayName: "Старое Имя",
+      updatedAt: "2026-07-10T10:00:00.000Z",
+    });
+
+    const path = `/api/auth/directory/users/${target.accountId}/profile`;
+    const unauthenticated = await app.inject({
+      method: "PATCH", url: path, headers: { origin: "https://klinok.test" },
+      payload: { firstName: "Новое", lastName: "Имя" },
+    });
+    expect(unauthenticated.statusCode).toBe(401);
+    const forbidden = await app.inject({
+      method: "PATCH", url: path,
+      headers: { origin: "https://klinok.test", cookie: administrator.cookie, "x-csrf-token": administrator.csrf },
+      payload: { firstName: "Новое", lastName: "Имя" },
+    });
+    expect(forbidden.statusCode).toBe(403);
+    expect(forbidden.json().error.code).toBe("BOOTSTRAP_ADMINISTRATOR_REQUIRED");
+
+    for (const payload of [
+      { firstName: " ", lastName: "Имя" },
+      { firstName: 42, lastName: "Имя" },
+    ]) {
+      const invalid = await app.inject({
+        method: "PATCH", url: path,
+        headers: { origin: "https://klinok.test", cookie: bootstrap.cookie, "x-csrf-token": bootstrap.csrf },
+        payload,
+      });
+      expect(invalid.statusCode).toBe(400);
+      expect(invalid.json().error.code).toBe("DIRECTORY_PROFILE_INVALID");
+    }
+
+    const updated = await app.inject({
+      method: "PATCH", url: path,
+      headers: { origin: "https://klinok.test", cookie: bootstrap.cookie, "x-csrf-token": bootstrap.csrf },
+      payload: { firstName: "  Новое ", patronymic: " Отчество ", lastName: " Имя  " },
+    });
+    expect(updated.statusCode).toBe(200);
+    expect(updated.headers["cache-control"]).toBe("no-store");
+    expect(updated.json()).toMatchObject({
+      operationId: expect.any(String),
+      profile: {
+        accountId: target.accountId,
+        firstName: "Новое",
+        patronymic: "Отчество",
+        lastName: "Имя",
+        displayName: "Новое Отчество Имя",
+        updatedAt: fixedNow.toISOString(),
+      },
+    });
+    expect(JSON.stringify(updated.json())).not.toContain("profile-target@example.com");
+    expect(JSON.stringify(updated.json())).not.toContain("passwordHash");
+    const persisted = await store.getAccount(target.accountId);
+    expect(persisted?.setup?.profile).toEqual({ firstName: "Новое", patronymic: "Отчество", lastName: "Имя" });
+    expect(persisted?.pendingOperations).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        operationId: updated.json().operationId,
+        kind: "profile",
+        payload: { firstName: "Новое", patronymic: "Отчество", lastName: "Имя" },
+      }),
+    ]));
+    expect(await store.getDirectoryProfile(target.accountId)).toEqual(updated.json().profile);
+
+    const repeated = await app.inject({
+      method: "PATCH", url: path,
+      headers: { origin: "https://klinok.test", cookie: bootstrap.cookie, "x-csrf-token": bootstrap.csrf },
+      payload: { firstName: "Новое", patronymic: "Отчество", lastName: "Имя" },
+    });
+    expect(repeated.json().operationId).toBe(updated.json().operationId);
+
+    const missing = await app.inject({
+      method: "PATCH", url: "/api/auth/directory/users/missing/profile",
+      headers: { origin: "https://klinok.test", cookie: bootstrap.cookie, "x-csrf-token": bootstrap.csrf },
+      payload: { firstName: "Новое", lastName: "Имя" },
+    });
+    expect(missing.statusCode).toBe(404);
+    expect(missing.json().error.code).toBe("DIRECTORY_USER_NOT_FOUND");
+
+    const uninitialized = await verifiedLogin(app, mailer, { ...registration, email: "uninitialized-profile@example.com" });
+    const absentProfile = await app.inject({
+      method: "PATCH", url: `/api/auth/directory/users/${uninitialized.accountId}/profile`,
+      headers: { origin: "https://klinok.test", cookie: bootstrap.cookie, "x-csrf-token": bootstrap.csrf },
+      payload: { firstName: "Новое", lastName: "Имя" },
+    });
+    expect(absentProfile.statusCode).toBe(404);
+    expect(absentProfile.json().error.code).toBe("DIRECTORY_USER_NOT_FOUND");
+
+    const deletedAccount = (await store.getAccount(target.accountId))!;
+    await store.putAccount({ ...deletedAccount, credentialStatus: "deleted" });
+    const deleted = await app.inject({
+      method: "PATCH", url: path,
+      headers: { origin: "https://klinok.test", cookie: bootstrap.cookie, "x-csrf-token": bootstrap.csrf },
+      payload: { firstName: "Ещё", lastName: "Имя" },
+    });
+    expect(deleted.statusCode).toBe(404);
+    expect(deleted.json().error.code).toBe("DIRECTORY_USER_NOT_FOUND");
+  });
+
   it("serves role-filtered doctor and pet directory views without caching", async () => {
     const { app, mailer, store } = await fixture();
     const owner = await verifiedLogin(app, mailer, { ...registration, email: "directory-owner@example.com" });

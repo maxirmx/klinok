@@ -12,6 +12,7 @@ import AdministratorScreen from "../src/screens/AdministratorScreen.vue";
 
 const appMocks = vi.hoisted(() => ({
   decideRole: vi.fn().mockResolvedValue(undefined),
+  updateAdministratorUserProfile: vi.fn(),
   directoryUsers: [] as DirectoryUserDto[],
   loadAdministratorUsers: vi.fn(async (
     query = "",
@@ -71,13 +72,18 @@ vi.mock("../src/appStore", async () => {
     appState: readonly(state),
     decideRole: appMocks.decideRole,
     loadAdministratorUsers: appMocks.loadAdministratorUsers,
+    updateAdministratorUserProfile: appMocks.updateAdministratorUserProfile,
     logout: appMocks.logout,
     getConfig: () => ({ p2p: { bootstrapAccountId: "bootstrap-administrator" } }),
     setAdministratorState: (value: {
       profiles?: AccountProfile[];
       roles?: RoleRequest[];
       events?: SignedEvent[];
+      sessionAccountId?: string;
+      activeRole?: Role | null;
     }) => {
+      state.session.accountId = value.sessionAccountId ?? "bootstrap-administrator";
+      state.activeRole = value.activeRole === undefined ? "administrator" : value.activeRole;
       state.control.profiles = value.profiles ?? [];
       state.control.allRoles = value.roles ?? [];
       state.control.events = value.events ?? [];
@@ -164,7 +170,13 @@ function event(overrides: Partial<SignedEvent> & Pick<SignedEvent, "eventId" | "
   };
 }
 
-async function setState(value: { profiles?: AccountProfile[]; roles?: RoleRequest[]; events?: SignedEvent[] }) {
+async function setState(value: {
+  profiles?: AccountProfile[];
+  roles?: RoleRequest[];
+  events?: SignedEvent[];
+  sessionAccountId?: string;
+  activeRole?: Role | null;
+}) {
   const store = await import("../src/appStore") as typeof import("../src/appStore") & {
     setAdministratorState: (input: typeof value) => void;
   };
@@ -197,6 +209,14 @@ function rowFor(wrapper: VueWrapper, text: string) {
 
 beforeEach(async () => {
   vi.clearAllMocks();
+  appMocks.updateAdministratorUserProfile.mockImplementation(async (accountId, input) => ({
+    accountId,
+    firstName: input.firstName,
+    lastName: input.lastName,
+    ...(input.patronymic ? { patronymic: input.patronymic } : {}),
+    displayName: [input.firstName, input.patronymic, input.lastName].filter(Boolean).join(" "),
+    updatedAt: "2026-07-12T10:00:00.000Z",
+  }));
   localStorage.clear();
   await setState({});
 });
@@ -273,7 +293,10 @@ describe("Administrator pages", () => {
     expect(wrapper.findAll(".administrator-table tbody tr")).toHaveLength(4);
     const ownerRow = rowFor(wrapper, "Ольга Владелец");
     expect(ownerRow.get('[data-label="Владелец"]').text()).toBe("Одобрена");
-    expect(ownerRow.findAll("button")).toHaveLength(0);
+    expect(ownerRow.findAll("button")).toHaveLength(1);
+    const ownerEdit = ownerRow.get('button[title="Изменить ФИО пользователя"]');
+    expect(ownerEdit.attributes("aria-label")).toBe("Изменить ФИО пользователя");
+    expect(ownerEdit.getComponent(AppIcon).props("name")).toBe("edit");
     const doctorRow = rowFor(wrapper, "Анна Врач");
     expect(doctorRow.text()).toContain("Запрошена");
     expect(doctorRow.text()).toContain("Отказ");
@@ -283,6 +306,7 @@ describe("Administrator pages", () => {
     expect(rowFor(wrapper, "Борис Врач").text()).toContain("Отозвана");
     expect(wrapper.find(".administrator-actions").exists()).toBe(false);
     expect(rowFor(wrapper, "Начальный Администратор").findAll(".administrator-role-cell button")).toHaveLength(0);
+    expect(rowFor(wrapper, "Начальный Администратор").find('button[title="Изменить ФИО пользователя"]').exists()).toBe(true);
     expect(doctorRow.get('[data-label="Ветеринар"]').findAll("button").map((button) => button.attributes("title"))).toEqual([
       "Одобрить роль «Ветеринар»",
       "Отклонить запрос роли «Ветеринар»",
@@ -290,6 +314,76 @@ describe("Administrator pages", () => {
     expect(doctorRow.get('[data-label="Администратор"]').findAll("button").map((button) => button.attributes("title"))).toEqual([
       "Восстановить роль «Администратор»",
     ]);
+  });
+
+  it("hides profile editing from ordinary approved administrators", async () => {
+    await setState({
+      sessionAccountId: "ordinary-administrator",
+      activeRole: "administrator",
+      profiles: [profile("owner-1", "Ольга", "Владелец")],
+      roles: [role("owner-1", "owner", "approved")],
+    });
+    const wrapper = await mountAt("/admin/home", "administrator-home");
+    expect(wrapper.find('button[title="Изменить ФИО пользователя"]').exists()).toBe(false);
+  });
+
+  it("edits an owner-only user's name in a modal and refreshes the current page", async () => {
+    await setState({
+      profiles: [{
+        ...profile("owner-1", "Ольга", "Владелец"),
+        patronymic: "Петровна",
+      }],
+      roles: [role("owner-1", "owner", "approved")],
+    });
+    let resolveUpdate!: (value: DirectoryUserDto) => void;
+    appMocks.updateAdministratorUserProfile.mockImplementationOnce(() =>
+      new Promise<DirectoryUserDto>((resolve) => { resolveUpdate = resolve; }));
+    const wrapper = await mountAt("/admin/home", "administrator-home");
+    const initialLoads = appMocks.loadAdministratorUsers.mock.calls.length;
+
+    await wrapper.get('button[title="Изменить ФИО пользователя"]').trigger("click");
+    const dialog = wrapper.get('[role="dialog"]');
+    expect(dialog.text()).toContain("Изменить ФИО");
+    expect(dialog.get(".person-identity-name").text()).toBe("Ольга Петровна Владелец");
+    const inputs = dialog.findAll<HTMLInputElement>("input");
+    expect(inputs.map((input) => input.element.value)).toEqual(["Ольга", "Петровна", "Владелец"]);
+
+    await inputs[0]!.setValue("   ");
+    await dialog.get("form").trigger("submit");
+    expect(dialog.get('[role="alert"]').text()).toBe("Имя и фамилия обязательны.");
+    expect(appMocks.updateAdministratorUserProfile).not.toHaveBeenCalled();
+
+    await inputs[0]!.setValue("Анна");
+    await inputs[1]!.setValue("");
+    await inputs[2]!.setValue("Иванова");
+    await dialog.get("form").trigger("submit");
+    await flushPromises();
+    expect(appMocks.updateAdministratorUserProfile).toHaveBeenCalledWith("owner-1", {
+      firstName: "Анна",
+      lastName: "Иванова",
+    });
+    expect(dialog.get('button[type="submit"]').attributes("disabled")).toBeDefined();
+    expect(dialog.get('button[type="submit"]').text()).toBe("Сохранение…");
+
+    resolveUpdate(directoryUser("owner-1", "Анна Иванова"));
+    await flushPromises();
+    expect(wrapper.find('[role="dialog"]').exists()).toBe(false);
+    expect(wrapper.get(".workspace-alert").text()).toContain("ФИО пользователя изменено.");
+    expect(appMocks.loadAdministratorUsers.mock.calls.length).toBe(initialLoads + 1);
+  });
+
+  it("keeps profile update failures inside the open modal", async () => {
+    await setState({ profiles: [profile("owner-1", "Ольга", "Владелец")] });
+    appMocks.updateAdministratorUserProfile.mockRejectedValueOnce(new Error("Сервис временно недоступен."));
+    const wrapper = await mountAt("/admin/home", "administrator-home");
+    await wrapper.get('button[title="Изменить ФИО пользователя"]').trigger("click");
+    const dialog = wrapper.get('[role="dialog"]');
+    await dialog.get("form").trigger("submit");
+    await flushPromises();
+
+    expect(wrapper.find('[role="dialog"]').exists()).toBe(true);
+    expect(dialog.get('[role="alert"]').text()).toBe("Сервис временно недоступен.");
+    expect(wrapper.find(".workspace-alert").exists()).toBe(false);
   });
 
   it("confirms rejection with an optional reason and restoration without one", async () => {
@@ -332,8 +426,10 @@ describe("Administrator pages", () => {
       profiles,
       roles: profiles.map((item) => role(item.accountId, "doctor", "pending")),
     });
+    const setItem = vi.spyOn(Storage.prototype, "setItem");
     const wrapper = await mountAt("/admin/home", "administrator-home");
 
+    expect(setItem).not.toHaveBeenCalled();
     const searchLabel = wrapper.get(".administrator-search");
     expect(searchLabel.get(":scope > span").text()).toBe("ФИО или идентификатор");
     expect(searchLabel.get("input").attributes("placeholder")).toBe("Поиск");
@@ -343,11 +439,15 @@ describe("Administrator pages", () => {
     await flushPromises();
     expect(wrapper.findAll(".administrator-table tbody tr")).toHaveLength(2);
     expect(appMocks.loadAdministratorUsers).toHaveBeenLastCalledWith("", false, 2, 20, "name", "asc");
+    expect(setItem).not.toHaveBeenCalled();
     await wrapper.get('.app-paginator select').setValue("50");
     await flushPromises();
+    expect(setItem).toHaveBeenCalledOnce();
+    expect(setItem).toHaveBeenCalledWith("klinok:admin-role-table-page-size", "50");
     expect(localStorage.getItem("klinok:admin-role-table-page-size")).toBe("50");
     expect(wrapper.findAll(".administrator-table tbody tr")).toHaveLength(22);
 
+    setItem.mockClear();
     await wrapper.get<HTMLInputElement>('.administrator-search input').setValue("Имя21");
     await flushPromises();
     expect(wrapper.findAll(".administrator-table tbody tr")).toHaveLength(1);
@@ -357,6 +457,8 @@ describe("Administrator pages", () => {
     await flushPromises();
     expect(wrapper.findAll(".administrator-table tbody tr")).toHaveLength(1);
     expect(wrapper.get(".administrator-table tbody tr").text()).toContain("doctor-20");
+    expect(setItem).not.toHaveBeenCalled();
+    setItem.mockRestore();
   });
 
   it("keeps the newest user-directory response when requests finish out of order", async () => {

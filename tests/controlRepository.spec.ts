@@ -162,6 +162,62 @@ describe("control repository", () => {
     expect(new Set(operationEvents.map((event) => event.operationId)).size).toBe(1);
   });
 
+  it("publishes bootstrap profile edits for the target and approved administrators", async () => {
+    const transport = new MemoryEventTransport();
+    await transport.initialize();
+    const administrator = await repositoryFor(transport, "bootstrap-administrator", "administrator");
+    const target = await repositoryFor(transport, "owner-account", "owner");
+    await administrator.initialize({
+      profile: { firstName: "Начальный", lastName: "Администратор" },
+      requestedRoles: ["administrator"],
+    });
+    await target.initialize({ profile: { firstName: "Старое", lastName: "Имя" }, requestedRoles: ["owner"] });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    await administrator.updateProfile({
+      accountId: "owner-account",
+      revision: 2,
+      firstName: "Новое",
+      patronymic: "Отчество",
+      lastName: "Имя",
+      updatedAt: "2026-07-12T10:00:00.000Z",
+    }, "bootstrap-profile-operation");
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const event = (await transport.list("control")).find((candidate) =>
+      candidate.eventType === "profile.updated" && candidate.operationId === "bootstrap-profile-operation",
+    )!;
+    expect(event).toMatchObject({
+      aggregateId: "owner-account",
+      resourceId: "owner-account",
+      actorAccountId: "bootstrap-administrator",
+      activeRole: "administrator",
+      metadata: { accountId: "owner-account", revision: 2 },
+    });
+    expect(new Set(event.keyring.map((envelope) => envelope.recipientId))).toEqual(new Set([
+      "owner-account",
+      "bootstrap-administrator",
+    ]));
+    expect((await target.snapshot()).profile).toMatchObject({
+      accountId: "owner-account",
+      revision: 2,
+      firstName: "Новое",
+      patronymic: "Отчество",
+      lastName: "Имя",
+    });
+
+    await administrator.updateProfile({
+      accountId: "owner-account",
+      revision: 2,
+      firstName: "Новое",
+      lastName: "Имя",
+      updatedAt: "2026-07-12T10:00:00.000Z",
+    }, "bootstrap-profile-operation");
+    expect((await transport.list("control")).filter((candidate) =>
+      candidate.eventType === "profile.updated" && candidate.operationId === "bootstrap-profile-operation",
+    )).toHaveLength(1);
+  });
+
   it("records a direct restoration and its audit companion", async () => {
     const transport = new MemoryEventTransport();
     await transport.initialize();

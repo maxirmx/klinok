@@ -50,6 +50,39 @@ describe("AuthStore role projections", () => {
   });
 });
 
+describe("AuthStore profile persistence", () => {
+  it("writes an account and its directory profile in one batch", async () => {
+    const dataDir = await mkdtemp(join(tmpdir(), "klinok-auth-store-test-"));
+    const store = new AuthStore(dataDir);
+    stores.push({ dataDir, store });
+    await store.open();
+    const account: AuthAccount = {
+      accountId: "account-1",
+      email: "account-1@example.com",
+      passwordHash: "hash",
+      credentialStatus: "active",
+      verificationState: "verified",
+      createdAt: "2026-07-10T10:00:00.000Z",
+      updatedAt: "2026-07-10T10:00:00.000Z",
+      failureTimes: [], devices: [], enrollments: [], pendingOperations: [], sessionDigests: [],
+    };
+    await store.createAccount(account);
+    const changed = { ...account, updatedAt: "2026-07-11T10:00:00.000Z" };
+    const profile = {
+      accountId: account.accountId,
+      firstName: "Анна",
+      lastName: "Иванова",
+      displayName: "Анна Иванова",
+      updatedAt: changed.updatedAt,
+    };
+
+    await store.putAccountAndDirectoryProfile(changed, profile);
+
+    expect(await store.getAccount(account.accountId)).toEqual(changed);
+    expect(await store.getDirectoryProfile(account.accountId)).toEqual(profile);
+  });
+});
+
 describe("AuthStore pending registrations", () => {
   it("removes an unchanged account, email index, and verification token", async () => {
     const dataDir = await mkdtemp(join(tmpdir(), "klinok-auth-store-test-"));

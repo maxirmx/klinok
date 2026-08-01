@@ -297,7 +297,15 @@ function capabilityResult(event: SignedEvent, state: ProtocolState): Verificatio
   if (event.eventType === "account.deleted" && event.aggregateId === state.bootstrapAccountId) {
     return { accepted: false, code: "BOOTSTRAP_PROTECTED", message: "Bootstrap account cannot be deleted." };
   }
-  if (["profile.updated", "consent.accepted", "account.deleted", "device.enrollment.requested", "device.revoked", "device.rotated"].includes(event.eventType)) {
+  if (event.eventType === "profile.updated") {
+    const selfService = event.actorAccountId === event.aggregateId;
+    const bootstrapAdministrator = event.actorAccountId === state.bootstrapAccountId
+      && hasActiveRoleProof(state, event, "administrator");
+    return selfService || bootstrapAdministrator
+      ? { accepted: true }
+      : { accepted: false, code: "ACCOUNT_SCOPE_FORBIDDEN", message: "Only the account owner or Bootstrap Administrator may update a profile." };
+  }
+  if (["consent.accepted", "account.deleted", "device.enrollment.requested", "device.revoked", "device.rotated"].includes(event.eventType)) {
     return event.actorAccountId === event.aggregateId
       ? { accepted: true }
       : { accepted: false, code: "ACCOUNT_SCOPE_FORBIDDEN", message: "Account commands are self-service." };

@@ -3,7 +3,7 @@
 // All rights reserved.
 // This file is a part of Klinok application
 
-import { computed, ref, watch } from "vue";
+import { computed, reactive, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import type { AccountProfile, DirectoryUserDto, Role, RoleRequest, RoleStatus } from "@klinok/protocol";
 import AppIcon from "../components/AppIcon.vue";
@@ -12,7 +12,14 @@ import ModalDialog from "../components/ModalDialog.vue";
 import PendingCountBadge from "../components/PendingCountBadge.vue";
 import PersonIdentity from "../components/PersonIdentity.vue";
 import WorkspaceShell from "../components/WorkspaceShell.vue";
-import { appState, decideRole, getConfig, loadAdministratorUsers, logout } from "../appStore";
+import {
+  appState,
+  decideRole,
+  getConfig,
+  loadAdministratorUsers,
+  logout,
+  updateAdministratorUserProfile,
+} from "../appStore";
 import { administratorPendingRequestCount } from "../pendingApprovals";
 import { useAlertStore } from "../stores/alert";
 
@@ -61,6 +68,10 @@ let usersRefreshId = 0;
 const decision = ref<{ request: RoleRequest; action: DecisionAction } | null>(null);
 const decisionReason = ref("");
 const decisionBusy = ref(false);
+const profileEdit = ref<DirectoryUserDto | null>(null);
+const profileEditDraft = reactive({ firstName: "", patronymic: "", lastName: "" });
+const profileEditError = ref("");
+const profileEditBusy = ref(false);
 
 const auditSearch = ref("");
 const auditRole = ref<AdvancedRole | "">("");
@@ -129,6 +140,8 @@ const administratorRows = computed<AdministratorRow[]>(() => {
   });
 });
 const pendingRoleCount = computed(() => administratorPendingRequestCount(appState.control));
+const mayEditProfiles = computed(() => appState.session.accountId === getConfig()?.p2p.bootstrapAccountId
+  && appState.activeRole === "administrator");
 
 function changeSort(field: SortField) {
   if (sortField.value === field) sortDirection.value = sortDirection.value === "asc" ? "desc" : "asc";
@@ -172,6 +185,49 @@ async function refreshUsers() {
     if (refreshId === usersRefreshId) alertStore.error(reason, "Не удалось загрузить список пользователей.");
   } finally {
     if (refreshId === usersRefreshId) usersLoading.value = false;
+  }
+}
+
+function openProfileEdit(user: DirectoryUserDto) {
+  profileEdit.value = user;
+  profileEditDraft.firstName = user.firstName;
+  profileEditDraft.patronymic = user.patronymic ?? "";
+  profileEditDraft.lastName = user.lastName;
+  profileEditError.value = "";
+}
+
+function closeProfileEdit() {
+  if (profileEditBusy.value) return;
+  profileEdit.value = null;
+  profileEditError.value = "";
+}
+
+async function submitProfileEdit() {
+  if (!profileEdit.value || profileEditBusy.value) return;
+  const firstName = profileEditDraft.firstName.trim();
+  const patronymic = profileEditDraft.patronymic.trim();
+  const lastName = profileEditDraft.lastName.trim();
+  if (!firstName || !lastName) {
+    profileEditError.value = "Имя и фамилия обязательны.";
+    return;
+  }
+  profileEditError.value = "";
+  profileEditBusy.value = true;
+  try {
+    await updateAdministratorUserProfile(profileEdit.value.accountId, {
+      firstName,
+      lastName,
+      ...(patronymic ? { patronymic } : {}),
+    });
+    profileEdit.value = null;
+    alertStore.success("ФИО пользователя изменено.");
+    await refreshUsers();
+  } catch (reason) {
+    profileEditError.value = reason instanceof Error && /[А-Яа-яЁё]/.test(reason.message)
+      ? reason.message
+      : "Не удалось изменить ФИО пользователя.";
+  } finally {
+    profileEditBusy.value = false;
   }
 }
 
@@ -311,7 +367,6 @@ async function signOut() {
 }
 
 watch([search, pendingOnly, sortField, sortDirection, page, pageSize, isAudit], (current, previous) => {
-  localStorage.setItem(cabinetPageSizeKey, String(pageSize.value));
   if (isAudit.value) {
     usersRefreshId += 1;
     usersLoading.value = false;
@@ -334,6 +389,7 @@ watch([search, pendingOnly, sortField, sortDirection, page, pageSize, isAudit], 
   void refreshUsers();
 }, { immediate: true });
 watch(pendingRoleCount, (count) => { if (!count) pendingOnly.value = false; });
+watch(pageSize, (value) => localStorage.setItem(cabinetPageSizeKey, String(value)));
 watch([auditSearch, auditRole, auditAction, auditPageSize], () => { auditPage.value = 1; });
 watch(auditPageSize, (value) => localStorage.setItem(auditPageSizeKey, String(value)));
 watch(auditPageCount, (count) => { if (auditPage.value > count) auditPage.value = count; });
@@ -436,7 +492,19 @@ watch(auditPageCount, (count) => { if (auditPage.value > count) auditPage.value 
               <tbody>
                 <tr v-for="row in administratorRows" :key="row.accountId">
                   <td class="administrator-name" data-label="ФИО">
-                    <PersonIdentity :display-name="row.displayName" :account-id="row.accountId" />
+                    <div class="administrator-name-content">
+                      <PersonIdentity :display-name="row.displayName" :account-id="row.accountId" />
+                      <button
+                        v-if="mayEditProfiles"
+                        class="outline-action inline access-icon-action administrator-profile-edit"
+                        type="button"
+                        title="Изменить ФИО пользователя"
+                        aria-label="Изменить ФИО пользователя"
+                        @click="openProfileEdit(row)"
+                      >
+                        <AppIcon name="edit" />
+                      </button>
+                    </div>
                   </td>
                   <td
                     v-for="displayedRole in displayedRoles"
@@ -608,6 +676,44 @@ watch(auditPageCount, (count) => { if (auditPage.value > count) auditPage.value 
         </template>
       </article>
     </section>
+
+    <ModalDialog
+      :model-value="Boolean(profileEdit)"
+      title="Изменить ФИО"
+      :busy="profileEditBusy"
+      @update:model-value="closeProfileEdit"
+    >
+      <template #description>
+        <PersonIdentity
+          v-if="profileEdit"
+          :display-name="profileEdit.displayName"
+          :account-id="profileEdit.accountId"
+        />
+      </template>
+      <form class="form-stack administrator-profile-edit-form" @submit.prevent="submitProfileEdit">
+        <p v-if="profileEditError" class="form-alert error" role="alert">{{ profileEditError }}</p>
+        <label>
+          <span>Имя</span>
+          <input v-model="profileEditDraft.firstName" type="text" autocomplete="off" required />
+        </label>
+        <label>
+          <span>Отчество</span>
+          <input v-model="profileEditDraft.patronymic" type="text" autocomplete="off" />
+        </label>
+        <label>
+          <span>Фамилия</span>
+          <input v-model="profileEditDraft.lastName" type="text" autocomplete="off" required />
+        </label>
+        <div class="confirmation-dialog-actions">
+          <button class="outline-action inline" type="button" :disabled="profileEditBusy" @click="closeProfileEdit">
+            Отмена
+          </button>
+          <button class="primary-action inline" type="submit" :disabled="profileEditBusy">
+            {{ profileEditBusy ? 'Сохранение…' : 'Сохранить' }}
+          </button>
+        </div>
+      </form>
+    </ModalDialog>
 
     <ModalDialog
       :model-value="Boolean(decision)"

@@ -255,6 +255,13 @@ export class AuthStore {
     await this.db.put(`directory:profile:${profile.accountId}`, profile);
   }
 
+  async putAccountAndDirectoryProfile(account: AuthAccount, profile: DirectoryProfileDto): Promise<void> {
+    await this.db.batch()
+      .put(`account:${account.accountId}`, account)
+      .put(`directory:profile:${profile.accountId}`, profile)
+      .write();
+  }
+
   async getDirectoryProfile(accountId: string): Promise<DirectoryProfileDto | null> {
     return this.get<DirectoryProfileDto>(`directory:profile:${accountId}`);
   }

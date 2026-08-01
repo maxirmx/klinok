@@ -125,6 +125,47 @@ describe("klinok protocol", () => {
     }, keys.signingPrivateKey);
   }
 
+  it("allows bootstrap profile edits across accounts only with an active Administrator proof", async () => {
+    const bootstrap = await actorFixture("administrator");
+    bootstrap.state.bootstrapAccountId = bootstrap.certificate.accountId;
+    const accepted = await signedFor(bootstrap.state, bootstrap.keys, {
+      aggregateId: "target-account",
+      resourceId: "target-account",
+      activeRole: "administrator",
+      metadata: { accountId: "target-account", revision: 2 },
+    });
+    await expect(verifySignedEvent(accepted, bootstrap.state)).resolves.toMatchObject({ accepted: true });
+
+    const withoutProof = await signedFor(bootstrap.state, bootstrap.keys, {
+      aggregateId: "target-account",
+      resourceId: "target-account",
+      activeRole: "administrator",
+      proofIds: [],
+      metadata: { accountId: "target-account", revision: 2 },
+    });
+    await expect(verifySignedEvent(withoutProof, bootstrap.state)).resolves.toMatchObject({
+      accepted: false,
+      code: "ACCOUNT_SCOPE_FORBIDDEN",
+    });
+
+    const ordinaryAdministrator = await actorFixture("administrator");
+    const forbidden = await signedFor(ordinaryAdministrator.state, ordinaryAdministrator.keys, {
+      aggregateId: "target-account",
+      resourceId: "target-account",
+      activeRole: "administrator",
+      metadata: { accountId: "target-account", revision: 2 },
+    });
+    await expect(verifySignedEvent(forbidden, ordinaryAdministrator.state)).resolves.toMatchObject({
+      accepted: false,
+      code: "ACCOUNT_SCOPE_FORBIDDEN",
+    });
+
+    const selfEdit = await signedFor(ordinaryAdministrator.state, ordinaryAdministrator.keys, {
+      metadata: { accountId: ordinaryAdministrator.certificate.accountId, revision: 2 },
+    });
+    await expect(verifySignedEvent(selfEdit, ordinaryAdministrator.state)).resolves.toMatchObject({ accepted: true });
+  });
+
   it("retains a deferred child across imports and accepts it after its parent arrives", async () => {
     const { keys, certificate, state } = await actorFixture();
     const repository = new InMemorySignedEventRepository();

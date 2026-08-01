@@ -12,6 +12,7 @@ const authMocks = vi.hoisted(() => ({
   deleteAccount: vi.fn(),
   syncDirectoryProfile: vi.fn(),
   syncDirectoryPet: vi.fn(),
+  updateDirectoryUserProfile: vi.fn(),
 }));
 
 const repositoryMocks = vi.hoisted(() => ({
@@ -26,6 +27,7 @@ const repositoryMocks = vi.hoisted(() => ({
   syncListener: null as ((status: Record<string, unknown>) => void) | null,
   revokeDevice: vi.fn(),
   deleteAccount: vi.fn(),
+  updateProfile: vi.fn(),
 }));
 
 vi.mock("../src/runtimeConfig", () => ({
@@ -52,6 +54,7 @@ vi.mock("../src/repositories/authClient", () => {
     deleteAccount = authMocks.deleteAccount;
     syncDirectoryProfile = authMocks.syncDirectoryProfile;
     syncDirectoryPet = authMocks.syncDirectoryPet;
+    updateDirectoryUserProfile = authMocks.updateDirectoryUserProfile;
   }
   return { AuthClient, AuthClientError };
 });
@@ -71,6 +74,7 @@ vi.mock("../src/repositories", () => {
       subscribe: vi.fn().mockReturnValue(() => undefined),
       revokeDevice: repositoryMocks.revokeDevice,
       deleteAccount: repositoryMocks.deleteAccount,
+      updateProfile: repositoryMocks.updateProfile,
     },
     medical: {
       snapshot: repositoryMocks.medicalSnapshot,
@@ -96,6 +100,7 @@ import {
   dismissSyncNotification,
   logout,
   revokeDevice,
+  updateAdministratorUserProfile,
 } from "../src/appStore";
 import { useAlertStore } from "../src/stores/alert";
 
@@ -168,7 +173,18 @@ beforeEach(() => {
   authMocks.deleteAccount.mockResolvedValue({ operationId: "delete-operation" });
   repositoryMocks.revokeDevice.mockResolvedValue(undefined);
   repositoryMocks.deleteAccount.mockResolvedValue(undefined);
+  repositoryMocks.updateProfile.mockResolvedValue(undefined);
   authMocks.syncDirectoryPet.mockResolvedValue(undefined);
+  authMocks.updateDirectoryUserProfile.mockResolvedValue({
+    operationId: "profile-operation",
+    profile: {
+      accountId: "owner-2",
+      firstName: "Анна",
+      lastName: "Иванова",
+      displayName: "Анна Иванова",
+      updatedAt: "2026-07-23T00:00:00.000Z",
+    },
+  });
 });
 
 describe("app-store directory reconciliation", () => {
@@ -245,6 +261,69 @@ describe("app-store directory reconciliation", () => {
     expect(authMocks.deleteAccount).toHaveBeenCalled();
     expect(repositoryMocks.deleteAccount).toHaveBeenCalledWith("delete-operation");
     expect(appState.syncNotifications).toEqual([]);
+  });
+
+  it("propagates the auth operation ID and next target revision to the control profile", async () => {
+    authMocks.session.mockResolvedValue({
+      authenticated: true,
+      accountId: "bootstrap-administrator",
+      serverKeySetAvailable: true,
+      setup: { requestedRoles: ["administrator"] },
+      device: {
+        deviceId: "bootstrap-device",
+        accountId: "bootstrap-administrator",
+        orbitIdentityId: "bootstrap-orbit",
+        status: "active",
+        userKeyVersion: 1,
+        signingPublicKey: {},
+        encryptionPublicKey: {},
+        issuedAt: "2026-07-22T00:00:00.000Z",
+        attestation: "attestation",
+      },
+    });
+    repositoryMocks.controlSnapshot.mockResolvedValue({
+      profile: {
+        accountId: "bootstrap-administrator",
+        revision: 1,
+        firstName: "Начальный",
+        lastName: "Администратор",
+        updatedAt: "2026-07-22T00:00:00.000Z",
+      },
+      profiles: [{
+        accountId: "owner-2",
+        revision: 4,
+        firstName: "Старое",
+        lastName: "Имя",
+        updatedAt: "2026-07-22T00:00:00.000Z",
+      }],
+      roles: [{
+        requestId: "bootstrap-administrator-role",
+        accountId: "bootstrap-administrator",
+        role: "administrator",
+        status: "approved",
+        profileRevision: 1,
+        requestedAt: "2026-07-22T00:00:00.000Z",
+      }],
+      allRoles: [], devices: [], pendingQueue: [], notifications: [], events: [],
+    });
+    await bootstrapApp(true);
+
+    await expect(updateAdministratorUserProfile("owner-2", {
+      firstName: "Анна",
+      lastName: "Иванова",
+    })).resolves.toMatchObject({ accountId: "owner-2", displayName: "Анна Иванова" });
+
+    expect(authMocks.updateDirectoryUserProfile).toHaveBeenCalledWith("owner-2", {
+      firstName: "Анна",
+      lastName: "Иванова",
+    });
+    expect(repositoryMocks.updateProfile).toHaveBeenCalledWith({
+      accountId: "owner-2",
+      revision: 5,
+      firstName: "Анна",
+      lastName: "Иванова",
+      updatedAt: "2026-07-23T00:00:00.000Z",
+    }, "profile-operation");
   });
 
   it("logs the bootstrap stage and preserves the original repository error", async () => {

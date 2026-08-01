@@ -2258,6 +2258,20 @@ dd {
   color: var(--text-muted);
   font-size: 10px;
 }
+.administrator-name-content {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+.administrator-name-content .person-identity { min-width: 0; }
+.workspace-content .administrator-profile-edit {
+  flex: 0 0 auto;
+  width: 30px;
+  height: 30px;
+  min-height: 30px;
+  padding: 0;
+}
 .app-paginator {
   display: grid;
   grid-template-columns: minmax(150px, 1fr) auto minmax(150px, 1fr);
