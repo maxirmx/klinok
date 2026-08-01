@@ -140,6 +140,18 @@ export interface DirectoryPetDto {
   grantId?: string;
 }
 
+export interface DoctorPetAccessDto {
+  petId: string;
+  ownerAccountId: string;
+  ownerDisplayName?: string;
+  species?: string;
+  name?: string;
+  status: "granted" | "requested" | "revoked";
+  permissions?: readonly PetGrantAction[];
+  grantId?: string;
+  requestId?: string;
+}
+
 export interface DirectoryPageDto<T> {
   items: T[];
   page: number;

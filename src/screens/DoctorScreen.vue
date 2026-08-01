@@ -3,12 +3,12 @@
 // All rights reserved.
 // This file is a part of Klinok application
 
-import { computed, onMounted, reactive, ref, watch } from "vue";
+import { computed, reactive, ref, watch } from "vue";
 import { RouterLink, useRoute, useRouter } from "vue-router";
 import type {
   DirectoryPetDto,
   DirectoryProfileDto,
-  PetAccessRequest,
+  DoctorPetAccessDto,
   PetGrantAction,
 } from "@klinok/protocol";
 import AccessStatusField from "../components/AccessStatusField.vue";
@@ -24,7 +24,7 @@ import PersonIdentity from "../components/PersonIdentity.vue";
 import WorkspaceShell from "../components/WorkspaceShell.vue";
 import {
   appState,
-  loadDoctorPets,
+  loadDoctorPetAccesses,
   lookupPetDirectory,
   logout,
   requireRepository,
@@ -50,7 +50,7 @@ import { useAlertStore } from "../stores/alert";
 const props = defineProps<{ role: "doctor"; scenarioId: string }>();
 type HomeSortField = "owner" | "pet";
 type SortDirection = "asc" | "desc";
-type HomeAccessFilter = "all" | "active" | "pending" | "revoked";
+type HomeAccessFilter = "all" | DoctorPetAccessDto["status"];
 interface DoctorHomeAccessRow {
   petId: string;
   ownerAccountId: string;
@@ -74,10 +74,10 @@ const homeSortDirection = ref<SortDirection>("asc");
 const homePage = ref(1);
 const storedPageSize = Number(localStorage.getItem("klinok:doctor-pets-page-size"));
 const homePageSize = ref<(typeof pageSizes)[number]>(pageSizes.includes(storedPageSize as never) ? storedPageSize as never : 10);
-const accessPets = reactive(new Map<string, DirectoryPetDto | null>());
-const directoryPets = ref<DirectoryPetDto[]>([]);
+const homeAccesses = ref<DoctorPetAccessDto[]>([]);
+const homeTotal = ref(0);
 const selectedDirectoryPet = ref<DirectoryPetDto | null>(null);
-let petsRefreshId = 0;
+let accessRefreshId = 0;
 const requestDialogOpen = ref(props.scenarioId === "doctor-pet-request-access");
 const requestError = ref("");
 const petOwnerQuery = ref("");
@@ -129,92 +129,13 @@ const confirmedIds = computed(() => new Set(appState.medical.confirmedRecordIds)
 const petRecords = computed(() => appState.medical.records.filter((record) => record.petId === petId.value));
 const currentDirectoryPet = computed(() => selectedDirectoryPet.value?.petId === petId.value
   ? selectedDirectoryPet.value
-  : directoryPets.value.find((pet) => pet.petId === petId.value));
-const pendingRequests = computed<PetAccessRequest[]>(() => appState.medical.accessRequests
-  .filter((request) =>
-    request.requesterAccountId === appState.session.accountId && request.status === "pending",
-  )
-  .sort((left, right) => right.requestedAt.localeCompare(left.requestedAt)));
-const revokedGrants = computed(() => {
-  const latestByPet = new Map<string, (typeof appState.medical.grants)[number]>();
-  for (const grant of appState.medical.grants) {
-    if (grant.granteeAccountId !== appState.session.accountId || grant.status === "active") continue;
-    const current = latestByPet.get(grant.petId);
-    const timestamp = grant.revokedAt ?? grant.createdAt;
-    if (!current || timestamp > (current.revokedAt ?? current.createdAt)) latestByPet.set(grant.petId, grant);
-  }
-  return [...latestByPet.values()];
-});
-const homeRows = computed<DoctorHomeAccessRow[]>(() => {
-  const rows = new Map<string, DoctorHomeAccessRow>();
-
-  for (const pet of directoryPets.value) {
-    rows.set(pet.petId, {
-      petId: pet.petId,
-      ownerAccountId: pet.ownerAccountId,
-      ownerDisplayName: pet.ownerDisplayName,
-      species: pet.species,
-      name: pet.name,
-      status: "granted",
-      permissions: pet.permissions,
-      ...(pet.grantId ? { grantId: pet.grantId } : {}),
-    });
-  }
-
-  for (const request of pendingRequests.value) {
-    if (rows.has(request.petId)) continue;
-    const pet = accessPets.get(request.petId);
-    rows.set(request.petId, {
-      petId: request.petId,
-      ownerAccountId: pet?.ownerAccountId ?? request.ownerAccountId,
-      ownerDisplayName: pet?.ownerDisplayName || "ФИО не указано",
-      species: pet?.species ?? "",
-      name: pet?.name ?? "Данные питомца недоступны",
-      status: "requested",
-      requestId: request.requestId,
-    });
-  }
-
-  for (const grant of revokedGrants.value) {
-    if (rows.has(grant.petId)) continue;
-    const pet = accessPets.get(grant.petId);
-    const medicalPet = appState.medical.pets.find((candidate) => candidate.petId === grant.petId);
-    rows.set(grant.petId, {
-      petId: grant.petId,
-      ownerAccountId: pet?.ownerAccountId ?? medicalPet?.ownerAccountId ?? grant.grantorAccountId,
-      ownerDisplayName: pet?.ownerDisplayName || "ФИО не указано",
-      species: pet?.species ?? medicalPet?.species ?? "",
-      name: pet?.name ?? medicalPet?.name ?? "Данные питомца недоступны",
-      status: "revoked",
-      grantId: grant.grantId,
-    });
-  }
-
-  const query = homeQuery.value.trim().toLocaleLowerCase("ru");
-  const direction = homeSortDirection.value === "asc" ? 1 : -1;
-  return [...rows.values()]
-    .filter((row) => {
-      if (homeFilter.value === "active" && row.status !== "granted") return false;
-      if (homeFilter.value === "pending" && row.status !== "requested") return false;
-      if (homeFilter.value === "revoked" && row.status !== "revoked") return false;
-      if (!query) return true;
-      return [
-        row.petId,
-        row.ownerAccountId,
-        row.ownerDisplayName,
-        row.species,
-        row.name,
-      ].some((value) => value.toLocaleLowerCase("ru").includes(query));
-    })
-    .sort((left, right) => direction * (homeSort.value === "pet"
-      ? left.name.localeCompare(right.name, "ru") || left.ownerDisplayName.localeCompare(right.ownerDisplayName, "ru")
-      : left.ownerDisplayName.localeCompare(right.ownerDisplayName, "ru") || left.name.localeCompare(right.name, "ru")));
-});
-const homePageCount = computed(() => Math.max(1, Math.ceil(homeRows.value.length / homePageSize.value)));
-const pagedHomeRows = computed(() => homeRows.value.slice(
-  (homePage.value - 1) * homePageSize.value,
-  homePage.value * homePageSize.value,
-));
+  : homeAccesses.value.find((pet) => pet.petId === petId.value));
+const homeRows = computed<DoctorHomeAccessRow[]>(() => homeAccesses.value.map((access) => ({
+  ...access,
+  ownerDisplayName: access.ownerDisplayName || "ФИО не указано",
+  species: access.species ?? "",
+  name: access.name ?? "Данные питомца недоступны",
+})));
 const delegatedAccessRows = computed<PetAccessRow[]>(() => {
   if (!selectedGrant.value) return [];
   return appState.medical.grants
@@ -286,34 +207,23 @@ async function signOut() {
   await router.replace("/auth/login");
 }
 
-async function refreshPets() {
-  const refreshId = ++petsRefreshId;
+async function refreshAccesses() {
+  const refreshId = ++accessRefreshId;
   try {
-    const pets = new Map<string, DirectoryPetDto>();
-    let page = 1;
-    let pageCount = 1;
-    do {
-      const result = await loadDoctorPets(
-        homeQuery.value,
-        page,
-        50,
-        homeSort.value,
-        homeSortDirection.value,
-      );
-      result.items.forEach((pet) => pets.set(pet.petId, pet));
-      pageCount = result.pageCount;
-      page += 1;
-    } while (page <= pageCount);
-    if (refreshId === petsRefreshId) directoryPets.value = [...pets.values()];
-  } catch {
-    const direction = homeSortDirection.value === "asc" ? 1 : -1;
-    const pets = appState.medical.pets.map((pet) => {
-      const grant = appState.medical.grants.find((item) => item.petId === pet.petId && item.granteeAccountId === appState.session.accountId && item.status === "active");
-      return { petId: pet.petId, ownerAccountId: pet.ownerAccountId, ownerDisplayName: pet.ownerAccountId, species: pet.species, name: pet.name, updatedAt: pet.updatedAt, permissions: grant?.actions, grantId: grant?.grantId };
-    }).sort((left, right) => direction * (homeSort.value === "pet"
-      ? left.name.localeCompare(right.name, "ru") || left.ownerDisplayName.localeCompare(right.ownerDisplayName, "ru")
-      : left.ownerDisplayName.localeCompare(right.ownerDisplayName, "ru") || left.name.localeCompare(right.name, "ru")));
-    if (refreshId === petsRefreshId) directoryPets.value = pets;
+    const result = await loadDoctorPetAccesses(
+      homeQuery.value,
+      homeFilter.value,
+      homePage.value,
+      homePageSize.value,
+      homeSort.value,
+      homeSortDirection.value,
+    );
+    if (refreshId !== accessRefreshId) return;
+    homeAccesses.value = result.items;
+    homeTotal.value = result.total;
+    if (homePage.value !== result.page) homePage.value = result.page;
+  } catch (reason) {
+    if (refreshId === accessRefreshId) alertStore.error(reason, "Не удалось загрузить список доступов.");
   }
 }
 
@@ -325,17 +235,6 @@ async function refreshSelectedDirectoryPet(id: string) {
   } catch {
     // The paged directory remains a useful fallback when the direct lookup is unavailable.
   }
-}
-
-async function hydrateAccessPets(petIds: string[]) {
-  await Promise.all(petIds.map(async (petId) => {
-    if (accessPets.has(petId)) return;
-    try {
-      accessPets.set(petId, await lookupPetDirectory(petId));
-    } catch {
-      if (!accessPets.has(petId)) accessPets.set(petId, null);
-    }
-  }));
 }
 
 function changeHomeSort(field: HomeSortField) {
@@ -366,46 +265,29 @@ async function findPets() {
   }, "Не удалось найти питомца.");
 }
 
-function showAutoApprovedPet(pet: DirectoryPetDto, requestId: string): boolean {
-  const grant = appState.medical.grants.find((candidate) =>
-    candidate.requestId === requestId && candidate.petId === pet.petId && candidate.status === "active",
-  );
-  if (!grant) return false;
-  const medicalPet = appState.medical.pets.find((candidate) => candidate.petId === pet.petId);
-  const row: DirectoryPetDto = {
-    ...pet,
-    species: medicalPet?.species ?? pet.species,
-    name: medicalPet?.name ?? pet.name,
-    updatedAt: medicalPet?.updatedAt ?? pet.updatedAt,
-    permissions: grant.actions,
-    grantId: grant.grantId,
-  };
-  const existingIndex = directoryPets.value.findIndex((candidate) => candidate.petId === pet.petId);
-  if (existingIndex >= 0) directoryPets.value.splice(existingIndex, 1, row);
-  else directoryPets.value = [row, ...directoryPets.value];
-  return true;
-}
-
 async function requestAccess(pet: DirectoryPetDto) {
   let autoApproved = false;
   const succeeded = await performModal(requestError, async () => {
     const requestId = await requireRepository().medical.requestAccess(pet.petId);
-    autoApproved = showAutoApprovedPet(pet, requestId);
-    if (!autoApproved) accessPets.set(pet.petId, pet);
+    autoApproved = appState.medical.grants.some((candidate) =>
+      candidate.requestId === requestId && candidate.petId === pet.petId && candidate.status === "active",
+    );
     petSearchResults.value = petSearchResults.value.filter((candidate) => candidate.petId !== pet.petId);
     if (!petSearchResults.value.length) petSearchPerformed.value = false;
   }, "Не удалось отправить запрос.");
   if (succeeded) {
     alertStore.success(autoApproved ? "Доступ предоставлен автоматически." : "Запрос отправлен владельцу.");
     requestDialogOpen.value = false;
+    await refreshAccesses();
   }
 }
 
 async function cancelPendingRequest(requestId: string) {
-  await perform(
+  const succeeded = await perform(
     () => requireRepository().medical.cancelAccessRequest(requestId),
     "Запрос на доступ отозван.",
   );
+  if (succeeded) await refreshAccesses();
 }
 
 function openRequestDialog() {
@@ -553,32 +435,22 @@ async function relinquish() {
   if (!target) return;
   const succeeded = await perform(() => requireRepository().medical.relinquishAccess(target.grantId));
   if (!succeeded) return;
-  const rowIndex = directoryPets.value.findIndex((candidate) => candidate.petId === target.petId);
-  if (rowIndex >= 0) directoryPets.value.splice(rowIndex, 1);
+  await refreshAccesses();
   alertStore.success(`Вы отказались от доступа к медицинской карте ${target.petName}.`);
   relinquishConfirm.value = false;
   relinquishTarget.value = null;
   if (route.path !== "/doctor/home") await router.replace("/doctor/home");
 }
 
-watch([homeQuery, homeSort, homeSortDirection], () => {
+watch([homeQuery, homeFilter, homeSort, homeSortDirection, homePage, homePageSize], (current, previous) => {
   localStorage.setItem("klinok:doctor-pets-page-size", String(homePageSize.value));
-  homePage.value = 1;
-  void refreshPets();
-});
-watch([homeFilter, homePageSize], () => {
-  localStorage.setItem("klinok:doctor-pets-page-size", String(homePageSize.value));
-  homePage.value = 1;
-});
-watch([pendingRequests, revokedGrants], ([requests, grants]) => {
-  void hydrateAccessPets([
-    ...requests.map((request) => request.petId),
-    ...grants.map((grant) => grant.petId),
-  ]);
+  const resetPage = previous && current.some((value, index) => index !== 4 && value !== previous[index]);
+  if (resetPage && homePage.value !== 1) {
+    homePage.value = 1;
+    return;
+  }
+  void refreshAccesses();
 }, { immediate: true });
-watch(homePageCount, (pageCount) => {
-  if (homePage.value > pageCount) homePage.value = pageCount;
-});
 watch(petId, (id) => { void refreshSelectedDirectoryPet(id); }, { immediate: true });
 watch(() => props.scenarioId, (scenarioId) => {
   if (scenarioId === "doctor-pet-request-access") openRequestDialog();
@@ -591,7 +463,6 @@ watch([petId, delegationPageSize], () => { delegationPage.value = 1; });
 watch(delegationPageCount, (pageCount) => {
   if (delegationPage.value > pageCount) delegationPage.value = pageCount;
 });
-onMounted(() => { void refreshPets(); });
 </script>
 
 <template>
@@ -614,8 +485,8 @@ onMounted(() => { void refreshPets(); });
           <span>Показывать</span>
           <select v-model="homeFilter" aria-label="Показывать">
             <option value="all">Все</option>
-            <option value="active">Медицинские карты</option>
-            <option value="pending">Ожидающие запросы</option>
+            <option value="granted">Медицинские карты</option>
+            <option value="requested">Ожидающие запросы</option>
             <option value="revoked">Отозванные</option>
           </select>
         </label>
@@ -654,7 +525,7 @@ onMounted(() => { void refreshPets(); });
             </tr>
           </thead>
           <tbody>
-            <tr v-for="row in pagedHomeRows" :key="row.petId">
+            <tr v-for="row in homeRows" :key="row.petId">
               <td class="owner-access-doctor doctor-access-pet" data-label="Питомец">
                 <div class="owner-access-controlled">
                   <div class="doctor-access-pet-identity">
@@ -740,7 +611,7 @@ onMounted(() => { void refreshPets(); });
         v-model:page="homePage"
         v-model:page-size="homePageSize"
         class="doctor-access-pagination"
-        :total-items="homeRows.length"
+        :total-items="homeTotal"
         :page-sizes="pageSizes"
         page-size-label="Строк на странице"
         aria-label="Навигация по доступам"

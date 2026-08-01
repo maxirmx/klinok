@@ -6,7 +6,7 @@ import { flushPromises, mount } from "@vue/test-utils";
 import { createMemoryHistory, createRouter } from "vue-router";
 import { createPinia } from "pinia";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { PetAccessRequest } from "@klinok/protocol";
+import type { DoctorPetAccessDto, PetAccessRequest } from "@klinok/protocol";
 import AppIcon from "../src/components/AppIcon.vue";
 import DoctorScreen from "../src/screens/DoctorScreen.vue";
 import type { MedicalRecordDraft, MedicalSnapshot, PetProfile } from "../src/repositories/types";
@@ -20,7 +20,7 @@ const repositoryMocks = vi.hoisted(() => ({
   relinquishAccess: vi.fn().mockResolvedValue(undefined),
 }));
 const directoryMocks = vi.hoisted(() => ({
-  loadDoctorPets: vi.fn(),
+  loadDoctorPetAccesses: vi.fn(),
   lookupPetDirectory: vi.fn(),
   searchDoctorDirectory: vi.fn(),
   searchPetDirectory: vi.fn(),
@@ -40,7 +40,7 @@ vi.mock("../src/appStore", async () => {
   });
   return {
     appState: readonly(state),
-    loadDoctorPets: directoryMocks.loadDoctorPets,
+    loadDoctorPetAccesses: directoryMocks.loadDoctorPetAccesses,
     lookupPetDirectory: directoryMocks.lookupPetDirectory,
     logout: vi.fn().mockResolvedValue(undefined),
     requireRepository: () => ({ medical: repositoryMocks }),
@@ -133,6 +133,24 @@ function accessRequest(overrides: Partial<PetAccessRequest> = {}): PetAccessRequ
   };
 }
 
+function doctorAccess(overrides: Partial<DoctorPetAccessDto> = {}): DoctorPetAccessDto {
+  return {
+    petId: pet.petId,
+    ownerAccountId: pet.ownerAccountId,
+    ownerDisplayName: "Ольга Владелец",
+    species: pet.species,
+    name: pet.name,
+    status: "granted",
+    permissions: ["read", "write_unconfirmed", "delegate"],
+    grantId: "grant-1",
+    ...overrides,
+  };
+}
+
+function accessPage(items: DoctorPetAccessDto[], page = 1, pageSize = 10, total = items.length) {
+  return { items, page, pageSize, total, pageCount: Math.max(1, Math.ceil(total / pageSize)) };
+}
+
 async function setMedical(medical: MedicalSnapshot) {
   const store = await import("../src/appStore") as typeof import("../src/appStore") & {
     setDoctorMedicalState: (value: MedicalSnapshot) => void;
@@ -161,19 +179,7 @@ beforeEach(async () => {
   vi.clearAllMocks();
   localStorage.clear();
   await setMedical(snapshot());
-  directoryMocks.loadDoctorPets.mockResolvedValue({
-    items: [{
-      petId: pet.petId,
-      ownerAccountId: pet.ownerAccountId,
-      ownerDisplayName: "Ольга Владелец",
-      species: pet.species,
-      name: pet.name,
-      permissions: ["read", "write_unconfirmed", "delegate"],
-      grantId: "grant-1",
-      updatedAt: pet.updatedAt,
-    }],
-    page: 1, pageSize: 20, total: 1, pageCount: 1,
-  });
+  directoryMocks.loadDoctorPetAccesses.mockResolvedValue(accessPage([doctorAccess()]));
   directoryMocks.lookupPetDirectory.mockResolvedValue({
     petId: pet.petId,
     ownerAccountId: pet.ownerAccountId,
@@ -230,7 +236,7 @@ describe("Doctor pages", () => {
     ]);
     expect(cells[0]!.get('[title="Открыть медицинскую карту"]').getComponent(AppIcon).props("name")).toBe("eye");
     expect(wrapper.get(".doctor-access-pagination").text()).toContain("Показаны 1–1 из 1");
-    expect(directoryMocks.loadDoctorPets).toHaveBeenCalledWith("", 1, 50, "owner", "asc");
+    expect(directoryMocks.loadDoctorPetAccesses).toHaveBeenCalledWith("", "all", 1, 10, "owner", "asc");
     const petSortHeader = table.findAll("th")[0]!;
     const ownerSortHeader = table.findAll("th")[1]!;
     expect(petSortHeader.attributes("aria-sort")).toBe("none");
@@ -239,52 +245,40 @@ describe("Doctor pages", () => {
     await flushPromises();
     expect(ownerSortHeader.attributes("aria-sort")).toBe("descending");
     expect(ownerSortHeader.getComponent(AppIcon).classes()).toContain("descending");
-    expect(directoryMocks.loadDoctorPets).toHaveBeenLastCalledWith("", 1, 50, "owner", "desc");
+    expect(directoryMocks.loadDoctorPetAccesses).toHaveBeenLastCalledWith("", "all", 1, 10, "owner", "desc");
     await petSortHeader.get("button").trigger("click");
     await flushPromises();
     expect(petSortHeader.attributes("aria-sort")).toBe("ascending");
-    expect(directoryMocks.loadDoctorPets).toHaveBeenLastCalledWith("", 1, 50, "pet", "asc");
+    expect(directoryMocks.loadDoctorPetAccesses).toHaveBeenLastCalledWith("", "all", 1, 10, "pet", "asc");
     expect(wrapper.find('[role="dialog"]').exists()).toBe(false);
     await requestAccessButton.trigger("click");
     expect(wrapper.get('[role="dialog"]').text()).toContain("Запросить доступ");
   });
 
-  it("shows only the current Doctor's pending requests with directory details", async () => {
-    const newest = accessRequest({
-      requestId: "request-newest",
-      petId: "pet-2",
-      ownerAccountId: "owner-2",
-      requestedAt: "2026-07-23T11:30:00.000Z",
-    });
-    const older = accessRequest({
-      requestId: "request-older",
-      requestedAt: "2026-07-22T10:00:00.000Z",
-    });
-    await setMedical(snapshot(undefined, {
-      accessRequests: [
-        older,
-        accessRequest({ requestId: "request-approved", status: "approved" }),
-        accessRequest({ requestId: "request-other-doctor", requesterAccountId: "doctor-2" }),
-        newest,
-      ],
-    }));
-    directoryMocks.loadDoctorPets.mockResolvedValue({
-      items: [], page: 1, pageSize: 50, total: 0, pageCount: 1,
-    });
-    directoryMocks.lookupPetDirectory.mockImplementation(async (id: string) => ({
-      petId: id,
-      ownerAccountId: id === "pet-2" ? "owner-2" : pet.ownerAccountId,
-      ownerDisplayName: id === "pet-2" ? "Мария Владелец" : "Ольга Владелец",
-      species: id === "pet-2" ? "Кошка" : pet.species,
-      name: id === "pet-2" ? "Матильда" : pet.name,
-      updatedAt: pet.updatedAt,
-    }));
+  it("renders pending accesses with directory details returned by the unified endpoint", async () => {
+    const pendingRows = [
+      doctorAccess({
+        requestId: "request-newest",
+        grantId: undefined,
+        petId: "pet-2",
+        ownerAccountId: "owner-2",
+        ownerDisplayName: "Мария Владелец",
+        species: "Кошка",
+        name: "Матильда",
+        status: "requested",
+        permissions: undefined,
+      }),
+      doctorAccess({ requestId: "request-older", grantId: undefined, status: "requested", permissions: undefined }),
+    ];
+    directoryMocks.loadDoctorPetAccesses.mockImplementation(async (
+      _query: string, status: string, page: number, pageSize: number,
+    ) => accessPage(status === "all" || status === "requested" ? pendingRows : [], page, pageSize));
 
     const wrapper = await mountAt("/doctor/home", "doctor-home");
     await flushPromises();
-    await flushPromises();
 
-    await wrapper.get<HTMLSelectElement>(".doctor-access-global-filter select").setValue("pending");
+    await wrapper.get<HTMLSelectElement>(".doctor-access-global-filter select").setValue("requested");
+    await flushPromises();
     const rows = wrapper.findAll(".doctor-access-table tbody tr");
     expect(rows).toHaveLength(2);
     expect(rows[0]!.text()).toContain("Кошка Матильда");
@@ -298,38 +292,31 @@ describe("Doctor pages", () => {
     expect(cancel.getComponent(AppIcon).props("name")).toBe("close");
     expect(rows[1]!.text()).toContain("Собака Буся");
     expect(wrapper.get(".doctor-access-pagination").text()).toContain("Показаны 1–2 из 2");
+    expect(directoryMocks.loadDoctorPetAccesses).toHaveBeenLastCalledWith("", "requested", 1, 10, "owner", "asc");
+    expect(directoryMocks.lookupPetDirectory).not.toHaveBeenCalled();
   });
 
   it("shows revoked accesses in the unified table and global selector", async () => {
-    const revokedPetId = "pet-revoked";
-    const state = snapshot();
-    state.grants.push({
-      grantId: "grant-revoked",
-      petId: revokedPetId,
-      grantorAccountId: "owner-2",
-      granteeAccountId: "doctor-1",
-      actions: ["read"],
-      petKeyVersion: 1,
+    const revoked = doctorAccess({
+      petId: "pet-revoked",
+      ownerAccountId: "owner-2",
+      ownerDisplayName: "Мария Владелец",
+      species: "Кошка",
+      name: "Матильда",
       status: "revoked",
-      createdAt: "2026-07-20T10:00:00.000Z",
-      revokedAt: "2026-07-23T10:00:00.000Z",
+      permissions: undefined,
+      grantId: "grant-revoked",
     });
-    await setMedical(state);
-    directoryMocks.lookupPetDirectory.mockImplementation(async (id: string) => ({
-      petId: id,
-      ownerAccountId: id === revokedPetId ? "owner-2" : pet.ownerAccountId,
-      ownerDisplayName: id === revokedPetId ? "Мария Владелец" : "Ольга Владелец",
-      species: id === revokedPetId ? "Кошка" : pet.species,
-      name: id === revokedPetId ? "Матильда" : pet.name,
-      updatedAt: pet.updatedAt,
-    }));
+    directoryMocks.loadDoctorPetAccesses.mockImplementation(async (
+      _query: string, status: string, page: number, pageSize: number,
+    ) => accessPage(status === "revoked" ? [revoked] : [doctorAccess(), revoked], page, pageSize));
 
     const wrapper = await mountAt("/doctor/home", "doctor-home");
-    await flushPromises();
     await flushPromises();
 
     expect(wrapper.findAll(".doctor-access-table tbody tr")).toHaveLength(2);
     await wrapper.get<HTMLSelectElement>(".doctor-access-global-filter select").setValue("revoked");
+    await flushPromises();
     const row = wrapper.get(".doctor-access-table tbody tr");
     expect(row.text()).toContain("Кошка Матильда");
     expect(row.text()).toContain("Мария Владелец");
@@ -339,89 +326,89 @@ describe("Doctor pages", () => {
     expect(wrapper.get(".doctor-access-pagination").text()).toContain("Показаны 1–1 из 1");
   });
 
-  it("keeps a pending request actionable when directory lookup fails", async () => {
-    const pending = accessRequest();
-    await setMedical(snapshot(undefined, { accessRequests: [pending] }));
-    directoryMocks.loadDoctorPets.mockResolvedValue({
-      items: [], page: 1, pageSize: 50, total: 0, pageCount: 1,
+  it("keeps a pending request actionable when optional catalog details are unavailable", async () => {
+    const pending = doctorAccess({
+      requestId: "request-pending",
+      grantId: undefined,
+      status: "requested",
+      permissions: undefined,
+      ownerDisplayName: undefined,
+      species: undefined,
+      name: undefined,
     });
-    directoryMocks.lookupPetDirectory.mockRejectedValueOnce(new Error("Directory unavailable"));
+    directoryMocks.loadDoctorPetAccesses.mockResolvedValue(accessPage([pending]));
 
     const wrapper = await mountAt("/doctor/home", "doctor-home");
     await flushPromises();
-    await flushPromises();
 
-    await wrapper.get<HTMLSelectElement>(".doctor-access-global-filter select").setValue("pending");
+    await wrapper.get<HTMLSelectElement>(".doctor-access-global-filter select").setValue("requested");
+    await flushPromises();
     const row = wrapper.get(".doctor-access-table tbody tr");
     expect(row.text()).toContain("Данные питомца недоступны");
-    expect(row.text()).toContain(pending.petId);
+    expect(row.text()).toContain("pet-1");
     expect(row.get(".person-identity-name").text()).toBe("ФИО не указано");
-    expect(row.get(".person-identity-id").text()).toBe(pending.ownerAccountId);
+    expect(row.get(".person-identity-id").text()).toBe("owner-1");
     expect(row.get('button[title="Отозвать запрос на доступ"]').exists()).toBe(true);
+    expect(directoryMocks.lookupPetDirectory).not.toHaveBeenCalled();
   });
 
   it("revokes a pending access request and reports cancellation failures", async () => {
-    const pending = accessRequest();
-    await setMedical(snapshot(undefined, { accessRequests: [pending] }));
-    directoryMocks.loadDoctorPets.mockResolvedValue({
-      items: [], page: 1, pageSize: 50, total: 0, pageCount: 1,
-    });
-    repositoryMocks.cancelAccessRequest.mockImplementationOnce(async () => {
-      await setMedical(snapshot(undefined, {
-        accessRequests: [{ ...pending, status: "cancelled" }],
-      }));
-    });
+    const pending = doctorAccess({ requestId: "request-pending", grantId: undefined, status: "requested", permissions: undefined });
+    directoryMocks.loadDoctorPetAccesses.mockResolvedValueOnce(accessPage([pending])).mockResolvedValue(accessPage([]));
     const wrapper = await mountAt("/doctor/home", "doctor-home");
     await flushPromises();
 
     await wrapper.get('.doctor-access-table button[title="Отозвать запрос на доступ"]').trigger("click");
     await flushPromises();
 
-    expect(repositoryMocks.cancelAccessRequest).toHaveBeenCalledWith(pending.requestId);
+    expect(repositoryMocks.cancelAccessRequest).toHaveBeenCalledWith("request-pending");
     expect(wrapper.get('[role="status"]').text()).toBe("Запрос на доступ отозван.");
     expect(wrapper.get(".doctor-access-table").text()).toContain("Доступы по выбранным условиям не найдены.");
 
-    await setMedical(snapshot(undefined, { accessRequests: [pending] }));
-    repositoryMocks.cancelAccessRequest.mockRejectedValueOnce(new Error("Не удалось отозвать запрос."));
+    directoryMocks.loadDoctorPetAccesses.mockResolvedValue(accessPage([pending]));
+    await wrapper.get<HTMLSelectElement>(".doctor-access-global-filter select").setValue("requested");
     await flushPromises();
+    repositoryMocks.cancelAccessRequest.mockRejectedValueOnce(new Error("Не удалось отозвать запрос."));
     await wrapper.get('.doctor-access-table button[title="Отозвать запрос на доступ"]').trigger("click");
     await flushPromises();
 
     expect(wrapper.get('[role="alert"]').text()).toContain("Не удалось отозвать запрос.");
-    expect(wrapper.get(".doctor-access-table tbody tr").text()).toContain(pending.petId);
+    expect(wrapper.get(".doctor-access-table tbody tr").text()).toContain("pet-1");
   });
 
-  it("paginates the globally filtered unified table", async () => {
-    const requests = Array.from({ length: 11 }, (_, index) => accessRequest({
+  it("loads one server page at a time for the globally filtered table", async () => {
+    const requests = Array.from({ length: 11 }, (_, index) => doctorAccess({
       requestId: `request-${index + 1}`,
+      grantId: undefined,
       petId: `pet-${index + 1}`,
-      requestedAt: new Date(Date.UTC(2026, 6, 22, 10, 0, index)).toISOString(),
+      name: `Питомец ${index + 1}`,
+      status: "requested",
+      permissions: undefined,
     }));
-    await setMedical(snapshot(undefined, { accessRequests: requests }));
-    directoryMocks.loadDoctorPets.mockResolvedValue({
-      items: [], page: 1, pageSize: 50, total: 0, pageCount: 1,
+    directoryMocks.loadDoctorPetAccesses.mockImplementation(async (
+      _query: string, status: string, page: number, pageSize: number,
+    ) => {
+      const filtered = status === "all" || status === "requested" ? requests : [];
+      return accessPage(filtered.slice((page - 1) * pageSize, page * pageSize), page, pageSize, filtered.length);
     });
-    directoryMocks.lookupPetDirectory.mockImplementation(async (id: string) => ({
-      petId: id,
-      ownerAccountId: pet.ownerAccountId,
-      ownerDisplayName: "Ольга Владелец",
-      species: pet.species,
-      name: id,
-      updatedAt: pet.updatedAt,
-    }));
     const wrapper = await mountAt("/doctor/home", "doctor-home");
     await flushPromises();
-    await flushPromises();
 
-    await wrapper.get<HTMLSelectElement>(".doctor-access-global-filter select").setValue("pending");
+    await wrapper.get<HTMLSelectElement>(".doctor-access-global-filter select").setValue("requested");
+    await flushPromises();
     expect(wrapper.findAll(".doctor-access-table tbody tr")).toHaveLength(10);
     expect(wrapper.get(".doctor-access-pagination").text()).toContain("Показаны 1–10 из 11");
     await wrapper.get('.doctor-access-pagination button[aria-label="Страница 2"]').trigger("click");
+    await flushPromises();
     expect(wrapper.findAll(".doctor-access-table tbody tr")).toHaveLength(1);
-    expect(wrapper.get(".doctor-access-table tbody tr").text()).toContain("pet-9");
+    expect(wrapper.get(".doctor-access-table tbody tr").text()).toContain("pet-11");
+    expect(directoryMocks.loadDoctorPetAccesses).toHaveBeenLastCalledWith("", "requested", 2, 10, "owner", "asc");
 
     await wrapper.get<HTMLSelectElement>(".doctor-access-pagination select").setValue("20");
+    await flushPromises();
     expect(localStorage.getItem("klinok:doctor-pets-page-size")).toBe("20");
+    expect(directoryMocks.loadDoctorPetAccesses).toHaveBeenLastCalledWith("", "requested", 1, 20, "owner", "asc");
+    expect(directoryMocks.lookupPetDirectory).not.toHaveBeenCalled();
   });
 
   it("finds a pet by partial owner name and pet name before requesting access", async () => {
@@ -478,6 +465,15 @@ describe("Doctor pages", () => {
       items: [requestedPet],
       page: 1, pageSize: 50, total: 1, pageCount: 1,
     });
+    directoryMocks.loadDoctorPetAccesses
+      .mockResolvedValueOnce(accessPage([doctorAccess()]))
+      .mockResolvedValue(accessPage([doctorAccess({
+        ...requestedPet,
+        requestId: "request-new",
+        grantId: undefined,
+        status: "requested",
+        permissions: undefined,
+      })]));
     repositoryMocks.requestAccess.mockImplementationOnce(async () => {
       await setMedical(snapshot(undefined, {
         accessRequests: [accessRequest({
@@ -544,6 +540,17 @@ describe("Doctor pages", () => {
       }],
       page: 1, pageSize: 50, total: 1, pageCount: 1,
     });
+    directoryMocks.loadDoctorPetAccesses
+      .mockResolvedValueOnce(accessPage([doctorAccess()]))
+      .mockResolvedValue(accessPage([doctorAccess({
+        petId: ownPet.petId,
+        ownerAccountId: ownPet.ownerAccountId,
+        ownerDisplayName: "Вера Врач",
+        species: ownPet.species,
+        name: ownPet.name,
+        permissions: ["read", "write_unconfirmed"],
+        grantId: "grant-own",
+      })]));
     repositoryMocks.requestAccess.mockImplementationOnce(async () => {
       await setMedical(snapshot(["read", "write_unconfirmed", "delegate"], {
         pets: [pet, ownPet],
@@ -583,13 +590,14 @@ describe("Doctor pages", () => {
   });
 
   it("shows delegation as no and hides the delegate action when it is unavailable", async () => {
-    directoryMocks.loadDoctorPets.mockResolvedValue({
+    directoryMocks.loadDoctorPetAccesses.mockResolvedValue({
       items: [{
         petId: pet.petId,
         ownerAccountId: pet.ownerAccountId,
         ownerDisplayName: "Ольга Владелец",
         species: pet.species,
         name: pet.name,
+        status: "granted",
         permissions: ["read", "write_unconfirmed"],
         grantId: "grant-1",
         updatedAt: pet.updatedAt,
@@ -605,6 +613,9 @@ describe("Doctor pages", () => {
   });
 
   it("confirms access cancellation in a user-facing modal and refreshes the list", async () => {
+    directoryMocks.loadDoctorPetAccesses
+      .mockResolvedValueOnce(accessPage([doctorAccess()]))
+      .mockResolvedValue(accessPage([]));
     const wrapper = await mountAt("/doctor/home", "doctor-home");
     await flushPromises();
 
@@ -911,7 +922,7 @@ describe("Doctor pages", () => {
   });
 
   it("shows the owner pet-profile information plus the owner's full name", async () => {
-    directoryMocks.loadDoctorPets.mockResolvedValue({ items: [], page: 1, pageSize: 10, total: 0, pageCount: 1 });
+    directoryMocks.loadDoctorPetAccesses.mockResolvedValue({ items: [], page: 1, pageSize: 10, total: 0, pageCount: 1 });
     const wrapper = await mountAt("/doctor/pets/pet-1", "doctor-pet-detail");
     await flushPromises();
 

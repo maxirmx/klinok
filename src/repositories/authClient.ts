@@ -11,6 +11,7 @@ import type {
   DirectoryPageDto,
   DirectoryPetDto,
   DirectoryProfileDto,
+  DoctorPetAccessDto,
   ExportedUserKeySet,
   Role,
 } from "@klinok/protocol";
@@ -153,6 +154,11 @@ export class AuthClient {
   getMyDirectoryPets(query = "", page = 1, pageSize = 20, sort = "owner", direction = "asc") {
     const params = new URLSearchParams({ query, page: String(page), pageSize: String(pageSize), sort, direction });
     return this.request<DirectoryPageDto<DirectoryPetDto>>(`/api/auth/directory/my-pets?${params}`);
+  }
+
+  getMyPetAccesses(query = "", status: DoctorPetAccessDto["status"] | "all" = "all", page = 1, pageSize = 20, sort = "owner", direction = "asc") {
+    const params = new URLSearchParams({ query, status, page: String(page), pageSize: String(pageSize), sort, direction });
+    return this.request<DirectoryPageDto<DoctorPetAccessDto>>(`/api/auth/directory/my-pet-accesses?${params}`);
   }
 
   syncDirectoryPet(pet: Pick<DirectoryPetDto, "petId" | "species" | "name">) {

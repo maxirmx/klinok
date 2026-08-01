@@ -21,6 +21,7 @@ import {
   type DirectoryPageDto,
   type DirectoryPetDto,
   type DirectoryProfileDto,
+  type DoctorPetAccessDto,
   type ExportedUserKeySet,
   type RegistrationSetupDto,
   type Role,
@@ -757,6 +758,97 @@ export async function buildAuthApp(options: AuthAppOptions): Promise<FastifyInst
       ? left.name.localeCompare(right.name, "ru") || left.ownerDisplayName.localeCompare(right.ownerDisplayName, "ru")
       : left.ownerDisplayName.localeCompare(right.ownerDisplayName, "ru") || left.name.localeCompare(right.name, "ru")));
     return reply.header("Cache-Control", "no-store").send(directoryPage(pets, request.query.page, request.query.pageSize));
+  });
+
+  app.get<{ Querystring: { query?: string; status?: string; sort?: string; direction?: string; page?: string; pageSize?: string } }>("/api/auth/directory/my-pet-accesses", {
+    config: { rateLimit: { max: options.config.rateLimit.sessionIpPerMinute, timeWindow: 60_000 } },
+  }, async (request, reply) => {
+    const current = await authenticated(request, reply, false);
+    if (!current) return;
+    if (!await hasObservedRole(current.account.accountId, "doctor")) return error(reply, 403, "DOCTOR_ROLE_REQUIRED", "Требуется одобренная роль врача.");
+
+    const [grants, requests, pets, petOwners] = await Promise.all([
+      store.listObservedGrants(),
+      store.listObservedAccessRequests(),
+      store.listDirectoryPets(),
+      store.listObservedPetOwners(),
+    ]);
+    const grantsById = new Map(grants.map((grant) => [grant.grantId, grant]));
+    const effective = (grant: (typeof grants)[number] | undefined, seen = new Set<string>()): boolean => {
+      if (!grant || grant.status !== "active" || seen.has(grant.grantId)) return false;
+      if (!grant.parentGrantId) return true;
+      seen.add(grant.grantId);
+      return effective(grantsById.get(grant.parentGrantId), seen);
+    };
+    const isNewerGrant = (candidate: (typeof grants)[number], selected: (typeof grants)[number] | undefined) =>
+      !selected || (candidate.revokedAt ?? candidate.createdAt).localeCompare(selected.revokedAt ?? selected.createdAt) > 0;
+    const activeByPet = new Map<string, (typeof grants)[number]>();
+    const revokedByPet = new Map<string, (typeof grants)[number]>();
+    for (const grant of grants) {
+      if (grant.granteeAccountId !== current.account.accountId) continue;
+      const target = effective(grant) ? activeByPet : revokedByPet;
+      if (isNewerGrant(grant, target.get(grant.petId))) target.set(grant.petId, grant);
+    }
+    const pendingByPet = new Map<string, (typeof requests)[number]>();
+    for (const accessRequest of requests) {
+      if (accessRequest.requesterAccountId !== current.account.accountId || accessRequest.status !== "pending") continue;
+      const selected = pendingByPet.get(accessRequest.petId);
+      if (!selected || accessRequest.requestedAt.localeCompare(selected.requestedAt) > 0) pendingByPet.set(accessRequest.petId, accessRequest);
+    }
+
+    const petsById = new Map(pets.map((pet) => [pet.petId, pet]));
+    const ownersByPet = new Map(petOwners.map((owner) => [owner.petId, owner.ownerAccountId]));
+    const rows = new Map<string, DoctorPetAccessDto>();
+    const details = (petId: string, fallbackOwnerAccountId: string) => {
+      const pet = petsById.get(petId);
+      return {
+        petId,
+        ownerAccountId: pet?.ownerAccountId ?? ownersByPet.get(petId) ?? fallbackOwnerAccountId,
+        ...(pet?.ownerDisplayName ? { ownerDisplayName: pet.ownerDisplayName } : {}),
+        ...(pet?.species ? { species: pet.species } : {}),
+        ...(pet?.name ? { name: pet.name } : {}),
+      };
+    };
+    for (const grant of revokedByPet.values()) {
+      rows.set(grant.petId, { ...details(grant.petId, grant.grantorAccountId), status: "revoked", grantId: grant.grantId });
+    }
+    for (const accessRequest of pendingByPet.values()) {
+      rows.set(accessRequest.petId, {
+        ...details(accessRequest.petId, accessRequest.ownerAccountId),
+        status: "requested",
+        requestId: accessRequest.requestId,
+      });
+    }
+    for (const grant of activeByPet.values()) {
+      rows.set(grant.petId, {
+        ...details(grant.petId, grant.grantorAccountId),
+        status: "granted",
+        permissions: grant.actions,
+        grantId: grant.grantId,
+      });
+    }
+
+    const status = (["granted", "requested", "revoked"] as const)
+      .find((candidate) => candidate === request.query.status);
+    const query = request.query.query?.trim().toLocaleLowerCase("ru") ?? "";
+    const accesses = [...rows.values()].filter((row) => {
+      if (status && row.status !== status) return false;
+      if (!query) return true;
+      return row.petId.toLocaleLowerCase("ru") === query
+        || row.ownerAccountId.toLocaleLowerCase("ru") === query
+        || row.ownerDisplayName?.toLocaleLowerCase("ru").includes(query)
+        || row.name?.toLocaleLowerCase("ru").includes(query)
+        || row.species?.toLocaleLowerCase("ru").includes(query);
+    });
+    const direction = request.query.direction === "desc" ? -1 : 1;
+    accesses.sort((left, right) => direction * (request.query.sort === "pet"
+      ? (left.name ?? "").localeCompare(right.name ?? "", "ru")
+        || (left.ownerDisplayName ?? left.ownerAccountId).localeCompare(right.ownerDisplayName ?? right.ownerAccountId, "ru")
+        || left.petId.localeCompare(right.petId)
+      : (left.ownerDisplayName ?? left.ownerAccountId).localeCompare(right.ownerDisplayName ?? right.ownerAccountId, "ru")
+        || (left.name ?? "").localeCompare(right.name ?? "", "ru")
+        || left.petId.localeCompare(right.petId)));
+    return reply.header("Cache-Control", "no-store").send(directoryPage(accesses, request.query.page, request.query.pageSize));
   });
 
   app.put<{ Params: { petId: string }; Body: Pick<DirectoryPetDto, "species" | "name"> }>("/api/auth/directory/pets/:petId", {

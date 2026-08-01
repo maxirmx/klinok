@@ -13,6 +13,7 @@ import type {
   RegistrationSetupDto,
   DirectoryPetDto,
   DirectoryProfileDto,
+  PetAccessRequest,
   PetAccessGrant,
   Role,
   RoleStatus,
@@ -302,6 +303,14 @@ export class AuthStore {
     return this.get<string>(`projection:pet-owner:${petId}`);
   }
 
+  async listObservedPetOwners(): Promise<Array<{ petId: string; ownerAccountId: string }>> {
+    const owners: Array<{ petId: string; ownerAccountId: string }> = [];
+    for await (const [key, value] of this.db.iterator({ gte: "projection:pet-owner:", lt: "projection:pet-owner;" })) {
+      owners.push({ petId: key.slice("projection:pet-owner:".length), ownerAccountId: value as string });
+    }
+    return owners;
+  }
+
   async putObservedGrant(grant: PetAccessGrant): Promise<void> {
     await this.db.put(`projection:grant:${grant.grantId}`, grant);
   }
@@ -312,5 +321,17 @@ export class AuthStore {
       grants.push(value as PetAccessGrant);
     }
     return grants;
+  }
+
+  async putObservedAccessRequest(request: PetAccessRequest): Promise<void> {
+    await this.db.put(`projection:grant-request:${request.requestId}`, request);
+  }
+
+  async listObservedAccessRequests(): Promise<PetAccessRequest[]> {
+    const requests: PetAccessRequest[] = [];
+    for await (const [, value] of this.db.iterator({ gte: "projection:grant-request:", lt: "projection:grant-request;" })) {
+      requests.push(value as PetAccessRequest);
+    }
+    return requests;
   }
 }
