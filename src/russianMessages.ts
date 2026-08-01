@@ -65,6 +65,7 @@ const AUTH_ERRORS: Record<string, string> = {
   PROFILE_INVALID: "Имя и фамилия обязательны.",
   DIRECTORY_PROFILE_INVALID: "Имя и фамилия обязательны.",
   DIRECTORY_ROLE_REQUIRED: "Требуется подтверждённая роль владельца или врача.",
+  ADMINISTRATOR_ROLE_REQUIRED: "Требуется подтверждённая роль администратора.",
   DOCTOR_ROLE_REQUIRED: "Требуется подтверждённая роль врача.",
   OWNER_ROLE_REQUIRED: "Требуется подтверждённая роль владельца.",
   PET_NOT_FOUND: "Питомец с таким идентификатором не найден.",

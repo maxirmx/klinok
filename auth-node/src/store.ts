@@ -295,6 +295,18 @@ export class AuthStore {
     return this.get<RoleStatus>(`projection:role:${accountId}:${role}`);
   }
 
+  async listObservedRoles(): Promise<Array<{ accountId: string; role: Role; status: RoleStatus }>> {
+    const roles: Array<{ accountId: string; role: Role; status: RoleStatus }> = [];
+    const prefix = "projection:role:";
+    for await (const [key, value] of this.db.iterator({ gte: prefix, lt: "projection:role;" })) {
+      const separator = key.lastIndexOf(":");
+      const accountId = key.slice(prefix.length, separator);
+      const role = key.slice(separator + 1) as Role;
+      roles.push({ accountId, role, status: value as RoleStatus });
+    }
+    return roles;
+  }
+
   async putObservedPetOwner(petId: string, ownerAccountId: string): Promise<void> {
     await this.db.put(`projection:pet-owner:${petId}`, ownerAccountId);
   }

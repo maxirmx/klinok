@@ -32,6 +32,13 @@ describe("auth client", () => {
     expect(fetchMock.mock.calls[0][0]).toBe("/api/auth/directory/pets?owner=%D0%98%D0%B2%D0%B0%D0%BD%D0%BE%D0%B2+%D0%98%D0%B2%D0%B0%D0%BD&pet=%D0%91%D0%B0%D1%80%D1%81&page=1&pageSize=50&sort=owner");
   });
 
+  it("sends all administrator user-directory page parameters", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ items: [], page: 2, pageSize: 10, total: 11, pageCount: 2 }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    await new AuthClient().searchUsers("Иван", true, 2, 10, "owner", "desc");
+    expect(fetchMock.mock.calls[0][0]).toBe("/api/auth/directory/users?query=%D0%98%D0%B2%D0%B0%D0%BD&pendingOnly=true&page=2&pageSize=10&sort=owner&direction=desc");
+  });
+
   it("sends all unified doctor-access page parameters", async () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ items: [], page: 1, pageSize: 10, total: 0, pageCount: 1 }), { status: 200 }));
     vi.stubGlobal("fetch", fetchMock);

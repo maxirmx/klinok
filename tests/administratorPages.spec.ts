@@ -6,12 +6,41 @@ import { flushPromises, mount, type VueWrapper } from "@vue/test-utils";
 import { createMemoryHistory, createRouter } from "vue-router";
 import { createPinia } from "pinia";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { AccountProfile, Role, RoleRequest, SignedEvent } from "@klinok/protocol";
+import type { AccountProfile, DirectoryUserDto, Role, RoleRequest, SignedEvent } from "@klinok/protocol";
 import AppIcon from "../src/components/AppIcon.vue";
 import AdministratorScreen from "../src/screens/AdministratorScreen.vue";
 
 const appMocks = vi.hoisted(() => ({
   decideRole: vi.fn().mockResolvedValue(undefined),
+  directoryUsers: [] as DirectoryUserDto[],
+  loadAdministratorUsers: vi.fn(async (
+    query = "",
+    pendingOnly = false,
+    page = 1,
+    pageSize = 20,
+    sort = "name",
+    direction = "asc",
+  ) => {
+    const normalized = query.trim().toLocaleLowerCase("ru");
+    const multiplier = direction === "desc" ? -1 : 1;
+    const items = appMocks.directoryUsers
+      .filter((user) => !normalized || user.displayName.toLocaleLowerCase("ru").includes(normalized)
+        || user.accountId.toLocaleLowerCase("ru").includes(normalized))
+      .filter((user) => !pendingOnly
+        || user.roleStatuses.doctor === "pending" || user.roleStatuses.administrator === "pending")
+      .sort((left, right) => multiplier * (sort === "name"
+        ? left.displayName.localeCompare(right.displayName, "ru")
+        : left.roleStatuses[sort as Role].localeCompare(right.roleStatuses[sort as Role])));
+    const pageCount = Math.max(1, Math.ceil(items.length / pageSize));
+    const selectedPage = Math.min(pageCount, Math.max(1, page));
+    return {
+      items: items.slice((selectedPage - 1) * pageSize, selectedPage * pageSize),
+      page: selectedPage,
+      pageSize,
+      total: items.length,
+      pageCount,
+    };
+  }),
   logout: vi.fn().mockResolvedValue(undefined),
 }));
 
@@ -41,6 +70,7 @@ vi.mock("../src/appStore", async () => {
   return {
     appState: readonly(state),
     decideRole: appMocks.decideRole,
+    loadAdministratorUsers: appMocks.loadAdministratorUsers,
     logout: appMocks.logout,
     getConfig: () => ({ p2p: { bootstrapAccountId: "bootstrap-administrator" } }),
     setAdministratorState: (value: {
@@ -51,6 +81,20 @@ vi.mock("../src/appStore", async () => {
       state.control.profiles = value.profiles ?? [];
       state.control.allRoles = value.roles ?? [];
       state.control.events = value.events ?? [];
+      const requests = new Map(state.control.allRoles.map((request) => [`${request.accountId}:${request.role}`, request.status]));
+      appMocks.directoryUsers = state.control.profiles.map((profile) => ({
+        accountId: profile.accountId,
+        firstName: profile.firstName,
+        lastName: profile.lastName,
+        ...(profile.patronymic ? { patronymic: profile.patronymic } : {}),
+        displayName: [profile.firstName, profile.patronymic, profile.lastName].filter(Boolean).join(" "),
+        updatedAt: profile.updatedAt,
+        roleStatuses: {
+          owner: requests.get(`${profile.accountId}:owner`) ?? "not_requested",
+          doctor: requests.get(`${profile.accountId}:doctor`) ?? "not_requested",
+          administrator: requests.get(`${profile.accountId}:administrator`) ?? "not_requested",
+        },
+      }));
     },
   };
 });
@@ -79,6 +123,22 @@ function profile(accountId: string, firstName: string, lastName: string): Accoun
     lastName,
     updatedAt: "2026-07-10T10:00:00.000Z",
   };
+}
+
+function directoryUser(accountId: string, displayName: string): DirectoryUserDto {
+  const [firstName, ...lastName] = displayName.split(" ");
+  return {
+    accountId,
+    firstName: firstName!,
+    lastName: lastName.join(" "),
+    displayName,
+    updatedAt: "2026-07-10T10:00:00.000Z",
+    roleStatuses: { owner: "approved", doctor: "not_requested", administrator: "not_requested" },
+  };
+}
+
+function directoryPage(items: DirectoryUserDto[]) {
+  return { items, page: 1, pageSize: 20, total: items.length, pageCount: 1 };
 }
 
 function event(overrides: Partial<SignedEvent> & Pick<SignedEvent, "eventId" | "eventType">): SignedEvent {
@@ -123,10 +183,12 @@ async function mountAt(path: "/admin/home" | "/admin/audit", scenarioId: "admini
   });
   await router.push(path);
   await router.isReady();
-  return mount(AdministratorScreen, {
+  const wrapper = mount(AdministratorScreen, {
     props: { role: "administrator", scenarioId },
     global: { plugins: [createPinia(), router] },
   });
+  await flushPromises();
+  return wrapper;
 }
 
 function rowFor(wrapper: VueWrapper, text: string) {
@@ -182,7 +244,7 @@ describe("Administrator pages", () => {
     expect(wrapper.findAll(".administrator-table tbody tr")).toHaveLength(2);
   });
 
-  it("groups advanced roles, maps statuses, excludes owner-only users, and protects bootstrap", async () => {
+  it("shows every initialized user with owner status and protects bootstrap", async () => {
     await setState({
       profiles: [
         profile("bootstrap-administrator", "Начальный", "Администратор"),
@@ -206,10 +268,12 @@ describe("Administrator pages", () => {
     expect(auditLink.text()).toBe("");
     expect(auditLink.getComponent(AppIcon).props("name")).toBe("book");
     expect(wrapper.findAll(".administrator-table th").map((header) => header.text())).toEqual([
-      "ФИО", "Ветеринар", "Администратор",
+      "ФИО", "Владелец", "Ветеринар", "Администратор",
     ]);
-    expect(wrapper.findAll(".administrator-table tbody tr")).toHaveLength(3);
-    expect(wrapper.text()).not.toContain("Ольга Владелец");
+    expect(wrapper.findAll(".administrator-table tbody tr")).toHaveLength(4);
+    const ownerRow = rowFor(wrapper, "Ольга Владелец");
+    expect(ownerRow.get('[data-label="Владелец"]').text()).toBe("Одобрена");
+    expect(ownerRow.findAll("button")).toHaveLength(0);
     const doctorRow = rowFor(wrapper, "Анна Врач");
     expect(doctorRow.text()).toContain("Запрошена");
     expect(doctorRow.text()).toContain("Отказ");
@@ -275,17 +339,49 @@ describe("Administrator pages", () => {
     expect(searchLabel.get("input").attributes("placeholder")).toBe("Поиск");
     expect(wrapper.findAll(".administrator-table tbody tr")).toHaveLength(20);
     expect(wrapper.get(".app-paginator").text()).toContain("Показаны 1–20 из 22");
+    await wrapper.get('.app-paginator button[aria-label="Страница 2"]').trigger("click");
+    await flushPromises();
+    expect(wrapper.findAll(".administrator-table tbody tr")).toHaveLength(2);
+    expect(appMocks.loadAdministratorUsers).toHaveBeenLastCalledWith("", false, 2, 20, "name", "asc");
     await wrapper.get('.app-paginator select').setValue("50");
+    await flushPromises();
     expect(localStorage.getItem("klinok:admin-role-table-page-size")).toBe("50");
     expect(wrapper.findAll(".administrator-table tbody tr")).toHaveLength(22);
 
     await wrapper.get<HTMLInputElement>('.administrator-search input').setValue("Имя21");
+    await flushPromises();
     expect(wrapper.findAll(".administrator-table tbody tr")).toHaveLength(1);
     expect(wrapper.get(".administrator-table tbody tr").text()).toContain("Имя21");
 
     await wrapper.get<HTMLInputElement>('.administrator-search input').setValue("doctor-20");
+    await flushPromises();
     expect(wrapper.findAll(".administrator-table tbody tr")).toHaveLength(1);
     expect(wrapper.get(".administrator-table tbody tr").text()).toContain("doctor-20");
+  });
+
+  it("keeps the newest user-directory response when requests finish out of order", async () => {
+    let resolveInitial!: (value: ReturnType<typeof directoryPage>) => void;
+    let resolveSearch!: (value: ReturnType<typeof directoryPage>) => void;
+    appMocks.loadAdministratorUsers
+      .mockImplementationOnce(() => new Promise((resolve) => { resolveInitial = resolve; }))
+      .mockImplementationOnce(() => new Promise((resolve) => { resolveSearch = resolve; }));
+    const wrapper = await mountAt("/admin/home", "administrator-home");
+
+    await wrapper.get<HTMLInputElement>('.administrator-search input').setValue("новый");
+    resolveSearch(directoryPage([directoryUser("new-user", "Новый Пользователь")]));
+    await flushPromises();
+    resolveInitial(directoryPage([directoryUser("old-user", "Старый Пользователь")]));
+    await flushPromises();
+
+    expect(wrapper.get(".administrator-table tbody tr").text()).toContain("Новый Пользователь");
+    expect(wrapper.text()).not.toContain("Старый Пользователь");
+  });
+
+  it("renders user-directory failures through the shared page alert", async () => {
+    appMocks.loadAdministratorUsers.mockRejectedValueOnce(new Error("network unavailable"));
+    const wrapper = await mountAt("/admin/home", "administrator-home");
+
+    expect(wrapper.get('.app-alert[role="alert"]').text()).toContain("Не удалось загрузить список пользователей.");
   });
 
   it("renders, filters, and paginates signed role audit actions with their actors", async () => {
