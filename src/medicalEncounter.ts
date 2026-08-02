@@ -7,6 +7,7 @@ import type {
   GeneralDataSectionValue,
   MedicalEncounterSectionKind,
   MedicalRecordDraft,
+  OutcomeSectionValue,
   WhatHappenedSectionValue,
 } from "./repositories/types";
 
@@ -88,7 +89,84 @@ export const ENCOUNTER_SECTION_LABELS: Record<MedicalEncounterSectionKind, strin
 };
 
 export const OPTIONAL_ENCOUNTER_SECTION_KINDS = (Object.keys(ENCOUNTER_SECTION_LABELS) as MedicalEncounterSectionKind[])
-  .filter((kind) => kind !== "what-happened");
+  .filter((kind) => kind !== "what-happened" && kind !== "outcome");
+
+export const OUTCOME_OPTIONS = [
+  { id: "outcome.no-observation", label: "Без наблюдения" },
+  { id: "outcome.observation", label: "В стадии наблюдения" },
+  { id: "outcome.examination", label: "В стадии обследования" },
+  { id: "outcome.recovery", label: "Выздоровление" },
+  { id: "outcome.improvement", label: "Улучшение" },
+  { id: "outcome.deterioration", label: "Ухудшение" },
+  { id: "outcome.death", label: "Смерть" },
+] as const;
+
+const outcomeLabels = new Map<string, string>(OUTCOME_OPTIONS.map((option) => [option.id, option.label]));
+const outcomeOrder = new Map<string, number>(OUTCOME_OPTIONS.map((option, index) => [option.id, index]));
+const outcomeConflictPairs = new Set([
+  ...OUTCOME_OPTIONS.filter((option) => option.id !== "outcome.death")
+    .map((option) => ["outcome.death", option.id].sort().join("|")),
+  ["outcome.no-observation", "outcome.observation"].sort().join("|"),
+  ["outcome.no-observation", "outcome.examination"].sort().join("|"),
+  ["outcome.deterioration", "outcome.improvement"].sort().join("|"),
+  ["outcome.deterioration", "outcome.recovery"].sort().join("|"),
+]);
+
+export function outcomeLabel(id: string): string {
+  return outcomeLabels.get(id) ?? id;
+}
+
+export function outcomeIdsConflict(left: string, right: string): boolean {
+  return left !== right && outcomeConflictPairs.has([left, right].sort().join("|"));
+}
+
+export function canonicalOutcomeIds(ids: readonly string[]): string[] {
+  return [...ids].sort((left, right) => (outcomeOrder.get(left) ?? Number.MAX_SAFE_INTEGER)
+    - (outcomeOrder.get(right) ?? Number.MAX_SAFE_INTEGER));
+}
+
+export function replaceConflictingOutcome(ids: readonly string[], id: string): string[] {
+  if (ids.includes(id)) return ids.filter((selectedId) => selectedId !== id);
+  return canonicalOutcomeIds([...ids.filter((selectedId) => !outcomeIdsConflict(selectedId, id)), id]);
+}
+
+export function outcomeValidationError(value: unknown): string {
+  if (!value || typeof value !== "object" || !("selectedIds" in value) || !("comment" in value) ||
+    !Array.isArray((value as OutcomeSectionValue).selectedIds) || typeof (value as OutcomeSectionValue).comment !== "string") {
+    return "Заполните раздел «Исход».";
+  }
+  const ids = (value as OutcomeSectionValue).selectedIds;
+  if (!ids.length) return "В разделе «Исход» выберите хотя бы один вариант.";
+  if (ids.some((id) => typeof id !== "string" || !outcomeLabels.has(id))) return "Раздел «Исход» содержит неизвестный вариант.";
+  if (new Set(ids).size !== ids.length) return "Раздел «Исход» содержит повторяющийся вариант.";
+  if (ids.some((id, index) => ids.slice(index + 1).some((other) => outcomeIdsConflict(id, other)))) {
+    return "Раздел «Исход» содержит несовместимые варианты.";
+  }
+  return "";
+}
+
+export function isOutcomeValue(value: unknown): value is OutcomeSectionValue {
+  return !outcomeValidationError(value);
+}
+
+export function normalizeOutcomeValue(value: OutcomeSectionValue): OutcomeSectionValue {
+  return { selectedIds: canonicalOutcomeIds(value.selectedIds), comment: value.comment.trim() };
+}
+
+export function outcomeSummary(value: unknown): string {
+  if (isOutcomeValue(value)) {
+    return [...value.selectedIds.map(outcomeLabel), value.comment.trim()].filter(Boolean).join("; ");
+  }
+  return isFreeTextValue(value) ? value.text.trim() : "";
+}
+
+export function outcomeSelectedIds(value: unknown): readonly string[] {
+  return isOutcomeValue(value) ? value.selectedIds : [];
+}
+
+export function outcomeComment(value: unknown): string {
+  return isOutcomeValue(value) ? value.comment : "";
+}
 
 const paths = new Map<string, string>();
 function indexPaths(nodes: WhatHappenedOption[], parents: string[] = []) {
@@ -238,6 +316,7 @@ export function generalDataMeasurements(value: GeneralDataSectionValue): Array<{
 }
 
 export function sectionSearchText(value: unknown): string {
+  if (isOutcomeValue(value)) return outcomeSummary(value);
   if (isFreeTextValue(value)) return value.text;
   if (isGeneralDataValue(value)) return generalDataMeasurements(value).map((item) => `${item.label} ${item.value}`).join(" ");
   return "";

@@ -39,6 +39,7 @@ import {
   generalDataDraft,
   isFreeTextValue,
   isGeneralDataValue,
+  isOutcomeValue,
   isWhatHappenedValue,
   parseGeneralDataDraft,
   sectionSearchText,
@@ -113,6 +114,8 @@ const encounter = reactive({
   date: new Date().toISOString().slice(0, 10),
   selectedIds: [] as string[],
   comment: "",
+  outcomeSelectedIds: [] as string[],
+  outcomeComment: "",
   optionalKinds: [] as MedicalEncounterSectionKind[],
   texts: {} as Partial<Record<MedicalEncounterSectionKind, string>>,
   generalData: emptyGeneralDataDraft(),
@@ -321,26 +324,31 @@ function resetEncounter() {
   encounter.date = new Date().toISOString().slice(0, 10);
   encounter.selectedIds = [];
   encounter.comment = "";
+  encounter.outcomeSelectedIds = [];
+  encounter.outcomeComment = "";
   encounter.optionalKinds = [];
   encounter.texts = {};
   encounter.generalData = emptyGeneralDataDraft();
 }
 
 async function saveEncounter() {
-  if (!encounter.selectedIds.length) return;
+  if (!encounter.selectedIds.length || !encounter.outcomeSelectedIds.length) return;
   await perform(async () => {
-    const sections: Parameters<ReturnType<typeof requireRepository>["medical"]["saveEncounter"]>[0]["sections"] = {
-      "what-happened": { selectedIds: [...encounter.selectedIds], comment: encounter.comment },
-    };
+    const optionalSections: Partial<Record<MedicalEncounterSectionKind, { text: string } | ReturnType<typeof parseGeneralDataDraft>["value"]>> = {};
     for (const kind of encounter.optionalKinds) {
       if (kind === "general-data" && encounter.texts[kind] === undefined) {
         const parsed = parseGeneralDataDraft(encounter.generalData);
         if (!parsed.value) throw new Error("Проверьте показатели в разделе «Общие данные/Габитус».");
-        sections[kind] = parsed.value;
+        optionalSections[kind] = parsed.value;
       } else {
-        sections[kind] = { text: encounter.texts[kind] ?? "" };
+        optionalSections[kind] = { text: encounter.texts[kind] ?? "" };
       }
     }
+    const sections = {
+      "what-happened": { selectedIds: [...encounter.selectedIds], comment: encounter.comment },
+      ...optionalSections,
+      outcome: { selectedIds: [...encounter.outcomeSelectedIds], comment: encounter.outcomeComment },
+    } as Parameters<ReturnType<typeof requireRepository>["medical"]["saveEncounter"]>[0]["sections"];
     await requireRepository().medical.saveEncounter({
       petId: petId.value,
       encounterDate: encounter.date,
@@ -358,6 +366,9 @@ function editRecord(record: (typeof appState.medical.records)[number]) {
   const what = record.sections["what-happened"]?.value;
   encounter.selectedIds = isWhatHappenedValue(what) ? [...what.selectedIds] : [];
   encounter.comment = isWhatHappenedValue(what) ? what.comment : record.text;
+  const outcome = record.sections.outcome?.value;
+  encounter.outcomeSelectedIds = isOutcomeValue(outcome) ? [...outcome.selectedIds] : [];
+  encounter.outcomeComment = isOutcomeValue(outcome) ? outcome.comment : isFreeTextValue(outcome) ? outcome.text : "";
   encounter.optionalKinds = OPTIONAL_ENCOUNTER_SECTION_KINDS.filter((kind) => Boolean(record.sections[kind]));
   const generalDataValue = record.sections["general-data"]?.value;
   encounter.generalData = isGeneralDataValue(generalDataValue) ? generalDataDraft(generalDataValue) : emptyGeneralDataDraft();
@@ -660,6 +671,8 @@ watch(delegationPageCount, (pageCount) => {
           v-model:date="encounter.date"
           v-model:selected-ids="encounter.selectedIds"
           v-model:comment="encounter.comment"
+          v-model:outcome-selected-ids="encounter.outcomeSelectedIds"
+          v-model:outcome-comment="encounter.outcomeComment"
           v-model:optional-kinds="encounter.optionalKinds"
           v-model:texts="encounter.texts"
           v-model:general-data="encounter.generalData"
@@ -698,6 +711,8 @@ watch(delegationPageCount, (pageCount) => {
                 v-model:date="encounter.date"
                 v-model:selected-ids="encounter.selectedIds"
                 v-model:comment="encounter.comment"
+                v-model:outcome-selected-ids="encounter.outcomeSelectedIds"
+                v-model:outcome-comment="encounter.outcomeComment"
                 v-model:optional-kinds="encounter.optionalKinds"
                 v-model:texts="encounter.texts"
                 v-model:general-data="encounter.generalData"

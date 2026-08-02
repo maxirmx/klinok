@@ -28,12 +28,15 @@ import {
   isFreeTextValue,
   isGeneralDataValue,
   isWhatHappenedValue,
+  normalizeOutcomeValue,
+  outcomeValidationError,
 } from "../medicalEncounter";
 import type {
   MedicalEncounterInput,
   MedicalEncounterSection,
   MedicalRecordDraft,
   MedicalSnapshot,
+  OutcomeSectionValue,
   PetProfile,
   PetProfileInput,
 } from "./types";
@@ -560,11 +563,14 @@ export class MedicalRepository {
     if (!activeRecipients.has(this.context.accountId)) await deletePetKey(this.context.accountId, petId);
   }
 
-  async saveRecord(input: { petId: string; title: string; text: string; recordId?: string }): Promise<string> {
+  async saveRecord(input: { petId: string; title: string; text: string; outcome: OutcomeSectionValue; recordId?: string }): Promise<string> {
     return this.saveEncounter({
       petId: input.petId,
       encounterDate: new Date().toISOString().slice(0, 10),
-      sections: { "what-happened": { selectedIds: [], comment: input.text } },
+      sections: {
+        "what-happened": { selectedIds: [], comment: input.text },
+        outcome: input.outcome,
+      },
       ...(input.recordId ? { recordId: input.recordId } : {}),
     }, input.title);
   }
@@ -578,13 +584,20 @@ export class MedicalRepository {
     if (!isWhatHappenedValue(whatHappened) || (!whatHappened.selectedIds.length && !whatHappened.comment.trim())) {
       throw new Error("В разделе «Что случилось» выберите хотя бы один вариант или добавьте комментарий.");
     }
-    for (const [kind, value] of Object.entries(input.sections)) {
+    const outcomeError = outcomeValidationError(input.sections.outcome);
+    if (outcomeError) throw new Error(outcomeError);
+    const normalizedSections = {
+      ...input.sections,
+      outcome: normalizeOutcomeValue(input.sections.outcome),
+    };
+    for (const [kind, value] of Object.entries(normalizedSections)) {
+      if (kind === "what-happened" || kind === "outcome") continue;
       if (kind === "general-data" && !isFreeTextValue(value)) {
         const validationError = generalDataValidationError(value as Parameters<typeof generalDataValidationError>[0]);
         if (validationError) throw new Error(validationError);
         continue;
       }
-      if (kind !== "what-happened" && (!isFreeTextValue(value) || !value.text.trim())) {
+      if (!isFreeTextValue(value) || !value.text.trim()) {
         throw new Error("Заполните или удалите пустой дополнительный раздел.");
       }
     }
@@ -595,13 +608,15 @@ export class MedicalRepository {
     const now = new Date().toISOString();
     const profile = await this.control.profile();
     const authorDisplayName = [profile?.firstName, profile?.patronymic, profile?.lastName].filter(Boolean).join(" ") || this.context.accountId;
-    const sections = Object.fromEntries(Object.entries(input.sections).map(([kind, value]) => [kind, {
+    const sections = Object.fromEntries(Object.entries(normalizedSections).map(([kind, value]) => [kind, {
       kind,
       templateVersion: kind === "what-happened"
         ? "what-happened-v1"
-        : kind === "general-data" && isGeneralDataValue(value)
-          ? "general-data-v1"
-          : "free-text-v0",
+        : kind === "outcome"
+          ? "outcome-v1"
+          : kind === "general-data" && isGeneralDataValue(value)
+            ? "general-data-v1"
+            : "free-text-v0",
       value,
       authorAccountId: this.context.accountId,
       authorDisplayName,

@@ -13,7 +13,12 @@ import {
   generalDataMeasurements,
   isFreeTextValue,
   isGeneralDataValue,
+  isOutcomeValue,
   isWhatHappenedValue,
+  outcomeComment,
+  outcomeLabel,
+  outcomeSelectedIds,
+  outcomeSummary,
   whatHappenedComment,
   whatHappenedPath,
   whatHappenedSelectedIds,
@@ -47,7 +52,8 @@ const populatedSections = computed(() =>
     .flatMap(([kind, label]) => {
       const section = props.record.sections[kind];
       return section ? [{ kind, label, section }] : [];
-    }),
+    })
+    .sort((left, right) => left.kind === right.kind ? 0 : left.kind === "outcome" ? 1 : right.kind === "outcome" ? -1 : 0),
 );
 
 const conditionHeadlines = computed(() => {
@@ -84,7 +90,7 @@ function formatLocalDateTime(value: string) {
   >
     <span>{{ formatDate(record.encounterDate) }}</span>
     <strong>{{ encounterSummary(record) }}</strong>
-    <span>{{ freeText(record.sections.outcome?.value) || 'Не заполнено' }}</span>
+    <span>{{ outcomeSummary(record.sections.outcome?.value) || 'Не заполнено' }}</span>
     <span class="status-badge" :class="confirmed ? 'approved' : 'pending'">
       {{ confirmed ? 'Подтверждена' : 'Ожидает подтверждения' }}
     </span>
@@ -157,11 +163,17 @@ function formatLocalDateTime(value: string) {
             </button>
           </span>
         </div>
-        <template v-if="isWhatHappenedValue(item.section.value)">
+        <template v-if="item.kind === 'what-happened' && isWhatHappenedValue(item.section.value)">
           <ul>
             <li v-for="id in whatHappenedSelectedIds(item.section.value)" :key="id">{{ whatHappenedPath(id) }}</li>
           </ul>
           <p v-if="whatHappenedComment(item.section.value)" class="encounter-history-comment">{{ whatHappenedComment(item.section.value) }}</p>
+        </template>
+        <template v-else-if="item.kind === 'outcome' && isOutcomeValue(item.section.value)">
+          <ul>
+            <li v-for="id in outcomeSelectedIds(item.section.value)" :key="id">{{ outcomeLabel(id) }}</li>
+          </ul>
+          <p v-if="outcomeComment(item.section.value)" class="encounter-history-comment">{{ outcomeComment(item.section.value) }}</p>
         </template>
         <dl v-else-if="isGeneralDataValue(item.section.value)" class="general-data-values">
           <div v-for="measurement in generalDataMeasurements(item.section.value)" :key="measurement.key">
