@@ -282,8 +282,8 @@ async function action(task: () => Promise<unknown>, success = "") {
 }
 
 function validateDraft(): string {
-  if (!draft.name.trim() || !draft.species.trim() || !draft.breed.trim() || !draft.color.trim()) {
-    return "Заполните кличку, вид, породу и окрас.";
+  if (!draft.name.trim() || !draft.species.trim() || !draft.breed.trim()) {
+    return "Заполните кличку, вид и породу.";
   }
   if (!draft.sex || !PET_SEXES.includes(draft.sex)) return "Выберите одно из четырёх значений пола.";
   const today = new Date().toISOString().slice(0, 10);
@@ -311,7 +311,7 @@ function petInput(): PetProfileInput {
     sex: draft.sex as PetSex,
     ...(draft.photoDataUrl ? { photoDataUrl: draft.photoDataUrl } : {}),
     ...(birthMode.value === "date" ? { birthDate: draft.birthDate } : { birthYear: Number(draft.birthYear) }),
-    color: draft.color,
+    ...(draft.color.trim() ? { color: draft.color } : {}),
     ...(draft.chip ? { chip: draft.chip } : {}),
     ...(draft.brandMark ? { brandMark: draft.brandMark } : {}),
     ...(draft.vaccinationDate && draft.vaccinationName
@@ -638,7 +638,7 @@ function confirmMedicalRecord(record: MedicalRecordDraft) {
               />
             </div>
           </fieldset>
-          <label><span>Окрас</span><input v-model="draft.color" required /></label>
+          <label><span>Окрас</span><input v-model="draft.color" /></label>
           <label><span>Вес, кг</span><input v-model="draft.weightKg" type="number" min="0.01" step="0.01" required /></label>
           <label><span>Номер чипа, если есть</span><input v-model="draft.chip" /></label>
           <label><span>Клеймо, если есть</span><input v-model="draft.brandMark" /></label>

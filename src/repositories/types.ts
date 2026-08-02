@@ -43,7 +43,7 @@ export interface PetProfileInput {
   photoDataUrl?: string;
   birthDate?: string;
   birthYear?: number;
-  color: string;
+  color?: string;
   chip?: string;
   brandMark?: string;
   latestVaccination?: { date: string; name: string };

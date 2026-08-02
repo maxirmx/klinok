@@ -300,7 +300,7 @@ describe("Owner pages", () => {
     await labelled(wrapper, "Порода").get("input").setValue("Сибирская");
     await labelled(wrapper, "Пол").get("select").setValue("Кастрированная самка");
     await wrapper.get('input[aria-label="Точная дата рождения"]').setValue("2021-05-10");
-    await labelled(wrapper, "Окрас").get("input").setValue("серый");
+    expect(labelled(wrapper, "Окрас").get("input").attributes("required")).toBeUndefined();
     await labelled(wrapper, "Вес, кг").get("input").setValue("4.8");
     await labelled(wrapper, "Заметки").get("textarea").setValue("Не любит переноску");
     await wrapper.get("form").trigger("submit");
@@ -311,16 +311,16 @@ describe("Owner pages", () => {
       species: "Кошка",
       sex: "Кастрированная самка",
       birthDate: "2021-05-10",
-      color: "серый",
       weightKg: 4.8,
       notes: "Не любит переноску",
     }));
+    expect(repositoryMocks.createPet.mock.calls[0]?.[0]).not.toHaveProperty("color");
   });
 
   it("shows supported-field validation and photo errors in the form", async () => {
     const wrapper = await mountAt("/owner/pets/new", "owner-pet-create");
     await wrapper.get("form").trigger("submit");
-    expect(wrapper.get('[role="alert"]').text()).toContain("Заполните кличку, вид, породу и окрас.");
+    expect(wrapper.get('[role="alert"]').text()).toContain("Заполните кличку, вид и породу.");
     expect(repositoryMocks.createPet).not.toHaveBeenCalled();
 
     const photo = wrapper.get<HTMLInputElement>('input[type="file"]');
