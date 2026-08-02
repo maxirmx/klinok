@@ -2011,14 +2011,19 @@ dd {
 }
 .doctor-access-global-filter {
   display: grid;
-  gap: 6px;
+  gap: 5px;
 }
-.doctor-access-global-filter > span {
+.doctor-access-filters > label > span:first-child {
   color: var(--text-soft);
   font-size: 12px;
-  font-weight: 700;
+  font-weight: 400;
 }
-.doctor-access-global-filter select { width: 100%; }
+.doctor-access-global-filter select {
+  width: 100%;
+  height: 40px;
+  min-height: 40px;
+  box-sizing: border-box;
+}
 .doctor-access-pet-identity { min-width: 0; }
 .doctor-access-pet-link {
   display: block;
