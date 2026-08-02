@@ -9,8 +9,10 @@ import WhatHappenedTree from "./WhatHappenedTree.vue";
 import {
   ENCOUNTER_SECTION_LABELS,
   OPTIONAL_ENCOUNTER_SECTION_KINDS,
+  OUTCOME_OPTIONS,
   WHAT_HAPPENED_TREE,
   parseGeneralDataDraft,
+  replaceConflictingOutcome,
   whatHappenedPath,
 } from "../medicalEncounter";
 import type { GeneralDataDraft, GeneralDataDraftErrors } from "../medicalEncounter";
@@ -26,6 +28,8 @@ const emit = defineEmits<{
 const date = defineModel<string>("date", { required: true });
 const selectedIds = defineModel<string[]>("selectedIds", { required: true });
 const comment = defineModel<string>("comment", { required: true });
+const outcomeSelectedIds = defineModel<string[]>("outcomeSelectedIds", { required: true });
+const outcomeComment = defineModel<string>("outcomeComment", { required: true });
 const optionalKinds = defineModel<MedicalEncounterSectionKind[]>("optionalKinds", { required: true });
 const texts = defineModel<Partial<Record<MedicalEncounterSectionKind, string>>>("texts", { required: true });
 const generalData = defineModel<GeneralDataDraft>("generalData", { required: true });
@@ -45,6 +49,10 @@ function toggleSelection(id: string) {
   }
 }
 
+function toggleOutcome(id: string) {
+  outcomeSelectedIds.value = replaceConflictingOutcome(outcomeSelectedIds.value, id);
+}
+
 function selectOptional(event: Event) {
   const select = event.target as HTMLSelectElement;
   const kind = select.value as MedicalEncounterSectionKind;
@@ -61,7 +69,7 @@ function updateGeneralData() {
 }
 
 function submit() {
-  if (!selectedIds.value.length) return;
+  if (!selectedIds.value.length || !outcomeSelectedIds.value.length) return;
   if (optionalKinds.value.includes("general-data") && texts.value["general-data"] === undefined) {
     const parsed = parseGeneralDataDraft(generalData.value);
     generalDataErrors.value = parsed.errors;
@@ -77,7 +85,7 @@ function submit() {
     <div class="doctor-heading encounter-editor-heading">
       <h2>{{ editing ? 'Редактирование записи' : 'Сегодняшний приём' }}</h2>
       <div class="row-actions">
-        <button class="primary-action inline owner-profile-action" type="button" :disabled="busy || !selectedIds.length" title="Сохранить запись" aria-label="Сохранить запись" @click="submit"><AppIcon name="check" /></button>
+        <button class="primary-action inline owner-profile-action" type="button" :disabled="busy || !selectedIds.length || !outcomeSelectedIds.length" title="Сохранить запись" aria-label="Сохранить запись" @click="submit"><AppIcon name="check" /></button>
         <button v-if="editing" type="button" class="outline-action inline owner-profile-action" title="Отменить редактирование" aria-label="Отменить редактирование" @click="emit('cancel')"><AppIcon name="close" /></button>
       </div>
     </div>
@@ -88,7 +96,7 @@ function submit() {
       <div class="encounter-condition-trees">
         <WhatHappenedTree v-for="condition in WHAT_HAPPENED_TREE.children ?? []" :key="condition.id" :node="condition" :selected="selectedIds" root @toggle="toggleSelection" />
       </div>
-      <label><span>Комментарий</span><textarea v-model="comment" rows="4" /></label>
+      <label><span>Комментарий</span><textarea v-model="comment" class="medical-card-comment" rows="2" /></label>
     </article>
     <article v-for="kind in optionalKinds" :key="kind" class="encounter-section-card">
       <div class="doctor-heading">
@@ -138,5 +146,19 @@ function submit() {
       </template>
     </article>
     <label v-if="optionalAvailable.length" class="encounter-add-section"><span>Добавить раздел</span><select @change="selectOptional"><option value="">Выберите раздел</option><option v-for="kind in optionalAvailable" :key="kind" :value="kind">{{ ENCOUNTER_SECTION_LABELS[kind] }}</option></select></label>
+    <article class="encounter-section-card encounter-outcome">
+      <div class="doctor-heading"><h3 id="encounter-outcome-heading">{{ ENCOUNTER_SECTION_LABELS.outcome }}</h3></div>
+      <div class="encounter-outcome-options medical-card-options" role="group" aria-labelledby="encounter-outcome-heading" aria-required="true">
+        <label v-for="option in OUTCOME_OPTIONS" :key="option.id" class="check-row">
+          <input
+            type="checkbox"
+            :checked="outcomeSelectedIds.includes(option.id)"
+            @change="toggleOutcome(option.id)"
+          />
+          <span>{{ option.label }}</span>
+        </label>
+      </div>
+      <label><span>Комментарий</span><textarea v-model="outcomeComment" class="medical-card-comment" rows="2" /></label>
+    </article>
   </form>
 </template>

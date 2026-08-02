@@ -743,6 +743,12 @@ dd {
 }
 .encounter-taxonomy { display: grid; gap: 3px; margin: 0; padding-left: 18px; list-style: none; }
 .encounter-taxonomy summary { cursor: pointer; font-weight: 600; padding: 3px 0; }
+.medical-card-options {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 6px 12px;
+}
+.workspace-content .encounter-editor textarea.medical-card-comment { min-height: 0; }
 .encounter-editor .check-row {
   align-items: center;
   gap: 8px;

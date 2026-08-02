@@ -52,6 +52,7 @@ const petInput = (name = "Шарик"): PetProfileInput => ({
   weightKg: 12.4,
   notes: "Спокойно переносит осмотры",
 });
+const encounterOutcome = () => ({ selectedIds: ["outcome.observation"], comment: "" });
 
 describe("medical authorization repository", () => {
   it("automatically approves an Owner-Doctor's request for their own pet", async () => {
@@ -187,14 +188,38 @@ describe("medical authorization repository", () => {
       encounterDate: "2026-07-21",
       sections: {
         "what-happened": { selectedIds: ["problem.digestive.1"], comment: "Проверка" },
+        outcome: encounterOutcome(),
         "general-data": {},
       },
     })).rejects.toThrow("Заполните хотя бы один показатель");
+    await expect(doctor.medical.saveEncounter({
+      petId,
+      encounterDate: "2026-07-21",
+      sections: {
+        "what-happened": { selectedIds: ["problem.digestive.1"], comment: "Проверка" },
+        outcome: { selectedIds: ["outcome.death", "outcome.improvement"], comment: "" },
+      },
+    })).rejects.toThrow("несовместимые варианты");
+    for (const [outcome, message] of [
+      [{ selectedIds: [], comment: "" }, "хотя бы один вариант"],
+      [{ selectedIds: ["outcome.unknown"], comment: "" }, "неизвестный вариант"],
+      [{ selectedIds: ["outcome.recovery", "outcome.recovery"], comment: "" }, "повторяющийся вариант"],
+    ] as const) {
+      await expect(doctor.medical.saveEncounter({
+        petId,
+        encounterDate: "2026-07-21",
+        sections: {
+          "what-happened": { selectedIds: ["problem.digestive.1"], comment: "Проверка" },
+          outcome,
+        },
+      })).rejects.toThrow(message);
+    }
     const recordId = await doctor.medical.saveEncounter({
       petId,
       encounterDate: "2026-07-21",
       sections: {
         "what-happened": { selectedIds: ["problem.digestive.1"], comment: "Не ест со вчерашнего дня" },
+        outcome: { selectedIds: ["outcome.improvement", "outcome.recovery"], comment: " Плановое наблюдение " },
         "general-data": {
           weightKg: 13.75,
           temperatureC: 38.6,
@@ -214,6 +239,10 @@ describe("medical authorization repository", () => {
       value: { selectedIds: ["problem.digestive.1"], comment: "Не ест со вчерашнего дня" },
     });
     expect(record.sections.diagnosis).toMatchObject({ templateVersion: "free-text-v0", value: { text: "Предварительный диагноз" } });
+    expect(record.sections.outcome).toMatchObject({
+      templateVersion: "outcome-v1",
+      value: { selectedIds: ["outcome.recovery", "outcome.improvement"], comment: "Плановое наблюдение" },
+    });
     expect(record.sections["general-data"]).toMatchObject({
       templateVersion: "general-data-v1",
       value: { weightKg: 13.75, bloodPressure: { systolicMmHg: 120, diastolicMmHg: 80, meanMmHg: 93 } },
@@ -245,6 +274,7 @@ describe("medical authorization repository", () => {
       encounterDate: "2026-07-20",
       sections: {
         "what-happened": { selectedIds: [], comment: "Подтверждается позднее" },
+        outcome: encounterOutcome(),
         "general-data": { weightKg: 15.1 },
       },
     });
@@ -257,14 +287,14 @@ describe("medical authorization repository", () => {
     await expect(doctor.medical.saveEncounter({
       petId,
       encounterDate: "2026-07-21",
-      sections: { "what-happened": { selectedIds: [], comment: "Позднее дополнение" } },
+      sections: { "what-happened": { selectedIds: [], comment: "Позднее дополнение" }, outcome: encounterOutcome() },
       addendumTo: recordId,
     } as Parameters<typeof doctor.medical.saveEncounter>[0])).rejects.toThrow("Дополнения к медицинским записям не поддерживаются.");
     await expect(doctor.medical.saveEncounter({
       petId,
       recordId,
       encounterDate: "2026-07-21",
-      sections: { "what-happened": { selectedIds: [], comment: "Изменение" } },
+      sections: { "what-happened": { selectedIds: [], comment: "Изменение" }, outcome: encounterOutcome() },
     })).rejects.toMatchObject({ code: "CONFIRMED_RECORD_IMMUTABLE" });
     await expect(doctor.medical.deleteRecord(petId, recordId)).rejects.toThrow("Подтверждённую медицинскую запись удалить нельзя.");
 
@@ -273,6 +303,7 @@ describe("medical authorization repository", () => {
       encounterDate: "2026-07-21",
       sections: {
         "what-happened": { selectedIds: [], comment: "Удаляемый черновик" },
+        outcome: encounterOutcome(),
         "general-data": { text: "Вес записан в старом формате" },
       },
     });
@@ -354,6 +385,7 @@ describe("medical authorization repository", () => {
       .find((event) => event.eventType === "grant.created" && event.resourceId === grantId)
       ?.metadata.grant as Record<string, unknown>;
     expect(publicGrant).not.toHaveProperty("granteeDisplayName");
+    await waitFor(async () => (await delegatedDoctor.medical.snapshot()).pets.some((pet) => pet.petId === petId));
     expect((await delegatedDoctor.medical.snapshot()).pets).toEqual([expect.objectContaining({ petId, name: "Шарик" })]);
     await expect(doctor.medical.delegateGrant(grantId, "delegated-doctor-account", ["read"]))
       .rejects.toMatchObject({ code: "GRANT_DELEGATION_FORBIDDEN" });
@@ -364,20 +396,20 @@ describe("medical authorization repository", () => {
       expect.objectContaining({ grantId, actions: ["read", "write_unconfirmed", "delegate"] }),
     ]));
 
-    const recordId = await doctor.medical.saveRecord({ petId, title: "Осмотр", text: "Состояние стабильное" });
+    const recordId = await doctor.medical.saveRecord({ petId, title: "Осмотр", text: "Состояние стабильное", outcome: encounterOutcome() });
     await tick();
     const ownerRecord = (await owner.medical.snapshot()).records.find((record) => record.recordId === recordId)!;
     expect(ownerRecord.text).toBe("Состояние стабильное");
     await owner.medical.confirmRecord(petId, recordId, ownerRecord.revision);
     await tick();
-    await expect(doctor.medical.saveRecord({ petId, recordId, title: "Изменено", text: "Нельзя изменить" })).rejects.toMatchObject({ code: "CONFIRMED_RECORD_IMMUTABLE" });
+    await expect(doctor.medical.saveRecord({ petId, recordId, title: "Изменено", text: "Нельзя изменить", outcome: encounterOutcome() })).rejects.toMatchObject({ code: "CONFIRMED_RECORD_IMMUTABLE" });
 
     await owner.medical.revokeGrant(grantId);
     await tick();
     expect((await owner.medical.snapshot()).pets[0]?.keyVersion).toBe(2);
     expect((await doctor.medical.snapshot()).pets).toHaveLength(0);
     expect((await delegatedDoctor.medical.snapshot()).pets).toHaveLength(0);
-    await expect(doctor.medical.saveRecord({ petId, title: "После отзыва", text: "Запрещено" })).rejects.toMatchObject({ code: "PET_GRANT_REQUIRED" });
+    await expect(doctor.medical.saveRecord({ petId, title: "После отзыва", text: "Запрещено", outcome: encounterOutcome() })).rejects.toMatchObject({ code: "PET_GRANT_REQUIRED" });
 
     const replay = new InMemorySignedEventRepository("bootstrap-administrator");
     const replayEvents = owner.control.signed.list();
@@ -476,6 +508,7 @@ describe("medical authorization repository", () => {
       petId,
       title: "Повторный доступ",
       text: "Запись после нескольких предоставлений доступа",
+      outcome: encounterOutcome(),
     });
     await tick();
     expect((await owner.medical.snapshot()).records).toEqual(expect.arrayContaining([

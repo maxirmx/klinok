@@ -5,10 +5,13 @@
 import { describe, expect, it } from "vitest";
 import {
   WHAT_HAPPENED_TREE,
+  OUTCOME_OPTIONS,
   encounterSummary,
   generalDataMeasurements,
   isGeneralDataValue,
   parseGeneralDataDraft,
+  outcomeValidationError,
+  replaceConflictingOutcome,
   sectionSearchText,
   whatHappenedPath,
 } from "../src/medicalEncounter";
@@ -42,6 +45,44 @@ describe("medical encounter templates", () => {
     });
     expect(summary).toContain("Кашляет");
     expect(summary).toContain("Три дня");
+  });
+
+  it("defines, validates, and indexes the structured outcome template", () => {
+    expect(OUTCOME_OPTIONS.map((option) => option.label)).toEqual([
+      "Без наблюдения",
+      "В стадии наблюдения",
+      "В стадии обследования",
+      "Выздоровление",
+      "Улучшение",
+      "Ухудшение",
+      "Смерть",
+    ]);
+    const recoveryAndImprovement = {
+      selectedIds: ["outcome.recovery", "outcome.improvement"],
+      comment: "Контроль через неделю",
+    };
+    expect(outcomeValidationError(recoveryAndImprovement)).toBe("");
+    expect(sectionSearchText(recoveryAndImprovement))
+      .toBe("Выздоровление; Улучшение; Контроль через неделю");
+    expect(outcomeValidationError({ selectedIds: [], comment: "" })).toContain("хотя бы один");
+    expect(outcomeValidationError({ selectedIds: ["outcome.unknown"], comment: "" })).toContain("неизвестный");
+    expect(outcomeValidationError({ selectedIds: ["outcome.recovery", "outcome.recovery"], comment: "" }))
+      .toContain("повторяющийся");
+    expect(outcomeValidationError({ selectedIds: ["outcome.death", "outcome.observation"], comment: "" }))
+      .toContain("несовместимые");
+  });
+
+  it("replaces only outcome selections that conflict with the newly selected option", () => {
+    expect(replaceConflictingOutcome(
+      ["outcome.recovery", "outcome.improvement", "outcome.observation"],
+      "outcome.deterioration",
+    )).toEqual(["outcome.observation", "outcome.deterioration"]);
+    expect(replaceConflictingOutcome(["outcome.observation", "outcome.examination"], "outcome.no-observation"))
+      .toEqual(["outcome.no-observation"]);
+    expect(replaceConflictingOutcome(["outcome.recovery", "outcome.improvement"], "outcome.death"))
+      .toEqual(["outcome.death"]);
+    expect(replaceConflictingOutcome(["outcome.death"], "outcome.recovery"))
+      .toEqual(["outcome.recovery"]);
   });
 
   it("parses, validates, formats, and indexes structured general data", () => {

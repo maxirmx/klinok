@@ -85,6 +85,11 @@ export interface WhatHappenedSectionValue {
   comment: string;
 }
 
+export interface OutcomeSectionValue {
+  selectedIds: readonly string[];
+  comment: string;
+}
+
 export interface FreeTextSectionValue {
   text: string;
 }
@@ -103,17 +108,22 @@ export interface GeneralDataSectionValue {
 
 export interface MedicalEncounterSection {
   kind: MedicalEncounterSectionKind;
-  templateVersion: "what-happened-v1" | "general-data-v1" | "free-text-v0";
-  value: WhatHappenedSectionValue | GeneralDataSectionValue | FreeTextSectionValue;
+  templateVersion: "what-happened-v1" | "outcome-v1" | "general-data-v1" | "free-text-v0";
+  value: WhatHappenedSectionValue | OutcomeSectionValue | GeneralDataSectionValue | FreeTextSectionValue;
   authorAccountId: string;
   authorDisplayName: string;
   updatedAt: string;
 }
 
+export type MedicalEncounterSectionInputValue = WhatHappenedSectionValue | OutcomeSectionValue | GeneralDataSectionValue | FreeTextSectionValue;
+
 export interface MedicalEncounterInput {
   petId: string;
   encounterDate: string;
-  sections: Partial<Record<MedicalEncounterSectionKind, WhatHappenedSectionValue | GeneralDataSectionValue | FreeTextSectionValue>>;
+  sections: {
+    "what-happened": WhatHappenedSectionValue;
+    outcome: OutcomeSectionValue;
+  } & Partial<Record<Exclude<MedicalEncounterSectionKind, "what-happened" | "outcome">, MedicalEncounterSectionInputValue>>;
   recordId?: string;
 }
 

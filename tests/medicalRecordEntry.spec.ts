@@ -50,8 +50,11 @@ const record: MedicalRecordDraft = {
     },
     outcome: {
       kind: "outcome",
-      templateVersion: "free-text-v0",
-      value: { text: "Назначено лечение" },
+      templateVersion: "outcome-v1",
+      value: {
+        selectedIds: ["outcome.recovery", "outcome.improvement"],
+        comment: "Назначено лечение",
+      },
       authorAccountId: "doctor-1",
       authorDisplayName: "Вера Врач",
       updatedAt: "2026-07-21T12:00:00.000Z",
@@ -99,6 +102,7 @@ describe("MedicalRecordEntry", () => {
     expect(wrapper.element.tagName).toBe("BUTTON");
     expect(wrapper.text()).toContain("21.07.2026");
     expect(wrapper.text()).toContain("Не ест");
+    expect(wrapper.text()).toContain("Выздоровление; Улучшение");
     expect(wrapper.text()).toContain("Назначено лечение");
     expect(wrapper.text()).toContain("Ожидает подтверждения");
     await wrapper.trigger("click");
@@ -112,6 +116,25 @@ describe("MedicalRecordEntry", () => {
       },
     });
     expect(withoutOutcome.text()).toContain("Не заполнено");
+
+    const legacyOutcome = mount(MedicalRecordEntry, {
+      props: {
+        record: {
+          ...record,
+          sections: {
+            ...record.sections,
+            outcome: {
+              ...record.sections.outcome!,
+              templateVersion: "free-text-v0",
+              value: { text: "Старый текст исхода" },
+            },
+          },
+        },
+        mode: "epicrisis",
+        confirmed: false,
+      },
+    });
+    expect(legacyOutcome.text()).toContain("Старый текст исхода");
   });
 
   it("renders populated sections in canonical order and hides editing for confirmed records", async () => {

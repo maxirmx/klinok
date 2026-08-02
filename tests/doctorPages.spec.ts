@@ -89,8 +89,8 @@ const medicalRecord: MedicalRecordDraft = {
     },
     outcome: {
       kind: "outcome",
-      templateVersion: "free-text-v0",
-      value: { text: "Назначено лечение" },
+      templateVersion: "outcome-v1",
+      value: { selectedIds: ["outcome.observation"], comment: "Назначено лечение" },
       authorAccountId: "doctor-1",
       authorDisplayName: "Вера Врач",
       updatedAt: "2026-07-21T10:00:00.000Z",
@@ -707,8 +707,16 @@ describe("Doctor pages", () => {
     const notEating = wrapper.findAll(".encounter-taxonomy label").find((label) => label.text() === "Не ест");
     expect(notEating).toBeDefined();
     await notEating!.get("input").trigger("change");
+    expect(save.element.disabled).toBe(true);
+    const outcomeOption = (label: string) => wrapper.findAll(".encounter-outcome .check-row")
+      .find((option) => option.text() === label)!;
+    await outcomeOption("Улучшение").get("input").trigger("change");
     expect(save.element.disabled).toBe(false);
-    await wrapper.get(".encounter-editor textarea").setValue("Не ест со вчерашнего дня");
+    await outcomeOption("Выздоровление").get("input").trigger("change");
+    expect(outcomeOption("Улучшение").get<HTMLInputElement>("input").element.checked).toBe(true);
+    expect(outcomeOption("Выздоровление").get<HTMLInputElement>("input").element.checked).toBe(true);
+    await wrapper.get(".encounter-what-happened textarea").setValue("Не ест со вчерашнего дня");
+    await wrapper.get(".encounter-outcome textarea").setValue("Контроль через неделю");
     await save.trigger("click");
     await flushPromises();
     expect(repositoryMocks.saveEncounter).toHaveBeenCalledWith(expect.objectContaining({
@@ -717,6 +725,10 @@ describe("Doctor pages", () => {
         "what-happened": {
           selectedIds: ["problem.digestive.1"],
           comment: "Не ест со вчерашнего дня",
+        },
+        outcome: {
+          selectedIds: ["outcome.recovery", "outcome.improvement"],
+          comment: "Контроль через неделю",
         },
       },
     }));
@@ -727,6 +739,9 @@ describe("Doctor pages", () => {
     await flushPromises();
     const notEating = wrapper.findAll(".encounter-taxonomy label").find((label) => label.text() === "Не ест")!;
     await notEating.get("input").trigger("change");
+    await wrapper.findAll(".encounter-outcome .check-row")
+      .find((option) => option.text() === "В стадии наблюдения")!
+      .get("input").trigger("change");
     await wrapper.get<HTMLSelectElement>(".encounter-add-section select").setValue("general-data");
 
     expect(wrapper.findAll(".general-data-pressure-inputs label > span").map((label) => label.text()))
@@ -763,7 +778,7 @@ describe("Doctor pages", () => {
   it("uses a small icon action to remove an optional encounter section", async () => {
     const wrapper = await mountAt("/doctor/pets/pet-1", "doctor-pet-detail");
     await flushPromises();
-    await wrapper.get<HTMLSelectElement>(".encounter-editor > form > label:last-child select").setValue("diagnosis");
+    await wrapper.get<HTMLSelectElement>(".encounter-add-section select").setValue("diagnosis");
 
     const remove = wrapper.get(".encounter-section-delete");
     expect(remove.text()).toBe("");
@@ -774,14 +789,14 @@ describe("Doctor pages", () => {
     let dialog = wrapper.get('[role="alertdialog"]');
     expect(dialog.text()).toContain("Удалить раздел?");
     expect(dialog.text()).toContain("Раздел «Диагноз» и введённые в нём данные будут удалены из записи.");
-    expect(wrapper.find(".encounter-section-card:not(.encounter-what-happened)").exists()).toBe(true);
+    expect(wrapper.find(".encounter-section-card:not(.encounter-what-happened):not(.encounter-outcome)").exists()).toBe(true);
     await dialog.get(".outline-action").trigger("click");
-    expect(wrapper.find(".encounter-section-card:not(.encounter-what-happened)").exists()).toBe(true);
+    expect(wrapper.find(".encounter-section-card:not(.encounter-what-happened):not(.encounter-outcome)").exists()).toBe(true);
 
     await remove.trigger("click");
     dialog = wrapper.get('[role="alertdialog"]');
     await dialog.get(".danger").trigger("click");
-    expect(wrapper.find(".encounter-section-card:not(.encounter-what-happened)").exists()).toBe(false);
+    expect(wrapper.find(".encounter-section-card:not(.encounter-what-happened):not(.encounter-outcome)").exists()).toBe(false);
   });
 
   it("edits an unconfirmed medical record in place", async () => {
@@ -837,7 +852,7 @@ describe("Doctor pages", () => {
     await wrapper.get(".medical-record-edit").trigger("click");
     const editor = wrapper.get(".encounter-editor-inline");
     expect(editor.get(".temporary-note").text()).toContain("старый шаблон");
-    expect(editor.get<HTMLTextAreaElement>(".encounter-section-card:not(.encounter-what-happened) textarea").element.value)
+    expect(editor.get<HTMLTextAreaElement>(".encounter-section-card:not(.encounter-what-happened):not(.encounter-outcome) textarea").element.value)
       .toBe("Вес 11,8 кг; температура 38,4");
     await editor.get('button[title="Сохранить запись"]').trigger("click");
     await flushPromises();
@@ -852,6 +867,8 @@ describe("Doctor pages", () => {
     const wrapper = await mountAt("/doctor/pets/pet-1", "doctor-pet-detail");
     await flushPromises();
     expect(wrapper.get(".encounter-what-happened > .doctor-heading h3").text()).toBe("Что случилось");
+    expect(wrapper.get(".encounter-what-happened textarea").attributes("rows")).toBe("2");
+    expect(wrapper.get(".encounter-what-happened textarea").classes()).toContain("medical-card-comment");
     expect(wrapper.findAll('.encounter-condition-trees > .encounter-taxonomy[role="tree"]')).toHaveLength(3);
     expect(wrapper.findAll('.encounter-condition-trees > .encounter-taxonomy[role="tree"]').map((tree) => tree.attributes("aria-label")))
       .toEqual(["Всё хорошо, необходимо", "Не всё хорошо с", "Всё плохо"]);
@@ -865,6 +882,9 @@ describe("Doctor pages", () => {
     const vaccination = checkbox("Вакцинация");
     const notEating = checkbox("Не ест");
     const bleeding = checkbox("Обильное кровотечение");
+    expect(checkup.element.closest(".medical-card-options")).not.toBeNull();
+    expect(notEating.element.closest(".medical-card-options")).not.toBeNull();
+    expect(bleeding.element.closest(".medical-card-options")).not.toBeNull();
 
     await checkup.trigger("change");
     await vaccination.trigger("change");
@@ -879,6 +899,87 @@ describe("Doctor pages", () => {
     await bleeding.trigger("change");
     expect(notEating.element.checked).toBe(false);
     expect(bleeding.element.checked).toBe(true);
+  });
+
+  it("keeps the mandatory outcome last and replaces only conflicting selections", async () => {
+    const wrapper = await mountAt("/doctor/pets/pet-1", "doctor-pet-detail");
+    await flushPromises();
+    const form = wrapper.get(".encounter-editor > form");
+    expect(form.element.lastElementChild?.classList.contains("encounter-outcome")).toBe(true);
+    expect(wrapper.findAll(".encounter-add-section option").map((option) => option.text())).not.toContain("Исход");
+    expect(wrapper.find(".encounter-outcome .encounter-section-delete").exists()).toBe(false);
+    expect(wrapper.get(".encounter-outcome-options").classes()).toContain("medical-card-options");
+    expect(wrapper.get(".encounter-outcome textarea").attributes("rows")).toBe("2");
+    expect(wrapper.get(".encounter-outcome textarea").classes()).toContain("medical-card-comment");
+
+    const outcome = (label: string) => wrapper.findAll(".encounter-outcome .check-row")
+      .find((option) => option.text() === label)!
+      .get<HTMLInputElement>("input");
+    const recovery = outcome("Выздоровление");
+    const improvement = outcome("Улучшение");
+    const deterioration = outcome("Ухудшение");
+    const death = outcome("Смерть");
+    const observation = outcome("В стадии наблюдения");
+    const examination = outcome("В стадии обследования");
+    const noObservation = outcome("Без наблюдения");
+
+    await recovery.trigger("change");
+    await improvement.trigger("change");
+    expect(recovery.element.checked).toBe(true);
+    expect(improvement.element.checked).toBe(true);
+    await deterioration.trigger("change");
+    expect(recovery.element.checked).toBe(false);
+    expect(improvement.element.checked).toBe(false);
+    expect(deterioration.element.checked).toBe(true);
+    await death.trigger("change");
+    expect(deterioration.element.checked).toBe(false);
+    expect(death.element.checked).toBe(true);
+    await observation.trigger("change");
+    expect(death.element.checked).toBe(false);
+    await examination.trigger("change");
+    expect(observation.element.checked).toBe(true);
+    expect(examination.element.checked).toBe(true);
+    await noObservation.trigger("change");
+    expect(observation.element.checked).toBe(false);
+    expect(examination.element.checked).toBe(false);
+    expect(noObservation.element.checked).toBe(true);
+  });
+
+  it("preserves a legacy free-text outcome as the structured outcome comment", async () => {
+    const legacyOutcomeRecord: MedicalRecordDraft = {
+      ...medicalRecord,
+      sections: {
+        ...medicalRecord.sections,
+        outcome: {
+          ...medicalRecord.sections.outcome!,
+          templateVersion: "free-text-v0",
+          value: { text: "Продолжить домашнее наблюдение" },
+        },
+      },
+    };
+    await setMedical(snapshot(undefined, { records: [legacyOutcomeRecord] }));
+    const wrapper = await mountAt("/doctor/pets/pet-1", "doctor-pet-detail");
+    await flushPromises();
+    await wrapper.get(".medical-record-edit").trigger("click");
+    const editor = wrapper.get(".encounter-editor-inline");
+    const save = editor.get<HTMLButtonElement>('button[title="Сохранить запись"]');
+    expect(editor.get<HTMLTextAreaElement>(".encounter-outcome textarea").element.value)
+      .toBe("Продолжить домашнее наблюдение");
+    expect(save.element.disabled).toBe(true);
+    await editor.findAll(".encounter-outcome .check-row")
+      .find((option) => option.text() === "В стадии наблюдения")!
+      .get("input").trigger("change");
+    expect(save.element.disabled).toBe(false);
+    await save.trigger("click");
+    await flushPromises();
+    expect(repositoryMocks.saveEncounter).toHaveBeenCalledWith(expect.objectContaining({
+      sections: expect.objectContaining({
+        outcome: {
+          selectedIds: ["outcome.observation"],
+          comment: "Продолжить домашнее наблюдение",
+        },
+      }),
+    }));
   });
 
   it("uses verified status in the medical card and does not offer changes to a confirmed record", async () => {
