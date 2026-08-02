@@ -6,6 +6,7 @@ import { describe, expect, it } from "vitest";
 import {
   formatCompletedYears,
   formatCompletedYearsInterval,
+  normalizePetInput,
   normalizePetProfile,
   petBirthSummary,
   petCompletedYears,
@@ -34,6 +35,20 @@ describe("pet profile normalization", () => {
     expect(normalized.sex).toBeUndefined();
     expect(normalized.notes).toBe("Заметка");
     expect(normalized).not.toHaveProperty("legacyOptionalField");
+  });
+
+  it("omits an empty optional color from normalized input", () => {
+    const normalized = normalizePetInput({
+      name: " Шарик ",
+      species: " Собака ",
+      breed: " Бигль ",
+      sex: "Интактный самец",
+      birthYear: 2022,
+      color: "   ",
+      weightKg: 12.4,
+    });
+
+    expect(normalized).not.toHaveProperty("color");
   });
 
   it("renders exact completed age or a year-only age interval", () => {

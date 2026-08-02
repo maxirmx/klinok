@@ -67,7 +67,7 @@ export function normalizePetInput(input: PetProfileInput): PetProfileInput {
     sex: input.sex,
     ...(optionalText(input.photoDataUrl) ? { photoDataUrl: optionalText(input.photoDataUrl) } : {}),
     ...(birthDate ? { birthDate } : Number.isInteger(input.birthYear) ? { birthYear: input.birthYear } : {}),
-    color: input.color.trim(),
+    ...(optionalText(input.color) ? { color: optionalText(input.color) } : {}),
     ...(optionalText(input.chip) ? { chip: optionalText(input.chip) } : {}),
     ...(optionalText(input.brandMark) ? { brandMark: optionalText(input.brandMark) } : {}),
     ...(input.latestVaccination?.date && input.latestVaccination.name.trim()
