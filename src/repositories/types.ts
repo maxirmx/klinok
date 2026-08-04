@@ -28,6 +28,7 @@ export interface PetProfile {
   chip?: string;
   brandMark?: string;
   latestVaccination?: { date: string; name: string };
+  latestConfirmedVaccination?: { date: string; name: string; recordId: string };
   weightKg?: number;
   notes?: string;
   keyVersion: number;
@@ -106,16 +107,27 @@ export interface GeneralDataSectionValue {
   };
 }
 
+export interface VaccinationSectionValue {
+  previousVaccinationDate?: string;
+  previousVaccineName?: string;
+  previousVaccinationComplications?: boolean;
+  currentVaccineName?: string;
+  currentVaccineBatch?: string;
+  currentVaccineExpiresOn?: string;
+  chipNumber?: string;
+  administrationSite?: string;
+}
+
 export interface MedicalEncounterSection {
   kind: MedicalEncounterSectionKind;
-  templateVersion: "what-happened-v1" | "outcome-v1" | "general-data-v1" | "free-text-v0";
-  value: WhatHappenedSectionValue | OutcomeSectionValue | GeneralDataSectionValue | FreeTextSectionValue;
+  templateVersion: "what-happened-v1" | "outcome-v1" | "general-data-v1" | "vaccination-v1" | "free-text-v0";
+  value: WhatHappenedSectionValue | OutcomeSectionValue | GeneralDataSectionValue | VaccinationSectionValue | FreeTextSectionValue;
   authorAccountId: string;
   authorDisplayName: string;
   updatedAt: string;
 }
 
-export type MedicalEncounterSectionInputValue = WhatHappenedSectionValue | OutcomeSectionValue | GeneralDataSectionValue | FreeTextSectionValue;
+export type MedicalEncounterSectionInputValue = WhatHappenedSectionValue | OutcomeSectionValue | GeneralDataSectionValue | VaccinationSectionValue | FreeTextSectionValue;
 
 export interface MedicalEncounterInput {
   petId: string;

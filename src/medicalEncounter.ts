@@ -8,6 +8,7 @@ import type {
   MedicalEncounterSectionKind,
   MedicalRecordDraft,
   OutcomeSectionValue,
+  VaccinationSectionValue,
   WhatHappenedSectionValue,
 } from "./repositories/types";
 
@@ -23,6 +24,20 @@ export interface GeneralDataDraft {
 
 export type GeneralDataDraftField = keyof GeneralDataDraft | "section" | "bloodPressure";
 export type GeneralDataDraftErrors = Partial<Record<GeneralDataDraftField, string>>;
+
+export interface VaccinationDraft {
+  previousVaccinationDate: string;
+  previousVaccineName: string;
+  previousVaccinationComplications: "" | "yes" | "no";
+  currentVaccineName: string;
+  currentVaccineBatch: string;
+  currentVaccineExpiresOn: string;
+  chipNumber: string;
+  administrationSite: string;
+}
+
+export type VaccinationDraftField = keyof VaccinationDraft | "section";
+export type VaccinationDraftErrors = Partial<Record<VaccinationDraftField, string>>;
 
 export interface WhatHappenedOption {
   id: string;
@@ -80,7 +95,7 @@ export const ENCOUNTER_SECTION_LABELS: Record<MedicalEncounterSectionKind, strin
   "general-data": "Общие данные/Габитус",
   "therapeutic-appointment": "Терапевтический приём",
   diagnosis: "Диагноз",
-  vaccination: "Вакцинация",
+  vaccination: "Вакцинация/чипирование",
   recommendations: "Рекомендации",
   "laboratory-tests": "Лабораторные исследования",
   "instrumental-tests": "Инструментальные исследования",
@@ -315,10 +330,135 @@ export function generalDataMeasurements(value: GeneralDataSectionValue): Array<{
   ];
 }
 
+function isIsoDate(value: string): boolean {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (!match) return false;
+  const date = new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])));
+  return date.getUTCFullYear() === Number(match[1]) &&
+    date.getUTCMonth() + 1 === Number(match[2]) &&
+    date.getUTCDate() === Number(match[3]);
+}
+
+export function emptyVaccinationDraft(previous?: { date: string; name: string }): VaccinationDraft {
+  return {
+    previousVaccinationDate: previous?.date ?? "",
+    previousVaccineName: previous?.name ?? "",
+    previousVaccinationComplications: "",
+    currentVaccineName: "",
+    currentVaccineBatch: "",
+    currentVaccineExpiresOn: "",
+    chipNumber: "",
+    administrationSite: "",
+  };
+}
+
+export function vaccinationDraft(value?: VaccinationSectionValue): VaccinationDraft {
+  return {
+    previousVaccinationDate: value?.previousVaccinationDate ?? "",
+    previousVaccineName: value?.previousVaccineName ?? "",
+    previousVaccinationComplications: value?.previousVaccinationComplications === undefined
+      ? ""
+      : value.previousVaccinationComplications ? "yes" : "no",
+    currentVaccineName: value?.currentVaccineName ?? "",
+    currentVaccineBatch: value?.currentVaccineBatch ?? "",
+    currentVaccineExpiresOn: value?.currentVaccineExpiresOn ?? "",
+    chipNumber: value?.chipNumber ?? "",
+    administrationSite: value?.administrationSite ?? "",
+  };
+}
+
+export function parseVaccinationDraft(draft: VaccinationDraft): { value?: VaccinationSectionValue; errors: VaccinationDraftErrors } {
+  const errors: VaccinationDraftErrors = {};
+  const previousVaccinationDate = draft.previousVaccinationDate.trim();
+  const previousVaccineName = draft.previousVaccineName.trim();
+  const currentVaccineName = draft.currentVaccineName.trim();
+  const currentVaccineBatch = draft.currentVaccineBatch.trim();
+  const currentVaccineExpiresOn = draft.currentVaccineExpiresOn.trim();
+  const chipNumber = draft.chipNumber.trim();
+  const administrationSite = draft.administrationSite.trim();
+  const currentVaccinationStarted = Boolean(currentVaccineName || currentVaccineBatch || currentVaccineExpiresOn);
+
+  if (previousVaccinationDate && !isIsoDate(previousVaccinationDate)) {
+    errors.previousVaccinationDate = "Укажите корректную дату предыдущей вакцинации.";
+  }
+  if (currentVaccineExpiresOn && !isIsoDate(currentVaccineExpiresOn)) {
+    errors.currentVaccineExpiresOn = "Укажите корректный срок годности вакцины.";
+  }
+  if (currentVaccinationStarted) {
+    if (!currentVaccineName) errors.currentVaccineName = "Укажите название нынешней вакцины.";
+    if (!currentVaccineBatch) errors.currentVaccineBatch = "Укажите серию и/или номер вакцины.";
+    if (!currentVaccineExpiresOn) errors.currentVaccineExpiresOn = "Укажите срок годности вакцины.";
+  }
+  if (!currentVaccinationStarted && !chipNumber) {
+    errors.section = "Заполните данные нынешней вакцинации или номер чипа.";
+  }
+  if (Object.keys(errors).length) return { errors };
+
+  return {
+    value: {
+      ...(previousVaccinationDate ? { previousVaccinationDate } : {}),
+      ...(previousVaccineName ? { previousVaccineName } : {}),
+      ...(draft.previousVaccinationComplications === ""
+        ? {}
+        : { previousVaccinationComplications: draft.previousVaccinationComplications === "yes" }),
+      ...(currentVaccineName ? { currentVaccineName } : {}),
+      ...(currentVaccineBatch ? { currentVaccineBatch } : {}),
+      ...(currentVaccineExpiresOn ? { currentVaccineExpiresOn } : {}),
+      ...(chipNumber ? { chipNumber } : {}),
+      ...(administrationSite ? { administrationSite } : {}),
+    },
+    errors,
+  };
+}
+
+export function isVaccinationValue(value: unknown): value is VaccinationSectionValue {
+  if (!value || typeof value !== "object" || isFreeTextValue(value)) return false;
+  const candidate = value as Record<string, unknown>;
+  const stringFields = [
+    "previousVaccinationDate",
+    "previousVaccineName",
+    "currentVaccineName",
+    "currentVaccineBatch",
+    "currentVaccineExpiresOn",
+    "chipNumber",
+    "administrationSite",
+  ];
+  if (stringFields.some((field) => candidate[field] !== undefined && typeof candidate[field] !== "string")) return false;
+  if (candidate.previousVaccinationComplications !== undefined && typeof candidate.previousVaccinationComplications !== "boolean") return false;
+  return Boolean(parseVaccinationDraft(vaccinationDraft(candidate as VaccinationSectionValue)).value);
+}
+
+export function normalizeVaccinationValue(value: VaccinationSectionValue): VaccinationSectionValue {
+  return parseVaccinationDraft(vaccinationDraft(value)).value ?? value;
+}
+
+function formatDate(value: string): string {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  return match ? `${match[3]}.${match[2]}.${match[1]}` : value;
+}
+
+export function vaccinationDetails(value: VaccinationSectionValue): Array<{ key: string; label: string; value: string }> {
+  return [
+    ...(value.previousVaccinationDate ? [{ key: "previous-date", label: "Дата предыдущей вакцинации", value: formatDate(value.previousVaccinationDate) }] : []),
+    ...(value.previousVaccineName ? [{ key: "previous-name", label: "Название предыдущей вакцины", value: value.previousVaccineName }] : []),
+    ...(value.previousVaccinationComplications === undefined ? [] : [{
+      key: "previous-complications",
+      label: "Осложнения после предыдущей вакцинации",
+      value: value.previousVaccinationComplications ? "Были" : "Не было",
+    }]),
+    ...(value.currentVaccineName ? [{ key: "current-name", label: "Название нынешней вакцины", value: value.currentVaccineName }] : []),
+    ...(value.currentVaccineBatch ? [{ key: "current-batch", label: "Серия и/или номер вакцины", value: value.currentVaccineBatch }] : []),
+    ...(value.currentVaccineExpiresOn ? [{ key: "current-expiry", label: "Срок годности препарата/вакцины", value: formatDate(value.currentVaccineExpiresOn) }] : []),
+    ...(value.chipNumber ? [{ key: "chip", label: "Номер чипа", value: value.chipNumber }] : []),
+    ...(value.administrationSite ? [{ key: "site", label: "Место введения", value: value.administrationSite }] : []),
+  ];
+}
+
 export function sectionSearchText(value: unknown): string {
   if (isOutcomeValue(value)) return outcomeSummary(value);
   if (isFreeTextValue(value)) return value.text;
   if (isGeneralDataValue(value)) return generalDataMeasurements(value).map((item) => `${item.label} ${item.value}`).join(" ");
+  if (isVaccinationValue(value)) return vaccinationDetails(value).map((item) => `${item.label} ${item.value}`).join(" ");
   return "";
 }
 

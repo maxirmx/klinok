@@ -91,6 +91,7 @@ describe("MedicalRecordEntry", () => {
     const summary = wrapper.get(".owner-encounter-summary");
     expect(summary.text()).toContain(label);
     expect(summary.text()).not.toContain("Подробный комментарий");
+    expect(summary.text()).toContain("Исход: Выздоровление; Улучшение; Назначено лечение");
     expect(summary.get(`.medical-record-condition-${tone}`).text()).toBe(label);
   });
 
@@ -177,6 +178,7 @@ describe("MedicalRecordEntry", () => {
     await wrapper.setProps({ confirmed: false });
     const edit = wrapper.get(".medical-record-edit");
     expect(wrapper.get(".owner-encounter-summary").find(".medical-record-actions").exists()).toBe(false);
+    expect(wrapper.get(".medical-record-collapsed-outcome").text()).toBe("· Исход: Выздоровление; Улучшение; Назначено лечение");
     expect(wrapper.findAll(".encounter-history-section")[0]!.get(".encounter-history-heading").find(".medical-record-actions").exists()).toBe(true);
     expect(edit.text()).toBe("");
     expect(edit.attributes("title")).toBe("Редактировать запись");
@@ -208,5 +210,60 @@ describe("MedicalRecordEntry", () => {
 
     await wrapper.setProps({ confirmed: true });
     expect(wrapper.find(".owner-encounter-confirm").exists()).toBe(false);
+  });
+
+  it("shows an explicit missing outcome after what happened in the collapsed summary", () => {
+    const wrapper = mount(MedicalRecordEntry, {
+      props: {
+        record: { ...record, sections: { "what-happened": record.sections["what-happened"] } },
+        mode: "details",
+        confirmed: false,
+      },
+    });
+
+    expect(wrapper.get(".owner-encounter-summary").text()).toContain("Исход: Не заполнено");
+  });
+
+  it("renders structured vaccination and chipping details", () => {
+    const wrapper = mount(MedicalRecordEntry, {
+      props: {
+        record: {
+          ...record,
+          sections: {
+            ...record.sections,
+            vaccination: {
+              kind: "vaccination",
+              templateVersion: "vaccination-v1",
+              value: {
+                previousVaccinationDate: "2025-08-04",
+                previousVaccineName: "Рабикан",
+                previousVaccinationComplications: false,
+                currentVaccineName: "Мультикан-8",
+                currentVaccineBatch: "AB-123",
+                currentVaccineExpiresOn: "2027-12-31",
+                chipNumber: "643094100000002",
+                administrationSite: "Холка",
+              },
+              authorAccountId: "doctor-1",
+              authorDisplayName: "Вера Врач",
+              updatedAt: "2026-07-21T12:00:00.000Z",
+            },
+          },
+        },
+        mode: "details",
+        confirmed: false,
+        open: true,
+      },
+    });
+
+    const section = wrapper.findAll(".encounter-history-section")
+      .find((candidate) => candidate.get("h3").text() === "Вакцинация/чипирование")!;
+    expect(section.get(".vaccination-values").text()).toContain("04.08.2025");
+    expect(section.text()).toContain("Не было");
+    expect(section.text()).toContain("Мультикан-8");
+    expect(section.text()).toContain("AB-123");
+    expect(section.text()).toContain("31.12.2027");
+    expect(section.text()).toContain("643094100000002");
+    expect(section.text()).toContain("Холка");
   });
 });

@@ -345,6 +345,9 @@ async function savePet() {
       tombstoned: false,
       updatedAt: selectedPet.value.updatedAt,
       ...petInput(),
+      ...(selectedPet.value.latestConfirmedVaccination
+        ? { latestConfirmedVaccination: selectedPet.value.latestConfirmedVaccination }
+        : {}),
     });
     await syncDirectoryPet({ petId: selectedPet.value.petId, species: draft.species.trim(), name: draft.name.trim() });
     await router.push(`/owner/pets/${selectedPet.value.petId}`);

@@ -70,6 +70,8 @@ const pet: PetProfile = {
   sex: "Интактный самец",
   birthDate: "2022-06-17",
   color: "трёхцветный",
+  latestVaccination: { date: "2026-04-15", name: "Рабикан" },
+  latestConfirmedVaccination: { date: "2026-04-15", name: "Рабикан", recordId: "record-vaccination" },
   weightKg: 12.4,
   notes: "Любит длительные прогулки",
   keyVersion: 1,
@@ -372,6 +374,7 @@ describe("Owner pages", () => {
     const saved = repositoryMocks.updatePet.mock.calls[0]?.[0] as Record<string, unknown>;
     expect(saved.species).toBe("Другое");
     expect(saved.sex).toBe("Интактный самец");
+    expect(saved.latestConfirmedVaccination).toEqual(pet.latestConfirmedVaccination);
     expect(saved).not.toHaveProperty("legacyOptionalField");
   });
 

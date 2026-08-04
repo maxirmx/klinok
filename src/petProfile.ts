@@ -36,6 +36,12 @@ export function normalizePetProfile(value: PetProfile | Record<string, unknown>)
   const sex = supportedPetSex(value.sex);
   const latestDate = optionalText(latest?.date);
   const latestName = optionalText(latest?.name);
+  const latestConfirmed = value.latestConfirmedVaccination && typeof value.latestConfirmedVaccination === "object"
+    ? value.latestConfirmedVaccination as { date?: unknown; name?: unknown; recordId?: unknown }
+    : undefined;
+  const latestConfirmedDate = optionalText(latestConfirmed?.date);
+  const latestConfirmedName = optionalText(latestConfirmed?.name);
+  const latestConfirmedRecordId = optionalText(latestConfirmed?.recordId);
 
   return {
     petId: String(value.petId ?? ""),
@@ -50,6 +56,13 @@ export function normalizePetProfile(value: PetProfile | Record<string, unknown>)
     ...(optionalText(value.chip) ? { chip: optionalText(value.chip) } : {}),
     ...(optionalText(value.brandMark) ? { brandMark: optionalText(value.brandMark) } : {}),
     ...(latestDate && latestName ? { latestVaccination: { date: latestDate, name: latestName } } : {}),
+    ...(latestConfirmedDate && latestConfirmedName && latestConfirmedRecordId ? {
+      latestConfirmedVaccination: {
+        date: latestConfirmedDate,
+        name: latestConfirmedName,
+        recordId: latestConfirmedRecordId,
+      },
+    } : {}),
     ...(weightKg ? { weightKg } : {}),
     ...(optionalText(value.notes) ? { notes: optionalText(value.notes) } : {}),
     keyVersion: Number(value.keyVersion) || 1,
