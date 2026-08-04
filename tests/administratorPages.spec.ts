@@ -316,6 +316,30 @@ describe("Administrator pages", () => {
     ]);
   });
 
+  it("shows actions when a fresh directory status arrives before the local role projection", async () => {
+    await setState({ profiles: [profile("doctor-1", "Анна", "Врач")] });
+    appMocks.directoryUsers = [{
+      ...directoryUser("doctor-1", "Анна Врач"),
+      roleStatuses: { owner: "approved", doctor: "pending", administrator: "not_requested" },
+    }];
+    const wrapper = await mountAt("/admin/home", "administrator-home");
+
+    const doctorCell = wrapper.get('[data-label="Ветеринар"]');
+    expect(doctorCell.findAll("button").map((button) => button.attributes("title"))).toEqual([
+      "Одобрить роль «Ветеринар»",
+      "Отклонить запрос роли «Ветеринар»",
+    ]);
+
+    await doctorCell.get('button[title="Одобрить роль «Ветеринар»"]').trigger("click");
+    await wrapper.get('[role="dialog"] form').trigger("submit");
+    await flushPromises();
+    expect(appMocks.decideRole).toHaveBeenCalledWith({
+      accountId: "doctor-1",
+      role: "doctor",
+      status: "pending",
+    }, "approved", undefined);
+  });
+
   it("hides profile editing from ordinary approved administrators", async () => {
     await setState({
       sessionAccountId: "ordinary-administrator",

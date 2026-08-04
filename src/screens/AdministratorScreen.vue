@@ -28,6 +28,7 @@ type SortField = "name" | Role;
 type SortDirection = "asc" | "desc";
 type DecisionAction = "approve" | "reject" | "revoke" | "restore";
 type AuditCategory = "request" | "approve" | "restore" | "reject" | "revoke" | "bootstrap";
+type RoleActionTarget = Pick<RoleRequest, "accountId" | "role" | "status">;
 
 type AdministratorRow = DirectoryUserDto & {
   doctor?: RoleRequest;
@@ -65,7 +66,7 @@ const users = ref<DirectoryUserDto[]>([]);
 const userTotal = ref(0);
 const usersLoading = ref(false);
 let usersRefreshId = 0;
-const decision = ref<{ request: RoleRequest; action: DecisionAction } | null>(null);
+const decision = ref<{ request: RoleActionTarget; action: DecisionAction } | null>(null);
 const decisionReason = ref("");
 const decisionBusy = ref(false);
 const profileEdit = ref<DirectoryUserDto | null>(null);
@@ -156,12 +157,16 @@ function sortAria(field: SortField): "ascending" | "descending" | "none" {
   return sortDirection.value === "asc" ? "ascending" : "descending";
 }
 
-function isBootstrapAdministrator(request: RoleRequest): boolean {
+function isBootstrapAdministrator(request: RoleActionTarget): boolean {
   return request.role === "administrator" && request.accountId === getConfig()?.p2p.bootstrapAccountId;
 }
 
-function requestFor(row: AdministratorRow, role: Role): RoleRequest | undefined {
-  return role === "owner" ? undefined : row[role];
+function requestFor(row: AdministratorRow, role: Role): RoleActionTarget | undefined {
+  if (role === "owner") return undefined;
+  const request = row[role];
+  if (request) return request;
+  const status = row.roleStatuses[role];
+  return status === "not_requested" ? undefined : { accountId: row.accountId, role, status };
 }
 
 async function refreshUsers() {
@@ -231,7 +236,7 @@ async function submitProfileEdit() {
   }
 }
 
-function openDecision(request: RoleRequest, action: DecisionAction) {
+function openDecision(request: RoleActionTarget, action: DecisionAction) {
   decisionReason.value = "";
   decision.value = { request, action };
 }
