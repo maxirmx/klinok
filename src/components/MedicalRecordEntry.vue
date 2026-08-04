@@ -14,11 +14,13 @@ import {
   isFreeTextValue,
   isGeneralDataValue,
   isOutcomeValue,
+  isVaccinationValue,
   isWhatHappenedValue,
   outcomeComment,
   outcomeLabel,
   outcomeSelectedIds,
   outcomeSummary,
+  vaccinationDetails,
   whatHappenedComment,
   whatHappenedPath,
   whatHappenedSelectedIds,
@@ -64,6 +66,8 @@ const conditionHeadlines = computed(() => {
     { id: "critical", label: "Всё плохо", tone: "critical" },
   ].filter((condition) => selectedIds.some((id) => id === condition.id || id.startsWith(`${condition.id}.`)));
 });
+
+const collapsedOutcome = computed(() => outcomeSummary(props.record.sections.outcome?.value) || "Не заполнено");
 
 function formatDate(value: string) {
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
@@ -116,6 +120,7 @@ function formatLocalDateTime(value: string) {
             </template>
           </template>
           <template v-else>{{ encounterSummary(record) }}</template>
+          <span class="medical-record-collapsed-outcome"> · Исход: {{ collapsedOutcome }}</span>
         </strong>
         <small>Редакция {{ record.revision }} · {{ record.authorDisplayName }}</small>
       </span>
@@ -179,6 +184,12 @@ function formatLocalDateTime(value: string) {
           <div v-for="measurement in generalDataMeasurements(item.section.value)" :key="measurement.key">
             <dt>{{ measurement.label }}</dt>
             <dd>{{ measurement.value }}</dd>
+          </div>
+        </dl>
+        <dl v-else-if="isVaccinationValue(item.section.value)" class="vaccination-values">
+          <div v-for="detail in vaccinationDetails(item.section.value)" :key="detail.key">
+            <dt>{{ detail.label }}</dt>
+            <dd>{{ detail.value }}</dd>
           </div>
         </dl>
         <p v-else-if="isFreeTextValue(item.section.value)">{{ freeText(item.section.value) }}</p>

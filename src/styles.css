@@ -788,6 +788,22 @@ dd {
 .general-data-fields > label,
 .general-data-pressure { min-width: 0; }
 .general-data-fields input { width: 100%; box-sizing: border-box; }
+.vaccination-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 10px;
+}
+.vaccination-fields > label,
+.vaccination-complications { min-width: 0; }
+.vaccination-fields input[type="text"],
+.vaccination-fields input[type="date"] { width: 100%; box-sizing: border-box; }
+.vaccination-complications {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
 .general-data-pressure {
   grid-column: 1 / -1;
   display: grid;
@@ -805,15 +821,19 @@ dd {
   gap: 6px;
 }
 .general-data-pressure-separator { align-self: end; margin-bottom: 11px; color: var(--text-muted); }
-.general-data-values {
+.general-data-values,
+.vaccination-values {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
   gap: 8px 16px;
   margin: 0;
 }
-.general-data-values > div { display: grid; gap: 2px; }
-.general-data-values dt { color: var(--text-muted); font-size: 11px; font-weight: 600; }
-.general-data-values dd { margin: 0; }
+.general-data-values > div,
+.vaccination-values > div { display: grid; gap: 2px; }
+.general-data-values dt,
+.vaccination-values dt { color: var(--text-muted); font-size: 11px; font-weight: 600; }
+.general-data-values dd,
+.vaccination-values dd { margin: 0; }
 .epicrisis-row { width: 100%; display: grid; grid-template-columns: 110px minmax(220px, 1fr) minmax(160px, .6fr) 150px; gap: 12px; align-items: center; padding: 12px; border: 0; border-bottom: 1px solid var(--line); background: transparent; text-align: left; }
 .epicrisis-row:hover { background: var(--brand-sky-soft); }
 .owner-encounter-record {
@@ -841,6 +861,7 @@ dd {
 .medical-record-chevron-expanded { display: none; }
 .owner-encounter-record[open] > .owner-encounter-summary .medical-record-chevron-collapsed { display: none; }
 .owner-encounter-record[open] > .owner-encounter-summary .medical-record-chevron-expanded { display: block; }
+.owner-encounter-record[open] > .owner-encounter-summary .medical-record-collapsed-outcome { display: none; }
 .owner-encounter-summary-copy { display: grid; min-width: 0; gap: 4px; }
 .owner-encounter-summary-copy :is(strong, small) { overflow-wrap: anywhere; }
 .medical-record-condition-well { color: #067647; }
@@ -897,6 +918,7 @@ dd {
   .medical-record-filters { grid-template-columns: 1fr; }
   .epicrisis-row { grid-template-columns: 1fr; }
   .general-data-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .vaccination-fields { grid-template-columns: 1fr; }
 }
 .role-selection-card.disabled .role-selection-title { cursor: default; }
 .role-selection-card.approved { border-color: #a6f4c5; background: #f6fef9; }

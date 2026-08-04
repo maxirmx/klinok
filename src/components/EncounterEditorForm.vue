@@ -11,14 +11,25 @@ import {
   OPTIONAL_ENCOUNTER_SECTION_KINDS,
   OUTCOME_OPTIONS,
   WHAT_HAPPENED_TREE,
+  emptyVaccinationDraft,
   parseGeneralDataDraft,
+  parseVaccinationDraft,
   replaceConflictingOutcome,
   whatHappenedPath,
 } from "../medicalEncounter";
-import type { GeneralDataDraft, GeneralDataDraftErrors } from "../medicalEncounter";
+import type {
+  GeneralDataDraft,
+  GeneralDataDraftErrors,
+  VaccinationDraft,
+  VaccinationDraftErrors,
+} from "../medicalEncounter";
 import type { MedicalEncounterSectionKind } from "../repositories/types";
 
-defineProps<{ busy: boolean; editing: boolean }>();
+const props = defineProps<{
+  busy: boolean;
+  editing: boolean;
+  latestConfirmedVaccination?: { date: string; name: string };
+}>();
 const emit = defineEmits<{
   save: [];
   cancel: [];
@@ -33,8 +44,10 @@ const outcomeComment = defineModel<string>("outcomeComment", { required: true })
 const optionalKinds = defineModel<MedicalEncounterSectionKind[]>("optionalKinds", { required: true });
 const texts = defineModel<Partial<Record<MedicalEncounterSectionKind, string>>>("texts", { required: true });
 const generalData = defineModel<GeneralDataDraft>("generalData", { required: true });
+const vaccination = defineModel<VaccinationDraft>("vaccination", { required: true });
 const form = ref<HTMLFormElement | null>(null);
 const generalDataErrors = ref<GeneralDataDraftErrors>({});
+const vaccinationErrors = ref<VaccinationDraftErrors>({});
 const optionalAvailable = computed(() => OPTIONAL_ENCOUNTER_SECTION_KINDS.filter((kind) => !optionalKinds.value.includes(kind)));
 
 function toggleSelection(id: string) {
@@ -56,7 +69,16 @@ function toggleOutcome(id: string) {
 function selectOptional(event: Event) {
   const select = event.target as HTMLSelectElement;
   const kind = select.value as MedicalEncounterSectionKind;
-  if (kind && !optionalKinds.value.includes(kind)) optionalKinds.value = [...optionalKinds.value, kind];
+  if (kind && !optionalKinds.value.includes(kind)) {
+    optionalKinds.value = [...optionalKinds.value, kind];
+    if (kind === "vaccination") {
+      vaccination.value = emptyVaccinationDraft(props.latestConfirmedVaccination);
+      vaccinationErrors.value = {};
+      const nextTexts = { ...texts.value };
+      delete nextTexts.vaccination;
+      texts.value = nextTexts;
+    }
+  }
   select.value = "";
 }
 
@@ -68,11 +90,20 @@ function updateGeneralData() {
   generalDataErrors.value = {};
 }
 
+function updateVaccination() {
+  vaccinationErrors.value = {};
+}
+
 function submit() {
   if (!selectedIds.value.length || !outcomeSelectedIds.value.length) return;
   if (optionalKinds.value.includes("general-data") && texts.value["general-data"] === undefined) {
     const parsed = parseGeneralDataDraft(generalData.value);
     generalDataErrors.value = parsed.errors;
+    if (!parsed.value) return;
+  }
+  if (optionalKinds.value.includes("vaccination") && texts.value.vaccination === undefined) {
+    const parsed = parseVaccinationDraft(vaccination.value);
+    vaccinationErrors.value = parsed.errors;
     if (!parsed.value) return;
   }
   if (form.value?.reportValidity() === false) return;
@@ -138,6 +169,51 @@ function submit() {
               {{ generalDataErrors.bloodPressure || generalDataErrors.systolicMmHg || generalDataErrors.diastolicMmHg || generalDataErrors.meanMmHg }}
             </small>
           </fieldset>
+        </div>
+      </template>
+      <template v-else-if="kind === 'vaccination' && texts[kind] === undefined">
+        <p v-if="vaccinationErrors.section" class="field-error" role="alert">{{ vaccinationErrors.section }}</p>
+        <div class="vaccination-fields" @input="updateVaccination" @change="updateVaccination">
+          <label>
+            <span>Дата предыдущей вакцинации</span>
+            <input v-model="vaccination.previousVaccinationDate" type="date" />
+            <small v-if="vaccinationErrors.previousVaccinationDate" class="field-error">{{ vaccinationErrors.previousVaccinationDate }}</small>
+          </label>
+          <label>
+            <span>Название предыдущей вакцины</span>
+            <input v-model="vaccination.previousVaccineName" type="text" />
+          </label>
+          <fieldset class="vaccination-complications">
+            <legend>Осложнения после предыдущей вакцинации</legend>
+            <div class="medical-card-options" role="radiogroup" aria-label="Осложнения после предыдущей вакцинации">
+              <label class="check-row"><input v-model="vaccination.previousVaccinationComplications" type="radio" name="previous-vaccination-complications" value="" /><span>Не указано</span></label>
+              <label class="check-row"><input v-model="vaccination.previousVaccinationComplications" type="radio" name="previous-vaccination-complications" value="yes" /><span>Были</span></label>
+              <label class="check-row"><input v-model="vaccination.previousVaccinationComplications" type="radio" name="previous-vaccination-complications" value="no" /><span>Не было</span></label>
+            </div>
+          </fieldset>
+          <label>
+            <span>Название нынешней вакцины</span>
+            <input v-model="vaccination.currentVaccineName" type="text" />
+            <small v-if="vaccinationErrors.currentVaccineName" class="field-error">{{ vaccinationErrors.currentVaccineName }}</small>
+          </label>
+          <label>
+            <span>Серия и/или номер вакцины</span>
+            <input v-model="vaccination.currentVaccineBatch" type="text" />
+            <small v-if="vaccinationErrors.currentVaccineBatch" class="field-error">{{ vaccinationErrors.currentVaccineBatch }}</small>
+          </label>
+          <label>
+            <span>Срок годности препарата/вакцины</span>
+            <input v-model="vaccination.currentVaccineExpiresOn" type="date" />
+            <small v-if="vaccinationErrors.currentVaccineExpiresOn" class="field-error">{{ vaccinationErrors.currentVaccineExpiresOn }}</small>
+          </label>
+          <label>
+            <span>Номер чипа</span>
+            <input v-model="vaccination.chipNumber" type="text" />
+          </label>
+          <label>
+            <span>Место введения</span>
+            <input v-model="vaccination.administrationSite" type="text" />
+          </label>
         </div>
       </template>
       <template v-else>

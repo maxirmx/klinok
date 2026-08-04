@@ -27,7 +27,9 @@ import {
   generalDataValidationError,
   isFreeTextValue,
   isGeneralDataValue,
+  isVaccinationValue,
   isWhatHappenedValue,
+  normalizeVaccinationValue,
   normalizeOutcomeValue,
   outcomeValidationError,
 } from "../medicalEncounter";
@@ -49,6 +51,36 @@ type GrantDoctorOptions = {
   granteeDisplayName?: string;
   proofIds?: string[];
 };
+
+function confirmationUpdatesProfile(event: SignedEvent): boolean {
+  return event.eventType === "medical.record.confirmed" && (
+    event.metadata.updatesProfileWeight === true ||
+    event.metadata.updatesProfileChip === true ||
+    event.metadata.updatesProfileVaccination === true
+  );
+}
+
+function applyConfirmationToPet(pet: PetProfile, confirmation: MedicalRecordConfirmation): PetProfile {
+  let next = pet;
+  let updated = false;
+  if (confirmation.appliedProfileWeightKg !== undefined) {
+    next = { ...next, weightKg: confirmation.appliedProfileWeightKg };
+    updated = true;
+  }
+  if (confirmation.appliedProfileChip) {
+    next = { ...next, chip: confirmation.appliedProfileChip };
+    updated = true;
+  }
+  const vaccination = confirmation.appliedProfileLatestVaccination;
+  if (vaccination && (!next.latestConfirmedVaccination || vaccination.date >= next.latestConfirmedVaccination.date)) {
+    next = { ...next, latestConfirmedVaccination: vaccination };
+    updated = true;
+    if (!next.latestVaccination || vaccination.date >= next.latestVaccination.date) {
+      next = { ...next, latestVaccination: { date: vaccination.date, name: vaccination.name } };
+    }
+  }
+  return updated ? { ...next, updatedAt: confirmation.confirmedAt } : next;
+}
 
 export class MedicalRepository {
   private readonly factory: EventFactory;
@@ -118,7 +150,7 @@ export class MedicalRepository {
   private profileEventForPet(petId: string): SignedEvent | undefined {
     return this.events.findLast((event) => !this.control.signed.state.invalidatedEvents.has(event.eventId) && event.aggregateId === petId && (
       event.eventType.startsWith("pet.") ||
-      (event.eventType === "medical.record.confirmed" && event.metadata.updatesProfileWeight === true)
+      confirmationUpdatesProfile(event)
     ));
   }
 
@@ -531,11 +563,9 @@ export class MedicalRepository {
       const currentIndex = this.events.findIndex((event) => event.eventId === currentPetEvent.eventId);
       for (const event of this.events.slice(currentIndex + 1)) {
         if (this.control.signed.state.invalidatedEvents.has(event.eventId)) continue;
-        if (event.aggregateId !== petId || event.eventType !== "medical.record.confirmed" || event.metadata.updatesProfileWeight !== true) continue;
+        if (event.aggregateId !== petId || !confirmationUpdatesProfile(event)) continue;
         const confirmation = await this.decrypt<MedicalRecordConfirmation>(event);
-        if (confirmation?.appliedProfileWeightKg !== undefined) {
-          pet = { ...pet, weightKg: confirmation.appliedProfileWeightKg, updatedAt: confirmation.confirmedAt };
-        }
+        if (confirmation) pet = applyConfirmationToPet(pet, confirmation);
       }
     }
     if (!pet || !currentPetEvent) throw new Error("Профиль питомца недоступен для ротации ключа.");
@@ -597,6 +627,11 @@ export class MedicalRepository {
         if (validationError) throw new Error(validationError);
         continue;
       }
+      if (kind === "vaccination" && !isFreeTextValue(value)) {
+        if (!isVaccinationValue(value)) throw new Error("Проверьте данные в разделе «Вакцинация/чипирование».");
+        normalizedSections.vaccination = normalizeVaccinationValue(value);
+        continue;
+      }
       if (!isFreeTextValue(value) || !value.text.trim()) {
         throw new Error("Заполните или удалите пустой дополнительный раздел.");
       }
@@ -616,6 +651,8 @@ export class MedicalRepository {
           ? "outcome-v1"
           : kind === "general-data" && isGeneralDataValue(value)
             ? "general-data-v1"
+            : kind === "vaccination" && isVaccinationValue(value)
+              ? "vaccination-v1"
             : "free-text-v0",
       value,
       authorAccountId: this.context.accountId,
@@ -702,11 +739,23 @@ export class MedicalRepository {
       ? generalDataSection.value
       : undefined;
     const appliedProfileWeightKg = generalData?.weightKg;
+    const vaccinationSection = record.sections.vaccination;
+    const vaccination = vaccinationSection?.templateVersion === "vaccination-v1" && isVaccinationValue(vaccinationSection.value)
+      ? vaccinationSection.value
+      : undefined;
+    const appliedProfileChip = vaccination?.chipNumber;
+    const appliedProfileLatestVaccination = vaccination?.currentVaccineName ? {
+      date: record.encounterDate,
+      name: vaccination.currentVaccineName,
+      recordId,
+    } : undefined;
     const confirmedAt = new Date().toISOString();
     const confirmation: MedicalRecordConfirmation = {
       confirmationId: crypto.randomUUID(), petId, recordId, recordRevision: revision,
       ownerAccountId: this.context.accountId, confirmedAt,
       ...(appliedProfileWeightKg !== undefined ? { appliedProfileWeightKg } : {}),
+      ...(appliedProfileChip ? { appliedProfileChip } : {}),
+      ...(appliedProfileLatestVaccination ? { appliedProfileLatestVaccination } : {}),
     };
     const recipientIds = new Set([this.context.accountId]);
     for (const grant of this.control.signed.state.grants.values()) {
@@ -722,7 +771,15 @@ export class MedicalRepository {
     const profileEvent = this.profileEventForPet(petId);
     await this.append(await this.factory.create({
       database: "medical", eventType: "medical.record.confirmed", aggregateId: petId, resourceId: recordId,
-      metadata: { petId, recordId, revision, updatesProfileWeight: appliedProfileWeightKg !== undefined }, cleartext: confirmation,
+      metadata: {
+        petId,
+        recordId,
+        revision,
+        updatesProfileWeight: appliedProfileWeightKg !== undefined,
+        updatesProfileChip: Boolean(appliedProfileChip),
+        updatesProfileVaccination: Boolean(appliedProfileLatestVaccination),
+      },
+      cleartext: confirmation,
       parents: [...new Set([recordEvent.eventId, profileEvent?.eventId].filter((item): item is string => Boolean(item)))],
       recipients: this.activeCertificates([...recipientIds]), dataKey: stored.key,
     }));
@@ -802,14 +859,8 @@ export class MedicalRepository {
         const confirmation = await this.decrypt<MedicalRecordConfirmation>(event);
         if (confirmation) {
           confirmations.push(confirmation);
-          if (confirmation.appliedProfileWeightKg !== undefined) {
-            const pet = pets.get(confirmation.petId);
-            if (pet) pets.set(confirmation.petId, {
-              ...pet,
-              weightKg: confirmation.appliedProfileWeightKg,
-              updatedAt: confirmation.confirmedAt,
-            });
-          }
+          const pet = pets.get(confirmation.petId);
+          if (pet) pets.set(confirmation.petId, applyConfirmationToPet(pet, confirmation));
         }
       }
     }

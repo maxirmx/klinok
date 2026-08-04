@@ -9,10 +9,13 @@ import {
   encounterSummary,
   generalDataMeasurements,
   isGeneralDataValue,
+  isVaccinationValue,
   parseGeneralDataDraft,
+  parseVaccinationDraft,
   outcomeValidationError,
   replaceConflictingOutcome,
   sectionSearchText,
+  vaccinationDetails,
   whatHappenedPath,
 } from "../src/medicalEncounter";
 
@@ -131,5 +134,73 @@ describe("medical encounter templates", () => {
       diastolicMmHg: "80",
       meanMmHg: "110",
     }).errors.bloodPressure).toContain("диастолическое");
+  });
+
+  it("parses, validates, formats, and indexes vaccination and chipping", () => {
+    const parsed = parseVaccinationDraft({
+      previousVaccinationDate: "2025-08-04",
+      previousVaccineName: " Рабикан ",
+      previousVaccinationComplications: "no",
+      currentVaccineName: " Мультикан-8 ",
+      currentVaccineBatch: " AB-123 ",
+      currentVaccineExpiresOn: "2027-12-31",
+      chipNumber: " 643094100000001 ",
+      administrationSite: " Холка ",
+    });
+
+    expect(parsed.errors).toEqual({});
+    expect(parsed.value).toEqual({
+      previousVaccinationDate: "2025-08-04",
+      previousVaccineName: "Рабикан",
+      previousVaccinationComplications: false,
+      currentVaccineName: "Мультикан-8",
+      currentVaccineBatch: "AB-123",
+      currentVaccineExpiresOn: "2027-12-31",
+      chipNumber: "643094100000001",
+      administrationSite: "Холка",
+    });
+    expect(isVaccinationValue(parsed.value)).toBe(true);
+    expect(vaccinationDetails(parsed.value!).map((item) => item.value)).toEqual([
+      "04.08.2025",
+      "Рабикан",
+      "Не было",
+      "Мультикан-8",
+      "AB-123",
+      "31.12.2027",
+      "643094100000001",
+      "Холка",
+    ]);
+    expect(sectionSearchText(parsed.value)).toContain("Номер чипа 643094100000001");
+
+    expect(parseVaccinationDraft({
+      previousVaccinationDate: "",
+      previousVaccineName: "",
+      previousVaccinationComplications: "",
+      currentVaccineName: "",
+      currentVaccineBatch: "",
+      currentVaccineExpiresOn: "",
+      chipNumber: "643094100000002",
+      administrationSite: "",
+    }).value).toEqual({ chipNumber: "643094100000002" });
+    expect(parseVaccinationDraft({
+      previousVaccinationDate: "",
+      previousVaccineName: "",
+      previousVaccinationComplications: "",
+      currentVaccineName: "Мультикан-8",
+      currentVaccineBatch: "",
+      currentVaccineExpiresOn: "",
+      chipNumber: "643094100000002",
+      administrationSite: "",
+    }).errors).toMatchObject({ currentVaccineBatch: expect.any(String), currentVaccineExpiresOn: expect.any(String) });
+    expect(parseVaccinationDraft({
+      previousVaccinationDate: "2026-02-30",
+      previousVaccineName: "",
+      previousVaccinationComplications: "",
+      currentVaccineName: "",
+      currentVaccineBatch: "",
+      currentVaccineExpiresOn: "",
+      chipNumber: "",
+      administrationSite: "",
+    }).errors).toMatchObject({ previousVaccinationDate: expect.any(String), section: expect.any(String) });
   });
 });

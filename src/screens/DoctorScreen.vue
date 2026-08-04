@@ -35,17 +35,25 @@ import {
   ENCOUNTER_SECTION_LABELS,
   OPTIONAL_ENCOUNTER_SECTION_KINDS,
   emptyGeneralDataDraft,
+  emptyVaccinationDraft,
   encounterSummary,
   generalDataDraft,
   isFreeTextValue,
   isGeneralDataValue,
   isOutcomeValue,
+  isVaccinationValue,
   isWhatHappenedValue,
   parseGeneralDataDraft,
+  parseVaccinationDraft,
   sectionSearchText,
+  vaccinationDraft,
 } from "../medicalEncounter";
 import type { PetAccessRow } from "../petAccess";
-import type { MedicalEncounterSectionKind, MedicalRecordDraft } from "../repositories/types";
+import type {
+  MedicalEncounterSectionInputValue,
+  MedicalEncounterSectionKind,
+  MedicalRecordDraft,
+} from "../repositories/types";
 import { useAlertStore } from "../stores/alert";
 
 const props = defineProps<{ role: "doctor"; scenarioId: string }>();
@@ -119,6 +127,7 @@ const encounter = reactive({
   optionalKinds: [] as MedicalEncounterSectionKind[],
   texts: {} as Partial<Record<MedicalEncounterSectionKind, string>>,
   generalData: emptyGeneralDataDraft(),
+  vaccination: emptyVaccinationDraft(),
 });
 
 const profileName = computed(() => [appState.control.profile?.firstName, appState.control.profile?.patronymic, appState.control.profile?.lastName].filter(Boolean).join(" "));
@@ -304,6 +313,7 @@ function removeOptional(kind: MedicalEncounterSectionKind) {
   encounter.optionalKinds = encounter.optionalKinds.filter((item) => item !== kind);
   delete encounter.texts[kind];
   if (kind === "general-data") encounter.generalData = emptyGeneralDataDraft();
+  if (kind === "vaccination") encounter.vaccination = emptyVaccinationDraft(selectedPet.value?.latestConfirmedVaccination);
 }
 
 function requestRemoveOptional(kind: MedicalEncounterSectionKind) {
@@ -329,16 +339,21 @@ function resetEncounter() {
   encounter.optionalKinds = [];
   encounter.texts = {};
   encounter.generalData = emptyGeneralDataDraft();
+  encounter.vaccination = emptyVaccinationDraft();
 }
 
 async function saveEncounter() {
   if (!encounter.selectedIds.length || !encounter.outcomeSelectedIds.length) return;
   await perform(async () => {
-    const optionalSections: Partial<Record<MedicalEncounterSectionKind, { text: string } | ReturnType<typeof parseGeneralDataDraft>["value"]>> = {};
+    const optionalSections: Partial<Record<MedicalEncounterSectionKind, MedicalEncounterSectionInputValue>> = {};
     for (const kind of encounter.optionalKinds) {
       if (kind === "general-data" && encounter.texts[kind] === undefined) {
         const parsed = parseGeneralDataDraft(encounter.generalData);
         if (!parsed.value) throw new Error("Проверьте показатели в разделе «Общие данные/Габитус».");
+        optionalSections[kind] = parsed.value;
+      } else if (kind === "vaccination" && encounter.texts[kind] === undefined) {
+        const parsed = parseVaccinationDraft(encounter.vaccination);
+        if (!parsed.value) throw new Error("Проверьте данные в разделе «Вакцинация/чипирование».");
         optionalSections[kind] = parsed.value;
       } else {
         optionalSections[kind] = { text: encounter.texts[kind] ?? "" };
@@ -372,6 +387,10 @@ function editRecord(record: (typeof appState.medical.records)[number]) {
   encounter.optionalKinds = OPTIONAL_ENCOUNTER_SECTION_KINDS.filter((kind) => Boolean(record.sections[kind]));
   const generalDataValue = record.sections["general-data"]?.value;
   encounter.generalData = isGeneralDataValue(generalDataValue) ? generalDataDraft(generalDataValue) : emptyGeneralDataDraft();
+  const vaccinationValue = record.sections.vaccination?.value;
+  encounter.vaccination = isVaccinationValue(vaccinationValue)
+    ? vaccinationDraft(vaccinationValue)
+    : emptyVaccinationDraft();
   encounter.texts = Object.fromEntries(encounter.optionalKinds.flatMap((kind) => {
     const value = record.sections[kind]?.value;
     return isFreeTextValue(value) ? [[kind, value.text]] : [];
@@ -676,8 +695,10 @@ watch(delegationPageCount, (pageCount) => {
           v-model:optional-kinds="encounter.optionalKinds"
           v-model:texts="encounter.texts"
           v-model:general-data="encounter.generalData"
+          v-model:vaccination="encounter.vaccination"
           :busy="busy"
           :editing="false"
+          :latest-confirmed-vaccination="selectedPet.latestConfirmedVaccination"
           @save="saveEncounter"
           @remove-section="requestRemoveOptional"
         />
@@ -716,8 +737,10 @@ watch(delegationPageCount, (pageCount) => {
                 v-model:optional-kinds="encounter.optionalKinds"
                 v-model:texts="encounter.texts"
                 v-model:general-data="encounter.generalData"
+                v-model:vaccination="encounter.vaccination"
                 :busy="busy"
                 editing
+                :latest-confirmed-vaccination="selectedPet.latestConfirmedVaccination"
                 @save="saveEncounter"
                 @cancel="resetEncounter"
                 @remove-section="requestRemoveOptional"

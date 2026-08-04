@@ -214,6 +214,15 @@ describe("medical authorization repository", () => {
         },
       })).rejects.toThrow(message);
     }
+    await expect(doctor.medical.saveEncounter({
+      petId,
+      encounterDate: "2026-07-21",
+      sections: {
+        "what-happened": { selectedIds: ["well.3"], comment: "Проверка" },
+        outcome: encounterOutcome(),
+        vaccination: { currentVaccineName: "Мультикан-8", chipNumber: "643094100000002" },
+      },
+    })).rejects.toThrow("Проверьте данные");
     const recordId = await doctor.medical.saveEncounter({
       petId,
       encounterDate: "2026-07-21",
@@ -226,6 +235,16 @@ describe("medical authorization repository", () => {
           heartRateBpm: 112,
           respiratoryRatePerMinute: 24,
           bloodPressure: { systolicMmHg: 120, diastolicMmHg: 80, meanMmHg: 93 },
+        },
+        vaccination: {
+          previousVaccinationDate: "2025-07-21",
+          previousVaccineName: "Рабикан",
+          previousVaccinationComplications: false,
+          currentVaccineName: "Мультикан-8",
+          currentVaccineBatch: "AB-123",
+          currentVaccineExpiresOn: "2027-12-31",
+          chipNumber: "643094100000002",
+          administrationSite: "Холка",
         },
         diagnosis: { text: "Предварительный диагноз" },
       },
@@ -247,7 +266,18 @@ describe("medical authorization repository", () => {
       templateVersion: "general-data-v1",
       value: { weightKg: 13.75, bloodPressure: { systolicMmHg: 120, diastolicMmHg: 80, meanMmHg: 93 } },
     });
-    expect((await owner.medical.snapshot()).pets.find((pet) => pet.petId === petId)?.weightKg).toBe(12.4);
+    expect(record.sections.vaccination).toMatchObject({
+      templateVersion: "vaccination-v1",
+      value: {
+        currentVaccineName: "Мультикан-8",
+        currentVaccineBatch: "AB-123",
+        chipNumber: "643094100000002",
+      },
+    });
+    const petBeforeConfirmation = (await owner.medical.snapshot()).pets.find((pet) => pet.petId === petId)!;
+    expect(petBeforeConfirmation.weightKg).toBe(12.4);
+    expect(petBeforeConfirmation.chip).toBeUndefined();
+    expect(petBeforeConfirmation.latestVaccination).toBeUndefined();
     await owner.medical.confirmRecord(petId, recordId, record.revision);
     await waitFor(async () => (await doctor.medical.snapshot()).confirmedRecordIds.includes(recordId));
     const ownerConfirmed = await owner.medical.snapshot();
@@ -259,13 +289,28 @@ describe("medical authorization repository", () => {
     expect(ownerConfirmed.pets.find((pet) => pet.petId === petId)?.weightKg).toBe(13.75);
     expect(doctorConfirmed.pets.find((pet) => pet.petId === petId)?.weightKg).toBe(13.75);
     expect(delegateConfirmed.pets.find((pet) => pet.petId === petId)?.weightKg).toBe(13.75);
-    expect(ownerConfirmed.confirmations.find((item) => item.recordId === recordId)?.appliedProfileWeightKg).toBe(13.75);
+    const confirmedProfile = ownerConfirmed.pets.find((pet) => pet.petId === petId)!;
+    expect(confirmedProfile.chip).toBe("643094100000002");
+    expect(confirmedProfile.latestVaccination).toEqual({ date: "2026-07-21", name: "Мультикан-8" });
+    expect(confirmedProfile.latestConfirmedVaccination).toEqual({
+      date: "2026-07-21",
+      name: "Мультикан-8",
+      recordId,
+    });
+    expect(ownerConfirmed.confirmations.find((item) => item.recordId === recordId)).toMatchObject({
+      appliedProfileWeightKg: 13.75,
+      appliedProfileChip: "643094100000002",
+      appliedProfileLatestVaccination: { date: "2026-07-21", name: "Мультикан-8", recordId },
+    });
     expect(doctorConfirmed.confirmations).toEqual([]);
     expect(delegateConfirmed.confirmations).toEqual([]);
     expect((await administrator.medical.snapshot()).confirmedRecordIds).toEqual([]);
     await owner.medical.grantDoctor(petId, "encounter-late-doctor", ["read"]);
     await waitFor(async () => (await lateDoctor.medical.snapshot()).pets.some((pet) => pet.petId === petId));
-    expect((await lateDoctor.medical.snapshot()).pets.find((pet) => pet.petId === petId)?.weightKg).toBe(13.75);
+    const lateDoctorProfile = (await lateDoctor.medical.snapshot()).pets.find((pet) => pet.petId === petId)!;
+    expect(lateDoctorProfile.weightKg).toBe(13.75);
+    expect(lateDoctorProfile.chip).toBe("643094100000002");
+    expect(lateDoctorProfile.latestVaccination).toEqual({ date: "2026-07-21", name: "Мультикан-8" });
     const confirmedPet = (await owner.medical.snapshot()).pets.find((pet) => pet.petId === petId)!;
     await owner.medical.updatePet({ ...confirmedPet, weightKg: 14.2 });
     await waitFor(async () => (await doctor.medical.snapshot()).pets.find((pet) => pet.petId === petId)?.weightKg === 14.2);
@@ -276,6 +321,11 @@ describe("medical authorization repository", () => {
         "what-happened": { selectedIds: [], comment: "Подтверждается позднее" },
         outcome: encounterOutcome(),
         "general-data": { weightKg: 15.1 },
+        vaccination: {
+          currentVaccineName: "Рабикан",
+          currentVaccineBatch: "OLD-1",
+          currentVaccineExpiresOn: "2027-01-01",
+        },
       },
     });
     await tick();
@@ -283,7 +333,10 @@ describe("medical authorization repository", () => {
     const laterRecord = (await owner.medical.snapshot()).records.find((item) => item.recordId === laterRecordId)!;
     await owner.medical.confirmRecord(petId, laterRecordId, laterRecord.revision);
     await waitFor(async () => (await lateDoctor.medical.snapshot()).pets.find((pet) => pet.petId === petId)?.weightKg === 15.1);
-    expect((await owner.medical.snapshot()).pets.find((pet) => pet.petId === petId)?.weightKg).toBe(15.1);
+    const afterOlderConfirmation = (await owner.medical.snapshot()).pets.find((pet) => pet.petId === petId)!;
+    expect(afterOlderConfirmation.weightKg).toBe(15.1);
+    expect(afterOlderConfirmation.latestVaccination).toEqual({ date: "2026-07-21", name: "Мультикан-8" });
+    expect(afterOlderConfirmation.latestConfirmedVaccination?.recordId).toBe(recordId);
     await expect(doctor.medical.saveEncounter({
       petId,
       encounterDate: "2026-07-21",

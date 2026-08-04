@@ -172,6 +172,12 @@ export interface MedicalRecordConfirmation {
   ownerAccountId: string;
   confirmedAt: string;
   appliedProfileWeightKg?: number;
+  appliedProfileChip?: string;
+  appliedProfileLatestVaccination?: {
+    date: string;
+    name: string;
+    recordId: string;
+  };
 }
 
 export interface KeyEnvelope {

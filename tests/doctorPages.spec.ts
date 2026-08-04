@@ -62,6 +62,7 @@ const pet: PetProfile = {
   chip: "643094100000001",
   brandMark: "ABC-123",
   latestVaccination: { date: "2026-04-15", name: "Рабикан" },
+  latestConfirmedVaccination: { date: "2026-04-15", name: "Рабикан", recordId: "record-vaccination-previous" },
   weightKg: 11.8,
   notes: "Боится громких звуков",
   keyVersion: 1,
@@ -771,6 +772,110 @@ describe("Doctor pages", () => {
           respiratoryRatePerMinute: 24,
           bloodPressure: { systolicMmHg: 120, diastolicMmHg: 80, meanMmHg: 93 },
         },
+      }),
+    }));
+  });
+
+  it("prefills, validates, and saves the structured vaccination and chipping template", async () => {
+    const wrapper = await mountAt("/doctor/pets/pet-1", "doctor-pet-detail");
+    await flushPromises();
+    await wrapper.findAll(".encounter-taxonomy label").find((label) => label.text() === "Вакцинация")!
+      .get("input").trigger("change");
+    await wrapper.findAll(".encounter-outcome .check-row")
+      .find((option) => option.text() === "Без наблюдения")!
+      .get("input").trigger("change");
+    await wrapper.get<HTMLSelectElement>(".encounter-add-section select").setValue("vaccination");
+
+    const card = wrapper.findAll(".encounter-section-card")
+      .find((candidate) => candidate.get("h3").text() === "Вакцинация/чипирование")!;
+    const field = (label: string) => card.findAll("label")
+      .find((candidate) => candidate.find("span").exists() && candidate.get("span").text() === label)!;
+    expect(field("Дата предыдущей вакцинации").get<HTMLInputElement>("input").element.value).toBe("2026-04-15");
+    expect(field("Название предыдущей вакцины").get<HTMLInputElement>("input").element.value).toBe("Рабикан");
+    expect(card.get(".vaccination-complications .medical-card-options").exists()).toBe(true);
+
+    await field("Дата предыдущей вакцинации").get("input").setValue("2026-04-14");
+    await field("Название предыдущей вакцины").get("input").setValue("Биокан");
+    await field("Название нынешней вакцины").get("input").setValue("Мультикан-8");
+    await field("Номер чипа").get("input").setValue("643094100000002");
+    await wrapper.get('button[title="Сохранить запись"]').trigger("click");
+    expect(repositoryMocks.saveEncounter).not.toHaveBeenCalled();
+    expect(card.text()).toContain("Укажите серию и/или номер вакцины");
+    expect(card.text()).toContain("Укажите срок годности вакцины");
+
+    await field("Серия и/или номер вакцины").get("input").setValue("AB-123");
+    await field("Срок годности препарата/вакцины").get("input").setValue("2027-12-31");
+    await field("Место введения").get("input").setValue("Холка");
+    await card.findAll(".vaccination-complications .check-row")
+      .find((option) => option.text() === "Не было")!
+      .get("input").setValue(true);
+    await wrapper.get('button[title="Сохранить запись"]').trigger("click");
+    await flushPromises();
+
+    expect(repositoryMocks.saveEncounter).toHaveBeenCalledWith(expect.objectContaining({
+      petId: "pet-1",
+      sections: expect.objectContaining({
+        vaccination: {
+          previousVaccinationDate: "2026-04-14",
+          previousVaccineName: "Биокан",
+          previousVaccinationComplications: false,
+          currentVaccineName: "Мультикан-8",
+          currentVaccineBatch: "AB-123",
+          currentVaccineExpiresOn: "2027-12-31",
+          chipNumber: "643094100000002",
+          administrationSite: "Холка",
+        },
+      }),
+    }));
+  });
+
+  it("reopens persisted structured vaccination data without replacing it from the profile", async () => {
+    const vaccinationRecord: MedicalRecordDraft = {
+      ...medicalRecord,
+      sections: {
+        ...medicalRecord.sections,
+        vaccination: {
+          kind: "vaccination",
+          templateVersion: "vaccination-v1",
+          value: {
+            previousVaccinationDate: "2025-01-10",
+            previousVaccineName: "Сохранённая вакцина",
+            previousVaccinationComplications: false,
+            chipNumber: "643094100000003",
+          },
+          authorAccountId: "doctor-1",
+          authorDisplayName: "Вера Врач",
+          updatedAt: "2026-07-21T10:00:00.000Z",
+        },
+      },
+    };
+    await setMedical(snapshot(undefined, { records: [vaccinationRecord] }));
+    const wrapper = await mountAt("/doctor/pets/pet-1", "doctor-pet-detail");
+    await flushPromises();
+    await wrapper.get(".medical-record-edit").trigger("click");
+
+    const editor = wrapper.get(".encounter-editor-inline");
+    const card = editor.findAll(".encounter-section-card")
+      .find((candidate) => candidate.get("h3").text() === "Вакцинация/чипирование")!;
+    const field = (label: string) => card.findAll("label")
+      .find((candidate) => candidate.find("span").exists() && candidate.get("span").text() === label)!;
+    expect(field("Дата предыдущей вакцинации").get<HTMLInputElement>("input").element.value).toBe("2025-01-10");
+    expect(field("Название предыдущей вакцины").get<HTMLInputElement>("input").element.value).toBe("Сохранённая вакцина");
+    expect(field("Номер чипа").get<HTMLInputElement>("input").element.value).toBe("643094100000003");
+    expect(card.findAll<HTMLInputElement>(".vaccination-complications input")
+      .find((input) => input.attributes("value") === "no")!.element.checked).toBe(true);
+
+    await editor.get('button[title="Сохранить запись"]').trigger("click");
+    await flushPromises();
+    expect(repositoryMocks.saveEncounter).toHaveBeenCalledWith(expect.objectContaining({
+      recordId: "record-1",
+      sections: expect.objectContaining({
+        vaccination: expect.objectContaining({
+          previousVaccinationDate: "2025-01-10",
+          previousVaccineName: "Сохранённая вакцина",
+          previousVaccinationComplications: false,
+          chipNumber: "643094100000003",
+        }),
       }),
     }));
   });

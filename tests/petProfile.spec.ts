@@ -26,6 +26,11 @@ describe("pet profile normalization", () => {
       color: "трёхцветный",
       weightKg: 12.4,
       notes: "Заметка",
+      latestConfirmedVaccination: {
+        date: "2026-04-15",
+        name: " Рабикан ",
+        recordId: " record-vaccination ",
+      },
       legacyOptionalField: "drop-me",
       keyVersion: 1,
       tombstoned: false,
@@ -34,6 +39,11 @@ describe("pet profile normalization", () => {
 
     expect(normalized.sex).toBeUndefined();
     expect(normalized.notes).toBe("Заметка");
+    expect(normalized.latestConfirmedVaccination).toEqual({
+      date: "2026-04-15",
+      name: "Рабикан",
+      recordId: "record-vaccination",
+    });
     expect(normalized).not.toHaveProperty("legacyOptionalField");
   });
 
