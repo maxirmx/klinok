@@ -28,6 +28,8 @@ const repositoryMocks = vi.hoisted(() => ({
   revokeDevice: vi.fn(),
   deleteAccount: vi.fn(),
   updateProfile: vi.fn(),
+  refreshProjection: vi.fn(),
+  decideRole: vi.fn(),
 }));
 
 vi.mock("../src/runtimeConfig", () => ({
@@ -75,6 +77,8 @@ vi.mock("../src/repositories", () => {
       revokeDevice: repositoryMocks.revokeDevice,
       deleteAccount: repositoryMocks.deleteAccount,
       updateProfile: repositoryMocks.updateProfile,
+      refreshProjection: repositoryMocks.refreshProjection,
+      decideRole: repositoryMocks.decideRole,
     },
     medical: {
       snapshot: repositoryMocks.medicalSnapshot,
@@ -96,6 +100,7 @@ vi.mock("../src/repositories", () => {
 import {
   appState,
   bootstrapApp,
+  decideRole,
   deleteAccount,
   dismissSyncNotification,
   logout,
@@ -174,6 +179,8 @@ beforeEach(() => {
   repositoryMocks.revokeDevice.mockResolvedValue(undefined);
   repositoryMocks.deleteAccount.mockResolvedValue(undefined);
   repositoryMocks.updateProfile.mockResolvedValue(undefined);
+  repositoryMocks.refreshProjection.mockResolvedValue(undefined);
+  repositoryMocks.decideRole.mockResolvedValue(undefined);
   authMocks.syncDirectoryPet.mockResolvedValue(undefined);
   authMocks.updateDirectoryUserProfile.mockResolvedValue({
     operationId: "profile-operation",
@@ -188,6 +195,21 @@ beforeEach(() => {
 });
 
 describe("app-store directory reconciliation", () => {
+  it("refreshes the role projection before deciding a directory role request", async () => {
+    await bootstrapApp(true);
+
+    await decideRole({ accountId: "doctor-1", role: "doctor" }, "approved");
+
+    expect(repositoryMocks.refreshProjection).toHaveBeenCalledOnce();
+    expect(repositoryMocks.decideRole).toHaveBeenCalledWith({
+      accountId: "doctor-1",
+      role: "doctor",
+      status: "approved",
+    });
+    expect(repositoryMocks.refreshProjection.mock.invocationCallOrder[0])
+      .toBeLessThan(repositoryMocks.decideRole.mock.invocationCallOrder[0]!);
+  });
+
   it("finishes bootstrap without waiting for profile and pet directory synchronization", async () => {
     let resolveProfile!: () => void;
     authMocks.syncDirectoryProfile.mockImplementation(() => new Promise<void>((resolve) => { resolveProfile = resolve; }));
