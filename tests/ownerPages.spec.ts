@@ -305,7 +305,9 @@ describe("Owner pages", () => {
     expect(labelled(wrapper, "Окрас").attributes("for")).toBe(wrapper.get(".owner-color-field input").attributes("id"));
     expect(wrapper.get(".owner-color-field input").attributes("required")).toBeUndefined();
     await wrapper.get(".owner-color-toggle").trigger("click");
-    await wrapper.findAll(".owner-color-option").find((option) => option.text() === "Ситцевый")!.trigger("click");
+    const calicoOption = wrapper.findAll(".owner-color-option").find((option) => option.text() === "Ситцевый");
+    expect(calicoOption).toBeTruthy();
+    await calicoOption!.trigger("click");
     await labelled(wrapper, "Вес, кг").get("input").setValue("4.8");
     await labelled(wrapper, "Заметки").get("textarea").setValue("Не любит переноску");
     await wrapper.get("form").trigger("submit");
