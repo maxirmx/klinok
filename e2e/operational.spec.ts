@@ -211,7 +211,7 @@ test("fresh provisioning, Doctor approval, grant, draft, and confirmation", asyn
   await ownerPage.getByLabel("Порода").fill("Бигль");
   await ownerPage.getByLabel("Пол").selectOption("Интактный самец");
   await ownerPage.getByLabel("Точная дата рождения", { exact: true }).fill("2022-06-17");
-  await ownerPage.getByLabel("Окрас").fill("трёхцветный");
+  await ownerPage.getByLabel("Окрас", { exact: true }).fill("трёхцветный");
   await ownerPage.getByLabel("Вес, кг").fill("12.4");
   await ownerPage.getByLabel("Заметки").fill("Первичная заметка");
   await attachLargePetPhoto(ownerPage);

@@ -17,6 +17,7 @@ import MedicalRecordEntry from "../components/MedicalRecordEntry.vue";
 import ModalDialog from "../components/ModalDialog.vue";
 import PendingCountBadge from "../components/PendingCountBadge.vue";
 import PetAccessManager from "../components/PetAccessManager.vue";
+import PetColorCombobox from "../components/PetColorCombobox.vue";
 import PetProfileView from "../components/PetProfileView.vue";
 import PersonIdentity from "../components/PersonIdentity.vue";
 import WorkspaceShell from "../components/WorkspaceShell.vue";
@@ -641,7 +642,7 @@ function confirmMedicalRecord(record: MedicalRecordDraft) {
               />
             </div>
           </fieldset>
-          <label><span>Окрас</span><input v-model="draft.color" /></label>
+          <PetColorCombobox v-model="draft.color" :species="draft.species" />
           <label><span>Вес, кг</span><input v-model="draft.weightKg" type="number" min="0.01" step="0.01" required /></label>
           <label><span>Номер чипа, если есть</span><input v-model="draft.chip" /></label>
           <label><span>Клеймо, если есть</span><input v-model="draft.brandMark" /></label>
