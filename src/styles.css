@@ -791,18 +791,73 @@ dd {
 .vaccination-fields {
   display: grid;
   grid-template-columns:
-    minmax(160px, .9fr)
-    minmax(170px, 1fr)
-    minmax(240px, 1.25fr)
-    repeat(5, minmax(160px, 1fr));
+    minmax(120px, .9fr)
+    minmax(130px, 1fr)
+    minmax(190px, 1.25fr)
+    repeat(6, minmax(120px, 1fr));
   gap: 10px;
 }
 .vaccination-fields > label,
 .vaccination-complications { min-width: 0; }
 .vaccination-fields input[type="text"],
 .vaccination-fields input[type="date"],
-.vaccination-fields select { width: 100%; box-sizing: border-box; }
-.vaccination-complications > span { white-space: nowrap; }
+.vaccination-fields select { width: 100%; min-width: 0; box-sizing: border-box; }
+.vaccination-fields label > span {
+  display: block;
+  min-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.vaccination-revaccination-field {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 6px;
+  align-items: end;
+  min-width: 120px;
+}
+.vaccination-revaccination-field > label { min-width: 0; }
+.vaccination-revaccination-menu {
+  position: relative;
+  align-self: end;
+  margin-bottom: 1px;
+}
+.workspace-content .vaccination-revaccination-toggle {
+  width: 34px;
+  min-width: 34px;
+  height: 34px;
+  padding: 0;
+  place-items: center;
+}
+.vaccination-revaccination-toggle .app-icon { width: 18px; height: 18px; }
+.vaccination-revaccination-options {
+  position: absolute;
+  top: calc(100% + 5px);
+  right: 0;
+  z-index: 30;
+  display: grid;
+  width: max-content;
+  min-width: 190px;
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 12px 30px rgba(18, 24, 40, .16);
+}
+.vaccination-revaccination-options button {
+  padding: 7px 9px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 11.5px;
+  text-align: left;
+  white-space: nowrap;
+}
+.vaccination-revaccination-options button:hover,
+.vaccination-revaccination-options button:focus-visible,
+.vaccination-revaccination-options button.active { background: var(--brand-bg-sky); }
 .general-data-pressure {
   grid-column: 1 / -1;
   display: grid;

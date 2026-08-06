@@ -795,6 +795,55 @@ describe("Doctor pages", () => {
     const complications = card.get<HTMLSelectElement>(".vaccination-complications select");
     expect(complications.element.value).toBe("");
     expect(complications.findAll("option").map((option) => option.text())).toEqual(["Не указано", "Были", "Не было"]);
+    const revaccinationDate = field("Дата следующей ревакцинации").get<HTMLInputElement>("input");
+    const revaccinationToggle = card.get(".vaccination-revaccination-toggle");
+    expect(revaccinationToggle.attributes("title")).toBe("Рассчитать дату следующей ревакцинации");
+    expect(revaccinationToggle.attributes("aria-label")).toBe("Рассчитать дату следующей ревакцинации");
+    expect(revaccinationToggle.attributes("aria-expanded")).toBe("false");
+    expect(revaccinationToggle.getComponent(AppIcon).props("name")).toBe("chevron-down");
+    expect(card.find(".vaccination-revaccination-options").exists()).toBe(false);
+    await revaccinationToggle.trigger("click");
+    expect(revaccinationToggle.getComponent(AppIcon).props("name")).toBe("chevron-up");
+    await revaccinationToggle.trigger("click");
+    expect(card.find(".vaccination-revaccination-options").exists()).toBe(false);
+    expect(revaccinationToggle.getComponent(AppIcon).props("name")).toBe("chevron-down");
+    await revaccinationToggle.trigger("click");
+    await card.get(".vaccination-revaccination-menu").trigger("keydown", { key: "Escape" });
+    expect(card.find(".vaccination-revaccination-options").exists()).toBe(false);
+    expect(revaccinationToggle.attributes("aria-expanded")).toBe("false");
+    expect(revaccinationToggle.getComponent(AppIcon).props("name")).toBe("chevron-down");
+    await revaccinationToggle.trigger("click");
+    let revaccinationOptions = card.get(".vaccination-revaccination-options");
+    expect(revaccinationOptions.findAll("button").map((option) => option.text())).toEqual([
+      "Через 14 дней",
+      "Через месяц",
+      "Через 4 месяца",
+      "Через полгода",
+      "Через год",
+      "В следующий день рождения",
+    ]);
+    const encounterDate = wrapper.get(".encounter-date-field input");
+    await encounterDate.setValue("2026-07-21");
+    await revaccinationOptions.findAll("button").find((option) => option.text() === "Через 14 дней")!.trigger("click");
+    expect(revaccinationDate.element.value).toBe("2026-08-04");
+    expect(card.find(".vaccination-revaccination-options").exists()).toBe(false);
+    await revaccinationToggle.trigger("click");
+    revaccinationOptions = card.get(".vaccination-revaccination-options");
+    await revaccinationOptions.findAll("button").find((option) => option.text() === "Через месяц")!.trigger("click");
+    expect(revaccinationDate.element.value).toBe("2026-08-21");
+    await revaccinationToggle.trigger("click");
+    revaccinationOptions = card.get(".vaccination-revaccination-options");
+    await revaccinationOptions.findAll("button").find((option) => option.text() === "Через 14 дней")!.trigger("click");
+    await encounterDate.setValue("2026-07-22");
+    expect(revaccinationDate.element.value).toBe("2026-08-05");
+    await encounterDate.setValue("");
+    expect(revaccinationDate.element.value).toBe("");
+    await encounterDate.setValue("2026-07-22");
+    expect(revaccinationDate.element.value).toBe("2026-08-05");
+    await revaccinationDate.setValue("0001-01-01");
+    await revaccinationToggle.trigger("click");
+    expect(card.get(".vaccination-revaccination-options").find("button.active").exists()).toBe(false);
+    await revaccinationToggle.trigger("click");
 
     await field("Дата предыдущей вакцинации").get("input").setValue("2026-04-14");
     await field("Название предыдущей вакцины").get("input").setValue("Биокан");
@@ -802,9 +851,19 @@ describe("Doctor pages", () => {
     await field("Номер чипа").get("input").setValue("643094100000002");
     await wrapper.get('button[title="Сохранить запись"]').trigger("click");
     expect(repositoryMocks.saveEncounter).not.toHaveBeenCalled();
+    expect(card.text()).toContain("Укажите корректную дату следующей ревакцинации");
     expect(card.text()).toContain("Укажите серию и/или номер вакцины");
     expect(card.text()).toContain("Укажите срок годности вакцины");
 
+    await revaccinationToggle.trigger("click");
+    revaccinationOptions = card.get(".vaccination-revaccination-options");
+    await revaccinationOptions.findAll("button").find((option) => option.text() === "Через 14 дней")!.trigger("click");
+    expect(revaccinationDate.element.value).toBe("2026-08-05");
+    expect(card.text()).not.toContain("Укажите корректную дату следующей ревакцинации");
+    expect(card.text()).toContain("Укажите серию и/или номер вакцины");
+    expect(card.text()).toContain("Укажите срок годности вакцины");
+
+    await revaccinationDate.setValue("2027-07-21");
     await field("Серия и/или номер вакцины").get("input").setValue("AB-123");
     await field("Срок годности препарата/вакцины").get("input").setValue("2027-12-31");
     await field("Место введения").get("input").setValue("Холка");
@@ -824,9 +883,23 @@ describe("Doctor pages", () => {
           currentVaccineExpiresOn: "2027-12-31",
           chipNumber: "643094100000002",
           administrationSite: "Холка",
+          nextRevaccinationDate: "2027-07-21",
         },
       }),
     }));
+  });
+
+  it("does not offer a birthday interval when the pet birth date is unknown", async () => {
+    await setMedical(snapshot(undefined, { pets: [{ ...pet, birthDate: undefined }] }));
+    const wrapper = await mountAt("/doctor/pets/pet-1", "doctor-pet-detail");
+    await flushPromises();
+    await wrapper.get<HTMLSelectElement>(".encounter-add-section select").setValue("vaccination");
+    await flushPromises();
+
+    const card = wrapper.findAll(".encounter-section-card")
+      .find((candidate) => candidate.get("h3").text() === "Вакцинация/чипирование")!;
+    await card.get(".vaccination-revaccination-toggle").trigger("click");
+    expect(card.get(".vaccination-revaccination-options").text()).not.toContain("В следующий день рождения");
   });
 
   it("reopens persisted structured vaccination data without replacing it from the profile", async () => {

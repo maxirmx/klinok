@@ -6,6 +6,7 @@ import { describe, expect, it } from "vitest";
 import {
   WHAT_HAPPENED_TREE,
   OUTCOME_OPTIONS,
+  calculateNextRevaccinationDate,
   encounterSummary,
   generalDataMeasurements,
   isGeneralDataValue,
@@ -146,6 +147,7 @@ describe("medical encounter templates", () => {
       currentVaccineExpiresOn: "2027-12-31",
       chipNumber: " 643094100000001 ",
       administrationSite: " Холка ",
+      nextRevaccinationDate: "2028-08-04",
     });
 
     expect(parsed.errors).toEqual({});
@@ -158,6 +160,7 @@ describe("medical encounter templates", () => {
       currentVaccineExpiresOn: "2027-12-31",
       chipNumber: "643094100000001",
       administrationSite: "Холка",
+      nextRevaccinationDate: "2028-08-04",
     });
     expect(isVaccinationValue(parsed.value)).toBe(true);
     expect(vaccinationDetails(parsed.value!).map((item) => item.value)).toEqual([
@@ -169,6 +172,7 @@ describe("medical encounter templates", () => {
       "31.12.2027",
       "643094100000001",
       "Холка",
+      "04.08.2028",
     ]);
     expect(sectionSearchText(parsed.value)).toContain("Номер чипа 643094100000001");
 
@@ -181,6 +185,7 @@ describe("medical encounter templates", () => {
       currentVaccineExpiresOn: "",
       chipNumber: "643094100000002",
       administrationSite: "",
+      nextRevaccinationDate: "",
     }).value).toEqual({ chipNumber: "643094100000002" });
     expect(parseVaccinationDraft({
       previousVaccinationDate: "",
@@ -191,6 +196,7 @@ describe("medical encounter templates", () => {
       currentVaccineExpiresOn: "",
       chipNumber: "643094100000002",
       administrationSite: "",
+      nextRevaccinationDate: "",
     }).errors).toMatchObject({ currentVaccineBatch: expect.any(String), currentVaccineExpiresOn: expect.any(String) });
     expect(parseVaccinationDraft({
       previousVaccinationDate: "2026-02-30",
@@ -201,6 +207,19 @@ describe("medical encounter templates", () => {
       currentVaccineExpiresOn: "",
       chipNumber: "",
       administrationSite: "",
+      nextRevaccinationDate: "",
     }).errors).toMatchObject({ previousVaccinationDate: expect.any(String), section: expect.any(String) });
+  });
+
+  it("calculates the next revaccination date from the encounter date", () => {
+    expect(calculateNextRevaccinationDate("2026-01-31", "days-14")).toBe("2026-02-14");
+    expect(calculateNextRevaccinationDate("2026-01-31", "month-1")).toBe("2026-02-28");
+    expect(calculateNextRevaccinationDate("2026-01-31", "months-4")).toBe("2026-05-31");
+    expect(calculateNextRevaccinationDate("2026-01-31", "months-6")).toBe("2026-07-31");
+    expect(calculateNextRevaccinationDate("2026-01-31", "months-12")).toBe("2027-01-31");
+    expect(calculateNextRevaccinationDate("2026-05-01", "next-birthday", "2022-06-17")).toBe("2026-06-17");
+    expect(calculateNextRevaccinationDate("2026-07-21", "next-birthday", "2022-06-17")).toBe("2027-06-17");
+    expect(calculateNextRevaccinationDate("2026-07-21", "next-birthday")).toBe("");
+    expect(calculateNextRevaccinationDate("invalid", "days-14")).toBe("");
   });
 });

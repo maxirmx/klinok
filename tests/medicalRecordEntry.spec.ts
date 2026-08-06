@@ -243,6 +243,7 @@ describe("MedicalRecordEntry", () => {
                 currentVaccineExpiresOn: "2027-12-31",
                 chipNumber: "643094100000002",
                 administrationSite: "Холка",
+                nextRevaccinationDate: "2028-08-04",
               },
               authorAccountId: "doctor-1",
               authorDisplayName: "Вера Врач",
@@ -265,5 +266,6 @@ describe("MedicalRecordEntry", () => {
     expect(section.text()).toContain("31.12.2027");
     expect(section.text()).toContain("643094100000002");
     expect(section.text()).toContain("Холка");
+    expect(section.text()).toContain("04.08.2028");
   });
 });

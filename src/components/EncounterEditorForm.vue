@@ -3,14 +3,16 @@
 // All rights reserved.
 // This file is a part of Klinok application
 
-import { computed, ref } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import AppIcon from "./AppIcon.vue";
 import WhatHappenedTree from "./WhatHappenedTree.vue";
 import {
   ENCOUNTER_SECTION_LABELS,
   OPTIONAL_ENCOUNTER_SECTION_KINDS,
   OUTCOME_OPTIONS,
+  REVACCINATION_INTERVAL_OPTIONS,
   WHAT_HAPPENED_TREE,
+  calculateNextRevaccinationDate,
   emptyVaccinationDraft,
   parseGeneralDataDraft,
   parseVaccinationDraft,
@@ -22,6 +24,7 @@ import type {
   GeneralDataDraftErrors,
   VaccinationDraft,
   VaccinationDraftErrors,
+  RevaccinationInterval,
 } from "../medicalEncounter";
 import type { MedicalEncounterSectionKind } from "../repositories/types";
 
@@ -29,6 +32,7 @@ const props = defineProps<{
   busy: boolean;
   editing: boolean;
   latestConfirmedVaccination?: { date: string; name: string };
+  petBirthDate?: string;
 }>();
 const emit = defineEmits<{
   save: [];
@@ -48,7 +52,25 @@ const vaccination = defineModel<VaccinationDraft>("vaccination", { required: tru
 const form = ref<HTMLFormElement | null>(null);
 const generalDataErrors = ref<GeneralDataDraftErrors>({});
 const vaccinationErrors = ref<VaccinationDraftErrors>({});
+const revaccinationInterval = ref<RevaccinationInterval | "">("");
+const revaccinationChooserOpen = ref(false);
+const revaccinationMenuRoot = ref<HTMLElement | null>(null);
 const optionalAvailable = computed(() => OPTIONAL_ENCOUNTER_SECTION_KINDS.filter((kind) => !optionalKinds.value.includes(kind)));
+const revaccinationIntervalOptions = computed(() => REVACCINATION_INTERVAL_OPTIONS
+  .filter((option) => option.value !== "next-birthday" || props.petBirthDate));
+
+function handleDocumentPointerDown(event: PointerEvent) {
+  if (revaccinationChooserOpen.value && !revaccinationMenuRoot.value?.contains(event.target as Node)) {
+    revaccinationChooserOpen.value = false;
+  }
+}
+
+onMounted(() => document.addEventListener("pointerdown", handleDocumentPointerDown));
+onBeforeUnmount(() => document.removeEventListener("pointerdown", handleDocumentPointerDown));
+
+watch(date, () => {
+  if (revaccinationInterval.value) applyRevaccinationInterval(revaccinationInterval.value);
+});
 
 function toggleSelection(id: string) {
   const index = selectedIds.value.indexOf(id);
@@ -74,6 +96,8 @@ function selectOptional(event: Event) {
     if (kind === "vaccination") {
       vaccination.value = emptyVaccinationDraft(props.latestConfirmedVaccination);
       vaccinationErrors.value = {};
+      revaccinationInterval.value = "";
+      revaccinationChooserOpen.value = false;
       const nextTexts = { ...texts.value };
       delete nextTexts.vaccination;
       texts.value = nextTexts;
@@ -92,6 +116,45 @@ function updateGeneralData() {
 
 function updateVaccination() {
   vaccinationErrors.value = {};
+}
+
+function applyRevaccinationInterval(interval: RevaccinationInterval) {
+  const nextRevaccinationDate = calculateNextRevaccinationDate(
+    date.value,
+    interval,
+    props.petBirthDate,
+  );
+  vaccination.value = { ...vaccination.value, nextRevaccinationDate };
+  if (vaccinationErrors.value.nextRevaccinationDate) {
+    const nextErrors = { ...vaccinationErrors.value };
+    delete nextErrors.nextRevaccinationDate;
+    vaccinationErrors.value = nextErrors;
+  }
+}
+
+function selectRevaccinationInterval(interval: RevaccinationInterval, event: Event) {
+  revaccinationMenuRoot.value = (event.currentTarget as HTMLElement)
+    .closest<HTMLElement>(".vaccination-revaccination-menu");
+  revaccinationInterval.value = interval;
+  applyRevaccinationInterval(interval);
+  closeRevaccinationChooser(true);
+}
+
+function useManualRevaccinationDate() {
+  revaccinationInterval.value = "";
+}
+
+function toggleRevaccinationChooser(event: Event) {
+  revaccinationMenuRoot.value = (event.currentTarget as HTMLElement)
+    .closest<HTMLElement>(".vaccination-revaccination-menu");
+  revaccinationChooserOpen.value = !revaccinationChooserOpen.value;
+}
+
+function closeRevaccinationChooser(restoreFocus = false) {
+  revaccinationChooserOpen.value = false;
+  if (restoreFocus) {
+    void nextTick(() => revaccinationMenuRoot.value?.querySelector<HTMLButtonElement>(".vaccination-revaccination-toggle")?.focus());
+  }
 }
 
 function submit() {
@@ -175,16 +238,16 @@ function submit() {
         <p v-if="vaccinationErrors.section" class="field-error" role="alert">{{ vaccinationErrors.section }}</p>
         <div class="vaccination-fields" @input="updateVaccination" @change="updateVaccination">
           <label>
-            <span>Дата предыдущей вакцинации</span>
+            <span title="Дата предыдущей вакцинации">Дата предыдущей вакцинации</span>
             <input v-model="vaccination.previousVaccinationDate" type="date" />
             <small v-if="vaccinationErrors.previousVaccinationDate" class="field-error">{{ vaccinationErrors.previousVaccinationDate }}</small>
           </label>
           <label>
-            <span>Название предыдущей вакцины</span>
+            <span title="Название предыдущей вакцины">Название предыдущей вакцины</span>
             <input v-model="vaccination.previousVaccineName" type="text" />
           </label>
           <label class="vaccination-complications">
-            <span>Осложнения после предыдущей вакцинации</span>
+            <span title="Осложнения после предыдущей вакцинации">Осложнения после предыдущей вакцинации</span>
             <select v-model="vaccination.previousVaccinationComplications">
               <option value="">Не указано</option>
               <option value="yes">Были</option>
@@ -192,28 +255,59 @@ function submit() {
             </select>
           </label>
           <label>
-            <span>Название нынешней вакцины</span>
+            <span title="Название нынешней вакцины">Название нынешней вакцины</span>
             <input v-model="vaccination.currentVaccineName" type="text" />
             <small v-if="vaccinationErrors.currentVaccineName" class="field-error">{{ vaccinationErrors.currentVaccineName }}</small>
           </label>
           <label>
-            <span>Серия и/или номер вакцины</span>
+            <span title="Серия и/или номер вакцины">Серия и/или номер вакцины</span>
             <input v-model="vaccination.currentVaccineBatch" type="text" />
             <small v-if="vaccinationErrors.currentVaccineBatch" class="field-error">{{ vaccinationErrors.currentVaccineBatch }}</small>
           </label>
           <label>
-            <span>Срок годности препарата/вакцины</span>
+            <span title="Срок годности препарата/вакцины">Срок годности препарата/вакцины</span>
             <input v-model="vaccination.currentVaccineExpiresOn" type="date" />
             <small v-if="vaccinationErrors.currentVaccineExpiresOn" class="field-error">{{ vaccinationErrors.currentVaccineExpiresOn }}</small>
           </label>
           <label>
-            <span>Номер чипа</span>
+            <span title="Номер чипа">Номер чипа</span>
             <input v-model="vaccination.chipNumber" type="text" />
           </label>
           <label>
-            <span>Место введения</span>
+            <span title="Место введения">Место введения</span>
             <input v-model="vaccination.administrationSite" type="text" />
           </label>
+          <div class="vaccination-revaccination-field">
+            <label>
+              <span title="Дата следующей ревакцинации">Дата следующей ревакцинации</span>
+              <input v-model="vaccination.nextRevaccinationDate" type="date" @input="useManualRevaccinationDate" />
+              <small v-if="vaccinationErrors.nextRevaccinationDate" class="field-error">{{ vaccinationErrors.nextRevaccinationDate }}</small>
+            </label>
+            <div
+              class="vaccination-revaccination-menu"
+              @keydown.esc.stop.prevent="closeRevaccinationChooser(true)"
+            >
+              <button
+                type="button"
+                class="outline-action inline owner-profile-action vaccination-revaccination-toggle"
+                title="Рассчитать дату следующей ревакцинации"
+                aria-label="Рассчитать дату следующей ревакцинации"
+                aria-haspopup="menu"
+                :aria-expanded="revaccinationChooserOpen"
+                @click="toggleRevaccinationChooser"
+              ><AppIcon :name="revaccinationChooserOpen ? 'chevron-up' : 'chevron-down'" /></button>
+              <div v-if="revaccinationChooserOpen" class="vaccination-revaccination-options" role="menu">
+                <button
+                  v-for="option in revaccinationIntervalOptions"
+                  :key="option.value"
+                  type="button"
+                  role="menuitem"
+                  :class="{ active: revaccinationInterval === option.value }"
+                  @click="selectRevaccinationInterval(option.value, $event)"
+                >{{ option.label }}</button>
+              </div>
+            </div>
+          </div>
         </div>
       </template>
       <template v-else>
