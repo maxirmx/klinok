@@ -792,7 +792,9 @@ describe("Doctor pages", () => {
       .find((candidate) => candidate.find("span").exists() && candidate.get("span").text() === label)!;
     expect(field("Дата предыдущей вакцинации").get<HTMLInputElement>("input").element.value).toBe("2026-04-15");
     expect(field("Название предыдущей вакцины").get<HTMLInputElement>("input").element.value).toBe("Рабикан");
-    expect(card.get(".vaccination-complications .medical-card-options").exists()).toBe(true);
+    const complications = card.get<HTMLSelectElement>(".vaccination-complications select");
+    expect(complications.element.value).toBe("");
+    expect(complications.findAll("option").map((option) => option.text())).toEqual(["Не указано", "Были", "Не было"]);
 
     await field("Дата предыдущей вакцинации").get("input").setValue("2026-04-14");
     await field("Название предыдущей вакцины").get("input").setValue("Биокан");
@@ -806,9 +808,7 @@ describe("Doctor pages", () => {
     await field("Серия и/или номер вакцины").get("input").setValue("AB-123");
     await field("Срок годности препарата/вакцины").get("input").setValue("2027-12-31");
     await field("Место введения").get("input").setValue("Холка");
-    await card.findAll(".vaccination-complications .check-row")
-      .find((option) => option.text() === "Не было")!
-      .get("input").setValue(true);
+    await complications.setValue("no");
     await wrapper.get('button[title="Сохранить запись"]').trigger("click");
     await flushPromises();
 
@@ -862,8 +862,7 @@ describe("Doctor pages", () => {
     expect(field("Дата предыдущей вакцинации").get<HTMLInputElement>("input").element.value).toBe("2025-01-10");
     expect(field("Название предыдущей вакцины").get<HTMLInputElement>("input").element.value).toBe("Сохранённая вакцина");
     expect(field("Номер чипа").get<HTMLInputElement>("input").element.value).toBe("643094100000003");
-    expect(card.findAll<HTMLInputElement>(".vaccination-complications input")
-      .find((input) => input.attributes("value") === "no")!.element.checked).toBe(true);
+    expect(card.get<HTMLSelectElement>(".vaccination-complications select").element.value).toBe("no");
 
     await editor.get('button[title="Сохранить запись"]').trigger("click");
     await flushPromises();
