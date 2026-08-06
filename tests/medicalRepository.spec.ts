@@ -245,6 +245,7 @@ describe("medical authorization repository", () => {
           currentVaccineExpiresOn: "2027-12-31",
           chipNumber: "643094100000002",
           administrationSite: "Холка",
+          nextRevaccinationDate: "2027-07-21",
         },
         diagnosis: { text: "Предварительный диагноз" },
       },
@@ -272,6 +273,7 @@ describe("medical authorization repository", () => {
         currentVaccineName: "Мультикан-8",
         currentVaccineBatch: "AB-123",
         chipNumber: "643094100000002",
+        nextRevaccinationDate: "2027-07-21",
       },
     });
     const petBeforeConfirmation = (await owner.medical.snapshot()).pets.find((pet) => pet.petId === petId)!;

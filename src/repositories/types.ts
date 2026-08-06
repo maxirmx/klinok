@@ -116,6 +116,7 @@ export interface VaccinationSectionValue {
   currentVaccineExpiresOn?: string;
   chipNumber?: string;
   administrationSite?: string;
+  nextRevaccinationDate?: string;
 }
 
 export interface MedicalEncounterSection {

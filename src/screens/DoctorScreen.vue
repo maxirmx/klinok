@@ -699,6 +699,7 @@ watch(delegationPageCount, (pageCount) => {
           :busy="busy"
           :editing="false"
           :latest-confirmed-vaccination="selectedPet.latestConfirmedVaccination"
+          :pet-birth-date="selectedPet.birthDate"
           @save="saveEncounter"
           @remove-section="requestRemoveOptional"
         />
@@ -741,6 +742,7 @@ watch(delegationPageCount, (pageCount) => {
                 :busy="busy"
                 editing
                 :latest-confirmed-vaccination="selectedPet.latestConfirmedVaccination"
+                :pet-birth-date="selectedPet.birthDate"
                 @save="saveEncounter"
                 @cancel="resetEncounter"
                 @remove-section="requestRemoveOptional"

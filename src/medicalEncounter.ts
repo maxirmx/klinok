@@ -34,7 +34,19 @@ export interface VaccinationDraft {
   currentVaccineExpiresOn: string;
   chipNumber: string;
   administrationSite: string;
+  nextRevaccinationDate: string;
 }
+
+export type RevaccinationInterval = "days-14" | "month-1" | "months-4" | "months-6" | "months-12" | "next-birthday";
+
+export const REVACCINATION_INTERVAL_OPTIONS: ReadonlyArray<{ value: RevaccinationInterval; label: string }> = [
+  { value: "days-14", label: "Через 14 дней" },
+  { value: "month-1", label: "Через месяц" },
+  { value: "months-4", label: "Через 4 месяца" },
+  { value: "months-6", label: "Через полгода" },
+  { value: "months-12", label: "Через год" },
+  { value: "next-birthday", label: "В следующий день рождения" },
+];
 
 export type VaccinationDraftField = keyof VaccinationDraft | "section";
 export type VaccinationDraftErrors = Partial<Record<VaccinationDraftField, string>>;
@@ -339,6 +351,50 @@ function isIsoDate(value: string): boolean {
     date.getUTCDate() === Number(match[3]);
 }
 
+function isoDate(year: number, month: number, day: number): string {
+  return `${String(year).padStart(4, "0")}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+}
+
+function isoDateParts(value: string): { year: number; month: number; day: number } | undefined {
+  if (!isIsoDate(value)) return undefined;
+  const [year, month, day] = value.split("-").map(Number);
+  return { year: year!, month: month!, day: day! };
+}
+
+function daysInMonth(year: number, month: number): number {
+  return new Date(Date.UTC(year, month, 0)).getUTCDate();
+}
+
+function addMonths(value: string, months: number): string {
+  const parts = isoDateParts(value)!;
+  const absoluteMonth = parts.year * 12 + parts.month - 1 + months;
+  const year = Math.floor(absoluteMonth / 12);
+  const month = absoluteMonth - year * 12 + 1;
+  return isoDate(year, month, Math.min(parts.day, daysInMonth(year, month)));
+}
+
+export function calculateNextRevaccinationDate(
+  encounterDate: string,
+  interval: RevaccinationInterval,
+  birthDate?: string,
+): string {
+  const encounter = isoDateParts(encounterDate);
+  if (!encounter) return "";
+  if (interval === "days-14") {
+    const result = new Date(Date.UTC(encounter.year, encounter.month - 1, encounter.day + 14));
+    return isoDate(result.getUTCFullYear(), result.getUTCMonth() + 1, result.getUTCDate());
+  }
+  if (interval !== "next-birthday") {
+    const months = interval === "month-1" ? 1 : interval === "months-4" ? 4 : interval === "months-6" ? 6 : 12;
+    return addMonths(encounterDate, months);
+  }
+  const birth = birthDate ? isoDateParts(birthDate) : undefined;
+  if (!birth) return "";
+  const birthdayInYear = (year: number) => isoDate(year, birth.month, Math.min(birth.day, daysInMonth(year, birth.month)));
+  const thisBirthday = birthdayInYear(encounter.year);
+  return thisBirthday > encounterDate ? thisBirthday : birthdayInYear(encounter.year + 1);
+}
+
 export function emptyVaccinationDraft(previous?: { date: string; name: string }): VaccinationDraft {
   return {
     previousVaccinationDate: previous?.date ?? "",
@@ -349,6 +405,7 @@ export function emptyVaccinationDraft(previous?: { date: string; name: string })
     currentVaccineExpiresOn: "",
     chipNumber: "",
     administrationSite: "",
+    nextRevaccinationDate: "",
   };
 }
 
@@ -364,6 +421,7 @@ export function vaccinationDraft(value?: VaccinationSectionValue): VaccinationDr
     currentVaccineExpiresOn: value?.currentVaccineExpiresOn ?? "",
     chipNumber: value?.chipNumber ?? "",
     administrationSite: value?.administrationSite ?? "",
+    nextRevaccinationDate: value?.nextRevaccinationDate ?? "",
   };
 }
 
@@ -376,13 +434,17 @@ export function parseVaccinationDraft(draft: VaccinationDraft): { value?: Vaccin
   const currentVaccineExpiresOn = draft.currentVaccineExpiresOn.trim();
   const chipNumber = draft.chipNumber.trim();
   const administrationSite = draft.administrationSite.trim();
-  const currentVaccinationStarted = Boolean(currentVaccineName || currentVaccineBatch || currentVaccineExpiresOn);
+  const nextRevaccinationDate = draft.nextRevaccinationDate.trim();
+  const currentVaccinationStarted = Boolean(currentVaccineName || currentVaccineBatch || currentVaccineExpiresOn || nextRevaccinationDate);
 
   if (previousVaccinationDate && !isIsoDate(previousVaccinationDate)) {
     errors.previousVaccinationDate = "Укажите корректную дату предыдущей вакцинации.";
   }
   if (currentVaccineExpiresOn && !isIsoDate(currentVaccineExpiresOn)) {
     errors.currentVaccineExpiresOn = "Укажите корректный срок годности вакцины.";
+  }
+  if (nextRevaccinationDate && !isIsoDate(nextRevaccinationDate)) {
+    errors.nextRevaccinationDate = "Укажите корректную дату следующей ревакцинации.";
   }
   if (currentVaccinationStarted) {
     if (!currentVaccineName) errors.currentVaccineName = "Укажите название нынешней вакцины.";
@@ -406,6 +468,7 @@ export function parseVaccinationDraft(draft: VaccinationDraft): { value?: Vaccin
       ...(currentVaccineExpiresOn ? { currentVaccineExpiresOn } : {}),
       ...(chipNumber ? { chipNumber } : {}),
       ...(administrationSite ? { administrationSite } : {}),
+      ...(nextRevaccinationDate ? { nextRevaccinationDate } : {}),
     },
     errors,
   };
@@ -422,6 +485,7 @@ export function isVaccinationValue(value: unknown): value is VaccinationSectionV
     "currentVaccineExpiresOn",
     "chipNumber",
     "administrationSite",
+    "nextRevaccinationDate",
   ];
   if (stringFields.some((field) => candidate[field] !== undefined && typeof candidate[field] !== "string")) return false;
   if (candidate.previousVaccinationComplications !== undefined && typeof candidate.previousVaccinationComplications !== "boolean") return false;
@@ -451,6 +515,7 @@ export function vaccinationDetails(value: VaccinationSectionValue): Array<{ key:
     ...(value.currentVaccineExpiresOn ? [{ key: "current-expiry", label: "Срок годности препарата/вакцины", value: formatDate(value.currentVaccineExpiresOn) }] : []),
     ...(value.chipNumber ? [{ key: "chip", label: "Номер чипа", value: value.chipNumber }] : []),
     ...(value.administrationSite ? [{ key: "site", label: "Место введения", value: value.administrationSite }] : []),
+    ...(value.nextRevaccinationDate ? [{ key: "next-revaccination", label: "Дата следующей ревакцинации", value: formatDate(value.nextRevaccinationDate) }] : []),
   ];
 }
 

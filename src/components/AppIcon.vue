@@ -14,6 +14,7 @@ defineProps<{
     | "chevron"
     | "chevron-left"
     | "chevron-down"
+    | "chevron-up"
     | "search"
     | "settings"
     | "filter"
@@ -72,6 +73,9 @@ defineProps<{
     </g>
     <g v-else-if="name === 'chevron-down'" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2">
       <path d="m6 9 6 6 6-6" />
+    </g>
+    <g v-else-if="name === 'chevron-up'" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2">
+      <path d="m6 15 6-6 6 6" />
     </g>
     <g v-else-if="name === 'search'" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.9">
       <circle cx="10.7" cy="10.7" r="6.2" />
