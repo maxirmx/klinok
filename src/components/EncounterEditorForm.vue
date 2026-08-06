@@ -183,14 +183,14 @@ function submit() {
             <span>Название предыдущей вакцины</span>
             <input v-model="vaccination.previousVaccineName" type="text" />
           </label>
-          <fieldset class="vaccination-complications">
-            <legend>Осложнения после предыдущей вакцинации</legend>
-            <div class="medical-card-options" role="radiogroup" aria-label="Осложнения после предыдущей вакцинации">
-              <label class="check-row"><input v-model="vaccination.previousVaccinationComplications" type="radio" name="previous-vaccination-complications" value="" /><span>Не указано</span></label>
-              <label class="check-row"><input v-model="vaccination.previousVaccinationComplications" type="radio" name="previous-vaccination-complications" value="yes" /><span>Были</span></label>
-              <label class="check-row"><input v-model="vaccination.previousVaccinationComplications" type="radio" name="previous-vaccination-complications" value="no" /><span>Не было</span></label>
-            </div>
-          </fieldset>
+          <label class="vaccination-complications">
+            <span>Осложнения после предыдущей вакцинации</span>
+            <select v-model="vaccination.previousVaccinationComplications">
+              <option value="">Не указано</option>
+              <option value="yes">Были</option>
+              <option value="no">Не было</option>
+            </select>
+          </label>
           <label>
             <span>Название нынешней вакцины</span>
             <input v-model="vaccination.currentVaccineName" type="text" />

@@ -790,20 +790,19 @@ dd {
 .general-data-fields input { width: 100%; box-sizing: border-box; }
 .vaccination-fields {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  grid-template-columns:
+    minmax(160px, .9fr)
+    minmax(170px, 1fr)
+    minmax(240px, 1.25fr)
+    repeat(5, minmax(160px, 1fr));
   gap: 10px;
 }
 .vaccination-fields > label,
 .vaccination-complications { min-width: 0; }
 .vaccination-fields input[type="text"],
-.vaccination-fields input[type="date"] { width: 100%; box-sizing: border-box; }
-.vaccination-complications {
-  display: grid;
-  gap: 6px;
-  margin: 0;
-  padding: 0;
-  border: 0;
-}
+.vaccination-fields input[type="date"],
+.vaccination-fields select { width: 100%; box-sizing: border-box; }
+.vaccination-complications > span { white-space: nowrap; }
 .general-data-pressure {
   grid-column: 1 / -1;
   display: grid;
@@ -907,6 +906,14 @@ dd {
 .encounter-history-meta .person-identity-name { font-weight: inherit; }
 .medical-record-actions { justify-self: end; }
 .owner-medical-pagination { margin-top: 16px; }
+
+@media (max-width: 1650px) {
+  .vaccination-fields { grid-template-columns: repeat(4, minmax(200px, 1fr)); }
+}
+
+@media (max-width: 1200px) {
+  .vaccination-fields { grid-template-columns: repeat(2, minmax(240px, 1fr)); }
+}
 
 @media (max-width: 760px) {
   .doctor-heading { align-items: stretch; flex-direction: column; }
