@@ -302,7 +302,10 @@ describe("Owner pages", () => {
     await labelled(wrapper, "Порода").get("input").setValue("Сибирская");
     await labelled(wrapper, "Пол").get("select").setValue("Кастрированная самка");
     await wrapper.get('input[aria-label="Точная дата рождения"]').setValue("2021-05-10");
-    expect(labelled(wrapper, "Окрас").get("input").attributes("required")).toBeUndefined();
+    expect(labelled(wrapper, "Окрас").attributes("for")).toBe(wrapper.get(".owner-color-field input").attributes("id"));
+    expect(wrapper.get(".owner-color-field input").attributes("required")).toBeUndefined();
+    await wrapper.get(".owner-color-toggle").trigger("click");
+    await wrapper.findAll(".owner-color-option").find((option) => option.text() === "Ситцевый")!.trigger("click");
     await labelled(wrapper, "Вес, кг").get("input").setValue("4.8");
     await labelled(wrapper, "Заметки").get("textarea").setValue("Не любит переноску");
     await wrapper.get("form").trigger("submit");
@@ -313,10 +316,10 @@ describe("Owner pages", () => {
       species: "Кошка",
       sex: "Кастрированная самка",
       birthDate: "2021-05-10",
+      color: "Ситцевый",
       weightKg: 4.8,
       notes: "Не любит переноску",
     }));
-    expect(repositoryMocks.createPet.mock.calls[0]?.[0]).not.toHaveProperty("color");
   });
 
   it("shows supported-field validation and photo errors in the form", async () => {
@@ -366,7 +369,7 @@ describe("Owner pages", () => {
     expect(formActions.get('a[title="Отмена"]').getComponent(AppIcon).props("name")).toBe("close");
     expect(formActions.get('a[title="Отмена"]').attributes("href")).toBe("/owner/pets/pet-1");
     await labelled(wrapper, "Пол").get("select").setValue("Интактный самец");
-    await labelled(wrapper, "Окрас").get("input").setValue("трёхцветный");
+    await wrapper.get(".owner-color-field input").setValue("трёхцветный");
     await labelled(wrapper, "Вес, кг").get("input").setValue("12.4");
     await wrapper.get("form").trigger("submit");
     await flushPromises();
@@ -374,6 +377,7 @@ describe("Owner pages", () => {
     const saved = repositoryMocks.updatePet.mock.calls[0]?.[0] as Record<string, unknown>;
     expect(saved.species).toBe("Другое");
     expect(saved.sex).toBe("Интактный самец");
+    expect(saved.color).toBe("трёхцветный");
     expect(saved.latestConfirmedVaccination).toEqual(pet.latestConfirmedVaccination);
     expect(saved).not.toHaveProperty("legacyOptionalField");
   });
