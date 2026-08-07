@@ -33,6 +33,10 @@ import {
   normalizeOutcomeValue,
   outcomeValidationError,
 } from "../medicalEncounter";
+import {
+  isTherapeuticAppointmentValue,
+  normalizeTherapeuticAppointmentValue,
+} from "../therapeuticAppointment";
 import type {
   MedicalEncounterInput,
   MedicalEncounterSection,
@@ -632,6 +636,13 @@ export class MedicalRepository {
         normalizedSections.vaccination = normalizeVaccinationValue(value);
         continue;
       }
+      if (kind === "therapeutic-appointment" && !isFreeTextValue(value)) {
+        if (!isTherapeuticAppointmentValue(value)) {
+          throw new Error("Проверьте данные в разделе «Терапевтический приём».");
+        }
+        normalizedSections["therapeutic-appointment"] = normalizeTherapeuticAppointmentValue(value);
+        continue;
+      }
       if (!isFreeTextValue(value) || !value.text.trim()) {
         throw new Error("Заполните или удалите пустой дополнительный раздел.");
       }
@@ -653,6 +664,8 @@ export class MedicalRepository {
             ? "general-data-v1"
             : kind === "vaccination" && isVaccinationValue(value)
               ? "vaccination-v1"
+              : kind === "therapeutic-appointment" && isTherapeuticAppointmentValue(value)
+                ? "therapeutic-appointment-v1"
             : "free-text-v0",
       value,
       authorAccountId: this.context.accountId,

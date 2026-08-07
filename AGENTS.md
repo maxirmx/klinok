@@ -18,7 +18,11 @@
 
 ## Medical cards
 
-- Render terminal checkbox and radio option groups in medical cards with the shared `medical-card-options` responsive grid. Options must flow into as many columns as fit and collapse naturally on narrow screens; do not force these groups into a single column.
+- Render every checkbox or radio group as a bordered panel with rounded corners. Use a semantic `fieldset` and `legend`; when the visual group label is separate, keep the `legend` available to assistive technology.
+- Render terminal checkbox and radio options with the shared `medical-card-options` responsive grid. Use the same option-column sizing and gaps for every group so checkboxes align across panels. Options must flow into as many columns as fit and collapse naturally on narrow screens; do not force these groups into a single column.
+- On wide screens, place a checkbox or radio group's visible label in the shared label column and its options in the shared content column, aligned with neighboring fields. On narrow screens, stack the label above the options. Do not render selected-option counters.
+- Lay out visible single-select questions in pairs when both selectors are compact. Treat a selector as naturally wide when its question label or any option label exceeds 40 characters.
+- Promote selectors to the full content width according to these rules: when a group has no second selector, the first selector is always wide; when the second selector is conditionally hidden, the first visible selector grows wide; and when the second visible selector is naturally wide, both the first and second selectors are wide. Naturally wide selectors always span the full content width themselves.
 - Set medical-card comment textareas to `rows="2"` and apply the shared `medical-card-comment` class so global textarea minimum heights do not enlarge them. Keep larger textareas for standalone free-text sections whose primary content is not a comment.
 
 ## User-facing alerts

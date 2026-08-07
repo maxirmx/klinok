@@ -20,7 +20,13 @@ function containsOnlyOptions(node: WhatHappenedOption): boolean {
     <li role="treeitem">
       <details>
         <summary>{{ node.label }}</summary>
-        <ul class="encounter-taxonomy encounter-taxonomy-children" :class="{ 'medical-card-options': containsOnlyOptions(node) }" role="group">
+        <fieldset v-if="containsOnlyOptions(node)" class="medical-card-option-panel encounter-taxonomy-options-panel">
+          <legend class="visually-hidden">{{ node.label }}</legend>
+          <ul class="encounter-taxonomy encounter-taxonomy-children medical-card-options" role="group">
+            <WhatHappenedTree v-for="child in node.children ?? []" :key="child.id" :node="child" :selected="selected" @toggle="emit('toggle', $event)" />
+          </ul>
+        </fieldset>
+        <ul v-else class="encounter-taxonomy encounter-taxonomy-children" role="group">
           <WhatHappenedTree v-for="child in node.children ?? []" :key="child.id" :node="child" :selected="selected" @toggle="emit('toggle', $event)" />
         </ul>
       </details>
@@ -29,7 +35,13 @@ function containsOnlyOptions(node: WhatHappenedOption): boolean {
   <li v-else role="treeitem">
     <details v-if="node.children?.length">
       <summary>{{ node.label }}</summary>
-      <ul class="encounter-taxonomy encounter-taxonomy-children" :class="{ 'medical-card-options': containsOnlyOptions(node) }" role="group">
+      <fieldset v-if="containsOnlyOptions(node)" class="medical-card-option-panel encounter-taxonomy-options-panel">
+        <legend class="visually-hidden">{{ node.label }}</legend>
+        <ul class="encounter-taxonomy encounter-taxonomy-children medical-card-options" role="group">
+          <WhatHappenedTree v-for="child in node.children" :key="child.id" :node="child" :selected="selected" @toggle="emit('toggle', $event)" />
+        </ul>
+      </fieldset>
+      <ul v-else class="encounter-taxonomy encounter-taxonomy-children" role="group">
         <WhatHappenedTree v-for="child in node.children" :key="child.id" :node="child" :selected="selected" @toggle="emit('toggle', $event)" />
       </ul>
     </details>

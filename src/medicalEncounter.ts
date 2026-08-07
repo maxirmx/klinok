@@ -11,6 +11,10 @@ import type {
   VaccinationSectionValue,
   WhatHappenedSectionValue,
 } from "./repositories/types";
+import {
+  isTherapeuticAppointmentValue,
+  therapeuticAppointmentSearchText,
+} from "./therapeuticAppointment";
 
 export interface GeneralDataDraft {
   weightKg: string | number;
@@ -522,6 +526,7 @@ export function vaccinationDetails(value: VaccinationSectionValue): Array<{ key:
 export function sectionSearchText(value: unknown): string {
   if (isOutcomeValue(value)) return outcomeSummary(value);
   if (isFreeTextValue(value)) return value.text;
+  if (isTherapeuticAppointmentValue(value)) return therapeuticAppointmentSearchText(value);
   if (isGeneralDataValue(value)) return generalDataMeasurements(value).map((item) => `${item.label} ${item.value}`).join(" ");
   if (isVaccinationValue(value)) return vaccinationDetails(value).map((item) => `${item.label} ${item.value}`).join(" ");
   return "";

@@ -268,4 +268,66 @@ describe("MedicalRecordEntry", () => {
     expect(section.text()).toContain("Холка");
     expect(section.text()).toContain("04.08.2028");
   });
+
+  it("renders every populated therapeutic tab together in read-only history", () => {
+    const wrapper = mount(MedicalRecordEntry, {
+      props: {
+        record: {
+          ...record,
+          sections: {
+            ...record.sections,
+            "therapeutic-appointment": {
+              kind: "therapeutic-appointment",
+              templateVersion: "therapeutic-appointment-v1",
+              value: {
+                diseaseAnamnesis: {
+                  text: "Снижение аппетита со вчерашнего дня",
+                  problems: [{
+                    id: "problem-1",
+                    title: "Не ест",
+                    onsetId: "problem.onset.yesterday",
+                    medicationIds: [],
+                  }],
+                  selectedIds: ["disease.appetite.state.changed", "disease.appetite.change.absent"],
+                },
+                lifeAnamnesis: {
+                  text: "Содержится в квартире",
+                  selectedIds: ["life.housing.place.apartment"],
+                  currentMedications: "Не получает",
+                  allergies: "Не выявлены",
+                },
+                examination: {
+                  text: "Контактен",
+                  selectedIds: ["exam.general.state.good"],
+                },
+                recommendations: "Контроль через неделю",
+                prescriptions: "Диетический корм",
+              },
+              authorAccountId: "doctor-1",
+              authorDisplayName: "Вера Врач",
+              updatedAt: "2026-07-21T12:00:00.000Z",
+            },
+          },
+        },
+        mode: "details",
+        confirmed: false,
+        open: true,
+      },
+    });
+
+    const section = wrapper.findAll(".encounter-history-section")
+      .find((candidate) => candidate.get("h3").text() === "Терапевтический приём")!;
+    expect(section.findAll(".therapeutic-history-block h4").map((heading) => heading.text())).toEqual([
+      "Анамнез болезни",
+      "Анамнез жизни",
+      "Осмотр",
+      "Рекомендации",
+      "Назначения",
+    ]);
+    expect(section.text()).toContain("Проблема 1: Не ест");
+    expect(section.text()).toContain("Вчера");
+    expect(section.text()).toContain("Содержится в квартире");
+    expect(section.text()).toContain("Контроль через неделю");
+    expect(section.text()).toContain("Диетический корм");
+  });
 });

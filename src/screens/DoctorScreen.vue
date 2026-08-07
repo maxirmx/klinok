@@ -48,6 +48,12 @@ import {
   sectionSearchText,
   vaccinationDraft,
 } from "../medicalEncounter";
+import {
+  emptyTherapeuticAppointmentDraft,
+  isTherapeuticAppointmentValue,
+  parseTherapeuticAppointmentDraft,
+  therapeuticAppointmentDraft,
+} from "../therapeuticAppointment";
 import type { PetAccessRow } from "../petAccess";
 import type {
   MedicalEncounterSectionInputValue,
@@ -128,6 +134,7 @@ const encounter = reactive({
   texts: {} as Partial<Record<MedicalEncounterSectionKind, string>>,
   generalData: emptyGeneralDataDraft(),
   vaccination: emptyVaccinationDraft(),
+  therapeuticAppointment: emptyTherapeuticAppointmentDraft(),
 });
 
 const profileName = computed(() => [appState.control.profile?.firstName, appState.control.profile?.patronymic, appState.control.profile?.lastName].filter(Boolean).join(" "));
@@ -314,6 +321,7 @@ function removeOptional(kind: MedicalEncounterSectionKind) {
   delete encounter.texts[kind];
   if (kind === "general-data") encounter.generalData = emptyGeneralDataDraft();
   if (kind === "vaccination") encounter.vaccination = emptyVaccinationDraft(selectedPet.value?.latestConfirmedVaccination);
+  if (kind === "therapeutic-appointment") encounter.therapeuticAppointment = emptyTherapeuticAppointmentDraft();
 }
 
 function requestRemoveOptional(kind: MedicalEncounterSectionKind) {
@@ -340,6 +348,7 @@ function resetEncounter() {
   encounter.texts = {};
   encounter.generalData = emptyGeneralDataDraft();
   encounter.vaccination = emptyVaccinationDraft();
+  encounter.therapeuticAppointment = emptyTherapeuticAppointmentDraft();
 }
 
 async function saveEncounter() {
@@ -354,6 +363,10 @@ async function saveEncounter() {
       } else if (kind === "vaccination" && encounter.texts[kind] === undefined) {
         const parsed = parseVaccinationDraft(encounter.vaccination);
         if (!parsed.value) throw new Error("Проверьте данные в разделе «Вакцинация/чипирование».");
+        optionalSections[kind] = parsed.value;
+      } else if (kind === "therapeutic-appointment" && encounter.texts[kind] === undefined) {
+        const parsed = parseTherapeuticAppointmentDraft(encounter.therapeuticAppointment);
+        if (!parsed.value) throw new Error("Проверьте данные в разделе «Терапевтический приём».");
         optionalSections[kind] = parsed.value;
       } else {
         optionalSections[kind] = { text: encounter.texts[kind] ?? "" };
@@ -391,6 +404,10 @@ function editRecord(record: (typeof appState.medical.records)[number]) {
   encounter.vaccination = isVaccinationValue(vaccinationValue)
     ? vaccinationDraft(vaccinationValue)
     : emptyVaccinationDraft();
+  const therapeuticValue = record.sections["therapeutic-appointment"]?.value;
+  encounter.therapeuticAppointment = isTherapeuticAppointmentValue(therapeuticValue)
+    ? therapeuticAppointmentDraft(therapeuticValue)
+    : emptyTherapeuticAppointmentDraft();
   encounter.texts = Object.fromEntries(encounter.optionalKinds.flatMap((kind) => {
     const value = record.sections[kind]?.value;
     return isFreeTextValue(value) ? [[kind, value.text]] : [];
@@ -696,6 +713,7 @@ watch(delegationPageCount, (pageCount) => {
           v-model:texts="encounter.texts"
           v-model:general-data="encounter.generalData"
           v-model:vaccination="encounter.vaccination"
+          v-model:therapeutic-appointment="encounter.therapeuticAppointment"
           :busy="busy"
           :editing="false"
           :latest-confirmed-vaccination="selectedPet.latestConfirmedVaccination"
@@ -739,6 +757,7 @@ watch(delegationPageCount, (pageCount) => {
                 v-model:texts="encounter.texts"
                 v-model:general-data="encounter.generalData"
                 v-model:vaccination="encounter.vaccination"
+                v-model:therapeutic-appointment="encounter.therapeuticAppointment"
                 :busy="busy"
                 editing
                 :latest-confirmed-vaccination="selectedPet.latestConfirmedVaccination"

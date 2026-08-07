@@ -6,6 +6,7 @@
 import { computed } from "vue";
 import AppIcon from "./AppIcon.vue";
 import PersonIdentity from "./PersonIdentity.vue";
+import TherapeuticAppointmentView from "./TherapeuticAppointmentView.vue";
 import {
   ENCOUNTER_SECTION_LABELS,
   encounterSummary,
@@ -25,6 +26,7 @@ import {
   whatHappenedPath,
   whatHappenedSelectedIds,
 } from "../medicalEncounter";
+import { isTherapeuticAppointmentValue } from "../therapeuticAppointment";
 import type { MedicalEncounterSectionKind, MedicalRecordDraft } from "../repositories/types";
 
 const props = withDefaults(defineProps<{
@@ -180,6 +182,10 @@ function formatLocalDateTime(value: string) {
           </ul>
           <p v-if="outcomeComment(item.section.value)" class="encounter-history-comment">{{ outcomeComment(item.section.value) }}</p>
         </template>
+        <TherapeuticAppointmentView
+          v-else-if="item.kind === 'therapeutic-appointment' && isTherapeuticAppointmentValue(item.section.value)"
+          :value="item.section.value"
+        />
         <dl v-else-if="isGeneralDataValue(item.section.value)" class="general-data-values">
           <div v-for="measurement in generalDataMeasurements(item.section.value)" :key="measurement.key">
             <dt>{{ measurement.label }}</dt>
