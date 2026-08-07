@@ -255,7 +255,7 @@ test("fresh provisioning, Doctor approval, grant, draft, and confirmation", asyn
   await expect(medicalCard).toBeVisible({ timeout: replicationTimeout });
   await medicalCard.getByRole("link", { name: "Открыть медицинскую карту" }).click();
   await expect(doctorPage).toHaveURL(new RegExp(`/doctor/pets/${petId}$`));
-  await doctorPage.getByText("Всё хорошо, необходимо", { exact: true }).click();
+  await doctorPage.getByRole("button", { name: "Всё хорошо, необходимо", exact: true }).click();
   await doctorPage.getByLabel("Контрольный осмотр", { exact: true }).check();
   await doctorPage.locator(".encounter-what-happened").getByLabel("Комментарий").fill("Состояние стабильное");
   await doctorPage.getByLabel("В стадии наблюдения", { exact: true }).check();
