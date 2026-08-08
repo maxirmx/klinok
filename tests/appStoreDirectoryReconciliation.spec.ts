@@ -2,6 +2,7 @@
 // All rights reserved.
 // This file is a part of Klinok application
 
+import "fake-indexeddb/auto";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createPinia, setActivePinia } from "pinia";
 
@@ -15,6 +16,8 @@ const authMocks = vi.hoisted(() => ({
   loadOwnDirectoryProfile: vi.fn(),
   loadOwnedDirectoryPets: vi.fn(),
   syncDirectoryPet: vi.fn(),
+  deleteDirectoryPet: vi.fn(),
+  lookupDirectoryProfiles: vi.fn(),
   updateDirectoryUserProfile: vi.fn(),
 }));
 
@@ -28,6 +31,7 @@ const repositoryMocks = vi.hoisted(() => ({
   dismissNotification: vi.fn(),
   syncStatus: vi.fn(),
   syncListener: null as ((status: Record<string, unknown>) => void) | null,
+  medicalListener: null as ((snapshot: Record<string, unknown>) => void) | null,
   revokeDevice: vi.fn(),
   rotateCurrentDevice: vi.fn(),
   deleteAccount: vi.fn(),
@@ -67,6 +71,8 @@ vi.mock("../src/repositories/authClient", () => {
     loadOwnDirectoryProfile = authMocks.loadOwnDirectoryProfile;
     loadOwnedDirectoryPets = authMocks.loadOwnedDirectoryPets;
     syncDirectoryPet = authMocks.syncDirectoryPet;
+    deleteDirectoryPet = authMocks.deleteDirectoryPet;
+    lookupDirectoryProfiles = authMocks.lookupDirectoryProfiles;
     updateDirectoryUserProfile = authMocks.updateDirectoryUserProfile;
   }
   return { AuthClient, AuthClientError };
@@ -94,7 +100,10 @@ vi.mock("../src/repositories", () => {
     },
     medical: {
       snapshot: repositoryMocks.medicalSnapshot,
-      subscribe: vi.fn().mockReturnValue(() => undefined),
+      subscribe: vi.fn((listener: (snapshot: Record<string, unknown>) => void) => {
+        repositoryMocks.medicalListener = listener;
+        return () => undefined;
+      }),
     },
     conflicts: vi.fn().mockResolvedValue([]),
     notifications: repositoryMocks.notifications,
@@ -114,7 +123,9 @@ import {
   bootstrapApp,
   decideRole,
   deleteAccount,
+  deleteDirectoryPet,
   dismissSyncNotification,
+  lookupAdministratorProfiles,
   logout,
   revokeDevice,
   syncDirectoryPet,
@@ -206,6 +217,7 @@ beforeEach(() => {
     lastError: "",
   });
   repositoryMocks.syncListener = null;
+  repositoryMocks.medicalListener = null;
   authMocks.logout.mockResolvedValue(undefined);
   authMocks.revokeDevice.mockResolvedValue({ revokedDeviceIds: [] });
   authMocks.deleteAccount.mockResolvedValue({ operationId: "delete-operation" });
@@ -247,6 +259,16 @@ beforeEach(() => {
     }],
   });
   authMocks.syncDirectoryPet.mockResolvedValue(undefined);
+  authMocks.deleteDirectoryPet.mockResolvedValue(undefined);
+  authMocks.lookupDirectoryProfiles.mockImplementation(async (accountIds: string[]) => ({
+    profiles: accountIds.map((accountId) => ({
+      accountId,
+      firstName: "Имя",
+      lastName: accountId,
+      displayName: `Имя ${accountId}`,
+      updatedAt: "2026-07-23T00:00:00.000Z",
+    })),
+  }));
   authMocks.updateDirectoryUserProfile.mockResolvedValue({
     operationId: "profile-operation",
     profile: {
@@ -326,6 +348,27 @@ describe("app-store directory reconciliation", () => {
     await vi.waitFor(() => expect(authMocks.loadOwnedDirectoryPets).toHaveBeenCalledOnce());
 
     expect(authMocks.syncDirectoryPet).not.toHaveBeenCalled();
+  });
+
+  it("reports directory comparison failures without blocking repository startup", async () => {
+    const consoleWarn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    authMocks.loadOwnDirectoryProfile.mockRejectedValueOnce(new Error("profile unavailable"));
+    authMocks.loadOwnedDirectoryPets.mockRejectedValueOnce(new Error("pets unavailable"));
+
+    await bootstrapApp(true);
+
+    await vi.waitFor(() => {
+      expect(consoleWarn).toHaveBeenCalledWith(
+        "Directory profile comparison failed.",
+        expect.objectContaining({ message: "profile unavailable" }),
+      );
+      expect(consoleWarn).toHaveBeenCalledWith(
+        "Directory pet comparison failed.",
+        expect.objectContaining({ message: "pets unavailable" }),
+      );
+    });
+    expect(appState.repositoryConnected).toBe(true);
+    consoleWarn.mockRestore();
   });
 
   it("finishes bootstrap without waiting for profile and pet directory synchronization", async () => {
@@ -452,6 +495,17 @@ describe("app-store directory reconciliation", () => {
     expect(useAlertStore().alert?.text).toBe("Уведомление закрыто.");
   });
 
+  it("applies medical subscription updates from the active repository", async () => {
+    await bootstrapApp(true);
+    const updatedMedical = {
+      pets: [], grants: [], accessRequests: [], records: [], confirmations: [], confirmedRecordIds: [], events: [],
+    };
+
+    repositoryMocks.medicalListener?.(updatedMedical);
+
+    expect(appState.medical).toEqual(updatedMedical);
+  });
+
   it("clears repository and synchronization state on logout", async () => {
     await bootstrapApp(true);
     await logout();
@@ -537,6 +591,49 @@ describe("app-store directory reconciliation", () => {
     expect(repositoryMocks.rotateCurrentDevice).not.toHaveBeenCalled();
   });
 
+  it("rejects startup when the current protected device is unavailable", async () => {
+    const snapshot = await repositoryMocks.controlSnapshot();
+    repositoryMocks.controlSnapshot.mockResolvedValue({ ...snapshot, devices: [] });
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    await bootstrapApp(true);
+
+    expect(appState.repositoryConnected).toBe(false);
+    expect(useAlertStore().alert?.text).toContain("Состояние текущего устройства расходится");
+    consoleError.mockRestore();
+  });
+
+  it("rejects startup when current device certificates conflict", async () => {
+    const snapshot = await repositoryMocks.controlSnapshot();
+    repositoryMocks.controlSnapshot.mockResolvedValue({
+      ...snapshot,
+      devices: [{ ...snapshot.devices[0], signingPublicKey: { kid: "protected-signing-key" } }],
+    });
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    await bootstrapApp(true);
+
+    expect(appState.repositoryConnected).toBe(false);
+    expect(useAlertStore().alert?.text).toContain("Сертификаты текущего устройства конфликтуют");
+    consoleError.mockRestore();
+  });
+
+  it("rejects startup when current device key versions differ by more than one", async () => {
+    const session = await authMocks.session();
+    authMocks.session.mockResolvedValue({
+      ...session,
+      device: { ...session.device, userKeyVersion: 3 },
+    });
+    deviceVaultMocks.loadUserKeys.mockResolvedValue({ version: 3 });
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    await bootstrapApp(true);
+
+    expect(appState.repositoryConnected).toBe(false);
+    expect(useAlertStore().alert?.text).toContain("Версии ключей устройства расходятся более чем на один шаг");
+    consoleError.mockRestore();
+  });
+
   it("rotates the surviving device before revoking devices with the new key", async () => {
     const currentDevice = {
       deviceId: "device-1",
@@ -589,6 +686,41 @@ describe("app-store directory reconciliation", () => {
     expect(repositoryMocks.revokeDevice).toHaveBeenCalledWith("old-device");
     expect(repositoryMocks.rotateCurrentDevice.mock.invocationCallOrder[0])
       .toBeLessThan(repositoryMocks.revokeDevice.mock.invocationCallOrder[0]!);
+  });
+
+  it("reports a protected-journal failure after revoking another device in auth", async () => {
+    await bootstrapApp(true);
+    const currentDevice = appState.session.device!;
+    authMocks.revokeDevice.mockResolvedValueOnce({
+      revokedDeviceIds: ["old-device"],
+      certificate: {
+        ...currentDevice,
+        userKeyVersion: 2,
+        signingPublicKey: { kid: "new-signing" },
+        encryptionPublicKey: { kid: "new-encryption" },
+      },
+    });
+    repositoryMocks.rotateCurrentDevice.mockRejectedValueOnce(new Error("projection unavailable"));
+
+    await expect(revokeDevice("old-device")).rejects.toThrow(
+      "Устройство отозвано в службе входа, но защищённый журнал ещё не обновлён",
+    );
+
+    expect(authMocks.revokeDevice).toHaveBeenCalledWith("old-device", expect.any(Object));
+    expect(repositoryMocks.revokeDevice).toHaveBeenCalledWith("old-device");
+    expect(repositoryMocks.rotateCurrentDevice).toHaveBeenCalledWith(expect.objectContaining({ userKeyVersion: 2 }));
+    expect(appState.repositoryConnected).toBe(false);
+  });
+
+  it("reports a protected-journal failure after revoking the current device in auth", async () => {
+    await bootstrapApp(true);
+    repositoryMocks.revokeDevice.mockRejectedValueOnce(new Error("projection unavailable"));
+
+    await expect(revokeDevice("device-1")).rejects.toThrow(
+      "Устройство отозвано в службе входа, но защищённый журнал ещё не обновлён",
+    );
+
+    expect(appState.repositoryConnected).toBe(false);
   });
 
   it("propagates the auth operation ID and next target revision to the control profile", async () => {
@@ -703,6 +835,72 @@ describe("app-store directory reconciliation", () => {
       lastName: "Иванова",
     })).resolves.toMatchObject({ projectionSynchronized: false });
     expect(authMocks.updateDirectoryUserProfile).toHaveBeenCalledOnce();
+  });
+
+  it("publishes a profile that the auth response leaves pending", async () => {
+    await bootstrapApp(true);
+    authMocks.updateProfile.mockResolvedValueOnce({ operationId: "pending-profile-operation" });
+    authMocks.syncDirectoryProfile.mockClear();
+
+    await expect(updateProfile({ firstName: "Мария", lastName: "Иванова" }))
+      .resolves.toEqual({ synchronized: true });
+
+    expect(authMocks.syncDirectoryProfile).toHaveBeenCalledWith({ firstName: "Мария", lastName: "Иванова" });
+    expect(appState.directoryPendingCount).toBe(0);
+  });
+
+  it("loads administrator profiles in deduplicated API-sized batches", async () => {
+    await bootstrapApp(true);
+    const accountIds = Array.from({ length: 401 }, (_, index) => `account-${index}`);
+
+    const profiles = await lookupAdministratorProfiles([...accountIds, "account-0"]);
+
+    expect(profiles).toHaveLength(401);
+    expect(authMocks.lookupDirectoryProfiles).toHaveBeenCalledTimes(3);
+    expect(authMocks.lookupDirectoryProfiles.mock.calls.map(([ids]) => ids.length)).toEqual([200, 200, 1]);
+  });
+
+  it("publishes and deletes directory pets through the durable outbox", async () => {
+    await bootstrapApp(true);
+    authMocks.syncDirectoryPet.mockClear();
+
+    await expect(syncDirectoryPet({ petId: "pet-new", species: "Кошка", name: "Муся" }))
+      .resolves.toEqual({ synchronized: true });
+    await expect(deleteDirectoryPet("pet-new")).resolves.toEqual({ synchronized: true });
+
+    expect(authMocks.syncDirectoryPet).toHaveBeenCalledWith({ petId: "pet-new", species: "Кошка", name: "Муся" });
+    expect(authMocks.deleteDirectoryPet).toHaveBeenCalledWith("pet-new");
+    expect(appState.directoryPendingCount).toBe(0);
+  });
+
+  it("surfaces a permanent directory pet deletion failure", async () => {
+    await bootstrapApp(true);
+    const rejection = new AuthClientError("PET_OWNER_REQUIRED", "Владелец изменился.", 403);
+    authMocks.deleteDirectoryPet.mockRejectedValueOnce(rejection);
+    const consoleWarn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+
+    await expect(deleteDirectoryPet("pet-stale")).rejects.toBe(rejection);
+
+    expect(appState.directoryPendingCount).toBe(0);
+    consoleWarn.mockRestore();
+  });
+
+  it("retries a lagging role decision and reports exhaustion", async () => {
+    await bootstrapApp(true);
+    vi.useFakeTimers();
+    repositoryMocks.refreshProjection.mockClear();
+    repositoryMocks.decideRole.mockClear();
+    repositoryMocks.decideRole.mockRejectedValue(new Error("Заявка роли не найдена."));
+
+    const assertion = expect(decideRole(
+      { accountId: "doctor-lagging", role: "doctor", status: "pending" },
+      "approved",
+    )).rejects.toThrow("Заявка уже видна в каталоге, но ещё синхронизируется");
+    await vi.runAllTimersAsync();
+    await assertion;
+
+    expect(repositoryMocks.refreshProjection).toHaveBeenCalledTimes(5);
+    expect(repositoryMocks.decideRole).toHaveBeenCalledTimes(5);
   });
 
   it("logs the bootstrap stage and preserves the original repository error", async () => {

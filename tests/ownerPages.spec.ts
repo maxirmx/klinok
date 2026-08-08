@@ -339,6 +339,34 @@ describe("Owner pages", () => {
     expect(wrapper.get('[role="status"]').text()).toContain("Публикация в каталоге продолжится автоматически");
   });
 
+  it("creates only one pet when the form is submitted repeatedly while saving", async () => {
+    let resolveCreatePet!: (petId: string) => void;
+    repositoryMocks.createPet.mockImplementationOnce(() => new Promise<string>((resolve) => {
+      resolveCreatePet = resolve;
+    }));
+    const wrapper = await mountAt("/owner/pets/new", "owner-pet-create");
+
+    await labelled(wrapper, "Кличка").get("input").setValue("Боня");
+    await labelled(wrapper, "Порода").get("input").setValue("Сибирская");
+    await labelled(wrapper, "Пол").get("select").setValue("Кастрированная самка");
+    await wrapper.get('input[aria-label="Точная дата рождения"]').setValue("2021-05-10");
+    await labelled(wrapper, "Вес, кг").get("input").setValue("4.8");
+
+    const firstSubmit = wrapper.get("form").trigger("submit");
+    const secondSubmit = wrapper.get("form").trigger("submit");
+    await Promise.all([firstSubmit, secondSubmit]);
+
+    expect(repositoryMocks.createPet).toHaveBeenCalledOnce();
+    expect(wrapper.get<HTMLButtonElement>('button[type="submit"]').element.disabled).toBe(true);
+    expect(wrapper.get('button[type="submit"]').attributes("aria-label")).toBe("Сохранение питомца…");
+
+    resolveCreatePet("pet-new");
+    await flushPromises();
+
+    expect(directoryMutationMocks.syncPet).toHaveBeenCalledOnce();
+    expect(wrapper.vm.$route.path).toBe("/owner/pets/pet-new");
+  });
+
   it("shows supported-field validation and photo errors in the form", async () => {
     const wrapper = await mountAt("/owner/pets/new", "owner-pet-create");
     await wrapper.get("form").trigger("submit");
@@ -469,7 +497,7 @@ describe("Owner pages", () => {
           petId: pet.petId,
           revision: 1,
           authorAccountId: "doctor-2",
-          authorDisplayName: "Борис Врач",
+          authorDisplayName: "Семён Врач",
           encounterDate: `2026-07-${day}`,
           title: "Осмотр",
           text: "Состояние стабильное",
@@ -479,7 +507,7 @@ describe("Owner pages", () => {
               templateVersion: "free-text-v0" as const,
               value: { text: "Состояние стабильное" },
               authorAccountId: "doctor-2",
-              authorDisplayName: "Борис Врач",
+              authorDisplayName: "Семён Врач",
               updatedAt: timestamp,
             },
           },
@@ -502,7 +530,7 @@ describe("Owner pages", () => {
     expect(detail.find(".medical-record-entry-epicrisis").exists()).toBe(false);
     expect(detail.findAll("details.owner-encounter-record")).toHaveLength(10);
     const encounterRecord = detail.get("details.owner-encounter-record");
-    expect(encounterRecord.get("summary").text()).toContain("Борис Врач");
+    expect(encounterRecord.get("summary").text()).toContain("Семён Врач");
     expect(encounterRecord.text()).not.toContain("doctor-2");
     expect(encounterRecord.get(".encounter-history-section").text()).not.toMatch(/\d{4}-\d{2}-\d{2}T/);
     const medicalPagination = detail.get(".owner-medical-pagination");
@@ -512,6 +540,9 @@ describe("Owner pages", () => {
     expect(medicalPagination.text()).toContain("Показаны 11–11 из 11");
 
     const filters = detail.get(".medical-record-filters");
+    await filters.get('input[type="search"]').setValue("Семен");
+    expect(detail.findAll("details.owner-encounter-record")).toHaveLength(10);
+    await filters.get('input[type="search"]').setValue("");
     await filters.get('select[aria-label="Порядок"]').setValue("asc");
     expect(detail.get("details.owner-encounter-record summary").text()).toContain("01.07.2026");
     await filters.get('.medical-record-date-filter input[type="date"]').setValue("2026-07-10");
@@ -739,6 +770,9 @@ describe("Owner pages", () => {
 
     await deleteButton.trigger("click");
     expect(detail.get('[role="alertdialog"]').text()).toContain("Удалить профиль Шарик?");
+    repositoryMocks.deletePet.mockImplementationOnce(async () => {
+      await setMedical(snapshot());
+    });
     directoryMutationMocks.deletePet.mockResolvedValueOnce({ synchronized: false });
     await detail.get('[role="alertdialog"]').findAll("button")
       .find((button) => button.text() === "Удалить питомца")!
@@ -746,6 +780,7 @@ describe("Owner pages", () => {
     await flushPromises();
 
     expect(repositoryMocks.deletePet).toHaveBeenCalledWith("pet-1");
+    expect(directoryMutationMocks.deletePet).toHaveBeenCalledWith("pet-1");
     expect(detail.vm.$route.path).toBe("/owner/home");
     expect(detail.get('[role="status"]').text()).toContain("Удаление из каталога продолжится автоматически");
   });

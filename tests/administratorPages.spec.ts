@@ -2,13 +2,15 @@
 // All rights reserved.
 // This file is a part of Klinok application
 
-import { flushPromises, mount, type VueWrapper } from "@vue/test-utils";
+import { enableAutoUnmount, flushPromises, mount, type VueWrapper } from "@vue/test-utils";
 import { createMemoryHistory, createRouter } from "vue-router";
 import { createPinia } from "pinia";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AccountProfile, DirectoryUserDto, Role, RoleRequest, SignedEvent } from "@klinok/protocol";
 import AppIcon from "../src/components/AppIcon.vue";
 import AdministratorScreen from "../src/screens/AdministratorScreen.vue";
+
+enableAutoUnmount(afterEach);
 
 const appMocks = vi.hoisted(() => ({
   decideRole: vi.fn().mockResolvedValue(undefined),
@@ -273,6 +275,92 @@ describe("Administrator pages", () => {
     expect(wrapper.find(".workspace-sidebar-nav .pending-count-badge").exists()).toBe(false);
     expect(pendingFilter.attributes("disabled")).toBeDefined();
     expect(wrapper.findAll(".administrator-table tbody tr")).toHaveLength(2);
+  });
+
+  it("keeps an authoritative zero pending count after navigating to the audit view", async () => {
+    const pendingDoctor = role("doctor-1", "doctor", "pending");
+    await setState({
+      profiles: [profile("doctor-1", "Анна", "Врач")],
+      roles: [pendingDoctor],
+    });
+    appMocks.loadAdministratorUsers.mockResolvedValueOnce({
+      ...directoryPage([directoryUser("doctor-1", "Анна Врач")]),
+      pendingCount: 0,
+    });
+    const wrapper = await mountAt("/admin/home", "administrator-home");
+
+    expect(wrapper.find(".workspace-sidebar-nav .pending-count-badge").exists()).toBe(false);
+    expect(wrapper.findAll(".administrator-role-filters button")[1]!.attributes("disabled")).toBeDefined();
+
+    await wrapper.setProps({ scenarioId: "administrator-audit" });
+
+    expect(wrapper.find(".workspace-sidebar-nav .pending-count-badge").exists()).toBe(false);
+  });
+
+  it("uses the local pending projection while the directory count is unknown", async () => {
+    let resolveDirectory!: (value: ReturnType<typeof directoryPage> & { pendingCount: number }) => void;
+    appMocks.loadAdministratorUsers.mockImplementationOnce(() => new Promise((resolve) => {
+      resolveDirectory = resolve;
+    }));
+    await setState({
+      profiles: [profile("doctor-1", "Анна", "Врач")],
+      roles: [role("doctor-1", "doctor", "pending")],
+    });
+    const wrapper = await mountAt("/admin/home", "administrator-home");
+
+    expect(wrapper.get(".workspace-sidebar-nav .pending-count-badge").text()).toBe("1");
+    expect(wrapper.findAll(".administrator-role-filters button")[1]!.attributes("disabled")).toBeUndefined();
+
+    resolveDirectory({ ...directoryPage([directoryUser("doctor-1", "Анна Врач")]), pendingCount: 0 });
+    await flushPromises();
+
+    expect(wrapper.find(".workspace-sidebar-nav .pending-count-badge").exists()).toBe(false);
+  });
+
+  it("refreshes the directory until a newly replicated role request becomes actionable", async () => {
+    vi.useFakeTimers();
+    let wrapper: VueWrapper | undefined;
+    try {
+      const pendingDoctor = role("doctor-1", "doctor", "pending");
+      const unsynchronizedUser = directoryUser("doctor-1", "Анна Врач");
+      const synchronizedUser = {
+        ...unsynchronizedUser,
+        roleStatuses: { ...unsynchronizedUser.roleStatuses, doctor: "pending" as const },
+      };
+      let resolveFirstReconciliation!: (value: ReturnType<typeof directoryPage> & { pendingCount: number }) => void;
+      appMocks.loadAdministratorUsers
+        .mockResolvedValueOnce({ ...directoryPage([unsynchronizedUser]), pendingCount: 0 })
+        .mockImplementationOnce(() => new Promise((resolve) => { resolveFirstReconciliation = resolve; }))
+        .mockResolvedValueOnce({ ...directoryPage([synchronizedUser]), pendingCount: 1 });
+      await setState({
+        profiles: [profile("doctor-1", "Анна", "Врач")],
+        roles: [],
+      });
+      wrapper = await mountAt("/admin/home", "administrator-home");
+
+      expect(appMocks.loadAdministratorUsers).toHaveBeenCalledTimes(1);
+      expect(wrapper.find('button[title="Одобрить роль «Ветеринар»"]').exists()).toBe(false);
+      await setState({
+        profiles: [profile("doctor-1", "Анна", "Врач")],
+        roles: [pendingDoctor],
+      });
+      await vi.advanceTimersByTimeAsync(0);
+      await flushPromises();
+      expect(appMocks.loadAdministratorUsers).toHaveBeenCalledTimes(2);
+      expect(wrapper.find('button[title="Одобрить роль «Ветеринар»"]').exists()).toBe(false);
+
+      resolveFirstReconciliation({ ...directoryPage([unsynchronizedUser]), pendingCount: 0 });
+      await flushPromises();
+
+      await vi.advanceTimersByTimeAsync(500);
+      await flushPromises();
+
+      expect(wrapper.find('button[title="Одобрить роль «Ветеринар»"]').exists()).toBe(true);
+      expect(appMocks.loadAdministratorUsers).toHaveBeenCalledTimes(3);
+    } finally {
+      wrapper?.unmount();
+      vi.useRealTimers();
+    }
   });
 
   it("shows every initialized user with owner status and protects bootstrap", async () => {
@@ -636,7 +724,7 @@ describe("Administrator pages", () => {
     });
     await setState({
       profiles: [
-        profile("doctor-1", "Анна", "Врач"),
+        profile("doctor-1", "Семён", "Врач"),
         profile("bootstrap-administrator", "Начальный", "Администратор"),
       ],
       events: [requested, requestedAudit, restored, restoredAudit, bootstrap],
@@ -656,6 +744,10 @@ describe("Administrator pages", () => {
     expect(rows[0]!.text()).toContain("Роль восстановлена");
     expect(rows[0]!.text()).toContain("Начальный Администратор");
     expect(rows[2]!.text()).toContain("Роль назначена при инициализации");
+
+    await searchLabel.get("input").setValue("Семен");
+    expect(wrapper.findAll(".administrator-audit-table tbody tr")).toHaveLength(2);
+    await searchLabel.get("input").setValue("");
 
     await wrapper.findAll<HTMLSelectElement>(".administrator-audit-filters select")[1]!.setValue("restore");
     expect(wrapper.findAll(".administrator-audit-table tbody tr")).toHaveLength(1);

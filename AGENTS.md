@@ -10,6 +10,10 @@
   This file is a part of Klinok application
   ```
 
+## Validation
+
+- The Compose end-to-end suite (`npm run test:e2e:compose`) must pass for every change.
+
 ## Shared UI components
 
 - Every paginated interface must use `src/components/AppPaginator.vue`. Do not implement page navigation buttons, item ranges, or page-size selectors inline in screens or other components.

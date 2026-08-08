@@ -29,7 +29,7 @@ async function fixture() {
   const transport = new MemoryEventTransport();
   await transport.initialize();
   const repository = new ControlRepository(transport, context, keys, certificate, "bootstrap-administrator");
-  return { repository, transport };
+  return { repository, transport, context, keys, certificate };
 }
 
 async function repositoryFor(
@@ -97,8 +97,13 @@ describe("control repository", () => {
     await first.rotateCurrentDevice({ ...firstCertificate, userKeyVersion: 2, issuedAt: "2026-07-20T10:00:00.000Z" });
     await new Promise((resolve) => setTimeout(resolve, 0));
 
+    const rotatedCertificate = (await first.snapshot()).devices[0]!;
+    await first.rotateCurrentDevice(rotatedCertificate);
+
     expect((await first.snapshot()).devices[0]?.userKeyVersion).toBe(2);
     expect((await second.snapshot()).devices[0]?.userKeyVersion).toBe(1);
+    expect((await transport.list("control")).filter((event) => event.eventType === "device.rotated"))
+      .toHaveLength(1);
   });
 
   it("repairs an auth-side rotation by signing the transition with the retained previous key", async () => {
@@ -198,6 +203,123 @@ describe("control repository", () => {
     await repository.revokeDevice("owner-device");
     expect((await transport.list("control")).filter((event) => event.eventType === "device.revoked"))
       .toHaveLength(1);
+    const revokedCertificate = (await repository.snapshot()).devices[0]!;
+    await expect(repository.rotateCurrentDevice({
+      ...revokedCertificate,
+      status: "active",
+      userKeyVersion: revokedCertificate.userKeyVersion + 1,
+    })).rejects.toMatchObject({ code: "DEVICE_ROTATION_SOURCE_UNAVAILABLE" });
+  });
+
+  it("resolves concurrent equal profile revisions by their update timestamp", async () => {
+    const { repository, transport, context, keys, certificate } = await fixture();
+    await repository.initialize({
+      profile: { firstName: "Иван", lastName: "Иванов" },
+      requestedRoles: ["owner"],
+    });
+    const sibling = new ControlRepository(
+      transport,
+      context,
+      keys,
+      certificate,
+      "bootstrap-administrator",
+    );
+    await sibling.initialize();
+
+    await Promise.all([
+      repository.updateProfile({
+        accountId: "owner-account",
+        revision: 2,
+        firstName: "Раннее",
+        lastName: "Имя",
+        updatedAt: "2026-07-11T10:00:00.000Z",
+      }),
+      sibling.updateProfile({
+        accountId: "owner-account",
+        revision: 2,
+        firstName: "Позднее",
+        lastName: "Имя",
+        updatedAt: "2026-07-12T10:00:00.000Z",
+      }),
+    ]);
+    await repository.refreshProjection();
+
+    expect((await repository.snapshot()).profile).toMatchObject({
+      revision: 2,
+      firstName: "Позднее",
+      updatedAt: "2026-07-12T10:00:00.000Z",
+    });
+    await repository.updateProfile({
+      accountId: "owner-account",
+      revision: 3,
+      firstName: "Следующее",
+      lastName: "Имя",
+      updatedAt: "2026-07-13T10:00:00.000Z",
+    });
+    await repository.deleteAccount("concurrent-delete-operation");
+    expect((await transport.list("control")).find((event) =>
+      event.eventType === "account.deleted" && event.operationId === "concurrent-delete-operation",
+    )).toBeDefined();
+  });
+
+  it("rejects rotation repair when the previous device key is unavailable", async () => {
+    const transport = new MemoryEventTransport();
+    await transport.initialize();
+    const accountId = `rotation-missing-key-${crypto.randomUUID()}`;
+    const oldKeys = await generateUserKeySet(1);
+    const oldExported = await exportUserKeySet(oldKeys);
+    const oldContext: ActiveRoleContext = {
+      accountId,
+      deviceId: "surviving-device",
+      orbitIdentityId: "surviving-orbit",
+      role: "owner",
+      roleProofId: "setup-owner",
+      userKeyVersion: 1,
+    };
+    const oldCertificate: DeviceCertificate = {
+      deviceId: oldContext.deviceId,
+      accountId,
+      orbitIdentityId: oldContext.orbitIdentityId,
+      status: "active",
+      userKeyVersion: 1,
+      signingPublicKey: oldExported.signingPublicKey,
+      encryptionPublicKey: oldExported.encryptionPublicKey,
+      issuedAt: "2026-07-10T10:00:00.000Z",
+      attestation: "old-attestation",
+    };
+    const oldRepository = new ControlRepository(
+      transport,
+      oldContext,
+      oldKeys,
+      oldCertificate,
+      "bootstrap-administrator",
+    );
+    await oldRepository.initialize({
+      profile: { firstName: "Ольга", lastName: "Владелец" },
+      requestedRoles: ["owner"],
+    });
+
+    const nextKeys = await generateUserKeySet(2);
+    const nextExported = await exportUserKeySet(nextKeys);
+    const nextCertificate: DeviceCertificate = {
+      ...oldCertificate,
+      userKeyVersion: 2,
+      signingPublicKey: nextExported.signingPublicKey,
+      encryptionPublicKey: nextExported.encryptionPublicKey,
+      issuedAt: "2026-07-11T10:00:00.000Z",
+      attestation: "new-attestation",
+    };
+    const repairedRepository = new ControlRepository(
+      transport,
+      { ...oldContext, userKeyVersion: 2 },
+      nextKeys,
+      nextCertificate,
+      "bootstrap-administrator",
+    );
+    await repairedRepository.initialize();
+
+    await expect(repairedRepository.rotateCurrentDevice(nextCertificate))
+      .rejects.toMatchObject({ code: "DEVICE_ROTATION_KEY_UNAVAILABLE" });
   });
 
   it("attests the device, encrypts the profile, and immediately approves Owner", async () => {
@@ -321,6 +443,88 @@ describe("control repository", () => {
     expect((await transport.list("control")).filter((candidate) =>
       candidate.eventType === "profile.updated" && candidate.operationId === "bootstrap-profile-operation",
     )).toHaveLength(1);
+  });
+
+  it("rewraps the latest profiles when a new Administrator is approved", async () => {
+    const transport = new MemoryEventTransport();
+    await transport.initialize();
+    const bootstrap = await repositoryFor(transport, "bootstrap-administrator", "administrator");
+    const owner = await repositoryFor(transport, "rewrap-owner", "owner");
+    const administrator = await repositoryFor(transport, "next-administrator", "administrator");
+    await bootstrap.initialize({
+      profile: { firstName: "Начальный", lastName: "Администратор" },
+      requestedRoles: ["administrator"],
+    });
+    await owner.initialize({ profile: { firstName: "Старое", lastName: "Имя" }, requestedRoles: ["owner"] });
+    await owner.updateProfile({
+      accountId: "rewrap-owner",
+      revision: 2,
+      firstName: "Новое",
+      lastName: "Имя",
+      updatedAt: "2026-07-12T10:00:00.000Z",
+    });
+    await administrator.initialize({
+      profile: { firstName: "Следующий", lastName: "Администратор" },
+      requestedRoles: ["administrator"],
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const pending = (await bootstrap.snapshot()).pendingQueue.find((request) =>
+      request.accountId === "next-administrator" && request.role === "administrator",
+    )!;
+
+    await bootstrap.decideRole({
+      accountId: pending.accountId,
+      role: pending.role,
+      status: "approved",
+    });
+
+    const decision = (await transport.list("control")).find((event) =>
+      event.eventType === "role.approved" && event.aggregateId === "next-administrator",
+    )!;
+    const rewrapped = (await transport.list("control")).filter((event) =>
+      event.eventType === "profile.key.rewrapped" && event.operationId === decision.operationId,
+    );
+    expect(rewrapped.map((event) => event.aggregateId)).toEqual(expect.arrayContaining([
+      "bootstrap-administrator",
+      "rewrap-owner",
+      "next-administrator",
+    ]));
+    expect(rewrapped.find((event) => event.aggregateId === "rewrap-owner"))
+      .toMatchObject({ metadata: { revision: 2, newAdministratorAccountId: "next-administrator" } });
+  });
+
+  it("links account deletion to the latest profile revision and remains idempotent", async () => {
+    const { repository, transport } = await fixture();
+    await repository.initialize({
+      profile: { firstName: "Иван", lastName: "Иванов" },
+      requestedRoles: ["owner"],
+    });
+    await repository.updateProfile({
+      accountId: "owner-account",
+      revision: 2,
+      firstName: "Пётр",
+      lastName: "Иванов",
+      updatedAt: "2026-07-11T10:00:00.000Z",
+    });
+    await repository.updateProfile({
+      accountId: "owner-account",
+      revision: 3,
+      firstName: "Анна",
+      lastName: "Иванова",
+      updatedAt: "2026-07-12T10:00:00.000Z",
+    });
+    const latestProfile = (await transport.list("control")).findLast((event) =>
+      event.eventType === "profile.updated" && event.metadata.revision === 3,
+    )!;
+
+    await repository.deleteAccount("delete-operation");
+    await repository.deleteAccount("delete-operation");
+
+    const deletions = (await transport.list("control")).filter((event) => event.eventType === "account.deleted");
+    expect(deletions).toEqual([expect.objectContaining({
+      operationId: "delete-operation",
+      parents: [latestProfile.eventId],
+    })]);
   });
 
   it("records a direct restoration and its audit companion", async () => {

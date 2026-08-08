@@ -3,9 +3,9 @@
 // All rights reserved.
 // This file is a part of Klinok application
 
-import { computed, reactive, ref, watch } from "vue";
+import { computed, onBeforeUnmount, reactive, ref, watch } from "vue";
 import { useRouter } from "vue-router";
-import type { AccountProfile, DirectoryProfileDto, DirectoryUserDto, Role, RoleRequest, RoleStatus } from "@klinok/protocol";
+import { normalizeRussianSearchText, type AccountProfile, type DirectoryProfileDto, type DirectoryUserDto, type Role, type RoleRequest, type RoleStatus } from "@klinok/protocol";
 import AppIcon from "../components/AppIcon.vue";
 import AppPaginator from "../components/AppPaginator.vue";
 import ModalDialog from "../components/ModalDialog.vue";
@@ -62,9 +62,11 @@ const page = ref(1);
 const pageSize = ref(readPageSize(cabinetPageSizeKey));
 const users = ref<DirectoryUserDto[]>([]);
 const userTotal = ref(0);
-const directoryPendingRoleCount = ref(0);
+const directoryPendingRoleCount = ref<number | null>(null);
 const usersLoading = ref(false);
 let usersRefreshId = 0;
+let directoryReconciliationTimer: ReturnType<typeof setTimeout> | null = null;
+let directoryReconciliationAttempts = 0;
 const roleStatusOverrides = reactive(new Map<string, { status: RoleStatus; sourceStatus: RoleStatus }>());
 const decision = ref<{ request: RoleActionTarget; action: DecisionAction; displayName: string } | null>(null);
 const decisionReason = ref("");
@@ -122,7 +124,7 @@ function profileName(accountId: string): string {
 }
 
 function normalize(value: string): string {
-  return value.trim().toLocaleLowerCase("ru");
+  return normalizeRussianSearchText(value);
 }
 
 const administratorRows = computed<AdministratorRow[]>(() => {
@@ -135,9 +137,42 @@ const administratorRows = computed<AdministratorRow[]>(() => {
     },
   }));
 });
-const pendingRoleCount = computed(() => directoryPendingRoleCount.value);
+const pendingRoleCount = computed(() =>
+  directoryPendingRoleCount.value ?? administratorPendingRequestCount(appState.control));
+const localRoleRevision = computed(() => appState.control.allRoles
+  .filter((request) => request.role === "doctor" || request.role === "administrator")
+  .map((request) => `${request.accountId}:${request.role}:${request.requestId}:${request.status}`)
+  .sort()
+  .join("|"));
 const mayEditProfiles = computed(() => appState.session.accountId === getConfig()?.p2p.bootstrapAccountId
   && appState.activeRole === "administrator");
+
+function clearDirectoryReconciliationTimer() {
+  if (directoryReconciliationTimer !== null) clearTimeout(directoryReconciliationTimer);
+  directoryReconciliationTimer = null;
+}
+
+function directoryProjectionMayBeBehind(): boolean {
+  if (directoryPendingRoleCount.value === null) return true;
+  if (administratorPendingRequestCount(appState.control) !== directoryPendingRoleCount.value) return true;
+  const localRoles = new Map(appState.control.allRoles.map((request) => [`${request.accountId}:${request.role}`, request.status]));
+  return users.value.some((user) => advancedRoles.some((role) =>
+    localRoles.get(`${user.accountId}:${role}`) === "pending" && user.roleStatuses[role] !== "pending"));
+}
+
+function scheduleDirectoryReconciliation(delay = 0) {
+  if (directoryReconciliationTimer !== null || directoryReconciliationAttempts <= 0 || isAudit.value) return;
+  directoryReconciliationTimer = setTimeout(async () => {
+    directoryReconciliationTimer = null;
+    directoryReconciliationAttempts -= 1;
+    await refreshUsers();
+    if (directoryReconciliationAttempts > 0 && directoryProjectionMayBeBehind()) {
+      scheduleDirectoryReconciliation(500);
+    } else {
+      directoryReconciliationAttempts = 0;
+    }
+  }, delay);
+}
 
 function changeSort(field: SortField) {
   if (sortField.value === field) sortDirection.value = sortDirection.value === "asc" ? "desc" : "asc";
@@ -178,7 +213,7 @@ async function refreshUsers() {
     if (refreshId !== usersRefreshId) return;
     users.value = result.items;
     userTotal.value = result.total;
-    directoryPendingRoleCount.value = result.pendingCount ?? administratorPendingRequestCount(appState.control);
+    directoryPendingRoleCount.value = result.pendingCount ?? null;
     for (const user of result.items) {
       for (const role of advancedRoles) {
         const key = `${user.accountId}:${role}`;
@@ -410,6 +445,7 @@ async function signOut() {
 
 watch([search, pendingOnly, sortField, sortDirection, page, pageSize, isAudit], (current, previous) => {
   if (isAudit.value) {
+    clearDirectoryReconciliationTimer();
     usersRefreshId += 1;
     usersLoading.value = false;
     return;
@@ -430,6 +466,11 @@ watch([search, pendingOnly, sortField, sortDirection, page, pageSize, isAudit], 
 
   void refreshUsers();
 }, { immediate: true });
+watch(localRoleRevision, () => {
+  directoryReconciliationAttempts = 60;
+  clearDirectoryReconciliationTimer();
+  scheduleDirectoryReconciliation();
+});
 watch(pendingRoleCount, (count) => { if (!count) pendingOnly.value = false; });
 watch(pageSize, (value) => localStorage.setItem(cabinetPageSizeKey, String(value)));
 watch([auditSearch, auditRole, auditAction, auditPageSize], () => { auditPage.value = 1; });
@@ -440,6 +481,7 @@ watch(
   () => { void refreshAuditProfiles(); },
   { immediate: true },
 );
+onBeforeUnmount(clearDirectoryReconciliationTimer);
 </script>
 
 <template>
@@ -447,7 +489,7 @@ watch(
     :role="role"
     title="Кабинет администратора"
     :profile-name="formatProfileName(appState.control.profile)"
-    :administrator-pending-count="isAudit && !directoryPendingRoleCount ? undefined : pendingRoleCount"
+    :administrator-pending-count="directoryPendingRoleCount ?? undefined"
     @sign-out="signOut"
   >
     <section v-if="!isAudit" class="administrator-page">

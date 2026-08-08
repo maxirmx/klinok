@@ -51,11 +51,19 @@ async function generatedAccount(accountId = "owner-account", deviceId = "owner-d
     personalDataConsentVersion: "1",
     userAgreementVersion: "1",
   });
-  return { events: await transport.list("control"), keys, certificate };
+  return { events: await transport.list("control"), keys, certificate, repository, transport };
 }
 
 async function generatedEvents(accountId = "owner-account", deviceId = "owner-device"): Promise<SignedEvent[]> {
   return (await generatedAccount(accountId, deviceId)).events;
+}
+
+async function generatedRoleRequestEvents(): Promise<SignedEvent[]> {
+  const { repository, transport } = await generatedAccount("doctor-account", "doctor-device");
+  await repository.requestRole("doctor", 1);
+  await repository.cancelRole("doctor");
+  await repository.requestRole("doctor", 1);
+  return transport.list("control");
 }
 
 function service() {
@@ -246,6 +254,36 @@ describe("trusted-node event ingestion", () => {
       results: [expect.objectContaining({ eventId: firstEvent.eventId, status: "duplicate" })],
     });
     expect(onPersisted).toHaveBeenCalledTimes(2);
+  });
+
+  it("notifies the auth projection for initial and repeated role requests after projection", async () => {
+    const events = await generatedRoleRequestEvents();
+    const projector = new InMemorySignedEventRepository("bootstrap-administrator", { requireTrustedAttestation: false });
+    const onPersisted = vi.fn().mockResolvedValue(undefined);
+    const ingest = new EventIngestService({
+      state: projector.state,
+      databases: {
+        control: { async add() {} },
+        medical: { async add() {} },
+      },
+      verification: { requireTrustedAttestation: false },
+      projectEvents: async (values) => { await projector.import(values); },
+      onPersisted,
+    });
+
+    const response = await ingest.ingest(events);
+
+    expect(response.results.every((result) => result.status === "persisted")).toBe(true);
+    expect(onPersisted.mock.calls.map(([event]: [SignedEvent]) => event.eventType))
+      .toEqual(expect.arrayContaining(["role.requested", "role.resubmitted"]));
+    expect(onPersisted).toHaveBeenCalledWith(expect.objectContaining({
+      eventType: "role.requested",
+      metadata: expect.objectContaining({ role: "doctor", status: "pending" }),
+    }));
+    expect(onPersisted).toHaveBeenCalledWith(expect.objectContaining({
+      eventType: "role.resubmitted",
+      metadata: expect.objectContaining({ role: "doctor", status: "pending" }),
+    }));
   });
 
   it("defers missing authorization state but rejects permanent verification failures", async () => {

@@ -7,6 +7,7 @@ import {
   chooseConcurrentRoleStatus,
   generateDataKey,
   isGrantEffectivelyActive,
+  normalizeRussianSearchText,
   generateUserKeySet,
   exportUserKeySet,
   createProtocolState,
@@ -33,6 +34,11 @@ import {
 } from "./index.js";
 
 describe("klinok protocol", () => {
+  it("normalizes е and ё equally for Russian text search", () => {
+    expect(normalizeRussianSearchText("  СЕМЁН  ")).toBe("семен");
+    expect(normalizeRussianSearchText("Алёна")).toBe(normalizeRussianSearchText("Алена"));
+  });
+
   it("builds collision-safe account-scoped device projection keys", () => {
     expect(deviceProjectionKey("account:a", "device")).not.toBe(deviceProjectionKey("account", "a:device"));
     expect(deviceProjectionKey("account", "device")).toBe(deviceProjectionKey("account", "device"));

@@ -125,10 +125,6 @@ export class EventIngestService {
           else if (!this.options.state.knownEvents.has(event.eventId)) applyAcceptedEvent(event, this.options.state);
           stateProgressed = true;
           try {
-            if (this.options.projectEvents) {
-              results[item.index] = { eventId: event.eventId, status: "persisted" };
-              continue;
-            }
             await this.options.onPersisted?.(event);
             results[item.index] = { eventId: event.eventId, status: "persisted" };
           } catch (reason) {
