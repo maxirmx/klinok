@@ -776,6 +776,49 @@ describe("Doctor pages", () => {
     }));
   });
 
+  it("validates and saves the five-tab therapeutic appointment template", async () => {
+    const wrapper = await mountAt("/doctor/pets/pet-1", "doctor-pet-detail");
+    await flushPromises();
+    await wrapper.findAll(".encounter-taxonomy label").find((label) => label.text() === "Не ест")!
+      .get("input").trigger("change");
+    await wrapper.findAll(".encounter-outcome .check-row")
+      .find((option) => option.text() === "В стадии наблюдения")!
+      .get("input").trigger("change");
+    await wrapper.get<HTMLSelectElement>(".encounter-add-section select").setValue("therapeutic-appointment");
+
+    const card = wrapper.findAll(".encounter-section-card")
+      .find((candidate) => candidate.get("h3").text() === "Терапевтический приём")!;
+    const tabs = card.findAll('[role="tab"]');
+    expect(tabs.map((tab) => tab.text())).toEqual([
+      "Анамнез болезни",
+      "Анамнез жизни",
+      "Осмотр",
+      "Рекомендации",
+      "Назначения",
+    ]);
+    expect(wrapper.findAll(".encounter-add-section option").map((option) => option.text()))
+      .toContain("Рекомендации");
+
+    await wrapper.get('button[title="Сохранить запись"]').trigger("click");
+    expect(repositoryMocks.saveEncounter).not.toHaveBeenCalled();
+    expect(card.get(".field-error").text()).toContain("хотя бы один");
+
+    await tabs[3]!.trigger("click");
+    await card.get<HTMLTextAreaElement>('#' + tabs[3]!.attributes("aria-controls") + ' textarea')
+      .setValue("Контроль через неделю");
+    await wrapper.get('button[title="Сохранить запись"]').trigger("click");
+    await flushPromises();
+    expect(repositoryMocks.saveEncounter).toHaveBeenCalledWith(expect.objectContaining({
+      petId: "pet-1",
+      sections: expect.objectContaining({
+        "therapeutic-appointment": expect.objectContaining({
+          recommendations: "Контроль через неделю",
+          prescriptions: "",
+        }),
+      }),
+    }));
+  });
+
   it("prefills, validates, and saves the structured vaccination and chipping template", async () => {
     const wrapper = await mountAt("/doctor/pets/pet-1", "doctor-pet-detail");
     await flushPromises();
@@ -1040,10 +1083,44 @@ describe("Doctor pages", () => {
     }));
   });
 
+  it("preserves a legacy free-text therapeutic section while editing", async () => {
+    const legacyRecord: MedicalRecordDraft = {
+      ...medicalRecord,
+      sections: {
+        ...medicalRecord.sections,
+        "therapeutic-appointment": {
+          kind: "therapeutic-appointment",
+          templateVersion: "free-text-v0",
+          value: { text: "Старый текст терапевтического приёма" },
+          authorAccountId: "doctor-1",
+          authorDisplayName: "Вера Врач",
+          updatedAt: "2026-07-21T10:00:00.000Z",
+        },
+      },
+    };
+    await setMedical(snapshot(undefined, { records: [legacyRecord] }));
+    const wrapper = await mountAt("/doctor/pets/pet-1", "doctor-pet-detail");
+    await flushPromises();
+    await wrapper.get(".medical-record-edit").trigger("click");
+    const card = wrapper.findAll(".encounter-section-card")
+      .find((candidate) => candidate.get("h3").text() === "Терапевтический приём")!;
+    expect(card.find(".therapeutic-appointment-form").exists()).toBe(false);
+    expect(card.get<HTMLTextAreaElement>("textarea").element.value).toBe("Старый текст терапевтического приёма");
+    await wrapper.get('.encounter-editor-inline button[title="Сохранить запись"]').trigger("click");
+    await flushPromises();
+    expect(repositoryMocks.saveEncounter).toHaveBeenCalledWith(expect.objectContaining({
+      sections: expect.objectContaining({
+        "therapeutic-appointment": { text: "Старый текст терапевтического приёма" },
+      }),
+    }));
+  });
+
   it("allows selections from only one general condition at a time", async () => {
     const wrapper = await mountAt("/doctor/pets/pet-1", "doctor-pet-detail");
     await flushPromises();
     expect(wrapper.get(".encounter-what-happened > .doctor-heading h3").text()).toBe("Что случилось");
+    expect(wrapper.get(".encounter-what-happened .medical-card-comment-section h4").text()).toBe("Комментарий");
+    expect(wrapper.get(".encounter-what-happened textarea").attributes("aria-label")).toBe("Комментарий");
     expect(wrapper.get(".encounter-what-happened textarea").attributes("rows")).toBe("2");
     expect(wrapper.get(".encounter-what-happened textarea").classes()).toContain("medical-card-comment");
     expect(wrapper.findAll('.encounter-condition-trees > .encounter-taxonomy[role="tree"]')).toHaveLength(3);
@@ -1062,6 +1139,9 @@ describe("Doctor pages", () => {
     expect(checkup.element.closest(".medical-card-options")).not.toBeNull();
     expect(notEating.element.closest(".medical-card-options")).not.toBeNull();
     expect(bleeding.element.closest(".medical-card-options")).not.toBeNull();
+    expect(checkup.element.closest(".medical-card-option-panel")?.tagName).toBe("FIELDSET");
+    expect(notEating.element.closest(".medical-card-option-panel")?.tagName).toBe("FIELDSET");
+    expect(bleeding.element.closest(".medical-card-option-panel")?.tagName).toBe("FIELDSET");
 
     await checkup.trigger("change");
     await vaccination.trigger("change");
@@ -1086,6 +1166,10 @@ describe("Doctor pages", () => {
     expect(wrapper.findAll(".encounter-add-section option").map((option) => option.text())).not.toContain("Исход");
     expect(wrapper.find(".encounter-outcome .encounter-section-delete").exists()).toBe(false);
     expect(wrapper.get(".encounter-outcome-options").classes()).toContain("medical-card-options");
+    expect(wrapper.get(".encounter-outcome-option-panel").element.tagName).toBe("FIELDSET");
+    expect(wrapper.get(".encounter-outcome-option-panel").classes()).toContain("medical-card-option-panel");
+    expect(wrapper.get(".encounter-outcome .medical-card-comment-section h4").text()).toBe("Комментарий");
+    expect(wrapper.get(".encounter-outcome textarea").attributes("aria-label")).toBe("Комментарий");
     expect(wrapper.get(".encounter-outcome textarea").attributes("rows")).toBe("2");
     expect(wrapper.get(".encounter-outcome textarea").classes()).toContain("medical-card-comment");
 

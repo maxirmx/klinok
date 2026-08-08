@@ -119,16 +119,48 @@ export interface VaccinationSectionValue {
   nextRevaccinationDate?: string;
 }
 
+export interface TherapeuticProblemValue {
+  id: string;
+  sourceWhatHappenedId?: string;
+  title: string;
+  onsetId?: string;
+  frequencyId?: string;
+  priorTherapyId?: string;
+  medicationUseId?: string;
+  medicationIds: readonly string[];
+  medicationDynamicsId?: string;
+}
+
+export interface TherapeuticAppointmentSectionValue {
+  diseaseAnamnesis: {
+    text: string;
+    problems: readonly TherapeuticProblemValue[];
+    selectedIds: readonly string[];
+  };
+  lifeAnamnesis: {
+    text: string;
+    selectedIds: readonly string[];
+    currentMedications: string;
+    allergies: string;
+  };
+  examination: {
+    text: string;
+    selectedIds: readonly string[];
+  };
+  recommendations: string;
+  prescriptions: string;
+}
+
 export interface MedicalEncounterSection {
   kind: MedicalEncounterSectionKind;
-  templateVersion: "what-happened-v1" | "outcome-v1" | "general-data-v1" | "vaccination-v1" | "free-text-v0";
-  value: WhatHappenedSectionValue | OutcomeSectionValue | GeneralDataSectionValue | VaccinationSectionValue | FreeTextSectionValue;
+  templateVersion: "what-happened-v1" | "outcome-v1" | "general-data-v1" | "vaccination-v1" | "therapeutic-appointment-v1" | "free-text-v0";
+  value: WhatHappenedSectionValue | OutcomeSectionValue | GeneralDataSectionValue | VaccinationSectionValue | TherapeuticAppointmentSectionValue | FreeTextSectionValue;
   authorAccountId: string;
   authorDisplayName: string;
   updatedAt: string;
 }
 
-export type MedicalEncounterSectionInputValue = WhatHappenedSectionValue | OutcomeSectionValue | GeneralDataSectionValue | VaccinationSectionValue | FreeTextSectionValue;
+export type MedicalEncounterSectionInputValue = WhatHappenedSectionValue | OutcomeSectionValue | GeneralDataSectionValue | VaccinationSectionValue | TherapeuticAppointmentSectionValue | FreeTextSectionValue;
 
 export interface MedicalEncounterInput {
   petId: string;

@@ -255,13 +255,48 @@ test("fresh provisioning, Doctor approval, grant, draft, and confirmation", asyn
   await expect(medicalCard).toBeVisible({ timeout: replicationTimeout });
   await medicalCard.getByRole("link", { name: "Открыть медицинскую карту" }).click();
   await expect(doctorPage).toHaveURL(new RegExp(`/doctor/pets/${petId}$`));
-  await doctorPage.getByText("Всё хорошо, необходимо", { exact: true }).click();
+  await doctorPage.getByRole("button", { name: "Всё хорошо, необходимо", exact: true }).click();
   await doctorPage.getByLabel("Контрольный осмотр", { exact: true }).check();
   await doctorPage.locator(".encounter-what-happened").getByLabel("Комментарий").fill("Состояние стабильное");
   await doctorPage.getByLabel("В стадии наблюдения", { exact: true }).check();
   await doctorPage.locator(".encounter-outcome").getByLabel("Комментарий").fill("Контроль через неделю");
   await doctorPage.locator(".encounter-add-section select").selectOption("general-data");
   await doctorPage.getByLabel("Вес, кг", { exact: true }).fill("14.3");
+  await doctorPage.locator(".encounter-add-section select").selectOption("therapeutic-appointment");
+  const therapeuticCard = doctorPage.locator(".encounter-section-card").filter({ hasText: "Терапевтический приём" });
+  const therapeuticTabs = therapeuticCard.getByRole("tab");
+  await expect(therapeuticTabs).toHaveCount(5);
+  await therapeuticCard.getByRole("button", { name: "Импортировать из «Что случилось»" }).click();
+  await expect(therapeuticCard.getByLabel("Проблема", { exact: true })).toHaveValue("Контрольный осмотр");
+  await therapeuticCard.getByRole("tab", { name: "Рекомендации" }).click();
+  await therapeuticCard.getByLabel("Текст рекомендаций").fill("Повторный осмотр через неделю");
+  await therapeuticCard.getByRole("tab", { name: "Назначения" }).click();
+  await therapeuticCard.getByLabel("Текст назначений").fill("Щадящий режим");
+
+  await doctorPage.setViewportSize({ width: 900, height: 800 });
+  const mediumTabRows = await therapeuticTabs.evaluateAll((tabs) => tabs.reduce<number[]>((rows, tab) => {
+    const top = Math.round(tab.getBoundingClientRect().top);
+    const row = rows.findIndex((candidate) => Math.abs(candidate - top) <= 2);
+    if (row < 0) rows.push(top);
+    return rows;
+  }, []));
+  expect(mediumTabRows).toHaveLength(2);
+  await doctorPage.setViewportSize({ width: 390, height: 844 });
+  await expect(therapeuticTabs).toHaveCount(5);
+  expect(await therapeuticCard.evaluate((card) => card.scrollWidth <= card.clientWidth + 1)).toBe(true);
+  const narrowTabRows = await therapeuticTabs.evaluateAll((tabs) => tabs.reduce<number[]>((rows, tab) => {
+    const top = Math.round(tab.getBoundingClientRect().top);
+    if (!rows.some((candidate) => Math.abs(candidate - top) <= 2)) rows.push(top);
+    return rows;
+  }, []));
+  expect(narrowTabRows).toHaveLength(3);
+  await doctorPage.setViewportSize({ width: 1280, height: 720 });
+  const wideTabRows = await therapeuticTabs.evaluateAll((tabs) => tabs.reduce<number[]>((rows, tab) => {
+    const top = Math.round(tab.getBoundingClientRect().top);
+    if (!rows.some((candidate) => Math.abs(candidate - top) <= 2)) rows.push(top);
+    return rows;
+  }, []));
+  expect(wideTabRows).toHaveLength(1);
   await doctorPage.getByRole("button", { name: "Сохранить запись" }).click();
   await expect(doctorPage.locator(".medical-record-entry-details").filter({ hasText: "Всё хорошо" })).toBeVisible();
 
@@ -269,9 +304,12 @@ test("fresh provisioning, Doctor approval, grant, draft, and confirmation", asyn
   const ownerRecord = ownerPage.locator(".medical-record-entry-details").filter({ hasText: "Всё хорошо" });
   await expect(ownerRecord).toBeVisible({ timeout: replicationTimeout });
   await ownerRecord.locator("summary").click();
-  await expect(ownerRecord.getByText("Состояние стабильное", { exact: true })).toBeVisible();
+  await expect(ownerRecord.locator(".encounter-history-comment").getByText("Состояние стабильное", { exact: true })).toBeVisible();
   await expect(ownerRecord.getByText("В стадии наблюдения", { exact: true })).toBeVisible();
   await expect(ownerRecord.getByText("Контроль через неделю", { exact: true })).toBeVisible();
+  await expect(ownerRecord.getByText("Повторный осмотр через неделю", { exact: true })).toBeVisible();
+  await expect(ownerRecord.getByText("Проблема 1: Контрольный осмотр", { exact: true })).toBeVisible();
+  await expect(ownerRecord.getByText("Щадящий режим", { exact: true })).toBeVisible();
   await expect(ownerRecord.getByText("14.3 кг", { exact: true })).toBeVisible();
   const profileWeight = ownerPage.locator(".pet-profile-view-fields > div").filter({ hasText: "Вес" });
   await expect(profileWeight).toContainText("12.4 кг");

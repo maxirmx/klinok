@@ -710,6 +710,17 @@ dd {
 .medical-record-date-filter > input { width: auto; min-width: 0; flex: 1 1 auto; box-sizing: border-box; }
 .encounter-editor fieldset { display: grid; gap: 3px; min-width: 0; }
 .encounter-editor-heading { align-items: center; }
+.encounter-editor > form > .encounter-editor-heading {
+  position: sticky;
+  top: 59px;
+  z-index: 12;
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: rgba(255, 255, 255, .97);
+  box-shadow: 0 5px 16px rgba(18, 24, 40, .06);
+  backdrop-filter: blur(10px);
+}
 .encounter-editor-inline { width: 100%; }
 .workspace-content .encounter-editor .encounter-date-field {
   display: flex;
@@ -734,6 +745,7 @@ dd {
 .encounter-condition-trees > .encounter-taxonomy { padding-left: 0; }
 .encounter-editor label:not(.check-row) > span,
 .encounter-editor .check-row > span,
+.encounter-editor .therapeutic-group-label,
 .encounter-editor fieldset > legend {
   color: #344054;
   font-family: var(--font);
@@ -745,9 +757,20 @@ dd {
 .encounter-taxonomy summary { cursor: pointer; font-weight: 600; padding: 3px 0; }
 .medical-card-options {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
   gap: 6px 12px;
 }
+.medical-card-option-panel {
+  min-width: 0;
+  margin: 0;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfcfd;
+}
+.encounter-taxonomy-options-panel { margin: 3px 0 0 18px; }
+.encounter-taxonomy-options-panel > .encounter-taxonomy { padding-left: 0; }
+.encounter-outcome-option-panel { display: block; }
 .workspace-content .encounter-editor textarea.medical-card-comment { min-height: 0; }
 .encounter-editor .check-row {
   align-items: center;
@@ -858,6 +881,167 @@ dd {
 .vaccination-revaccination-options button:hover,
 .vaccination-revaccination-options button:focus-visible,
 .vaccination-revaccination-options button.active { background: var(--brand-bg-sky); }
+.therapeutic-appointment-form { display: grid; min-width: 0; gap: 10px; }
+.therapeutic-tabs {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 5px;
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: #f8fafc;
+}
+.therapeutic-tabs > button {
+  min-width: 0;
+  min-height: 34px;
+  padding: 6px 8px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-soft);
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+}
+.therapeutic-tabs > button:hover { background: var(--brand-sky-soft); color: var(--accent); }
+.therapeutic-tabs > button.active {
+  border-color: var(--accent);
+  background: #fff;
+  color: var(--accent);
+  box-shadow: 0 1px 4px rgba(18, 24, 40, .08);
+}
+.therapeutic-tabs > button:focus-visible { outline: 2px solid rgba(33, 150, 83, .32); outline-offset: 1px; }
+.therapeutic-tab-panel { display: grid; min-width: 0; gap: 10px; }
+.therapeutic-tab-panel[hidden] { display: none; }
+.therapeutic-tab-panel > h4,
+.therapeutic-panel-heading h4,
+.therapeutic-problem-heading h5,
+.therapeutic-history-block h4,
+.therapeutic-history-problems h5 { margin: 0; }
+.therapeutic-panel-heading,
+.therapeutic-problem-heading {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.workspace-content .therapeutic-panel-action,
+.workspace-content .therapeutic-problem-delete {
+  display: inline-grid;
+  width: 34px;
+  min-width: 34px;
+  height: 34px;
+  padding: 0;
+  place-items: center;
+}
+.therapeutic-panel-action .app-icon,
+.therapeutic-problem-delete .app-icon { width: 17px; height: 17px; }
+.therapeutic-problem-card label:not(.check-row),
+.therapeutic-select-field {
+  display: grid;
+  grid-template-columns: minmax(130px, 190px) minmax(0, 1fr);
+  min-width: 0;
+  align-items: center;
+  gap: 6px 10px;
+}
+.therapeutic-primary-text,
+.therapeutic-short-text > textarea,
+.therapeutic-problem-card label:not(.check-row) :is(input, select),
+.therapeutic-select-field select { width: 100%; min-width: 0; box-sizing: border-box; }
+.therapeutic-select-field-wide {
+  grid-column: 1 / -1;
+  grid-template-columns: minmax(130px, 190px) minmax(0, 1fr);
+}
+.therapeutic-select-field select { text-overflow: ellipsis; }
+.therapeutic-problems { display: grid; gap: 8px; }
+.therapeutic-problem-card {
+  display: grid;
+  min-width: 0;
+  container-type: inline-size;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: #fbfcfd;
+}
+.therapeutic-problem-title { grid-column: 1 / -1; }
+.therapeutic-problem-fields,
+.therapeutic-question-grid {
+  display: grid;
+  gap: 8px 10px;
+}
+.therapeutic-problem-fields { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.therapeutic-question-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.therapeutic-problem-medications,
+.therapeutic-multiple-field {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: minmax(130px, 190px) minmax(0, 1fr);
+  min-width: 0;
+  align-items: start;
+  gap: 6px 10px;
+  margin: 0;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfcfd;
+}
+.therapeutic-problem-title > .field-error,
+.therapeutic-problem-medications > .medical-card-options,
+.therapeutic-multiple-field > .medical-card-options { grid-column: 2; }
+.therapeutic-group-label { min-width: 0; }
+.therapeutic-categories { display: grid; min-width: 0; gap: 6px; }
+.therapeutic-category {
+  display: grid;
+  grid-template-columns: minmax(150px, .35fr) minmax(0, 1.65fr);
+  min-width: 0;
+  align-items: start;
+  gap: 10px;
+  padding: 9px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+}
+.therapeutic-category > h5 { margin: 2px 0 0; }
+.medical-card-comment-section {
+  display: grid;
+  grid-template-columns: minmax(150px, .35fr) minmax(0, 1.65fr);
+  min-width: 0;
+  align-items: start;
+  gap: 10px;
+  padding: 9px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+}
+.medical-card-comment-section > :is(h4, h5) {
+  margin: 2px 0 0;
+  font-size: .83em;
+  font-weight: 700;
+  line-height: 1.2;
+}
+.medical-card-comment-section > textarea { width: 100%; min-width: 0; box-sizing: border-box; }
+
+@container (max-width: 1350px) {
+  .therapeutic-problem-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@container (max-width: 760px) {
+  .therapeutic-problem-fields { grid-template-columns: minmax(0, 1fr); }
+}
+.therapeutic-history-text { white-space: pre-wrap; overflow-wrap: anywhere; }
+.therapeutic-appointment-view { display: grid; gap: 12px; }
+.therapeutic-history-block { display: grid; min-width: 0; gap: 7px; }
+.therapeutic-history-block + .therapeutic-history-block { padding-top: 10px; border-top: 1px solid var(--line); }
+.therapeutic-history-problems { display: grid; gap: 7px; }
+.therapeutic-history-problems > article { display: grid; gap: 5px; padding: 8px; border: 1px solid var(--line); border-radius: 8px; }
+.therapeutic-history-values { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 7px 14px; margin: 0; }
+.therapeutic-history-values > div { display: grid; min-width: 0; gap: 2px; }
+.therapeutic-history-values dt { color: var(--text-muted); font-size: 10px; font-weight: 600; }
+.therapeutic-history-values dd { min-width: 0; margin: 0; overflow-wrap: anywhere; }
 .general-data-pressure {
   grid-column: 1 / -1;
   display: grid;
@@ -970,6 +1154,42 @@ dd {
   .vaccination-fields { grid-template-columns: repeat(2, minmax(240px, 1fr)); }
 }
 
+@media (min-width: 1101px) {
+  .therapeutic-group-label {
+    grid-column: 1;
+    grid-row: 1;
+    min-height: 18px;
+    align-self: start;
+    padding: 2px 0 0;
+    line-height: 16px;
+  }
+  .therapeutic-problem-medications > .medical-card-options,
+  .therapeutic-multiple-field > .medical-card-options {
+    grid-row: 1;
+    box-sizing: border-box;
+    padding-left: 2px;
+  }
+}
+
+@media (max-width: 1100px) and (min-width: 761px) {
+  .therapeutic-tabs { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+  .therapeutic-tabs > button:nth-child(-n+3) { grid-column: span 2; }
+  .therapeutic-tabs > button:nth-child(n+4) { grid-column: span 3; }
+}
+
+@media (max-width: 1100px) {
+  .therapeutic-category,
+  .medical-card-comment-section { grid-template-columns: minmax(0, 1fr); }
+  .therapeutic-problem-card label:not(.check-row),
+  .therapeutic-select-field,
+  .therapeutic-problem-medications,
+  .therapeutic-multiple-field { grid-template-columns: minmax(0, 1fr); }
+  .therapeutic-problem-title > .field-error,
+  .therapeutic-problem-medications > .medical-card-options,
+  .therapeutic-multiple-field > .medical-card-options { grid-column: 1; }
+  .therapeutic-group-label { grid-column: 1; }
+}
+
 @media (max-width: 760px) {
   .doctor-heading { align-items: stretch; flex-direction: column; }
   .doctor-access-heading { align-items: center; flex-direction: row; }
@@ -981,6 +1201,12 @@ dd {
   .epicrisis-row { grid-template-columns: 1fr; }
   .general-data-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .vaccination-fields { grid-template-columns: 1fr; }
+  .therapeutic-tabs { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .therapeutic-tabs > button:last-child { grid-column: 1 / -1; }
+  .therapeutic-problem-fields,
+  .therapeutic-question-grid { grid-template-columns: minmax(0, 1fr); }
+  .therapeutic-problem-medications,
+  .therapeutic-multiple-field { grid-column: 1; }
 }
 .role-selection-card.disabled .role-selection-title { cursor: default; }
 .role-selection-card.approved { border-color: #a6f4c5; background: #f6fef9; }

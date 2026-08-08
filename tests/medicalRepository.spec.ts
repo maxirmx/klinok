@@ -247,6 +247,31 @@ describe("medical authorization repository", () => {
           administrationSite: "Холка",
           nextRevaccinationDate: "2027-07-21",
         },
+        "therapeutic-appointment": {
+          diseaseAnamnesis: {
+            text: "Жалобы со слов владельца",
+            problems: [{
+              id: "problem-1",
+              sourceWhatHappenedId: "problem.digestive.1",
+              title: "Не ест",
+              onsetId: "problem.onset.yesterday",
+              medicationIds: [],
+            }],
+            selectedIds: ["disease.appetite.state.changed", "disease.appetite.change.absent"],
+          },
+          lifeAnamnesis: {
+            text: "Содержится в квартире",
+            selectedIds: ["life.housing.place.apartment", "life.housing.apartment-walk.leash"],
+            currentMedications: "",
+            allergies: "Не выявлены",
+          },
+          examination: {
+            text: "Контактен",
+            selectedIds: ["exam.general.state.good"],
+          },
+          recommendations: "Контроль через неделю",
+          prescriptions: "Диетический корм",
+        },
         diagnosis: { text: "Предварительный диагноз" },
       },
     });
@@ -274,6 +299,17 @@ describe("medical authorization repository", () => {
         currentVaccineBatch: "AB-123",
         chipNumber: "643094100000002",
         nextRevaccinationDate: "2027-07-21",
+      },
+    });
+    expect(record.sections["therapeutic-appointment"]).toMatchObject({
+      templateVersion: "therapeutic-appointment-v1",
+      value: {
+        diseaseAnamnesis: {
+          text: "Жалобы со слов владельца",
+          problems: [{ title: "Не ест", onsetId: "problem.onset.yesterday" }],
+        },
+        recommendations: "Контроль через неделю",
+        prescriptions: "Диетический корм",
       },
     });
     const petBeforeConfirmation = (await owner.medical.snapshot()).pets.find((pet) => pet.petId === petId)!;

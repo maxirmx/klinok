@@ -5,6 +5,7 @@
 
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import AppIcon from "./AppIcon.vue";
+import TherapeuticAppointmentForm from "./TherapeuticAppointmentForm.vue";
 import WhatHappenedTree from "./WhatHappenedTree.vue";
 import {
   ENCOUNTER_SECTION_LABELS,
@@ -19,6 +20,10 @@ import {
   replaceConflictingOutcome,
   whatHappenedPath,
 } from "../medicalEncounter";
+import {
+  emptyTherapeuticAppointmentDraft,
+  parseTherapeuticAppointmentDraft,
+} from "../therapeuticAppointment";
 import type {
   GeneralDataDraft,
   GeneralDataDraftErrors,
@@ -26,6 +31,10 @@ import type {
   VaccinationDraftErrors,
   RevaccinationInterval,
 } from "../medicalEncounter";
+import type {
+  TherapeuticAppointmentDraft,
+  TherapeuticAppointmentDraftErrors,
+} from "../therapeuticAppointment";
 import type { MedicalEncounterSectionKind } from "../repositories/types";
 
 const props = defineProps<{
@@ -49,9 +58,11 @@ const optionalKinds = defineModel<MedicalEncounterSectionKind[]>("optionalKinds"
 const texts = defineModel<Partial<Record<MedicalEncounterSectionKind, string>>>("texts", { required: true });
 const generalData = defineModel<GeneralDataDraft>("generalData", { required: true });
 const vaccination = defineModel<VaccinationDraft>("vaccination", { required: true });
+const therapeuticAppointment = defineModel<TherapeuticAppointmentDraft>("therapeuticAppointment", { required: true });
 const form = ref<HTMLFormElement | null>(null);
 const generalDataErrors = ref<GeneralDataDraftErrors>({});
 const vaccinationErrors = ref<VaccinationDraftErrors>({});
+const therapeuticErrors = ref<TherapeuticAppointmentDraftErrors>({});
 const revaccinationInterval = ref<RevaccinationInterval | "">("");
 const revaccinationChooserOpen = ref(false);
 const revaccinationMenuRoot = ref<HTMLElement | null>(null);
@@ -102,6 +113,13 @@ function selectOptional(event: Event) {
       delete nextTexts.vaccination;
       texts.value = nextTexts;
     }
+    if (kind === "therapeutic-appointment") {
+      therapeuticAppointment.value = emptyTherapeuticAppointmentDraft();
+      therapeuticErrors.value = {};
+      const nextTexts = { ...texts.value };
+      delete nextTexts["therapeutic-appointment"];
+      texts.value = nextTexts;
+    }
   }
   select.value = "";
 }
@@ -116,6 +134,10 @@ function updateGeneralData() {
 
 function updateVaccination() {
   vaccinationErrors.value = {};
+}
+
+function updateTherapeuticAppointment() {
+  therapeuticErrors.value = {};
 }
 
 function applyRevaccinationInterval(interval: RevaccinationInterval) {
@@ -169,6 +191,11 @@ function submit() {
     vaccinationErrors.value = parsed.errors;
     if (!parsed.value) return;
   }
+  if (optionalKinds.value.includes("therapeutic-appointment") && texts.value["therapeutic-appointment"] === undefined) {
+    const parsed = parseTherapeuticAppointmentDraft(therapeuticAppointment.value);
+    therapeuticErrors.value = parsed.errors;
+    if (!parsed.value) return;
+  }
   if (form.value?.reportValidity() === false) return;
   emit("save");
 }
@@ -190,7 +217,10 @@ function submit() {
       <div class="encounter-condition-trees">
         <WhatHappenedTree v-for="condition in WHAT_HAPPENED_TREE.children ?? []" :key="condition.id" :node="condition" :selected="selectedIds" root @toggle="toggleSelection" />
       </div>
-      <label><span>Комментарий</span><textarea v-model="comment" class="medical-card-comment" rows="2" /></label>
+      <section class="medical-card-comment-section">
+        <h4>Комментарий</h4>
+        <textarea v-model="comment" class="medical-card-comment" rows="2" aria-label="Комментарий" />
+      </section>
     </article>
     <article v-for="kind in optionalKinds" :key="kind" class="encounter-section-card">
       <div class="doctor-heading">
@@ -310,6 +340,16 @@ function submit() {
           </div>
         </div>
       </template>
+      <template v-else-if="kind === 'therapeutic-appointment' && texts[kind] === undefined">
+        <TherapeuticAppointmentForm
+          v-model="therapeuticAppointment"
+          :what-happened-ids="selectedIds"
+          :what-happened-comment="comment"
+          :errors="therapeuticErrors"
+          @input="updateTherapeuticAppointment"
+          @change="updateTherapeuticAppointment"
+        />
+      </template>
       <template v-else>
         <p class="temporary-note">{{ kind === 'general-data' ? 'Сохранён старый шаблон free-text-v0.' : 'Временный универсальный шаблон free-text-v0.' }}</p>
         <textarea :value="texts[kind] ?? ''" rows="4" required @input="updateText(kind, $event)" />
@@ -318,17 +358,23 @@ function submit() {
     <label v-if="optionalAvailable.length" class="encounter-add-section"><span>Добавить раздел</span><select @change="selectOptional"><option value="">Выберите раздел</option><option v-for="kind in optionalAvailable" :key="kind" :value="kind">{{ ENCOUNTER_SECTION_LABELS[kind] }}</option></select></label>
     <article class="encounter-section-card encounter-outcome">
       <div class="doctor-heading"><h3 id="encounter-outcome-heading">{{ ENCOUNTER_SECTION_LABELS.outcome }}</h3></div>
-      <div class="encounter-outcome-options medical-card-options" role="group" aria-labelledby="encounter-outcome-heading" aria-required="true">
-        <label v-for="option in OUTCOME_OPTIONS" :key="option.id" class="check-row">
-          <input
-            type="checkbox"
-            :checked="outcomeSelectedIds.includes(option.id)"
-            @change="toggleOutcome(option.id)"
-          />
-          <span>{{ option.label }}</span>
-        </label>
-      </div>
-      <label><span>Комментарий</span><textarea v-model="outcomeComment" class="medical-card-comment" rows="2" /></label>
+      <fieldset class="medical-card-option-panel encounter-outcome-option-panel">
+        <legend class="visually-hidden">{{ ENCOUNTER_SECTION_LABELS.outcome }}</legend>
+        <div class="encounter-outcome-options medical-card-options" role="group" aria-labelledby="encounter-outcome-heading" aria-required="true">
+          <label v-for="option in OUTCOME_OPTIONS" :key="option.id" class="check-row">
+            <input
+              type="checkbox"
+              :checked="outcomeSelectedIds.includes(option.id)"
+              @change="toggleOutcome(option.id)"
+            />
+            <span>{{ option.label }}</span>
+          </label>
+        </div>
+      </fieldset>
+      <section class="medical-card-comment-section">
+        <h4>Комментарий</h4>
+        <textarea v-model="outcomeComment" class="medical-card-comment" rows="2" aria-label="Комментарий" />
+      </section>
     </article>
   </form>
 </template>
