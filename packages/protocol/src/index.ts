@@ -4,6 +4,7 @@
 
 export * from "./types.js";
 export * from "./stable.js";
+export * from "./search.js";
 export * from "./crypto.js";
 export * from "./authorization.js";
 export * from "./reducers.js";

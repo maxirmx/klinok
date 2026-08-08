@@ -16,7 +16,7 @@ import { AttestationService } from "../auth-node/src/attestation";
 import { closeBrowserHeliaStorage, createBrowserHeliaInit } from "../src/repositories/browserStorage";
 import { createAndStoreUserKeys, loadUserKeys } from "../src/repositories/deviceVault";
 import { IndexedDbEventTransport, MemoryEventTransport } from "../src/repositories/eventTransport";
-import { getPetKey, putPetKey } from "../src/repositories/petKeyVault";
+import { deletePetKey, getPetKey, putPetKey } from "../src/repositories/petKeyVault";
 import { parentOrdered, recoverableDeviceAttestations, waitForInitialReplication } from "../src/repositories/orbitTransport";
 
 const databaseNames = [
@@ -309,6 +309,64 @@ describe("durable browser event storage", () => {
 
     expect((await loadUserKeys("account"))?.version).toBe(userKeys.version);
     expect(await getPetKey("account", "pet")).toMatchObject({ version: 3, key: expect.any(CryptoKey) });
+  });
+
+  it("closes the pet-key database when a transaction cannot be opened", async () => {
+    const dataKey = await crypto.subtle.generateKey({ name: "AES-GCM", length: 256 }, true, ["encrypt", "decrypt"]);
+    await putPetKey("account", "seed", 1, dataKey);
+    const close = vi.spyOn(IDBDatabase.prototype, "close");
+    vi.spyOn(IDBDatabase.prototype, "transaction").mockImplementationOnce(() => {
+      throw new DOMException("transaction failed", "InvalidStateError");
+    });
+
+    await expect(putPetKey("account", "pet", 1, dataKey)).rejects.toThrow("transaction failed");
+
+    expect(close).toHaveBeenCalledOnce();
+  });
+
+  it("rejects a failed current-key read and closes the pet-key database", async () => {
+    const dataKey = await crypto.subtle.generateKey({ name: "AES-GCM", length: 256 }, true, ["encrypt", "decrypt"]);
+    await putPetKey("account", "seed", 1, dataKey);
+    const close = vi.spyOn(IDBDatabase.prototype, "close");
+    const failure = new DOMException("current key read failed", "UnknownError");
+    const request = {
+      error: failure,
+      result: undefined,
+      onsuccess: null,
+      onerror: null,
+    } as unknown as IDBRequest;
+    vi.spyOn(IDBObjectStore.prototype, "get").mockImplementationOnce(() => {
+      queueMicrotask(() => request.onerror?.call(request, new Event("error")));
+      return request;
+    });
+
+    await expect(putPetKey("account", "pet", 1, dataKey)).rejects.toThrow("current key read failed");
+
+    expect(close).toHaveBeenCalledOnce();
+  });
+
+  it("rejects aborted pet-key operations and closes their database connections", async () => {
+    const dataKey = await crypto.subtle.generateKey({ name: "AES-GCM", length: 256 }, true, ["encrypt", "decrypt"]);
+    await putPetKey("account", "seed", 1, dataKey);
+    const close = vi.spyOn(IDBDatabase.prototype, "close");
+    const transaction = vi.spyOn(IDBDatabase.prototype, "transaction");
+    const abortNextTransaction = () => {
+      const current = transaction.getMockImplementation();
+      transaction.mockImplementationOnce(function (this: IDBDatabase, ...args: Parameters<IDBDatabase["transaction"]>) {
+        const tx = current
+          ? current.apply(this, args)
+          : IDBDatabase.prototype.transaction.apply(this, args);
+        queueMicrotask(() => tx.abort());
+        return tx;
+      });
+    };
+
+    abortNextTransaction();
+    await expect(getPetKey("account", "pet")).rejects.toThrow();
+    abortNextTransaction();
+    await expect(deletePetKey("account", "pet")).rejects.toThrow();
+
+    expect(close).toHaveBeenCalledTimes(2);
   });
 
   it("closes browser Helia stores before their IndexedDB databases are deleted", async () => {

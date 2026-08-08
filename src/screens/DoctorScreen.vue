@@ -5,11 +5,12 @@
 
 import { computed, reactive, ref, watch } from "vue";
 import { RouterLink, useRoute, useRouter } from "vue-router";
-import type {
-  DirectoryPetDto,
-  DirectoryProfileDto,
-  DoctorPetAccessDto,
-  PetGrantAction,
+import {
+  normalizeRussianSearchText,
+  type DirectoryPetDto,
+  type DirectoryProfileDto,
+  type DoctorPetAccessDto,
+  type PetGrantAction,
 } from "@klinok/protocol";
 import AccessStatusField from "../components/AccessStatusField.vue";
 import AppIcon from "../components/AppIcon.vue";
@@ -216,8 +217,9 @@ const filteredRecords = computed(() => petRecords.value.filter((record) => {
   if (historyFrom.value && record.encounterDate < historyFrom.value) return false;
   if (historyTo.value && record.encounterDate > historyTo.value) return false;
   if (historySection.value && !record.sections[historySection.value]) return false;
-  const content = `${encounterSummary(record)} ${record.authorDisplayName} ${record.authorAccountId} ${Object.values(record.sections).map((section) => section ? sectionSearchText(section.value) : "").join(" ")}`.toLocaleLowerCase("ru");
-  return !historyQuery.value.trim() || content.includes(historyQuery.value.trim().toLocaleLowerCase("ru"));
+  const query = normalizeRussianSearchText(historyQuery.value);
+  const content = normalizeRussianSearchText(`${encounterSummary(record)} ${record.authorDisplayName} ${record.authorAccountId} ${Object.values(record.sections).map((section) => section ? sectionSearchText(section.value) : "").join(" ")}`);
+  return !query || content.includes(query);
 }).sort((left, right) => (historySort.value === "desc" ? -1 : 1) * (left.encounterDate.localeCompare(right.encounterDate) || left.createdAt.localeCompare(right.createdAt))));
 const pagedRecords = computed(() => filteredRecords.value.slice((historyPage.value - 1) * historyPageSize.value, historyPage.value * historyPageSize.value));
 

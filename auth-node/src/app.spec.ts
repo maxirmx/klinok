@@ -780,6 +780,16 @@ describe("auth-node", () => {
       }],
     });
 
+    const userByEquivalentYo = await app.inject({
+      method: "GET",
+      url: `/api/auth/directory/users?query=${encodeURIComponent("Имя01 Пользоватёль")}&pageSize=10`,
+      headers: { cookie: administrator.cookie },
+    });
+    expect(userByEquivalentYo.json()).toMatchObject({
+      total: 1,
+      items: [{ accountId: pendingDoctorId, displayName: "Имя01 Пользователь" }],
+    });
+
     const pendingOnly = await app.inject({
       method: "GET",
       url: "/api/auth/directory/users?pendingOnly=true&sort=doctor&direction=desc&pageSize=10",
@@ -1000,9 +1010,9 @@ describe("auth-node", () => {
         payload: { firstName, lastName },
       });
     }
-    expect((await putProfile(owner, "Ольга", "Владелец")).statusCode).toBe(200);
+    expect((await putProfile(owner, "Пётр", "Владелец")).statusCode).toBe(200);
     expect((await putProfile(doctor, "Вера", "Врач")).statusCode).toBe(200);
-    expect((await putProfile(delegate, "Дина", "Делегат")).statusCode).toBe(200);
+    expect((await putProfile(delegate, "Алёна", "Делегат")).statusCode).toBe(200);
 
     const petId = "pet-directory-1";
     await store.putObservedPetOwner(petId, owner.accountId);
@@ -1017,20 +1027,20 @@ describe("auth-node", () => {
 
     const doctors = await app.inject({
       method: "GET",
-      url: "/api/auth/directory/doctors?query=Дина&page=1&pageSize=10",
+      url: "/api/auth/directory/doctors?query=Алена&page=1&pageSize=10",
       headers: { cookie: doctor.cookie },
     });
     expect(doctors.statusCode).toBe(200);
     expect(doctors.headers["cache-control"]).toBe("no-store");
-    expect(doctors.json()).toMatchObject({ total: 1, items: [{ accountId: delegate.accountId, displayName: "Дина Делегат" }] });
+    expect(doctors.json()).toMatchObject({ total: 1, items: [{ accountId: delegate.accountId, displayName: "Алёна Делегат" }] });
 
     const doctorsForOwner = await app.inject({
       method: "GET",
-      url: "/api/auth/directory/doctors?query=ина&page=1&pageSize=10",
+      url: "/api/auth/directory/doctors?query=лена&page=1&pageSize=10",
       headers: { cookie: owner.cookie },
     });
     expect(doctorsForOwner.statusCode).toBe(200);
-    expect(doctorsForOwner.json()).toMatchObject({ total: 1, items: [{ accountId: delegate.accountId, displayName: "Дина Делегат" }] });
+    expect(doctorsForOwner.json()).toMatchObject({ total: 1, items: [{ accountId: delegate.accountId, displayName: "Алёна Делегат" }] });
 
     const doctorById = await app.inject({
       method: "GET",
@@ -1058,14 +1068,14 @@ describe("auth-node", () => {
 
     const matchingPets = await app.inject({
       method: "GET",
-      url: "/api/auth/directory/pets?owner=льга&pet=ус&page=1&pageSize=10",
+      url: "/api/auth/directory/pets?owner=петр&pet=ус&page=1&pageSize=10",
       headers: { cookie: doctor.cookie },
     });
     expect(matchingPets.statusCode).toBe(200);
     expect(matchingPets.headers["cache-control"]).toBe("no-store");
     expect(matchingPets.json()).toMatchObject({
       total: 1,
-      items: [{ petId, ownerDisplayName: "Ольга Владелец", name: "Буся" }],
+      items: [{ petId, ownerDisplayName: "Пётр Владелец", name: "Буся" }],
     });
 
     const petByIds = await app.inject({
@@ -1110,27 +1120,27 @@ describe("auth-node", () => {
 
     const exactPet = await app.inject({ method: "GET", url: `/api/auth/directory/pets/${petId}`, headers: { cookie: doctor.cookie } });
     expect(exactPet.statusCode).toBe(200);
-    expect(exactPet.json()).toMatchObject({ petId, ownerAccountId: owner.accountId, ownerDisplayName: "Ольга Владелец" });
+    expect(exactPet.json()).toMatchObject({ petId, ownerAccountId: owner.accountId, ownerDisplayName: "Пётр Владелец" });
 
     const renamedProfile = await app.inject({
       method: "PATCH",
       url: "/api/auth/profile",
       headers: { origin: "https://klinok.test", cookie: owner.cookie, "x-csrf-token": owner.csrf },
-      payload: { firstName: "Мария", lastName: "Владелец" },
+      payload: { firstName: "Алёна", lastName: "Владелец" },
     });
     expect(renamedProfile.statusCode).toBe(200);
     const staleProfileWrite = await putProfile(owner, "Ольга", "Владелец");
     expect(staleProfileWrite.statusCode).toBe(200);
-    expect(staleProfileWrite.json()).toMatchObject({ displayName: "Мария Владелец" });
+    expect(staleProfileWrite.json()).toMatchObject({ displayName: "Алёна Владелец" });
     const renamedPet = await app.inject({ method: "GET", url: `/api/auth/directory/pets/${petId}`, headers: { cookie: doctor.cookie } });
-    expect(renamedPet.json()).toMatchObject({ petId, ownerDisplayName: "Мария Владелец" });
+    expect(renamedPet.json()).toMatchObject({ petId, ownerDisplayName: "Алёна Владелец" });
     const ownProfile = await app.inject({ method: "GET", url: "/api/auth/directory/profile", headers: { cookie: owner.cookie } });
     expect(ownProfile.statusCode).toBe(200);
     expect(ownProfile.headers["cache-control"]).toBe("no-store");
-    expect(ownProfile.json()).toMatchObject({ accountId: owner.accountId, displayName: "Мария Владелец" });
+    expect(ownProfile.json()).toMatchObject({ accountId: owner.accountId, displayName: "Алёна Владелец" });
     const ownedPets = await app.inject({ method: "GET", url: "/api/auth/directory/owned-pets", headers: { cookie: owner.cookie } });
     expect(ownedPets.statusCode).toBe(200);
-    expect(ownedPets.json()).toEqual({ pets: [expect.objectContaining({ petId, ownerDisplayName: "Мария Владелец" })] });
+    expect(ownedPets.json()).toEqual({ pets: [expect.objectContaining({ petId, ownerDisplayName: "Алёна Владелец" })] });
 
     await store.putObservedGrant({
       grantId: "grant-directory-1",
@@ -1148,6 +1158,12 @@ describe("auth-node", () => {
       total: 1,
       items: [{ petId, grantId: "grant-directory-1", permissions: ["read", "write_unconfirmed"] }],
     });
+    const myPetsByEquivalentE = await app.inject({
+      method: "GET",
+      url: `/api/auth/directory/my-pets?query=${encodeURIComponent("Алена")}`,
+      headers: { cookie: doctor.cookie },
+    });
+    expect(myPetsByEquivalentE.json()).toMatchObject({ total: 1, items: [{ petId }] });
 
     const secondPetId = "pet-directory-2";
     await store.putObservedPetOwner(secondPetId, owner.accountId);
@@ -1231,7 +1247,7 @@ describe("auth-node", () => {
       return {
         petId: `pet-access-${number}`,
         ownerAccountId: `owner-${number}`,
-        ownerDisplayName: `Владелец ${reverseNumber}`,
+        ownerDisplayName: index === 5 ? "Владёлец 07" : `Владелец ${reverseNumber}`,
         species: index % 2 === 0 ? "Кошка" : "Собака",
         name: `Питомец ${number}`,
         updatedAt: `2026-07-${number}T10:00:00.000Z`,

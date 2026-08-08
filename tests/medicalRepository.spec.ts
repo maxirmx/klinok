@@ -212,15 +212,17 @@ describe("medical authorization repository", () => {
     const delegatedGrantId = await doctor.medical.delegateGrant(
       grantId,
       "encounter-delegate",
-      ["read"],
+      ["read", "read"],
       { granteeDisplayName: "Дина Врач" },
     );
     await tick();
     expect((await owner.medical.snapshot()).grants.find((grant) => grant.grantId === delegatedGrantId))
       .toMatchObject({ granteeDisplayName: "Дина Врач" });
-    const publicDelegation = owner.control.signed.list()
-      .find((event) => event.eventType === "grant.delegated" && event.resourceId === delegatedGrantId)
-      ?.metadata.grant as Record<string, unknown>;
+    const delegationEvent = owner.control.signed.list()
+      .find((event) => event.eventType === "grant.delegated" && event.resourceId === delegatedGrantId);
+    const publicDelegation = delegationEvent?.metadata.grant as Record<string, unknown>;
+    expect(delegationEvent?.metadata.actions).toEqual(["read"]);
+    expect(publicDelegation.actions).toEqual(["read"]);
     expect(publicDelegation).not.toHaveProperty("granteeDisplayName");
     await expect(doctor.medical.saveEncounter({
       petId,

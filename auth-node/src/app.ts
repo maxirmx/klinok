@@ -10,6 +10,7 @@ import {
   generateDataKey,
   importSigningPublicKey,
   importUserKeySet,
+  normalizeRussianSearchText,
   stableSerialize,
   unwrapDataKey,
   wrapDataKey,
@@ -724,15 +725,15 @@ export async function buildAuthApp(options: AuthAppOptions): Promise<FastifyInst
     const maySearchDoctors = await hasObservedRole(current.account.accountId, "owner")
       || await hasObservedRole(current.account.accountId, "doctor");
     if (!maySearchDoctors) return error(reply, 403, "DIRECTORY_ROLE_REQUIRED", "Требуется одобренная роль владельца или врача.");
-    const query = request.query.query?.trim().toLocaleLowerCase("ru") ?? "";
+    const query = normalizeRussianSearchText(request.query.query ?? "");
     const availableProfiles = (await store.listDirectoryProfiles())
       .filter((profile) => profile.accountId !== current.account.accountId);
     const exactProfile = query
-      ? availableProfiles.find((profile) => profile.accountId.toLocaleLowerCase("ru") === query)
+      ? availableProfiles.find((profile) => normalizeRussianSearchText(profile.accountId) === query)
       : undefined;
     const profiles = exactProfile
       ? [exactProfile]
-      : availableProfiles.filter((profile) => !query || profile.displayName.toLocaleLowerCase("ru").includes(query));
+      : availableProfiles.filter((profile) => !query || normalizeRussianSearchText(profile.displayName).includes(query));
     const approved: DirectoryProfileDto[] = [];
     for (const profile of profiles) {
       const account = await store.getAccount(profile.accountId);
@@ -762,7 +763,7 @@ export async function buildAuthApp(options: AuthAppOptions): Promise<FastifyInst
       return error(reply, 403, "ADMINISTRATOR_ROLE_REQUIRED", "Требуется одобренная роль администратора.");
     }
 
-    const query = request.query.query?.trim().toLocaleLowerCase("ru") ?? "";
+    const query = normalizeRussianSearchText(request.query.query ?? "");
     const roleStatuses = new Map<string, DirectoryUserDto["roleStatuses"]>();
     for (const observed of await store.listObservedRoles()) {
       const statuses = roleStatuses.get(observed.accountId) ?? {
@@ -776,7 +777,7 @@ export async function buildAuthApp(options: AuthAppOptions): Promise<FastifyInst
 
     const directoryProfiles = await store.listDirectoryProfiles();
     const exactAccountId = query
-      ? directoryProfiles.find((profile) => profile.accountId.toLocaleLowerCase("ru") === query)?.accountId
+      ? directoryProfiles.find((profile) => normalizeRussianSearchText(profile.accountId) === query)?.accountId
       : undefined;
     const users: DirectoryUserDto[] = [];
     let pendingCount = 0;
@@ -791,8 +792,8 @@ export async function buildAuthApp(options: AuthAppOptions): Promise<FastifyInst
       if (statuses.doctor === "pending") pendingCount += 1;
       if (statuses.administrator === "pending") pendingCount += 1;
       if (exactAccountId ? profile.accountId !== exactAccountId : query &&
-        !profile.displayName.toLocaleLowerCase("ru").includes(query) &&
-        !profile.accountId.toLocaleLowerCase("ru").includes(query)) continue;
+        !normalizeRussianSearchText(profile.displayName).includes(query) &&
+        !normalizeRussianSearchText(profile.accountId).includes(query)) continue;
       if (request.query.pendingOnly === "true"
         && statuses.doctor !== "pending" && statuses.administrator !== "pending") continue;
       users.push({ ...profile, roleStatuses: statuses });
@@ -907,15 +908,15 @@ export async function buildAuthApp(options: AuthAppOptions): Promise<FastifyInst
     const current = await authenticated(request, reply, false);
     if (!current) return;
     if (!await hasObservedRole(current.account.accountId, "doctor")) return error(reply, 403, "DOCTOR_ROLE_REQUIRED", "Требуется одобренная роль врача.");
-    const ownerQuery = request.query.owner?.trim().toLocaleLowerCase("ru") ?? "";
-    const petQuery = request.query.pet?.trim().toLocaleLowerCase("ru") ?? "";
+    const ownerQuery = normalizeRussianSearchText(request.query.owner ?? "");
+    const petQuery = normalizeRussianSearchText(request.query.pet ?? "");
     if (!petQuery) return error(reply, 400, "PET_SEARCH_INVALID", "Укажите кличку или полный ID питомца.");
     const pets = (await store.listDirectoryPets()).filter((pet) => {
-      const petIdMatches = pet.petId.toLocaleLowerCase("ru") === petQuery;
+      const petIdMatches = normalizeRussianSearchText(pet.petId) === petQuery;
       if (!ownerQuery) return petIdMatches;
-      const ownerMatches = pet.ownerDisplayName.toLocaleLowerCase("ru").includes(ownerQuery)
-        || pet.ownerAccountId.toLocaleLowerCase("ru") === ownerQuery;
-      return ownerMatches && (pet.name.toLocaleLowerCase("ru").includes(petQuery) || petIdMatches);
+      const ownerMatches = normalizeRussianSearchText(pet.ownerDisplayName).includes(ownerQuery)
+        || normalizeRussianSearchText(pet.ownerAccountId) === ownerQuery;
+      return ownerMatches && (normalizeRussianSearchText(pet.name).includes(petQuery) || petIdMatches);
     });
     pets.sort((left, right) => request.query.sort === "pet"
       ? left.name.localeCompare(right.name, "ru") || left.ownerDisplayName.localeCompare(right.ownerDisplayName, "ru")
@@ -957,14 +958,14 @@ export async function buildAuthApp(options: AuthAppOptions): Promise<FastifyInst
         access.set(grant.petId, grant);
       }
     }
-    const query = request.query.query?.trim().toLocaleLowerCase("ru") ?? "";
+    const query = normalizeRussianSearchText(request.query.query ?? "");
     const pets = (await store.listDirectoryPets()).filter((pet) => access.has(pet.petId)
       && (!query
-        || pet.ownerDisplayName.toLocaleLowerCase("ru").includes(query)
-        || pet.ownerAccountId.toLocaleLowerCase("ru") === query
-        || pet.name.toLocaleLowerCase("ru").includes(query)
-        || pet.petId.toLocaleLowerCase("ru") === query
-        || pet.species.toLocaleLowerCase("ru").includes(query)))
+        || normalizeRussianSearchText(pet.ownerDisplayName).includes(query)
+        || normalizeRussianSearchText(pet.ownerAccountId) === query
+        || normalizeRussianSearchText(pet.name).includes(query)
+        || normalizeRussianSearchText(pet.petId) === query
+        || normalizeRussianSearchText(pet.species).includes(query)))
       .map((pet): DirectoryPetDto => ({ ...pet, permissions: access.get(pet.petId)!.actions, grantId: access.get(pet.petId)!.grantId }));
     const direction = request.query.direction === "desc" ? -1 : 1;
     pets.sort((left, right) => direction * (request.query.sort === "pet"
@@ -1051,17 +1052,17 @@ export async function buildAuthApp(options: AuthAppOptions): Promise<FastifyInst
 
     const status = (["granted", "requested", "revoked"] as const)
       .find((candidate) => candidate === request.query.status);
-    const query = request.query.query?.trim().toLocaleLowerCase("ru") ?? "";
+    const query = normalizeRussianSearchText(request.query.query ?? "");
     const statusMatches = [...rows.values()].filter((row) => !status || row.status === status);
     const exactPet = query
-      ? statusMatches.find((row) => row.petId.toLocaleLowerCase("ru") === query)
+      ? statusMatches.find((row) => normalizeRussianSearchText(row.petId) === query)
       : undefined;
     const accesses = exactPet ? [exactPet] : statusMatches.filter((row) => {
       if (!query) return true;
-      return row.ownerAccountId.toLocaleLowerCase("ru") === query
-        || row.ownerDisplayName?.toLocaleLowerCase("ru").includes(query)
-        || row.name?.toLocaleLowerCase("ru").includes(query)
-        || row.species?.toLocaleLowerCase("ru").includes(query);
+      return normalizeRussianSearchText(row.ownerAccountId) === query
+        || (row.ownerDisplayName ? normalizeRussianSearchText(row.ownerDisplayName).includes(query) : false)
+        || (row.name ? normalizeRussianSearchText(row.name).includes(query) : false)
+        || (row.species ? normalizeRussianSearchText(row.species).includes(query) : false);
     });
     const direction = request.query.direction === "desc" ? -1 : 1;
     accesses.sort((left, right) => direction * (request.query.sort === "pet"

@@ -2658,7 +2658,13 @@ dd {
   justify-self: end;
   gap: 8px;
 }
-.app-paginator select { width: 72px; min-height: 34px; }
+.app-paginator select {
+  width: 88px;
+  min-width: 88px;
+  min-height: 34px;
+  padding-right: 36px;
+  font-variant-numeric: tabular-nums;
+}
 .app-paginator-buttons {
   display: flex;
   align-items: center;

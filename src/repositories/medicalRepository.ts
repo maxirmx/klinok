@@ -526,7 +526,13 @@ export class MedicalRepository {
     };
     const delegation = await this.factory.create({
       database: "medical", eventType: "grant.delegated", aggregateId: parent.petId, resourceId: grantId,
-      metadata: { petId: parent.petId, parentGrantId, actions, grant: publicGrant as unknown as Record<string, unknown> }, cleartext: grant,
+      metadata: {
+        petId: parent.petId,
+        parentGrantId,
+        actions: requestedActions,
+        grant: publicGrant as unknown as Record<string, unknown>,
+      },
+      cleartext: grant,
       proofIds: [this.context.roleProofId, parentGrantId],
       parents: this.events.filter((event) => event.resourceId === parentGrantId).map((event) => event.eventId).slice(-1),
       recipients, dataKey: stored.key,

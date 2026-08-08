@@ -1451,6 +1451,10 @@ describe("Doctor pages", () => {
     expect(saveEncounterButton.attributes("aria-label")).toBe("Сохранить запись");
     expect(saveEncounterButton.getComponent(AppIcon).props("name")).toBe("check");
 
+    await wrapper.get('.doctor-history-filters input[type="search"]').setValue("Вёра");
+    expect(wrapper.findAll(".medical-record-entry-details")).toHaveLength(1);
+    await wrapper.get('.doctor-history-filters input[type="search"]').setValue("");
+
     await wrapper.get('.doctor-history-filters select[aria-label="Статус"]').setValue("unconfirmed");
     expect(wrapper.find(".medical-record-entry-details").exists()).toBe(false);
     await wrapper.get('.doctor-history-filters select[aria-label="Статус"]').setValue("confirmed");

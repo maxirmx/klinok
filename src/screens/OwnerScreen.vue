@@ -7,6 +7,7 @@ import { computed, reactive, ref, watch } from "vue";
 import { RouterLink, useRoute, useRouter } from "vue-router";
 import {
   PET_SEXES,
+  normalizeRussianSearchText,
   type DirectoryProfileDto,
   type PetSex,
 } from "@klinok/protocol";
@@ -46,6 +47,7 @@ const router = useRouter();
 const alertStore = useAlertStore();
 const formError = ref("");
 const photoBusy = ref(false);
+const petSaveBusy = ref(false);
 const deleteConfirmation = ref(false);
 const grantDialogOpen = ref(false);
 const grantBusy = ref(false);
@@ -123,11 +125,10 @@ const filteredPetRecords = computed(() => petRecords.value.filter((record) => {
   if (medicalFrom.value && record.encounterDate < medicalFrom.value) return false;
   if (medicalTo.value && record.encounterDate > medicalTo.value) return false;
   if (medicalSection.value && !record.sections[medicalSection.value]) return false;
-  const query = medicalQuery.value.trim();
+  const query = normalizeRussianSearchText(medicalQuery.value);
   if (!query) return true;
-  const queryLower = query.toLocaleLowerCase("ru");
-  const content = `${encounterSummary(record)} ${record.authorDisplayName} ${record.authorAccountId} ${Object.values(record.sections).map((section) => section ? sectionSearchText(section.value) : "").join(" ")}`.toLocaleLowerCase("ru");
-  return content.includes(queryLower);
+  const content = normalizeRussianSearchText(`${encounterSummary(record)} ${record.authorDisplayName} ${record.authorAccountId} ${Object.values(record.sections).map((section) => section ? sectionSearchText(section.value) : "").join(" ")}`);
+  return content.includes(query);
 }).sort((left, right) => (medicalSort.value === "desc" ? -1 : 1)
   * (left.encounterDate.localeCompare(right.encounterDate) || left.createdAt.localeCompare(right.createdAt))));
 const medicalPageCount = computed(() => Math.max(1, Math.ceil(filteredPetRecords.value.length / medicalPageSize.value)));
@@ -326,6 +327,7 @@ function petInput(): PetProfileInput {
 }
 
 async function savePet() {
+  if (petSaveBusy.value) return;
   const error = validateDraft();
   if (error) {
     alertStore.clear();
@@ -333,33 +335,38 @@ async function savePet() {
     return;
   }
   formError.value = "";
+  petSaveBusy.value = true;
   let directoryPending = false;
-  const saved = await action(async () => {
-    if (isCreate.value) {
-      const petId = await requireRepository().medical.createPet(petInput());
-      const result = await syncDirectoryPet({ petId, species: draft.species.trim(), name: draft.name.trim() });
+  try {
+    const saved = await action(async () => {
+      if (isCreate.value) {
+        const petId = await requireRepository().medical.createPet(petInput());
+        const result = await syncDirectoryPet({ petId, species: draft.species.trim(), name: draft.name.trim() });
+        directoryPending = result?.synchronized === false;
+        await router.push(`/owner/pets/${petId}`);
+        return;
+      }
+      if (!selectedPet.value) throw new Error("Питомец не найден.");
+      await requireRepository().medical.updatePet({
+        petId: selectedPet.value.petId,
+        ownerAccountId: selectedPet.value.ownerAccountId,
+        keyVersion: selectedPet.value.keyVersion,
+        tombstoned: false,
+        updatedAt: selectedPet.value.updatedAt,
+        ...petInput(),
+        ...(selectedPet.value.latestConfirmedVaccination
+          ? { latestConfirmedVaccination: selectedPet.value.latestConfirmedVaccination }
+          : {}),
+      });
+      const result = await syncDirectoryPet({ petId: selectedPet.value.petId, species: draft.species.trim(), name: draft.name.trim() });
       directoryPending = result?.synchronized === false;
-      await router.push(`/owner/pets/${petId}`);
-      return;
-    }
-    if (!selectedPet.value) throw new Error("Питомец не найден.");
-    await requireRepository().medical.updatePet({
-      petId: selectedPet.value.petId,
-      ownerAccountId: selectedPet.value.ownerAccountId,
-      keyVersion: selectedPet.value.keyVersion,
-      tombstoned: false,
-      updatedAt: selectedPet.value.updatedAt,
-      ...petInput(),
-      ...(selectedPet.value.latestConfirmedVaccination
-        ? { latestConfirmedVaccination: selectedPet.value.latestConfirmedVaccination }
-        : {}),
+      await router.push(`/owner/pets/${selectedPet.value.petId}`);
     });
-    const result = await syncDirectoryPet({ petId: selectedPet.value.petId, species: draft.species.trim(), name: draft.name.trim() });
-    directoryPending = result?.synchronized === false;
-    await router.push(`/owner/pets/${selectedPet.value.petId}`);
-  });
-  if (saved && directoryPending) {
-    alertStore.success("Питомец сохранён. Публикация в каталоге продолжится автоматически.");
+    if (saved && directoryPending) {
+      alertStore.success("Питомец сохранён. Публикация в каталоге продолжится автоматически.");
+    }
+  } finally {
+    petSaveBusy.value = false;
   }
 }
 
@@ -470,13 +477,14 @@ async function regrantAccess(row: PetAccessRow) {
 
 async function deletePet() {
   if (!selectedPet.value) return;
+  const petId = selectedPet.value.petId;
   deleteConfirmation.value = false;
   let directoryPending = false;
   const deleted = await action(async () => {
-    await requireRepository().medical.deletePet(selectedPet.value!.petId);
-    const result = await deleteDirectoryPet(selectedPet.value!.petId);
+    await requireRepository().medical.deletePet(petId);
+    await router.replace("/owner/home");
+    const result = await deleteDirectoryPet(petId);
     directoryPending = result?.synchronized === false;
-    await router.push("/owner/home");
   });
   if (deleted && directoryPending) {
     alertStore.success("Питомец удалён. Удаление из каталога продолжится автоматически.");
@@ -597,9 +605,9 @@ function confirmMedicalRecord(record: MedicalRecordDraft) {
             <button
               class="primary-action inline owner-profile-action"
               type="submit"
-              :disabled="photoBusy"
-              :title="isEdit ? 'Сохранить изменения' : 'Сохранить питомца'"
-              :aria-label="isEdit ? 'Сохранить изменения' : 'Сохранить питомца'"
+              :disabled="photoBusy || petSaveBusy"
+              :title="petSaveBusy ? 'Сохранение питомца…' : isEdit ? 'Сохранить изменения' : 'Сохранить питомца'"
+              :aria-label="petSaveBusy ? 'Сохранение питомца…' : isEdit ? 'Сохранить изменения' : 'Сохранить питомца'"
             >
               <AppIcon name="check" />
             </button>
