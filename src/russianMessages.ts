@@ -73,6 +73,7 @@ const AUTH_ERRORS: Record<string, string> = {
   PET_NOT_FOUND: "Питомец с таким идентификатором не найден.",
   PET_SEARCH_INVALID: "Укажите кличку или полный идентификатор питомца.",
   PET_PROJECTION_PENDING: "Профиль питомца ещё не подтверждён хранилищем. Повторите попытку.",
+  PET_TOMBSTONED: "Питомец уже удалён.",
   DIRECTORY_PET_INVALID: "Вид и кличка обязательны.",
   PROFILE_DIRECTORY_MISSING: "Сначала синхронизируйте профиль владельца.",
   PET_OWNER_REQUIRED: "Операция доступна только владельцу питомца.",
@@ -102,6 +103,7 @@ export function syncReasonKeyForCode(code: string): SyncReasonKey {
 }
 
 export function localOperationErrorText(code: string): string {
+  if (code === "PET_TOMBSTONED") return "Питомец уже удалён.";
   const messages: Record<SyncReasonKey, string> = {
     device: "Устройство не прошло проверку. Проверьте его состояние в настройках.",
     permission: "Для этой операции недостаточно действующих прав.",

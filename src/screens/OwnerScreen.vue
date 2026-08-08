@@ -272,13 +272,15 @@ async function signOut() {
   await router.replace("/auth/login");
 }
 
-async function action(task: () => Promise<unknown>, success = "") {
+async function action(task: () => Promise<unknown>, success = ""): Promise<boolean> {
   alertStore.clear();
   try {
     await task();
     if (success) alertStore.success(success);
+    return true;
   } catch (reason) {
     alertStore.error(reason, "Операция не выполнена.");
+    return false;
   }
 }
 
@@ -331,10 +333,12 @@ async function savePet() {
     return;
   }
   formError.value = "";
-  await action(async () => {
+  let directoryPending = false;
+  const saved = await action(async () => {
     if (isCreate.value) {
       const petId = await requireRepository().medical.createPet(petInput());
-      await syncDirectoryPet({ petId, species: draft.species.trim(), name: draft.name.trim() });
+      const result = await syncDirectoryPet({ petId, species: draft.species.trim(), name: draft.name.trim() });
+      directoryPending = result?.synchronized === false;
       await router.push(`/owner/pets/${petId}`);
       return;
     }
@@ -350,9 +354,13 @@ async function savePet() {
         ? { latestConfirmedVaccination: selectedPet.value.latestConfirmedVaccination }
         : {}),
     });
-    await syncDirectoryPet({ petId: selectedPet.value.petId, species: draft.species.trim(), name: draft.name.trim() });
+    const result = await syncDirectoryPet({ petId: selectedPet.value.petId, species: draft.species.trim(), name: draft.name.trim() });
+    directoryPending = result?.synchronized === false;
     await router.push(`/owner/pets/${selectedPet.value.petId}`);
   });
+  if (saved && directoryPending) {
+    alertStore.success("Питомец сохранён. Публикация в каталоге продолжится автоматически.");
+  }
 }
 
 async function selectPhoto(event: Event) {
@@ -412,6 +420,13 @@ async function findDoctors() {
   }
 }
 
+async function currentAvailableDoctor(accountId: string): Promise<DirectoryProfileDto> {
+  const doctor = (await searchDoctorDirectory(accountId, 1, 50, "id")).items
+    .find((candidate) => candidate.accountId === accountId);
+  if (!doctor) throw new Error("Выбранный врач больше недоступен для предоставления доступа.");
+  return doctor;
+}
+
 async function grantDoctor() {
   if (!selectedPet.value || !selectedDoctor.value) {
     grantError.value = "Выберите врача из результатов поиска.";
@@ -420,11 +435,12 @@ async function grantDoctor() {
   grantBusy.value = true;
   grantError.value = "";
   try {
+    const doctor = await currentAvailableDoctor(selectedDoctor.value.accountId);
     await requireRepository().medical.grantDoctor(
       selectedPet.value!.petId,
-      selectedDoctor.value!.accountId,
+      doctor.accountId,
       ["read", "write_unconfirmed", ...(grantDelegate.value ? ["delegate" as const] : [])],
-      { granteeDisplayName: selectedDoctor.value!.displayName },
+      { granteeDisplayName: doctor.displayName },
     );
     doctorQuery.value = "";
     doctorResults.value = [];
@@ -441,25 +457,30 @@ async function grantDoctor() {
 
 async function regrantAccess(row: PetAccessRow) {
   if (!selectedPet.value) return;
-  await action(
-    () => requireRepository().medical.grantDoctor(
+  await action(async () => {
+    const doctor = await currentAvailableDoctor(row.accountId);
+    await requireRepository().medical.grantDoctor(
       selectedPet.value!.petId,
-      row.accountId,
+      doctor.accountId,
       ["read", "write_unconfirmed"],
-      row.displayName === "ФИО не указано" ? {} : { granteeDisplayName: row.displayName },
-    ),
-    "Доступ предоставлен повторно.",
-  );
+      { granteeDisplayName: doctor.displayName },
+    );
+  }, "Доступ предоставлен повторно.");
 }
 
 async function deletePet() {
   if (!selectedPet.value) return;
   deleteConfirmation.value = false;
-  await action(async () => {
+  let directoryPending = false;
+  const deleted = await action(async () => {
     await requireRepository().medical.deletePet(selectedPet.value!.petId);
-    await deleteDirectoryPet(selectedPet.value!.petId);
+    const result = await deleteDirectoryPet(selectedPet.value!.petId);
+    directoryPending = result?.synchronized === false;
     await router.push("/owner/home");
   });
+  if (deleted && directoryPending) {
+    alertStore.success("Питомец удалён. Удаление из каталога продолжится автоматически.");
+  }
 }
 
 function confirmMedicalRecord(record: MedicalRecordDraft) {

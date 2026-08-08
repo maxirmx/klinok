@@ -5,7 +5,7 @@
 
 import { computed, reactive, ref, watch } from "vue";
 import { useRouter } from "vue-router";
-import type { AccountProfile, DirectoryUserDto, Role, RoleRequest, RoleStatus } from "@klinok/protocol";
+import type { AccountProfile, DirectoryProfileDto, DirectoryUserDto, Role, RoleRequest, RoleStatus } from "@klinok/protocol";
 import AppIcon from "../components/AppIcon.vue";
 import AppPaginator from "../components/AppPaginator.vue";
 import ModalDialog from "../components/ModalDialog.vue";
@@ -17,6 +17,7 @@ import {
   decideRole,
   getConfig,
   loadAdministratorUsers,
+  lookupAdministratorProfiles,
   logout,
   updateAdministratorUserProfile,
 } from "../appStore";
@@ -30,10 +31,7 @@ type DecisionAction = "approve" | "reject" | "revoke" | "restore";
 type AuditCategory = "request" | "approve" | "restore" | "reject" | "revoke" | "bootstrap";
 type RoleActionTarget = Pick<RoleRequest, "accountId" | "role" | "status">;
 
-type AdministratorRow = DirectoryUserDto & {
-  doctor?: RoleRequest;
-  administrator?: RoleRequest;
-};
+type AdministratorRow = DirectoryUserDto;
 
 type AuditRow = {
   eventId: string;
@@ -64,9 +62,11 @@ const page = ref(1);
 const pageSize = ref(readPageSize(cabinetPageSizeKey));
 const users = ref<DirectoryUserDto[]>([]);
 const userTotal = ref(0);
+const directoryPendingRoleCount = ref(0);
 const usersLoading = ref(false);
 let usersRefreshId = 0;
-const decision = ref<{ request: RoleActionTarget; action: DecisionAction } | null>(null);
+const roleStatusOverrides = reactive(new Map<string, { status: RoleStatus; sourceStatus: RoleStatus }>());
+const decision = ref<{ request: RoleActionTarget; action: DecisionAction; displayName: string } | null>(null);
 const decisionReason = ref("");
 const decisionBusy = ref(false);
 const profileEdit = ref<DirectoryUserDto | null>(null);
@@ -79,6 +79,8 @@ const auditRole = ref<AdvancedRole | "">("");
 const auditAction = ref<AuditCategory | "">("");
 const auditPage = ref(1);
 const auditPageSize = ref(readPageSize(auditPageSizeKey));
+const auditProfiles = ref<Record<string, DirectoryProfileDto>>({});
+let auditProfilesRefreshId = 0;
 
 const roleLabels: Record<Role, string> = {
   owner: "Владелец",
@@ -114,7 +116,9 @@ function formatProfileName(profile?: Pick<AccountProfile, "firstName" | "patrony
 }
 
 function profileName(accountId: string): string {
-  return formatProfileName(appState.control.profiles.find((profile) => profile.accountId === accountId)) || "ФИО не указано";
+  return auditProfiles.value[accountId]?.displayName
+    || formatProfileName(appState.control.profiles.find((profile) => profile.accountId === accountId))
+    || "ФИО не указано";
 }
 
 function normalize(value: string): string {
@@ -122,25 +126,16 @@ function normalize(value: string): string {
 }
 
 const administratorRows = computed<AdministratorRow[]>(() => {
-  const requests = new Map(appState.control.allRoles
-    .filter((request): request is RoleRequest & { role: AdvancedRole } => advancedRoles.includes(request.role as AdvancedRole))
-    .map((request) => [`${request.accountId}:${request.role}`, request]));
-  return users.value.map((user) => {
-    const doctor = requests.get(`${user.accountId}:doctor`);
-    const administrator = requests.get(`${user.accountId}:administrator`);
-    return {
-      ...user,
-      roleStatuses: {
-        ...user.roleStatuses,
-        ...(doctor ? { doctor: doctor.status } : {}),
-        ...(administrator ? { administrator: administrator.status } : {}),
-      },
-      doctor,
-      administrator,
-    };
-  });
+  return users.value.map((user) => ({
+    ...user,
+    roleStatuses: {
+      ...user.roleStatuses,
+      doctor: roleStatusOverrides.get(`${user.accountId}:doctor`)?.status ?? user.roleStatuses.doctor,
+      administrator: roleStatusOverrides.get(`${user.accountId}:administrator`)?.status ?? user.roleStatuses.administrator,
+    },
+  }));
 });
-const pendingRoleCount = computed(() => administratorPendingRequestCount(appState.control));
+const pendingRoleCount = computed(() => directoryPendingRoleCount.value);
 const mayEditProfiles = computed(() => appState.session.accountId === getConfig()?.p2p.bootstrapAccountId
   && appState.activeRole === "administrator");
 
@@ -163,8 +158,6 @@ function isBootstrapAdministrator(request: RoleActionTarget): boolean {
 
 function requestFor(row: AdministratorRow, role: Role): RoleActionTarget | undefined {
   if (role === "owner") return undefined;
-  const request = row[role];
-  if (request) return request;
   const status = row.roleStatuses[role];
   return status === "not_requested" ? undefined : { accountId: row.accountId, role, status };
 }
@@ -185,6 +178,16 @@ async function refreshUsers() {
     if (refreshId !== usersRefreshId) return;
     users.value = result.items;
     userTotal.value = result.total;
+    directoryPendingRoleCount.value = result.pendingCount ?? administratorPendingRequestCount(appState.control);
+    for (const user of result.items) {
+      for (const role of advancedRoles) {
+        const key = `${user.accountId}:${role}`;
+        const override = roleStatusOverrides.get(key);
+        if (override && (override.status === user.roleStatuses[role] || override.sourceStatus !== user.roleStatuses[role])) {
+          roleStatusOverrides.delete(key);
+        }
+      }
+    }
     if (page.value !== result.page) page.value = result.page;
   } catch (reason) {
     if (refreshId === usersRefreshId) alertStore.error(reason, "Не удалось загрузить список пользователей.");
@@ -219,13 +222,15 @@ async function submitProfileEdit() {
   profileEditError.value = "";
   profileEditBusy.value = true;
   try {
-    await updateAdministratorUserProfile(profileEdit.value.accountId, {
+    const result = await updateAdministratorUserProfile(profileEdit.value.accountId, {
       firstName,
       lastName,
       ...(patronymic ? { patronymic } : {}),
     });
     profileEdit.value = null;
-    alertStore.success("ФИО пользователя изменено.");
+    alertStore.success(result?.projectionSynchronized !== false
+      ? "ФИО пользователя изменено."
+      : "ФИО изменено в каталоге. Защищённая копия обновится при подключении устройства пользователя.");
     await refreshUsers();
   } catch (reason) {
     profileEditError.value = reason instanceof Error && /[А-Яа-яЁё]/.test(reason.message)
@@ -236,9 +241,11 @@ async function submitProfileEdit() {
   }
 }
 
-function openDecision(request: RoleActionTarget, action: DecisionAction) {
+function openDecision(row: AdministratorRow, role: Role, action: DecisionAction) {
+  const request = requestFor(row, role);
+  if (!request) return;
   decisionReason.value = "";
-  decision.value = { request, action };
+  decision.value = { request, action, displayName: row.displayName };
 }
 
 const decisionTitle = computed(() => {
@@ -265,6 +272,17 @@ async function submitDecision() {
   alertStore.clear();
   const current = decision.value;
   try {
+    const latestUser = (await loadAdministratorUsers(
+      current.request.accountId,
+      false,
+      1,
+      50,
+      "name",
+      "asc",
+    )).items.find((user) => user.accountId === current.request.accountId);
+    if (!latestUser || latestUser.roleStatuses[current.request.role] !== current.request.status) {
+      throw new Error("Статус заявки изменился. Закройте окно и повторите действие с обновлённым списком.");
+    }
     const status = current.action === "reject"
       ? "rejected"
       : current.action === "revoke"
@@ -275,6 +293,10 @@ async function submitDecision() {
       status,
       destructiveDecision.value && decisionReason.value.trim() ? decisionReason.value.trim() : undefined,
     );
+    roleStatusOverrides.set(`${current.request.accountId}:${current.request.role}`, {
+      status,
+      sourceStatus: current.request.status,
+    });
     alertStore.success(current.action === "approve"
       ? "Роль одобрена."
       : current.action === "restore"
@@ -359,6 +381,21 @@ const pagedAuditRows = computed(() =>
   filteredAuditRows.value.slice((auditPage.value - 1) * auditPageSize.value, auditPage.value * auditPageSize.value),
 );
 
+async function refreshAuditProfiles(): Promise<void> {
+  if (!isAudit.value) return;
+  const refreshId = ++auditProfilesRefreshId;
+  const accountIds = [...new Set(auditRows.value.flatMap((row) => [row.targetAccountId, row.actorAccountId]))];
+  try {
+    const profiles = await lookupAdministratorProfiles(accountIds);
+    if (refreshId !== auditProfilesRefreshId) return;
+    auditProfiles.value = Object.fromEntries(profiles.map((profile) => [profile.accountId, profile]));
+  } catch (reason) {
+    if (refreshId === auditProfilesRefreshId) {
+      alertStore.error(reason, "Не удалось загрузить ФИО для журнала действий.");
+    }
+  }
+}
+
 function formatDate(value: string): string {
   return new Intl.DateTimeFormat("ru-RU", {
     dateStyle: "short",
@@ -398,6 +435,11 @@ watch(pageSize, (value) => localStorage.setItem(cabinetPageSizeKey, String(value
 watch([auditSearch, auditRole, auditAction, auditPageSize], () => { auditPage.value = 1; });
 watch(auditPageSize, (value) => localStorage.setItem(auditPageSizeKey, String(value)));
 watch(auditPageCount, (count) => { if (auditPage.value > count) auditPage.value = count; });
+watch(
+  [isAudit, () => auditRows.value.flatMap((row) => [row.targetAccountId, row.actorAccountId]).join("|")],
+  () => { void refreshAuditProfiles(); },
+  { immediate: true },
+);
 </script>
 
 <template>
@@ -405,6 +447,7 @@ watch(auditPageCount, (count) => { if (auditPage.value > count) auditPage.value 
     :role="role"
     title="Кабинет администратора"
     :profile-name="formatProfileName(appState.control.profile)"
+    :administrator-pending-count="isAudit && !directoryPendingRoleCount ? undefined : pendingRoleCount"
     @sign-out="signOut"
   >
     <section v-if="!isAudit" class="administrator-page">
@@ -534,7 +577,7 @@ watch(auditPageCount, (count) => { if (auditPage.value > count) auditPage.value 
                             type="button"
                             :title="`Одобрить роль «${roleLabels[displayedRole]}»`"
                             :aria-label="`Одобрить роль «${roleLabels[displayedRole]}»`"
-                            @click="openDecision(requestFor(row, displayedRole)!, 'approve')"
+                            @click="openDecision(row, displayedRole, 'approve')"
                           >
                             <AppIcon name="check" />
                           </button>
@@ -543,7 +586,7 @@ watch(auditPageCount, (count) => { if (auditPage.value > count) auditPage.value 
                             type="button"
                             :title="`Отклонить запрос роли «${roleLabels[displayedRole]}»`"
                             :aria-label="`Отклонить запрос роли «${roleLabels[displayedRole]}»`"
-                            @click="openDecision(requestFor(row, displayedRole)!, 'reject')"
+                            @click="openDecision(row, displayedRole, 'reject')"
                           >
                             <AppIcon name="close" />
                           </button>
@@ -554,7 +597,7 @@ watch(auditPageCount, (count) => { if (auditPage.value > count) auditPage.value 
                           type="button"
                           :title="`Отозвать роль «${roleLabels[displayedRole]}»`"
                           :aria-label="`Отозвать роль «${roleLabels[displayedRole]}»`"
-                          @click="openDecision(requestFor(row, displayedRole)!, 'revoke')"
+                          @click="openDecision(row, displayedRole, 'revoke')"
                         >
                           <AppIcon name="close" />
                         </button>
@@ -564,7 +607,7 @@ watch(auditPageCount, (count) => { if (auditPage.value > count) auditPage.value 
                           type="button"
                           :title="`Восстановить роль «${roleLabels[displayedRole]}»`"
                           :aria-label="`Восстановить роль «${roleLabels[displayedRole]}»`"
-                          @click="openDecision(requestFor(row, displayedRole)!, 'restore')"
+                          @click="openDecision(row, displayedRole, 'restore')"
                         >
                           <AppIcon name="restore" />
                         </button>
@@ -730,7 +773,7 @@ watch(auditPageCount, (count) => { if (auditPage.value > count) auditPage.value 
       <template #description>
         <PersonIdentity
           v-if="decision"
-          :display-name="profileName(decision.request.accountId)"
+          :display-name="decision.displayName"
           :account-id="decision.request.accountId"
         />
       </template>

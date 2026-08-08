@@ -197,5 +197,6 @@ export interface RoleDecisionInput {
   accountId: string;
   role: Role;
   status: "approved" | "rejected" | "revoked";
+  expectedStatus?: RoleRequest["status"];
   reason?: string;
 }

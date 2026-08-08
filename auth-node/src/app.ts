@@ -637,7 +637,6 @@ export async function buildAuthApp(options: AuthAppOptions): Promise<FastifyInst
     const current = await authenticated(request, reply);
     if (!current) return;
     if (!await allowAccountMutation(request, reply, current.account.accountId)) return;
-    const operationId = randomUUID();
     const profile = { ...(current.account.setup?.profile ?? {}), ...request.body };
     if (!profile.firstName?.trim() || !profile.lastName?.trim()) return error(reply, 400, "PROFILE_INVALID", "Имя и фамилия обязательны.");
     const normalizedProfile = {
@@ -648,14 +647,29 @@ export async function buildAuthApp(options: AuthAppOptions): Promise<FastifyInst
     const existing = current.account.pendingOperations.find((operation) =>
       operation.kind === "profile" && stableSerialize(operation.payload) === stableSerialize(normalizedProfile),
     );
-    if (existing) return { operationId: existing.operationId };
-    await store.putAccount({
+    const createdAt = now().toISOString();
+    const operation = existing ?? { operationId: randomUUID(), kind: "profile" as const, createdAt, payload: normalizedProfile };
+    const existingDirectoryProfile = await store.getDirectoryProfile(current.account.accountId);
+    const directoryProfileMatches = existingDirectoryProfile
+      && existingDirectoryProfile.firstName === normalizedProfile.firstName
+      && existingDirectoryProfile.lastName === normalizedProfile.lastName
+      && (existingDirectoryProfile.patronymic ?? "") === (normalizedProfile.patronymic ?? "");
+    const directoryProfile: DirectoryProfileDto = {
+      accountId: current.account.accountId,
+      ...normalizedProfile,
+      displayName: [normalizedProfile.firstName, normalizedProfile.patronymic, normalizedProfile.lastName].filter(Boolean).join(" "),
+      updatedAt: directoryProfileMatches ? existingDirectoryProfile.updatedAt : createdAt,
+    };
+    await store.putAccountAndDirectoryProfile({
       ...current.account,
       ...(current.account.setup ? { setup: { ...current.account.setup, profile: normalizedProfile } } : {}),
-      pendingOperations: [...current.account.pendingOperations, { operationId, kind: "profile", createdAt: now().toISOString(), payload: normalizedProfile }],
-      updatedAt: now().toISOString(),
-    });
-    return { operationId };
+      pendingOperations: [
+        ...current.account.pendingOperations.filter((candidate) => candidate.kind !== "profile"),
+        operation,
+      ],
+      updatedAt: createdAt,
+    }, directoryProfile);
+    return { operationId: operation.operationId, profile: directoryProfile };
   });
 
   app.put<{ Body: Partial<DirectoryProfileDto> }>("/api/auth/directory/profile", {
@@ -668,6 +682,8 @@ export async function buildAuthApp(options: AuthAppOptions): Promise<FastifyInst
     const lastName = request.body.lastName?.trim();
     const patronymic = request.body.patronymic?.trim();
     if (!firstName || !lastName) return error(reply, 400, "DIRECTORY_PROFILE_INVALID", "Имя и фамилия обязательны.");
+    const existing = await store.getDirectoryProfile(current.account.accountId);
+    if (existing) return reply.header("Cache-Control", "no-store").send(existing);
     const profile: DirectoryProfileDto = {
       accountId: current.account.accountId,
       firstName,
@@ -676,8 +692,28 @@ export async function buildAuthApp(options: AuthAppOptions): Promise<FastifyInst
       displayName: [firstName, patronymic, lastName].filter(Boolean).join(" "),
       updatedAt: now().toISOString(),
     };
-    await store.putDirectoryProfile(profile);
+    const published = await store.createDirectoryProfile(profile);
+    return reply.header("Cache-Control", "no-store").send(published);
+  });
+
+  app.get("/api/auth/directory/profile", {
+    config: { rateLimit: { max: options.config.rateLimit.sessionIpPerMinute, timeWindow: 60_000 } },
+  }, async (request, reply) => {
+    const current = await authenticated(request, reply, false);
+    if (!current) return;
+    const profile = await store.getDirectoryProfile(current.account.accountId);
+    if (!profile) return error(reply, 404, "DIRECTORY_PROFILE_NOT_FOUND", "Профиль ещё не опубликован в каталоге.");
     return reply.header("Cache-Control", "no-store").send(profile);
+  });
+
+  app.get("/api/auth/directory/owned-pets", {
+    config: { rateLimit: { max: options.config.rateLimit.sessionIpPerMinute, timeWindow: 60_000 } },
+  }, async (request, reply) => {
+    const current = await authenticated(request, reply, false);
+    if (!current) return;
+    const pets = (await store.listDirectoryPets())
+      .filter((pet) => pet.ownerAccountId === current.account.accountId);
+    return reply.header("Cache-Control", "no-store").send({ pets });
   });
 
   app.get<{ Querystring: { query?: string; sort?: string; page?: string; pageSize?: string } }>("/api/auth/directory/doctors", {
@@ -689,11 +725,20 @@ export async function buildAuthApp(options: AuthAppOptions): Promise<FastifyInst
       || await hasObservedRole(current.account.accountId, "doctor");
     if (!maySearchDoctors) return error(reply, 403, "DIRECTORY_ROLE_REQUIRED", "Требуется одобренная роль владельца или врача.");
     const query = request.query.query?.trim().toLocaleLowerCase("ru") ?? "";
-    const profiles = (await store.listDirectoryProfiles()).filter((profile) => profile.accountId !== current.account.accountId
-      && (!query || profile.displayName.toLocaleLowerCase("ru").includes(query)
-        || profile.accountId.toLocaleLowerCase("ru") === query));
+    const availableProfiles = (await store.listDirectoryProfiles())
+      .filter((profile) => profile.accountId !== current.account.accountId);
+    const exactProfile = query
+      ? availableProfiles.find((profile) => profile.accountId.toLocaleLowerCase("ru") === query)
+      : undefined;
+    const profiles = exactProfile
+      ? [exactProfile]
+      : availableProfiles.filter((profile) => !query || profile.displayName.toLocaleLowerCase("ru").includes(query));
     const approved: DirectoryProfileDto[] = [];
-    for (const profile of profiles) if (await hasObservedRole(profile.accountId, "doctor")) approved.push(profile);
+    for (const profile of profiles) {
+      const account = await store.getAccount(profile.accountId);
+      if (account?.credentialStatus !== "deleted" && await hasObservedRole(profile.accountId, "doctor") &&
+        account?.devices.some((device) => device.status === "active")) approved.push(profile);
+    }
     approved.sort((left, right) => request.query.sort === "id"
       ? left.accountId.localeCompare(right.accountId)
       : left.displayName.localeCompare(right.displayName, "ru") || left.accountId.localeCompare(right.accountId));
@@ -729,10 +774,13 @@ export async function buildAuthApp(options: AuthAppOptions): Promise<FastifyInst
       roleStatuses.set(observed.accountId, statuses);
     }
 
+    const directoryProfiles = await store.listDirectoryProfiles();
+    const exactAccountId = query
+      ? directoryProfiles.find((profile) => profile.accountId.toLocaleLowerCase("ru") === query)?.accountId
+      : undefined;
     const users: DirectoryUserDto[] = [];
-    for (const profile of await store.listDirectoryProfiles()) {
-      if (query && !profile.displayName.toLocaleLowerCase("ru").includes(query)
-        && !profile.accountId.toLocaleLowerCase("ru").includes(query)) continue;
+    let pendingCount = 0;
+    for (const profile of directoryProfiles) {
       const account = await store.getAccount(profile.accountId);
       if (!account || account.credentialStatus === "deleted") continue;
       const statuses = roleStatuses.get(profile.accountId) ?? {
@@ -740,6 +788,11 @@ export async function buildAuthApp(options: AuthAppOptions): Promise<FastifyInst
         doctor: "not_requested",
         administrator: "not_requested",
       };
+      if (statuses.doctor === "pending") pendingCount += 1;
+      if (statuses.administrator === "pending") pendingCount += 1;
+      if (exactAccountId ? profile.accountId !== exactAccountId : query &&
+        !profile.displayName.toLocaleLowerCase("ru").includes(query) &&
+        !profile.accountId.toLocaleLowerCase("ru").includes(query)) continue;
       if (request.query.pendingOnly === "true"
         && statuses.doctor !== "pending" && statuses.administrator !== "pending") continue;
       users.push({ ...profile, roleStatuses: statuses });
@@ -757,7 +810,34 @@ export async function buildAuthApp(options: AuthAppOptions): Promise<FastifyInst
         || left.displayName.localeCompare(right.displayName, "ru", { sensitivity: "base" })
         || left.accountId.localeCompare(right.accountId);
     });
-    return reply.header("Cache-Control", "no-store").send(directoryPage(users, request.query.page, request.query.pageSize));
+    return reply.header("Cache-Control", "no-store").send({
+      ...directoryPage(users, request.query.page, request.query.pageSize),
+      pendingCount,
+    });
+  });
+
+  app.post<{ Body: { accountIds?: unknown } }>("/api/auth/directory/profiles/lookup", {
+    config: { rateLimit: { max: options.config.rateLimit.sessionIpPerMinute, timeWindow: 60_000 } },
+  }, async (request, reply) => {
+    const current = await authenticated(request, reply, false);
+    if (!current) return;
+    if (!isBootstrapAdministratorAccount(current.account)
+      && !await hasObservedRole(current.account.accountId, "administrator")) {
+      return error(reply, 403, "ADMINISTRATOR_ROLE_REQUIRED", "Требуется одобренная роль администратора.");
+    }
+    if (!Array.isArray(request.body?.accountIds) || request.body.accountIds.length > 200 ||
+      request.body.accountIds.some((accountId) => typeof accountId !== "string" || !accountId.trim())) {
+      return error(reply, 400, "DIRECTORY_LOOKUP_INVALID", "Передан некорректный список пользователей.");
+    }
+    const profiles: DirectoryProfileDto[] = [];
+    for (const accountId of [...new Set(request.body.accountIds.map((value) => String(value).trim()))]) {
+      const [profile, account] = await Promise.all([
+        store.getDirectoryProfile(accountId),
+        store.getAccount(accountId),
+      ]);
+      if (profile && account && account.credentialStatus !== "deleted") profiles.push(profile);
+    }
+    return reply.header("Cache-Control", "no-store").send({ profiles });
   });
 
   app.patch<{
@@ -868,8 +948,15 @@ export async function buildAuthApp(options: AuthAppOptions): Promise<FastifyInst
       seen.add(grant.grantId);
       return effective(byId.get(grant.parentGrantId), seen);
     };
-    const access = new Map(grants.filter((grant) => grant.granteeAccountId === current.account.accountId && effective(grant))
-      .map((grant) => [grant.petId, grant]));
+    const access = new Map<string, (typeof grants)[number]>();
+    for (const grant of grants) {
+      if (grant.granteeAccountId !== current.account.accountId || !effective(grant)) continue;
+      const selected = access.get(grant.petId);
+      if (!selected || grant.createdAt.localeCompare(selected.createdAt) > 0 ||
+        (grant.createdAt === selected.createdAt && grant.grantId.localeCompare(selected.grantId) > 0)) {
+        access.set(grant.petId, grant);
+      }
+    }
     const query = request.query.query?.trim().toLocaleLowerCase("ru") ?? "";
     const pets = (await store.listDirectoryPets()).filter((pet) => access.has(pet.petId)
       && (!query
@@ -906,8 +993,12 @@ export async function buildAuthApp(options: AuthAppOptions): Promise<FastifyInst
       seen.add(grant.grantId);
       return effective(grantsById.get(grant.parentGrantId), seen);
     };
-    const isNewerGrant = (candidate: (typeof grants)[number], selected: (typeof grants)[number] | undefined) =>
-      !selected || (candidate.revokedAt ?? candidate.createdAt).localeCompare(selected.revokedAt ?? selected.createdAt) > 0;
+    const isNewerGrant = (candidate: (typeof grants)[number], selected: (typeof grants)[number] | undefined) => {
+      if (!selected) return true;
+      const timestampComparison = (candidate.revokedAt ?? candidate.createdAt)
+        .localeCompare(selected.revokedAt ?? selected.createdAt);
+      return timestampComparison > 0 || (timestampComparison === 0 && candidate.grantId.localeCompare(selected.grantId) > 0);
+    };
     const activeByPet = new Map<string, (typeof grants)[number]>();
     const revokedByPet = new Map<string, (typeof grants)[number]>();
     for (const grant of grants) {
@@ -919,7 +1010,11 @@ export async function buildAuthApp(options: AuthAppOptions): Promise<FastifyInst
     for (const accessRequest of requests) {
       if (accessRequest.requesterAccountId !== current.account.accountId || accessRequest.status !== "pending") continue;
       const selected = pendingByPet.get(accessRequest.petId);
-      if (!selected || accessRequest.requestedAt.localeCompare(selected.requestedAt) > 0) pendingByPet.set(accessRequest.petId, accessRequest);
+      const timestampComparison = selected ? accessRequest.requestedAt.localeCompare(selected.requestedAt) : 1;
+      if (!selected || timestampComparison > 0 ||
+        (timestampComparison === 0 && accessRequest.requestId.localeCompare(selected.requestId) > 0)) {
+        pendingByPet.set(accessRequest.petId, accessRequest);
+      }
     }
 
     const petsById = new Map(pets.map((pet) => [pet.petId, pet]));
@@ -957,11 +1052,13 @@ export async function buildAuthApp(options: AuthAppOptions): Promise<FastifyInst
     const status = (["granted", "requested", "revoked"] as const)
       .find((candidate) => candidate === request.query.status);
     const query = request.query.query?.trim().toLocaleLowerCase("ru") ?? "";
-    const accesses = [...rows.values()].filter((row) => {
-      if (status && row.status !== status) return false;
+    const statusMatches = [...rows.values()].filter((row) => !status || row.status === status);
+    const exactPet = query
+      ? statusMatches.find((row) => row.petId.toLocaleLowerCase("ru") === query)
+      : undefined;
+    const accesses = exactPet ? [exactPet] : statusMatches.filter((row) => {
       if (!query) return true;
-      return row.petId.toLocaleLowerCase("ru") === query
-        || row.ownerAccountId.toLocaleLowerCase("ru") === query
+      return row.ownerAccountId.toLocaleLowerCase("ru") === query
         || row.ownerDisplayName?.toLocaleLowerCase("ru").includes(query)
         || row.name?.toLocaleLowerCase("ru").includes(query)
         || row.species?.toLocaleLowerCase("ru").includes(query);
@@ -983,6 +1080,9 @@ export async function buildAuthApp(options: AuthAppOptions): Promise<FastifyInst
     const current = await authenticated(request, reply);
     if (!current) return;
     if (!await hasObservedRole(current.account.accountId, "owner")) return error(reply, 403, "OWNER_ROLE_REQUIRED", "Требуется одобренная роль владельца.");
+    if (await store.isObservedPetTombstoned(request.params.petId)) {
+      return error(reply, 410, "PET_TOMBSTONED", "Питомец удалён из защищённого журнала.");
+    }
     if (await store.getObservedPetOwner(request.params.petId) !== current.account.accountId) {
       return error(reply, 409, "PET_PROJECTION_PENDING", "Профиль питомца ещё не подтверждён хранилищем. Повторите попытку.");
     }
@@ -999,7 +1099,9 @@ export async function buildAuthApp(options: AuthAppOptions): Promise<FastifyInst
       name,
       updatedAt: now().toISOString(),
     };
-    await store.putDirectoryPet(pet);
+    if (!await store.putDirectoryPet(pet)) {
+      return error(reply, 410, "PET_TOMBSTONED", "Питомец удалён из защищённого журнала.");
+    }
     return reply.header("Cache-Control", "no-store").send(pet);
   });
 
@@ -1008,8 +1110,13 @@ export async function buildAuthApp(options: AuthAppOptions): Promise<FastifyInst
   }, async (request, reply) => {
     const current = await authenticated(request, reply);
     if (!current) return;
+    const directoryPet = await store.getDirectoryPet(request.params.petId);
+    if (!directoryPet) return reply.code(204).send();
     if (!await hasObservedRole(current.account.accountId, "owner")) return error(reply, 403, "OWNER_ROLE_REQUIRED", "Требуется одобренная роль владельца.");
-    if (await store.getObservedPetOwner(request.params.petId) !== current.account.accountId) return error(reply, 403, "PET_OWNER_REQUIRED", "Удалить запись может только владелец.");
+    const observedOwner = await store.getObservedPetOwner(request.params.petId);
+    if (observedOwner !== current.account.accountId && directoryPet.ownerAccountId !== current.account.accountId) {
+      return error(reply, 403, "PET_OWNER_REQUIRED", "Удалить запись может только владелец.");
+    }
     await store.deleteDirectoryPet(request.params.petId);
     return reply.code(204).send();
   });

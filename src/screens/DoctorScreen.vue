@@ -76,6 +76,7 @@ interface DoctorHomeAccessRow {
   permissions?: readonly PetGrantAction[];
   grantId?: string;
   requestId?: string;
+  projectionReady: boolean;
 }
 const route = useRoute();
 const router = useRouter();
@@ -140,8 +141,13 @@ const encounter = reactive({
 const profileName = computed(() => [appState.control.profile?.firstName, appState.control.profile?.patronymic, appState.control.profile?.lastName].filter(Boolean).join(" "));
 const petId = computed(() => String(route.params.petId ?? ""));
 const selectedPet = computed(() => appState.medical.pets.find((pet) => pet.petId === petId.value) ?? null);
-const selectedGrant = computed(() => appState.medical.grants.find((grant) => grant.petId === petId.value
-  && grant.granteeAccountId === appState.session.accountId && grant.status === "active") ?? null);
+const routeGrantId = computed(() => typeof route.query.grantId === "string" ? route.query.grantId : "");
+const selectedGrant = computed(() => {
+  const candidates = appState.medical.grants.filter((grant) => grant.petId === petId.value
+    && grant.granteeAccountId === appState.session.accountId && localGrantEffectivelyActive(grant.grantId));
+  if (routeGrantId.value) return candidates.find((grant) => grant.grantId === routeGrantId.value) ?? null;
+  return candidates.length === 1 ? candidates[0]! : null;
+});
 const canWrite = computed(() => selectedGrant.value?.actions.includes("write_unconfirmed") ?? false);
 const canDelegate = computed(() => selectedGrant.value?.actions.includes("delegate") ?? false);
 const confirmedIds = computed(() => new Set(appState.medical.confirmedRecordIds));
@@ -154,7 +160,30 @@ const homeRows = computed<DoctorHomeAccessRow[]>(() => homeAccesses.value.map((a
   ownerDisplayName: access.ownerDisplayName || "ФИО не указано",
   species: access.species ?? "",
   name: access.name ?? "Данные питомца недоступны",
+  projectionReady: (() => {
+    if (access.status === "requested") {
+      return Boolean(access.requestId && appState.medical.accessRequests.some((request) =>
+        request.requestId === access.requestId && request.petId === access.petId &&
+        request.requesterAccountId === appState.session.accountId && request.status === "pending"));
+    }
+    if (access.status !== "granted") return true;
+    const grant = access.grantId
+      ? appState.medical.grants.find((candidate) => candidate.grantId === access.grantId)
+      : undefined;
+    return Boolean(grant && grant.petId === access.petId &&
+      grant.granteeAccountId === appState.session.accountId &&
+      appState.medical.pets.some((pet) => pet.petId === access.petId) &&
+      localGrantEffectivelyActive(grant.grantId));
+  })(),
 })));
+
+function localGrantEffectivelyActive(grantId: string, visited = new Set<string>()): boolean {
+  const grant = appState.medical.grants.find((candidate) => candidate.grantId === grantId);
+  if (!grant || grant.status !== "active" || visited.has(grantId)) return false;
+  if (!grant.parentGrantId) return true;
+  visited.add(grantId);
+  return localGrantEffectivelyActive(grant.parentGrantId, visited);
+}
 const delegatedAccessRows = computed<PetAccessRow[]>(() => {
   if (!selectedGrant.value) return [];
   return appState.medical.grants
@@ -287,7 +316,11 @@ async function findPets() {
 async function requestAccess(pet: DirectoryPetDto) {
   let autoApproved = false;
   const succeeded = await performModal(requestError, async () => {
-    const requestId = await requireRepository().medical.requestAccess(pet.petId);
+    const currentPet = await lookupPetDirectory(pet.petId);
+    if (currentPet.ownerAccountId !== pet.ownerAccountId) {
+      throw new Error("Данные владельца питомца изменились. Обновите результаты поиска.");
+    }
+    const requestId = await requireRepository().medical.requestAccess(currentPet.petId, currentPet.ownerAccountId);
     autoApproved = appState.medical.grants.some((candidate) =>
       candidate.requestId === requestId && candidate.petId === pet.petId && candidate.status === "active",
     );
@@ -301,11 +334,13 @@ async function requestAccess(pet: DirectoryPetDto) {
   }
 }
 
-async function cancelPendingRequest(requestId: string) {
-  const succeeded = await perform(
-    () => requireRepository().medical.cancelAccessRequest(requestId),
-    "Запрос на доступ отозван.",
-  );
+async function cancelPendingRequest(petId: string, requestId: string) {
+  const succeeded = await perform(async () => {
+    const current = (await loadDoctorPetAccesses(petId, "requested", 1, 50, "owner", "asc")).items
+      .find((access) => access.petId === petId && access.requestId === requestId && access.status === "requested");
+    if (!current) throw new Error("Статус запроса изменился. Обновите список перед повторной попыткой.");
+    await requireRepository().medical.cancelAccessRequest(requestId);
+  }, "Запрос на доступ отозван.");
   if (succeeded) await refreshAccesses();
 }
 
@@ -454,33 +489,73 @@ function openDelegationDialog() {
 
 async function delegate() {
   if (!delegationTarget.value || !selectedGrant.value) return;
-  const actions: PetGrantAction[] = selectedGrant.value.actions.filter((action) => action !== "delegate");
-  if (delegationDelegate.value && selectedGrant.value.actions.includes("delegate")) actions.push("delegate");
+  const target = delegationTarget.value;
+  const parentGrant = selectedGrant.value;
+  const selectedPetId = petId.value;
+  const actions: PetGrantAction[] = parentGrant.actions.filter((action) => action !== "delegate");
+  if (delegationDelegate.value && parentGrant.actions.includes("delegate")) actions.push("delegate");
   delegationConfirm.value = false;
   delegationDialogOpen.value = false;
   await perform(async () => {
-    await requireRepository().medical.delegateGrant(selectedGrant.value!.grantId, delegationTarget.value!.accountId, actions);
-    await router.push(`/doctor/pets/${petId.value}`);
+    const currentTarget = (await searchDoctorDirectory(target.accountId, 1, 50, "id")).items
+      .find((doctor) => doctor.accountId === target.accountId);
+    if (!currentTarget) throw new Error("Выбранный врач больше недоступен для предоставления доступа.");
+    await requireRepository().medical.delegateGrant(
+      parentGrant.grantId,
+      currentTarget.accountId,
+      actions,
+      { granteeDisplayName: currentTarget.displayName },
+    );
+    await router.push({ path: `/doctor/pets/${selectedPetId}`, query: { grantId: parentGrant.grantId } });
   }, "Доступ делегирован.");
 }
 
-function openRelinquish(pet: Pick<DirectoryPetDto, "petId" | "name">) {
-  const grant = appState.medical.grants.find((candidate) =>
-    candidate.petId === pet.petId && candidate.granteeAccountId === appState.session.accountId && candidate.status === "active",
-  );
-  if (!grant) {
-    alertStore.error(new Error("Доступ к медицинской карте уже закрыт."));
-    return;
+function openSelectedPetRelinquish() {
+  if (!selectedPet.value || !selectedGrant.value) return;
+  void openRelinquish({
+    petId: selectedPet.value.petId,
+    name: selectedPet.value.name,
+    grantId: selectedGrant.value.grantId,
+  });
+}
+
+async function requireCurrentGrantedAccess(petId: string, grantId: string): Promise<void> {
+  const current = (await loadDoctorPetAccesses(petId, "granted", 1, 50, "owner", "asc")).items
+    .find((access) => access.petId === petId && access.grantId === grantId && access.status === "granted");
+  if (!current) {
+    throw new Error("Статус доступа изменился. Обновите список перед повторной попыткой.");
   }
+}
+
+async function openRelinquish(pet: Pick<DirectoryPetDto, "petId" | "name"> & { grantId?: string }) {
+  busy.value = true;
   alertStore.clear();
-  relinquishTarget.value = { petId: pet.petId, petName: pet.name, grantId: grant.grantId };
-  relinquishConfirm.value = true;
+  try {
+    if (!pet.grantId) throw new Error("Идентификатор доступа ещё не синхронизирован. Обновите список.");
+    await requireCurrentGrantedAccess(pet.petId, pet.grantId);
+    const medical = requireRepository().medical;
+    if (typeof medical.refreshProjection === "function") await medical.refreshProjection();
+    const grant = appState.medical.grants.find((candidate) => candidate.grantId === pet.grantId);
+    if (!grant || grant.petId !== pet.petId || grant.granteeAccountId !== appState.session.accountId ||
+      !localGrantEffectivelyActive(grant.grantId)) {
+      throw new Error("Данные доступа ещё синхронизируются или доступ уже закрыт. Обновите список и повторите попытку.");
+    }
+    relinquishTarget.value = { petId: pet.petId, petName: pet.name, grantId: grant.grantId };
+    relinquishConfirm.value = true;
+  } catch (reason) {
+    alertStore.error(reason, "Не удалось проверить доступ.");
+  } finally {
+    busy.value = false;
+  }
 }
 
 async function relinquish() {
   const target = relinquishTarget.value;
   if (!target) return;
-  const succeeded = await perform(() => requireRepository().medical.relinquishAccess(target.grantId));
+  const succeeded = await perform(async () => {
+    await requireCurrentGrantedAccess(target.petId, target.grantId);
+    await requireRepository().medical.relinquishAccess(target.grantId);
+  });
   if (!succeeded) return;
   await refreshAccesses();
   alertStore.success(`Вы отказались от доступа к медицинской карте ${target.petName}.`);
@@ -572,24 +647,25 @@ watch(delegationPageCount, (pageCount) => {
             </tr>
           </thead>
           <tbody>
-            <tr v-for="row in homeRows" :key="row.petId">
+            <tr v-for="row in homeRows" :key="row.grantId || row.requestId || `${row.petId}:${row.status}`">
               <td class="owner-access-doctor doctor-access-pet" data-label="Питомец">
                 <div class="owner-access-controlled">
                   <div class="doctor-access-pet-identity">
                     <RouterLink
-                      v-if="row.status === 'granted'"
+                      v-if="row.status === 'granted' && row.projectionReady"
                       class="doctor-access-pet-link"
-                      :to="`/doctor/pets/${row.petId}`"
+                      :to="{ path: `/doctor/pets/${row.petId}`, query: { grantId: row.grantId } }"
                     >
                       <strong>{{ [row.species, row.name].filter(Boolean).join(' ') }}</strong>
                     </RouterLink>
                     <strong v-else>{{ [row.species, row.name].filter(Boolean).join(' ') }}</strong>
                     <small>{{ row.petId }}</small>
+                    <small v-if="(row.status === 'granted' || row.status === 'requested') && !row.projectionReady">Данные синхронизируются…</small>
                   </div>
-                  <div v-if="row.status === 'granted'" class="row-actions">
+                  <div v-if="row.status === 'granted' && row.projectionReady" class="row-actions">
                     <RouterLink
                       class="primary-action inline access-icon-action"
-                      :to="`/doctor/pets/${row.petId}`"
+                      :to="{ path: `/doctor/pets/${row.petId}`, query: { grantId: row.grantId } }"
                       title="Открыть медицинскую карту"
                       aria-label="Открыть медицинскую карту"
                     >
@@ -604,18 +680,18 @@ watch(delegationPageCount, (pageCount) => {
               <td data-label="Доступ">
                 <AccessStatusField :status="row.status">
                   <button
-                    v-if="row.status === 'requested' && row.requestId"
+                    v-if="row.status === 'requested' && row.requestId && row.projectionReady"
                     class="outline-action inline danger-outline access-icon-action"
                     type="button"
                     :disabled="busy"
                     title="Отозвать запрос на доступ"
                     aria-label="Отозвать запрос на доступ"
-                    @click="cancelPendingRequest(row.requestId)"
+                    @click="cancelPendingRequest(row.petId, row.requestId)"
                   >
                     <AppIcon name="close" />
                   </button>
                   <button
-                    v-else-if="row.status === 'granted'"
+                    v-else-if="row.status === 'granted' && row.grantId && row.projectionReady"
                     class="outline-action inline danger-outline access-icon-action"
                     type="button"
                     :disabled="busy"
@@ -637,9 +713,9 @@ watch(delegationPageCount, (pageCount) => {
                   :delegation-allowed="row.permissions?.includes('delegate')"
                 >
                   <RouterLink
-                    v-if="row.status === 'granted' && row.permissions?.includes('delegate')"
+                    v-if="row.status === 'granted' && row.projectionReady && row.permissions?.includes('delegate')"
                     class="outline-action inline access-icon-action"
-                    :to="`/doctor/pets/${row.petId}/delegate`"
+                    :to="{ path: `/doctor/pets/${row.petId}/delegate`, query: { grantId: row.grantId } }"
                     title="Делегировать доступ"
                     aria-label="Делегировать доступ"
                   >
@@ -697,8 +773,8 @@ watch(delegationPageCount, (pageCount) => {
           >
             <AppIcon name="chevron-left" />
           </RouterLink>
-          <RouterLink v-if="canDelegate" class="outline-action inline owner-profile-action" :to="`/doctor/pets/${petId}/delegate`" title="Делегировать доступ" aria-label="Делегировать доступ"><AppIcon name="share" /></RouterLink>
-          <button class="outline-action inline danger-outline owner-profile-action" type="button" title="Отказаться от доступа" aria-label="Отказаться от доступа" @click="openRelinquish(selectedPet)"><AppIcon name="close" /></button>
+          <RouterLink v-if="canDelegate" class="outline-action inline owner-profile-action" :to="{ path: `/doctor/pets/${petId}/delegate`, query: { grantId: selectedGrant?.grantId } }" title="Делегировать доступ" aria-label="Делегировать доступ"><AppIcon name="share" /></RouterLink>
+          <button v-if="selectedGrant" class="outline-action inline danger-outline owner-profile-action" type="button" title="Отказаться от доступа" aria-label="Отказаться от доступа" @click="openSelectedPetRelinquish"><AppIcon name="close" /></button>
         </template>
       </PetProfileView>
 
@@ -796,7 +872,7 @@ watch(delegationPageCount, (pageCount) => {
       @add="openDelegationDialog"
     >
       <template #headerActions>
-        <RouterLink class="outline-action inline owner-profile-action" :to="`/doctor/pets/${selectedPet.petId}`" title="Назад к медицинской карте" aria-label="Назад к медицинской карте"><AppIcon name="chevron-left" /></RouterLink>
+        <RouterLink class="outline-action inline owner-profile-action" :to="{ path: `/doctor/pets/${selectedPet.petId}`, query: { grantId: selectedGrant?.grantId } }" title="Назад к медицинской карте" aria-label="Назад к медицинской карте"><AppIcon name="chevron-left" /></RouterLink>
       </template>
       <p v-if="!canDelegate" class="form-alert error">Текущий доступ не разрешает делегирование.</p>
       <ModalDialog v-model="delegationDialogOpen" title="Делегировать доступ" :busy="busy">

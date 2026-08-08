@@ -24,6 +24,10 @@ const repositoryMocks = vi.hoisted(() => ({
 }));
 const clipboardWriteText = vi.fn().mockResolvedValue(undefined);
 const searchDoctorDirectory = vi.hoisted(() => vi.fn());
+const directoryMutationMocks = vi.hoisted(() => ({
+  syncPet: vi.fn(),
+  deletePet: vi.fn(),
+}));
 
 vi.mock("../src/appStore", async () => {
   const { reactive, readonly } = await import("vue");
@@ -52,12 +56,12 @@ vi.mock("../src/appStore", async () => {
   });
   return {
     appState: readonly(state),
-    deleteDirectoryPet: vi.fn().mockResolvedValue(undefined),
+    deleteDirectoryPet: directoryMutationMocks.deletePet,
     logout: vi.fn().mockResolvedValue(undefined),
     requireRepository: () => ({ medical: repositoryMocks }),
     searchDoctorDirectory,
     setOwnerMedicalState: (medical: MedicalSnapshot) => { state.medical = medical; },
-    syncDirectoryPet: vi.fn().mockResolvedValue(undefined),
+    syncDirectoryPet: directoryMutationMocks.syncPet,
   };
 });
 
@@ -161,6 +165,8 @@ beforeEach(async () => {
   repositoryMocks.createPet.mockResolvedValue("pet-new");
   repositoryMocks.grantDoctor.mockResolvedValue("grant-new");
   repositoryMocks.approveAccessRequest.mockResolvedValue("grant-approved");
+  directoryMutationMocks.syncPet.mockResolvedValue({ synchronized: true });
+  directoryMutationMocks.deletePet.mockResolvedValue({ synchronized: true });
   searchDoctorDirectory.mockResolvedValue({ items: [], page: 1, pageSize: 50, total: 0, pageCount: 1 });
   await setMedical(snapshot());
 });
@@ -279,6 +285,7 @@ describe("Owner pages", () => {
   });
 
   it("offers fixed species and sex values and creates a complete profile with notes", async () => {
+    directoryMutationMocks.syncPet.mockResolvedValueOnce({ synchronized: false });
     const wrapper = await mountAt("/owner/pets/new", "owner-pet-create");
     expect(wrapper.get(".workspace-topbar h1").text()).toBe("Кабинет владельца");
     expect(wrapper.get(".owner-section-heading h2").text()).toBe("Добавить питомца");
@@ -322,6 +329,14 @@ describe("Owner pages", () => {
       weightKg: 4.8,
       notes: "Не любит переноску",
     }));
+    expect(directoryMutationMocks.syncPet).toHaveBeenCalledWith({
+      petId: "pet-new",
+      species: "Кошка",
+      name: "Боня",
+    });
+    expect(repositoryMocks.createPet).toHaveBeenCalledOnce();
+    expect(wrapper.vm.$route.path).toBe("/owner/pets/pet-new");
+    expect(wrapper.get('[role="status"]').text()).toContain("Публикация в каталоге продолжится автоматически");
   });
 
   it("shows supported-field validation and photo errors in the form", async () => {
@@ -564,6 +579,16 @@ describe("Owner pages", () => {
     await flushPromises();
     expect(repositoryMocks.enableGrantDelegation).toHaveBeenCalledWith("grant-3");
 
+    searchDoctorDirectory.mockResolvedValueOnce({
+      items: [{
+        accountId: "doctor-3",
+        firstName: "Виктор",
+        lastName: "Врач",
+        displayName: "Виктор Врач",
+        updatedAt: "2026-07-17T10:00:00.000Z",
+      }],
+      page: 1, pageSize: 50, total: 1, pageCount: 1,
+    });
     await revokedRow.get('button[title="Предоставить доступ повторно"]').trigger("click");
     await flushPromises();
     expect(repositoryMocks.grantDoctor).toHaveBeenCalledWith(
@@ -647,6 +672,33 @@ describe("Owner pages", () => {
     expect(wrapper.get('[role="status"]').text()).toContain("Доступ предоставлен.");
   });
 
+  it("revalidates a selected doctor before granting access", async () => {
+    await setMedical(snapshot({ pets: [pet] }));
+    const doctor = {
+      accountId: "doctor-unavailable",
+      firstName: "Мария",
+      lastName: "Ветеринар",
+      displayName: "Мария Ветеринар",
+      updatedAt: "2026-07-21T10:00:00.000Z",
+    };
+    searchDoctorDirectory
+      .mockResolvedValueOnce({ items: [doctor], page: 1, pageSize: 50, total: 1, pageCount: 1 })
+      .mockResolvedValueOnce({ items: [], page: 1, pageSize: 50, total: 0, pageCount: 1 });
+    const wrapper = await mountAt("/owner/pets/pet-1/access", "owner-pet-access");
+    await wrapper.get('.owner-page-heading button[title="Предоставить доступ"]').trigger("click");
+    const dialog = wrapper.get('[role="dialog"]');
+    await labelled(wrapper, "ФИО врача, его часть или полный идентификатор").get("input").setValue("Мария");
+    await dialog.get("form").trigger("submit");
+    await flushPromises();
+    await dialog.get('.list-row button[title="Выбрать врача"]').trigger("click");
+    await dialog.findAll("form")[1]!.trigger("submit");
+    await flushPromises();
+
+    expect(searchDoctorDirectory).toHaveBeenLastCalledWith("doctor-unavailable", 1, 50, "id");
+    expect(repositoryMocks.grantDoctor).not.toHaveBeenCalled();
+    expect(dialog.get('[role="alert"]').text()).toContain("больше недоступен");
+  });
+
   it("renders a missing-pet state and confirms deletion before returning home", async () => {
     const missing = await mountAt("/owner/pets/missing", "owner-pet-detail");
     expect(missing.text()).toContain("Питомец не найден");
@@ -687,6 +739,7 @@ describe("Owner pages", () => {
 
     await deleteButton.trigger("click");
     expect(detail.get('[role="alertdialog"]').text()).toContain("Удалить профиль Шарик?");
+    directoryMutationMocks.deletePet.mockResolvedValueOnce({ synchronized: false });
     await detail.get('[role="alertdialog"]').findAll("button")
       .find((button) => button.text() === "Удалить питомца")!
       .trigger("click");
@@ -694,6 +747,7 @@ describe("Owner pages", () => {
 
     expect(repositoryMocks.deletePet).toHaveBeenCalledWith("pet-1");
     expect(detail.vm.$route.path).toBe("/owner/home");
+    expect(detail.get('[role="status"]').text()).toContain("Удаление из каталога продолжится автоматически");
   });
 
   it("shows an age interval and birth year in one age field when no exact birth date is stored", async () => {

@@ -6,6 +6,7 @@ import {
   decryptPayload,
   deviceProjectionKey,
   InMemorySignedEventRepository,
+  stableSerialize,
   unwrapDataKey,
   type AccountProfile,
   type ActiveRoleContext,
@@ -190,7 +191,18 @@ export class ControlRepository {
 
   async updateProfile(profile: AccountProfile, operationId?: string): Promise<void> {
     if (operationId && this.events.some((event) => event.eventType === "profile.updated" && event.operationId === operationId)) return;
-    const parent = this.events.findLast((event) => event.eventType === "profile.updated" && event.aggregateId === profile.accountId)?.eventId;
+    const latestRevision = Math.max(0, ...this.events
+      .filter((event) => event.eventType === "profile.updated" && event.aggregateId === profile.accountId)
+      .map((event) => Number(event.metadata.revision) || 0));
+    if (!Number.isInteger(profile.revision) || profile.revision <= latestRevision) {
+      throw Object.assign(new Error(localOperationErrorText("PROFILE_REVISION_STALE")), {
+        code: "PROFILE_REVISION_STALE",
+      });
+    }
+    const parent = this.events
+      .filter((event) => event.eventType === "profile.updated" && event.aggregateId === profile.accountId)
+      .sort((left, right) => Number(right.metadata.revision ?? 0) - Number(left.metadata.revision ?? 0) ||
+        right.createdAt.localeCompare(left.createdAt))[0]?.eventId;
     const recipients = this.profileRecipients(profile.accountId);
     if (profile.accountId !== this.context.accountId && !recipients.some((device) => device.accountId === profile.accountId)) {
       throw Object.assign(new Error("The target account has no active profile encryption recipient."), {
@@ -204,6 +216,14 @@ export class ControlRepository {
       parents: parent ? [parent] : [this.latestDeviceEventId()].filter(Boolean),
       recipients: recipients.length ? recipients : [this.certificate],
     }));
+  }
+
+  async nextProfileRevision(accountId = this.context.accountId): Promise<number> {
+    await this.refreshProjection();
+    const latestRevision = Math.max(0, ...[...this.signed.state.events.values()]
+      .filter((event) => event.eventType === "profile.updated" && event.aggregateId === accountId)
+      .map((event) => Number(event.metadata.revision) || 0));
+    return latestRevision + 1;
   }
 
   async requestRole(role: Role, profileRevision: number): Promise<void> {
@@ -247,6 +267,12 @@ export class ControlRepository {
   async decideRole(input: RoleDecisionInput): Promise<void> {
     const current = this.signed.state.roles.get(roleKey(input.accountId, input.role));
     if (!current) throw new Error("Заявка роли не найдена.");
+    if (current.request.status === input.status) return;
+    if (input.expectedStatus && current.request.status !== input.expectedStatus) {
+      throw Object.assign(new Error("Статус заявки изменился. Обновите список и повторите действие."), {
+        code: "ROLE_STATUS_CHANGED",
+      });
+    }
     const operationId = crypto.randomUUID();
     const restoring = input.status === "approved" &&
       ["not_requested", "rejected", "revoked"].includes(current.request.status);
@@ -295,13 +321,18 @@ export class ControlRepository {
   }
 
   private async rewrapProfilesForAdministrator(accountId: string, operationId: string): Promise<void> {
-    const latest = new Map<string, SignedEvent>();
+    const latest = new Map<string, { source: SignedEvent; profile: AccountProfile }>();
     for (const event of this.events) {
-      if (event.eventType === "profile.updated" || event.eventType === "profile.key.rewrapped") latest.set(event.aggregateId, event);
-    }
-    for (const source of latest.values()) {
-      const profile = await this.decrypt<AccountProfile>(source);
+      if (event.eventType !== "profile.updated" && event.eventType !== "profile.key.rewrapped") continue;
+      const profile = await this.decrypt<AccountProfile>(event);
       if (!profile) continue;
+      const current = latest.get(profile.accountId);
+      if (!current || profile.revision > current.profile.revision ||
+        (profile.revision === current.profile.revision && profile.updatedAt > current.profile.updatedAt)) {
+        latest.set(profile.accountId, { source: event, profile });
+      }
+    }
+    for (const { source, profile } of latest.values()) {
       await this.append(await this.factory.create({
         database: "control", eventType: "profile.key.rewrapped", aggregateId: profile.accountId,
         resourceId: source.eventId, operationId, parents: [source.eventId],
@@ -313,7 +344,10 @@ export class ControlRepository {
 
   async deleteAccount(operationId: string): Promise<void> {
     if (this.events.some((event) => event.eventType === "account.deleted" && event.operationId === operationId)) return;
-    const parent = this.events.findLast((event) => event.eventType === "profile.updated" && event.aggregateId === this.context.accountId)?.eventId;
+    const parent = this.events
+      .filter((event) => event.eventType === "profile.updated" && event.aggregateId === this.context.accountId)
+      .sort((left, right) => Number(right.metadata.revision ?? 0) - Number(left.metadata.revision ?? 0) ||
+        right.createdAt.localeCompare(left.createdAt))[0]?.eventId;
     await this.append(await this.factory.create({
       database: "control", eventType: "account.deleted", aggregateId: this.context.accountId,
       operationId, metadata: { accountId: this.context.accountId }, cleartext: { deletedAt: new Date().toISOString() },
@@ -322,6 +356,8 @@ export class ControlRepository {
   }
 
   async revokeDevice(deviceId: string): Promise<void> {
+    const projected = this.signed.state.devices.get(deviceProjectionKey(this.context.accountId, deviceId));
+    if (!projected || projected.status === "revoked") return;
     const parent = this.events.findLast((event) => event.eventType.startsWith("device.") &&
       event.aggregateId === this.context.accountId && event.resourceId === deviceId)?.eventId;
     await this.append(await this.factory.create({
@@ -332,9 +368,30 @@ export class ControlRepository {
   }
 
   async rotateCurrentDevice(certificate: DeviceCertificate): Promise<void> {
+    const projected = this.signed.state.devices.get(deviceProjectionKey(this.context.accountId, certificate.deviceId));
+    if (projected?.status === "active" && projected.userKeyVersion >= certificate.userKeyVersion &&
+      stableSerialize(projected.signingPublicKey) === stableSerialize(certificate.signingPublicKey) &&
+      stableSerialize(projected.encryptionPublicKey) === stableSerialize(certificate.encryptionPublicKey)) return;
+    if (!projected || projected.status !== "active") {
+      throw Object.assign(new Error("The current device is not active in the protected journal."), {
+        code: "DEVICE_ROTATION_SOURCE_UNAVAILABLE",
+      });
+    }
+    const rotationKeys = projected.userKeyVersion === this.keys.version
+      ? this.keys
+      : await loadUserKeys(this.context.accountId, projected.userKeyVersion);
+    if (!rotationKeys) {
+      throw Object.assign(new Error("The previous device key is unavailable for rotation."), {
+        code: "DEVICE_ROTATION_KEY_UNAVAILABLE",
+      });
+    }
     const parent = this.events.findLast((event) => event.eventType.startsWith("device.") &&
       event.aggregateId === this.context.accountId && event.resourceId === certificate.deviceId)?.eventId;
-    await this.append(await this.factory.create({
+    const rotationFactory = new EventFactory({
+      context: { ...this.context, userKeyVersion: projected.userKeyVersion },
+      keys: rotationKeys,
+    });
+    await this.append(await rotationFactory.create({
       database: "control", eventType: "device.rotated", aggregateId: this.context.accountId, resourceId: certificate.deviceId,
       metadata: { accountId: this.context.accountId, certificate: certificate as unknown as Record<string, unknown> },
       cleartext: { certificate }, parents: parent ? [parent] : [], recipients: this.ownRecipients(),
@@ -367,8 +424,12 @@ export class ControlRepository {
       if (event.eventType === "profile.updated" || event.eventType === "profile.key.rewrapped") {
         const value = await this.decrypt<AccountProfile>(event);
         if (value) {
-          profiles.set(value.accountId, value);
-          if (event.aggregateId === this.context.accountId) profile = value;
+          const current = profiles.get(value.accountId);
+          if (!current || value.revision > current.revision ||
+            (value.revision === current.revision && value.updatedAt > current.updatedAt)) {
+            profiles.set(value.accountId, value);
+            if (event.aggregateId === this.context.accountId) profile = value;
+          }
         }
       }
       if (event.eventType === "notification.role-transition" && event.aggregateId === this.context.accountId) {

@@ -25,6 +25,7 @@ const props = defineProps<{
   title: string;
   profileName: string;
   settings?: boolean;
+  administratorPendingCount?: number;
 }>();
 
 const emit = defineEmits<{ signOut: [] }>();
@@ -64,7 +65,8 @@ const ownerRootNavigation: WorkspacePathNavItem = {
   exact: true,
 };
 const ownerPending = computed(() => ownerPendingApprovals(appState.medical));
-const administratorPendingCount = computed(() => administratorPendingRequestCount(appState.control));
+const administratorPendingCount = computed(() => props.administratorPendingCount
+  ?? administratorPendingRequestCount(appState.control));
 const ownerChildNavigation = computed<WorkspacePendingNavItem[]>(() => [
   { id: "owner-add-pet", label: "Добавить питомца", icon: "plus", path: "/owner/pets/new", exact: true, pendingCount: 0 },
   ...appState.medical.pets.map((pet) => ({

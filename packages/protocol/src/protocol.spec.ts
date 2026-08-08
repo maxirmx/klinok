@@ -118,7 +118,7 @@ describe("klinok protocol", () => {
       eventType: "profile.updated", aggregateId: certificate.accountId, resourceId: certificate.accountId,
       createdAt: "2026-07-10T10:01:00.000Z", actorAccountId: certificate.accountId, actorDeviceId: certificate.deviceId,
       orbitIdentityId: certificate.orbitIdentityId, activeRole, parents: [], keyVersion: 1,
-      proofIds: [proof], metadata: {},
+      proofIds: [proof], metadata: { revision: 1 },
       keyring: await wrapDataKey(dataKey, [{ recipientId: certificate.accountId, keyVersion: 1, publicKey: await importEncryptionPublicKey(certificate.encryptionPublicKey) }]),
       payload: await encryptPayload({ secret: "profile" }, dataKey),
       ...input,
@@ -166,6 +166,19 @@ describe("klinok protocol", () => {
     await expect(verifySignedEvent(selfEdit, ordinaryAdministrator.state)).resolves.toMatchObject({ accepted: true });
   });
 
+  it("keeps legacy same-revision profile events replayable", async () => {
+    const { keys, state } = await actorFixture();
+    const current = await signedFor(state, keys, { metadata: { revision: 2 } });
+    await expect(verifySignedEvent(current, state)).resolves.toMatchObject({ accepted: true });
+    applyAcceptedEvent(current, state);
+    const stale = await signedFor(state, keys, {
+      eventId: "stale-profile-revision",
+      metadata: { revision: 2 },
+    });
+
+    await expect(verifySignedEvent(stale, state)).resolves.toMatchObject({ accepted: true });
+  });
+
   it("retains a deferred child across imports and accepts it after its parent arrives", async () => {
     const { keys, certificate, state } = await actorFixture();
     const repository = new InMemorySignedEventRepository();
@@ -173,7 +186,11 @@ describe("klinok protocol", () => {
     repository.state.roles.set(roleProjectionKey(certificate.accountId, "owner"), state.roles.get(roleProjectionKey(certificate.accountId, "owner"))!);
     repository.state.knownEvents.add("owner-proof");
     const parent = await signedFor(state, keys, { eventId: "parent-event" });
-    const child = await signedFor(state, keys, { eventId: "child-event", parents: [parent.eventId] });
+    const child = await signedFor(state, keys, {
+      eventId: "child-event",
+      parents: [parent.eventId],
+      metadata: { revision: 2 },
+    });
 
     const first = await repository.import([child]);
     expect(first.accepted).toEqual([]);
@@ -683,6 +700,66 @@ describe("klinok protocol", () => {
       metadata: { petId: request.petId, ownerAccountId: "account-1", keyVersion: 1, grantId: grant.grantId },
     });
     await expect(verifySignedEvent(shared, state)).resolves.toMatchObject({ accepted: true });
+  });
+
+  it("keeps legacy duplicate grants replayable for command-layer cleanup", async () => {
+    const { keys, state } = await actorFixture("owner");
+    state.petOwners.set("pet-1", "account-1");
+    state.grants.set("grant-existing", {
+      grantId: "grant-existing",
+      petId: "pet-1",
+      grantorAccountId: "account-1",
+      granteeAccountId: "doctor-1",
+      actions: ["read"],
+      petKeyVersion: 1,
+      status: "active",
+      createdAt: "2026-07-10T10:00:00.000Z",
+    });
+    const duplicateGrant = {
+      grantId: "grant-duplicate",
+      petId: "pet-1",
+      grantorAccountId: "account-1",
+      granteeAccountId: "doctor-1",
+      actions: ["read"] as const,
+      petKeyVersion: 1,
+      status: "active" as const,
+      createdAt: "2026-07-10T10:01:00.000Z",
+    };
+    const duplicate = await signedFor(state, keys, {
+      database: "medical",
+      eventType: "grant.created",
+      aggregateId: "pet-1",
+      resourceId: duplicateGrant.grantId,
+      metadata: { petId: "pet-1", grant: duplicateGrant },
+    });
+
+    await expect(verifySignedEvent(duplicate, state)).resolves.toMatchObject({ accepted: true });
+  });
+
+  it("keeps pet tombstones terminal", async () => {
+    const { keys, state } = await actorFixture("owner");
+    state.petOwners.set("pet-1", "account-1");
+    const tombstone = await signedFor(state, keys, {
+      database: "medical",
+      eventType: "pet.tombstoned",
+      aggregateId: "pet-1",
+      resourceId: "pet-1",
+      metadata: { petId: "pet-1", ownerAccountId: "account-1", keyVersion: 1 },
+    });
+    await expect(verifySignedEvent(tombstone, state)).resolves.toMatchObject({ accepted: true });
+    applyAcceptedEvent(tombstone, state);
+
+    const staleUpdate = await signedFor(state, keys, {
+      database: "medical",
+      eventType: "pet.updated",
+      aggregateId: "pet-1",
+      resourceId: "pet-1",
+      metadata: { petId: "pet-1", ownerAccountId: "account-1", keyVersion: 1 },
+    });
+    await expect(verifySignedEvent(staleUpdate, state)).resolves.toMatchObject({
+      accepted: false,
+      code: "PET_TOMBSTONED",
+    });
   });
 
   it("lets the pet Owner toggle future delegation without revoking existing child grants", async () => {

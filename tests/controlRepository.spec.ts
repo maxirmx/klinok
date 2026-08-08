@@ -2,6 +2,7 @@
 // All rights reserved.
 // This file is a part of Klinok application
 
+import "fake-indexeddb/auto";
 import { describe, expect, it } from "vitest";
 import {
   exportUserKeySet,
@@ -11,6 +12,7 @@ import {
 } from "@klinok/protocol";
 import { ControlRepository } from "../src/repositories/controlRepository";
 import { MemoryEventTransport } from "../src/repositories/eventTransport";
+import { storeExportedUserKeys } from "../src/repositories/deviceVault";
 
 async function fixture() {
   const keys = await generateUserKeySet();
@@ -99,6 +101,105 @@ describe("control repository", () => {
     expect((await second.snapshot()).devices[0]?.userKeyVersion).toBe(1);
   });
 
+  it("repairs an auth-side rotation by signing the transition with the retained previous key", async () => {
+    const transport = new MemoryEventTransport();
+    await transport.initialize();
+    const accountId = `rotation-repair-${crypto.randomUUID()}`;
+    const oldKeys = await generateUserKeySet(1);
+    const oldExported = await exportUserKeySet(oldKeys);
+    const oldContext: ActiveRoleContext = {
+      accountId,
+      deviceId: "surviving-device",
+      orbitIdentityId: "surviving-orbit",
+      role: "owner",
+      roleProofId: "setup-owner",
+      userKeyVersion: 1,
+    };
+    const oldCertificate: DeviceCertificate = {
+      deviceId: oldContext.deviceId,
+      accountId,
+      orbitIdentityId: oldContext.orbitIdentityId,
+      status: "active",
+      userKeyVersion: 1,
+      signingPublicKey: oldExported.signingPublicKey,
+      encryptionPublicKey: oldExported.encryptionPublicKey,
+      issuedAt: "2026-07-10T10:00:00.000Z",
+      attestation: "old-attestation",
+    };
+    const oldRepository = new ControlRepository(
+      transport,
+      oldContext,
+      oldKeys,
+      oldCertificate,
+      "bootstrap-administrator",
+    );
+    await oldRepository.initialize({
+      profile: { firstName: "Ольга", lastName: "Владелец" },
+      requestedRoles: ["owner"],
+    });
+
+    const nextKeys = await generateUserKeySet(2);
+    const nextExported = await exportUserKeySet(nextKeys);
+    await storeExportedUserKeys(accountId, oldExported);
+    await storeExportedUserKeys(accountId, nextExported);
+    const nextCertificate: DeviceCertificate = {
+      ...oldCertificate,
+      userKeyVersion: 2,
+      signingPublicKey: nextExported.signingPublicKey,
+      encryptionPublicKey: nextExported.encryptionPublicKey,
+      issuedAt: "2026-07-11T10:00:00.000Z",
+      attestation: "new-attestation",
+    };
+    const repairedRepository = new ControlRepository(
+      transport,
+      { ...oldContext, userKeyVersion: 2 },
+      nextKeys,
+      nextCertificate,
+      "bootstrap-administrator",
+    );
+    await repairedRepository.initialize();
+
+    await repairedRepository.rotateCurrentDevice(nextCertificate);
+
+    expect((await repairedRepository.snapshot()).devices[0]).toMatchObject({
+      deviceId: "surviving-device",
+      status: "active",
+      userKeyVersion: 2,
+    });
+    expect((await transport.list("control")).findLast((event) => event.eventType === "device.rotated"))
+      .toMatchObject({ keyVersion: 1 });
+  });
+
+  it("keeps profile revisions monotonic and ignores repeated device revocation", async () => {
+    const { repository, transport } = await fixture();
+    await repository.initialize({
+      profile: { firstName: "Иван", lastName: "Иванов" },
+      requestedRoles: ["owner"],
+    });
+    await repository.updateProfile({
+      accountId: "owner-account",
+      revision: 2,
+      firstName: "Пётр",
+      lastName: "Иванов",
+      updatedAt: "2026-07-11T10:00:00.000Z",
+    });
+
+    expect(await repository.nextProfileRevision()).toBe(3);
+    await expect(repository.updateProfile({
+      accountId: "owner-account",
+      revision: 2,
+      firstName: "Устаревшее",
+      lastName: "Имя",
+      updatedAt: "2026-07-12T10:00:00.000Z",
+    })).rejects.toMatchObject({ code: "PROFILE_REVISION_STALE" });
+    expect((await repository.snapshot()).profile).toMatchObject({ revision: 2, firstName: "Пётр" });
+
+    await repository.revokeDevice("owner-device");
+    await repository.revokeDevice("owner-device");
+    expect((await transport.list("control")).filter((event) => event.eventType === "device.revoked"))
+      .toHaveLength(1);
+  });
+
   it("attests the device, encrypts the profile, and immediately approves Owner", async () => {
     const { repository, transport } = await fixture();
     await repository.initialize({
@@ -150,11 +251,15 @@ describe("control repository", () => {
     const pending = (await administrator.snapshot()).pendingQueue.find((request) => request.accountId === "doctor-account")!;
     expect(pending).toMatchObject({ role: "doctor", status: "pending" });
     await administrator.decideRole({ accountId: pending.accountId, role: pending.role, status: "approved" });
+    await administrator.decideRole({ accountId: pending.accountId, role: pending.role, status: "approved" });
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect((await doctor.snapshot()).roles).toEqual(expect.arrayContaining([expect.objectContaining({ role: "doctor", status: "approved" })]));
     const decision = (await transport.list("control")).find((event) =>
       event.eventType === "role.approved" && event.aggregateId === "doctor-account",
     )!;
+    expect((await transport.list("control")).filter((event) =>
+      event.eventType === "role.approved" && event.aggregateId === "doctor-account",
+    )).toHaveLength(1);
     const operationEvents = (await transport.list("control")).filter((event) => event.operationId === decision.operationId);
     expect(operationEvents.map((event) => event.eventType)).toEqual(expect.arrayContaining([
       "role.approved", "audit.role-transition", "notification.role-transition", "email.role-transition",
@@ -233,7 +338,18 @@ describe("control repository", () => {
       request.accountId === "doctor-account" && request.role === "doctor",
     )!;
 
-    await administrator.decideRole({ accountId: rejected.accountId, role: rejected.role, status: "approved" });
+    await expect(administrator.decideRole({
+      accountId: rejected.accountId,
+      role: rejected.role,
+      status: "approved",
+      expectedStatus: "pending",
+    })).rejects.toMatchObject({ code: "ROLE_STATUS_CHANGED" });
+    await administrator.decideRole({
+      accountId: rejected.accountId,
+      role: rejected.role,
+      status: "approved",
+      expectedStatus: "rejected",
+    });
     await new Promise((resolve) => setTimeout(resolve, 0));
 
     const events = await transport.list("control");

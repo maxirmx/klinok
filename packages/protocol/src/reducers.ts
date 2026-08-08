@@ -122,6 +122,7 @@ export function applyAcceptedEvent(event: SignedEvent, state: ProtocolState): vo
     });
   }
   if (event.eventType === "pet.created") state.petOwners.set(event.aggregateId, event.actorAccountId);
+  if (event.eventType === "pet.tombstoned") state.tombstonedPets.add(event.aggregateId);
   if (event.eventType === "grant.requested") {
     state.grantRequests.set(event.resourceId, {
       request: event.metadata.request as unknown as PetAccessRequest,
@@ -174,6 +175,15 @@ export function applyAcceptedEvent(event: SignedEvent, state: ProtocolState): vo
       ...grant,
       actions: [...event.metadata.actions as PetAccessGrant["actions"]],
     });
+  }
+  if (event.eventType === "pet.key.rotated") {
+    const petId = String(event.metadata.petId ?? event.aggregateId);
+    const keyVersion = Number(event.metadata.keyVersion);
+    for (const [grantId, grant] of state.grants) {
+      if (grant.petId === petId && isGrantEffectivelyActive(state, grant)) {
+        state.grants.set(grantId, { ...grant, petKeyVersion: keyVersion });
+      }
+    }
   }
   if (event.eventType === "medical.record.confirmed") state.confirmedRecords.add(event.resourceId);
 }

@@ -13,6 +13,7 @@ import AdministratorScreen from "../src/screens/AdministratorScreen.vue";
 const appMocks = vi.hoisted(() => ({
   decideRole: vi.fn().mockResolvedValue(undefined),
   updateAdministratorUserProfile: vi.fn(),
+  lookupAdministratorProfiles: vi.fn(),
   directoryUsers: [] as DirectoryUserDto[],
   loadAdministratorUsers: vi.fn(async (
     query = "",
@@ -40,6 +41,9 @@ const appMocks = vi.hoisted(() => ({
       pageSize,
       total: items.length,
       pageCount,
+      pendingCount: appMocks.directoryUsers.reduce((count, user) => count
+        + (user.roleStatuses.doctor === "pending" ? 1 : 0)
+        + (user.roleStatuses.administrator === "pending" ? 1 : 0), 0),
     };
   }),
   logout: vi.fn().mockResolvedValue(undefined),
@@ -72,6 +76,7 @@ vi.mock("../src/appStore", async () => {
     appState: readonly(state),
     decideRole: appMocks.decideRole,
     loadAdministratorUsers: appMocks.loadAdministratorUsers,
+    lookupAdministratorProfiles: appMocks.lookupAdministratorProfiles,
     updateAdministratorUserProfile: appMocks.updateAdministratorUserProfile,
     logout: appMocks.logout,
     getConfig: () => ({ p2p: { bootstrapAccountId: "bootstrap-administrator" } }),
@@ -210,13 +215,18 @@ function rowFor(wrapper: VueWrapper, text: string) {
 beforeEach(async () => {
   vi.clearAllMocks();
   appMocks.updateAdministratorUserProfile.mockImplementation(async (accountId, input) => ({
-    accountId,
-    firstName: input.firstName,
-    lastName: input.lastName,
-    ...(input.patronymic ? { patronymic: input.patronymic } : {}),
-    displayName: [input.firstName, input.patronymic, input.lastName].filter(Boolean).join(" "),
-    updatedAt: "2026-07-12T10:00:00.000Z",
+    profile: {
+      accountId,
+      firstName: input.firstName,
+      lastName: input.lastName,
+      ...(input.patronymic ? { patronymic: input.patronymic } : {}),
+      displayName: [input.firstName, input.patronymic, input.lastName].filter(Boolean).join(" "),
+      updatedAt: "2026-07-12T10:00:00.000Z",
+    },
+    projectionSynchronized: true,
   }));
+  appMocks.lookupAdministratorProfiles.mockImplementation(async (accountIds: string[]) =>
+    appMocks.directoryUsers.filter((profile) => accountIds.includes(profile.accountId)));
   localStorage.clear();
   await setState({});
 });
@@ -258,6 +268,7 @@ describe("Administrator pages", () => {
       ],
       roles: [{ ...pendingDoctor, status: "approved" }, role("doctor-2", "doctor", "approved")],
     });
+    await wrapper.get<HTMLInputElement>('.administrator-search input').setValue("Врач");
     await flushPromises();
     expect(wrapper.find(".workspace-sidebar-nav .pending-count-badge").exists()).toBe(false);
     expect(pendingFilter.attributes("disabled")).toBeDefined();
@@ -316,8 +327,8 @@ describe("Administrator pages", () => {
     ]);
   });
 
-  it("shows actions when a fresh directory status arrives before the local role projection", async () => {
-    await setState({ profiles: [profile("doctor-1", "Анна", "Врач")] });
+  it("uses the directory identity when its status arrives before the local role projection", async () => {
+    await setState({ profiles: [] });
     appMocks.directoryUsers = [{
       ...directoryUser("doctor-1", "Анна Врач"),
       roleStatuses: { owner: "approved", doctor: "pending", administrator: "not_requested" },
@@ -331,13 +342,78 @@ describe("Administrator pages", () => {
     ]);
 
     await doctorCell.get('button[title="Одобрить роль «Ветеринар»"]').trigger("click");
-    await wrapper.get('[role="dialog"] form').trigger("submit");
+    const dialog = wrapper.get('[role="dialog"]');
+    expect(dialog.get(".person-identity-name").text()).toBe("Анна Врач");
+    expect(dialog.get(".person-identity-id").text()).toBe("doctor-1");
+    expect(dialog.text()).not.toContain("ФИО не указано");
+    await dialog.get("form").trigger("submit");
     await flushPromises();
     expect(appMocks.decideRole).toHaveBeenCalledWith({
       accountId: "doctor-1",
       role: "doctor",
       status: "pending",
     }, "approved", undefined);
+  });
+
+  it("keeps the directory role status authoritative when the local projection is stale", async () => {
+    await setState({
+      profiles: [profile("doctor-1", "Анна", "Врач")],
+      roles: [role("doctor-1", "doctor", "approved")],
+    });
+    appMocks.directoryUsers = [{
+      ...directoryUser("doctor-1", "Анна Врач"),
+      roleStatuses: { owner: "approved", doctor: "pending", administrator: "not_requested" },
+    }];
+
+    const wrapper = await mountAt("/admin/home", "administrator-home");
+    const doctorCell = wrapper.get('[data-label="Ветеринар"]');
+
+    expect(doctorCell.text()).toContain("Запрошена");
+    expect(wrapper.get('.workspace-sidebar-nav a[href="/admin/home"] .pending-count-badge').text()).toBe("1");
+    expect(doctorCell.find('button[title="Одобрить роль «Ветеринар»"]').exists()).toBe(true);
+    expect(doctorCell.find('button[title="Отозвать роль «Ветеринар»"]').exists()).toBe(false);
+  });
+
+  it("refuses a stale modal decision after the directory status changes", async () => {
+    appMocks.directoryUsers = [{
+      ...directoryUser("doctor-1", "Анна Врач"),
+      roleStatuses: { owner: "approved", doctor: "pending", administrator: "not_requested" },
+    }];
+    const wrapper = await mountAt("/admin/home", "administrator-home");
+    await wrapper.get('button[title="Одобрить роль «Ветеринар»"]').trigger("click");
+    appMocks.directoryUsers = [{
+      ...directoryUser("doctor-1", "Анна Врач"),
+      roleStatuses: { owner: "approved", doctor: "approved", administrator: "not_requested" },
+    }];
+
+    await wrapper.get('[role="dialog"] form').trigger("submit");
+    await flushPromises();
+
+    expect(appMocks.decideRole).not.toHaveBeenCalled();
+    expect(wrapper.get(".workspace-alert").text()).toContain("Статус заявки изменился");
+    expect(wrapper.find('[role="dialog"]').exists()).toBe(true);
+  });
+
+  it("drops an optimistic role status when the directory resolves to another decision", async () => {
+    appMocks.directoryUsers = [{
+      ...directoryUser("doctor-1", "Анна Врач"),
+      roleStatuses: { owner: "approved", doctor: "pending", administrator: "not_requested" },
+    }];
+    const wrapper = await mountAt("/admin/home", "administrator-home");
+    await wrapper.get('button[title="Одобрить роль «Ветеринар»"]').trigger("click");
+    await wrapper.get('[role="dialog"] form').trigger("submit");
+    await flushPromises();
+    expect(wrapper.get('[data-label="Ветеринар"]').text()).toContain("Одобрена");
+
+    appMocks.directoryUsers = [{
+      ...directoryUser("doctor-1", "Анна Врач"),
+      roleStatuses: { owner: "approved", doctor: "rejected", administrator: "not_requested" },
+    }];
+    await wrapper.get<HTMLInputElement>('.administrator-search input').setValue("Анна");
+    await flushPromises();
+
+    expect(wrapper.get('[data-label="Ветеринар"]').text()).toContain("Отказ");
+    expect(wrapper.find('button[title="Восстановить роль «Ветеринар»"]').exists()).toBe(true);
   });
 
   it("hides profile editing from ordinary approved administrators", async () => {
@@ -359,9 +435,9 @@ describe("Administrator pages", () => {
       }],
       roles: [role("owner-1", "owner", "approved")],
     });
-    let resolveUpdate!: (value: DirectoryUserDto) => void;
+    let resolveUpdate!: (value: { profile: DirectoryUserDto; projectionSynchronized: boolean }) => void;
     appMocks.updateAdministratorUserProfile.mockImplementationOnce(() =>
-      new Promise<DirectoryUserDto>((resolve) => { resolveUpdate = resolve; }));
+      new Promise((resolve) => { resolveUpdate = resolve; }));
     const wrapper = await mountAt("/admin/home", "administrator-home");
     const initialLoads = appMocks.loadAdministratorUsers.mock.calls.length;
 
@@ -389,7 +465,7 @@ describe("Administrator pages", () => {
     expect(dialog.get('button[type="submit"]').attributes("disabled")).toBeDefined();
     expect(dialog.get('button[type="submit"]').text()).toBe("Сохранение…");
 
-    resolveUpdate(directoryUser("owner-1", "Анна Иванова"));
+    resolveUpdate({ profile: directoryUser("owner-1", "Анна Иванова"), projectionSynchronized: true });
     await flushPromises();
     expect(wrapper.find('[role="dialog"]').exists()).toBe(false);
     expect(wrapper.get(".workspace-alert").text()).toContain("ФИО пользователя изменено.");
@@ -431,7 +507,11 @@ describe("Administrator pages", () => {
     await rejectDialog.get("textarea").setValue("Документы не подтверждены");
     await rejectDialog.get("form").trigger("submit");
     await flushPromises();
-    expect(appMocks.decideRole).toHaveBeenCalledWith(pending, "rejected", "Документы не подтверждены");
+    expect(appMocks.decideRole).toHaveBeenCalledWith({
+      accountId: pending.accountId,
+      role: pending.role,
+      status: pending.status,
+    }, "rejected", "Документы не подтверждены");
     expect(wrapper.find('[role="alertdialog"]').exists()).toBe(false);
 
     await wrapper.get('button[title="Восстановить роль «Администратор»"]').trigger("click");
@@ -439,7 +519,11 @@ describe("Administrator pages", () => {
     expect(restoreDialog.find("textarea").exists()).toBe(false);
     await restoreDialog.get("form").trigger("submit");
     await flushPromises();
-    expect(appMocks.decideRole).toHaveBeenCalledWith(rejected, "approved", undefined);
+    expect(appMocks.decideRole).toHaveBeenCalledWith({
+      accountId: rejected.accountId,
+      role: rejected.role,
+      status: rejected.status,
+    }, "approved", undefined);
   });
 
   it("searches, paginates, and remembers the selected page size", async () => {
@@ -576,5 +660,37 @@ describe("Administrator pages", () => {
     await wrapper.findAll<HTMLSelectElement>(".administrator-audit-filters select")[1]!.setValue("restore");
     expect(wrapper.findAll(".administrator-audit-table tbody tr")).toHaveLength(1);
     expect(wrapper.get(".administrator-audit-table tbody tr").text()).toContain("Роль восстановлена");
+  });
+
+  it("loads current audit identities from the directory when local profiles cannot be decrypted", async () => {
+    const transition = event({
+      eventId: "directory-audit-transition",
+      eventType: "role.approved",
+      aggregateId: "doctor-without-profile",
+      actorAccountId: "administrator-without-profile",
+      metadata: { role: "doctor", status: "approved" },
+    });
+    const audit = event({
+      eventId: "directory-audit",
+      eventType: "audit.role-transition",
+      aggregateId: "doctor-without-profile",
+      actorAccountId: "administrator-without-profile",
+      parents: [transition.eventId],
+    });
+    await setState({ profiles: [], events: [transition, audit] });
+    appMocks.lookupAdministratorProfiles.mockResolvedValueOnce([
+      directoryUser("doctor-without-profile", "Анна Врач"),
+      directoryUser("administrator-without-profile", "Алексей Администратор"),
+    ]);
+
+    const wrapper = await mountAt("/admin/audit", "administrator-audit");
+
+    expect(appMocks.lookupAdministratorProfiles).toHaveBeenCalledWith([
+      "doctor-without-profile",
+      "administrator-without-profile",
+    ]);
+    expect(wrapper.get(".administrator-audit-table tbody tr").text()).toContain("Анна Врач");
+    expect(wrapper.get(".administrator-audit-table tbody tr").text()).toContain("Алексей Администратор");
+    expect(wrapper.text()).not.toContain("ФИО не указано");
   });
 });

@@ -55,6 +55,13 @@ type GrantDoctorOptions = {
   granteeDisplayName?: string;
   proofIds?: string[];
 };
+type DelegateGrantOptions = {
+  granteeDisplayName?: string;
+};
+
+function projectionPendingError(code: string, message: string): Error {
+  return Object.assign(new Error(message), { code });
+}
 
 function confirmationUpdatesProfile(event: SignedEvent): boolean {
   return event.eventType === "medical.record.confirmed" && (
@@ -114,6 +121,10 @@ export class MedicalRepository {
     this.disposed = false;
     await this.reloadNow();
     this.unsubscribe = this.transport.subscribe("medical", () => { void this.queueReload(); });
+  }
+
+  async refreshProjection(): Promise<void> {
+    await this.queueReload();
   }
 
   private queueReload(): Promise<void> {
@@ -211,6 +222,7 @@ export class MedicalRepository {
   }
 
   async updatePet(pet: PetProfile): Promise<void> {
+    await this.refreshProjection();
     const stored = await getPetKey(this.context.accountId, pet.petId);
     if (!stored) throw new Error("Ключ питомца недоступен.");
     const normalized = normalizePetProfile(pet);
@@ -229,9 +241,21 @@ export class MedicalRepository {
     }));
   }
 
-  async requestAccess(petId: string): Promise<string> {
+  async requestAccess(petId: string, expectedOwnerAccountId?: string): Promise<string> {
+    await this.refreshProjection();
     const ownerAccountId = this.control.signed.state.petOwners.get(petId);
-    if (!ownerAccountId) throw new Error("Питомец с таким идентификатором не найден.");
+    if (!ownerAccountId) {
+      throw projectionPendingError(
+        "PET_PROJECTION_PENDING",
+        "Данные питомца ещё синхронизируются. Повторите запрос через несколько секунд.",
+      );
+    }
+    if (expectedOwnerAccountId && ownerAccountId !== expectedOwnerAccountId) {
+      throw projectionPendingError(
+        "PET_DIRECTORY_STALE",
+        "Данные владельца питомца изменились. Обновите результаты поиска.",
+      );
+    }
     const activeGrant = [...this.control.signed.state.grants.values()].some((grant) =>
       grant.petId === petId && grant.granteeAccountId === this.context.accountId &&
       isGrantEffectivelyActive(this.control.signed.state, grant),
@@ -243,7 +267,10 @@ export class MedicalRepository {
     if (duplicate) throw new Error("Запрос этому владельцу уже отправлен.");
     const recipients = this.activeCertificates([ownerAccountId, this.context.accountId]);
     if (!recipients.some((certificate) => certificate.accountId === ownerAccountId)) {
-      throw new Error("У владельца нет активного устройства для получения запроса.");
+      throw projectionPendingError(
+        "OWNER_DEVICE_PROJECTION_PENDING",
+        "Устройство владельца ещё не появилось в защищённом журнале. Повторите запрос через несколько секунд.",
+      );
     }
     const profile = await this.control.profile();
     const displayName = [profile?.firstName, profile?.patronymic, profile?.lastName].filter(Boolean).join(" ");
@@ -285,6 +312,7 @@ export class MedicalRepository {
   }
 
   async cancelAccessRequest(requestId: string): Promise<void> {
+    await this.refreshProjection();
     const projection = this.control.signed.state.grantRequests.get(requestId);
     if (!projection || projection.request.status !== "pending") throw new Error("Ожидающий запрос не найден.");
     const request = projection.request;
@@ -301,6 +329,7 @@ export class MedicalRepository {
   }
 
   async rejectAccessRequest(requestId: string): Promise<void> {
+    await this.refreshProjection();
     const projection = this.control.signed.state.grantRequests.get(requestId);
     if (!projection || projection.request.status !== "pending") throw new Error("Ожидающий запрос не найден.");
     const request = projection.request;
@@ -317,6 +346,7 @@ export class MedicalRepository {
   }
 
   async approveAccessRequest(requestId: string): Promise<string> {
+    await this.refreshProjection();
     const projection = this.control.signed.state.grantRequests.get(requestId);
     if (!projection || projection.request.status !== "pending") throw new Error("Ожидающий запрос не найден.");
     const request = (await this.buildSnapshot()).accessRequests.find((candidate) => candidate.requestId === requestId);
@@ -337,6 +367,7 @@ export class MedicalRepository {
     actions: PetGrantAction[],
     options: GrantDoctorOptions = {},
   ): Promise<string> {
+    await this.refreshProjection();
     doctorAccountId = doctorAccountId.trim();
     if (!doctorAccountId) throw new Error("Идентификатор аккаунта врача не указан.");
     const granteeDisplayName = options.granteeDisplayName?.trim();
@@ -347,6 +378,20 @@ export class MedicalRepository {
       isGrantEffectivelyActive(this.control.signed.state, grant),
     );
     if (existing) throw new Error("У этого врача уже есть действующий доступ.");
+    const recipients = this.activeCertificates([this.context.accountId, doctorAccountId]);
+    if (!recipients.some((certificate) => certificate.accountId === doctorAccountId)) {
+      throw projectionPendingError(
+        "GRANTEE_DEVICE_PROJECTION_PENDING",
+        "Устройство врача ещё не появилось в защищённом журнале. Повторите выдачу доступа через несколько секунд.",
+      );
+    }
+    const doctorRole = this.control.signed.state.roles.get(roleProjectionKey(doctorAccountId, "doctor"));
+    if (doctorRole?.request.status !== "approved") {
+      throw projectionPendingError(
+        "GRANTEE_ROLE_PROJECTION_PENDING",
+        "Одобренная роль врача ещё не появилась в защищённом журнале. Обновите список и повторите попытку.",
+      );
+    }
     const requestProjection = options.requestId
       ? this.control.signed.state.grantRequests.get(options.requestId)
       : undefined;
@@ -378,7 +423,7 @@ export class MedicalRepository {
       cleartext: grant,
       parents: requestProjection ? [requestProjection.eventId] : [],
       ...(options.proofIds ? { proofIds: options.proofIds } : {}),
-      recipients: this.activeCertificates([this.context.accountId, doctorAccountId]), dataKey: stored.key,
+      recipients, dataKey: stored.key,
     }));
     const pet = (await this.buildSnapshot()).pets.find((candidate) => candidate.petId === petId) ?? null;
     if (pet) {
@@ -388,7 +433,7 @@ export class MedicalRepository {
         database: "medical", eventType: "pet.shared", aggregateId: petId, resourceId: petId,
         metadata: { petId, ownerAccountId: pet.ownerAccountId, keyVersion: stored.version, grantId }, cleartext: pet,
         parents: [...new Set([grantEvent.eventId, profileEvent?.eventId].filter((item): item is string => Boolean(item)))],
-        recipients: this.activeCertificates([this.context.accountId, doctorAccountId]), dataKey: stored.key,
+        recipients, dataKey: stored.key,
         ...(options.proofIds ? { proofIds: options.proofIds } : {}),
       }));
     }
@@ -396,6 +441,7 @@ export class MedicalRepository {
   }
 
   async deletePet(petId: string): Promise<void> {
+    await this.refreshProjection();
     const snapshot = await this.buildSnapshot();
     const pet = snapshot.pets.find((candidate) => candidate.petId === petId);
     if (!pet) throw new Error("Питомец не найден.");
@@ -416,23 +462,74 @@ export class MedicalRepository {
     await this.updatePet({ ...refreshed, tombstoned: true });
   }
 
-  async delegateGrant(parentGrantId: string, doctorAccountId: string, actions: PetGrantAction[]): Promise<string> {
+  async delegateGrant(
+    parentGrantId: string,
+    doctorAccountId: string,
+    actions: PetGrantAction[],
+    options: DelegateGrantOptions = {},
+  ): Promise<string> {
+    await this.refreshProjection();
     const parent = this.control.signed.state.grants.get(parentGrantId);
     if (!parent) throw new Error("Исходный доступ не найден.");
+    const requestedActions = [...new Set(actions)];
+    if (parent.granteeAccountId !== this.context.accountId ||
+      !isGrantEffectivelyActive(this.control.signed.state, parent) ||
+      !parent.actions.includes("delegate") ||
+      requestedActions.some((action) => !parent.actions.includes(action))) {
+      throw Object.assign(new Error(localOperationErrorText("GRANT_DELEGATION_FORBIDDEN")), {
+        code: "GRANT_DELEGATION_FORBIDDEN",
+      });
+    }
     const stored = await getPetKey(this.context.accountId, parent.petId);
     if (!stored) throw new Error("Ключ питомца недоступен.");
+    const existing = [...this.control.signed.state.grants.values()].find((candidate) =>
+      candidate.petId === parent.petId && candidate.granteeAccountId === doctorAccountId &&
+      isGrantEffectivelyActive(this.control.signed.state, candidate),
+    );
+    if (existing) throw new Error("У этого врача уже есть действующий доступ.");
+    const ownerAccountId = this.control.signed.state.petOwners.get(parent.petId);
+    const recipients = this.activeCertificates([
+      this.context.accountId,
+      doctorAccountId,
+      ...(ownerAccountId ? [ownerAccountId] : []),
+    ]);
+    if (!recipients.some((certificate) => certificate.accountId === doctorAccountId)) {
+      throw projectionPendingError(
+        "GRANTEE_DEVICE_PROJECTION_PENDING",
+        "Устройство врача ещё не появилось в защищённом журнале. Повторите делегирование через несколько секунд.",
+      );
+    }
+    const doctorRole = this.control.signed.state.roles.get(roleProjectionKey(doctorAccountId, "doctor"));
+    if (doctorRole?.request.status !== "approved") {
+      throw projectionPendingError(
+        "GRANTEE_ROLE_PROJECTION_PENDING",
+        "Одобренная роль врача ещё не появилась в защищённом журнале. Обновите список и повторите попытку.",
+      );
+    }
     const grantId = crypto.randomUUID();
+    const granteeDisplayName = options.granteeDisplayName?.trim();
     const grant: PetAccessGrant = {
       grantId, petId: parent.petId, grantorAccountId: this.context.accountId, granteeAccountId: doctorAccountId,
-      actions: [...new Set(actions)], parentGrantId, petKeyVersion: stored.version, status: "active", createdAt: new Date().toISOString(),
+      ...(granteeDisplayName ? { granteeDisplayName } : {}),
+      actions: requestedActions, parentGrantId, petKeyVersion: stored.version, status: "active", createdAt: new Date().toISOString(),
     };
-    const ownerAccountId = this.control.signed.state.petOwners.get(parent.petId);
+    const publicGrant: PetAccessGrant = {
+      grantId: grant.grantId,
+      petId: grant.petId,
+      grantorAccountId: grant.grantorAccountId,
+      granteeAccountId: grant.granteeAccountId,
+      actions: grant.actions,
+      parentGrantId: grant.parentGrantId,
+      petKeyVersion: grant.petKeyVersion,
+      status: grant.status,
+      createdAt: grant.createdAt,
+    };
     const delegation = await this.factory.create({
       database: "medical", eventType: "grant.delegated", aggregateId: parent.petId, resourceId: grantId,
-      metadata: { petId: parent.petId, parentGrantId, actions, grant: grant as unknown as Record<string, unknown> }, cleartext: grant,
+      metadata: { petId: parent.petId, parentGrantId, actions, grant: publicGrant as unknown as Record<string, unknown> }, cleartext: grant,
       proofIds: [this.context.roleProofId, parentGrantId],
       parents: this.events.filter((event) => event.resourceId === parentGrantId).map((event) => event.eventId).slice(-1),
-      recipients: this.activeCertificates([this.context.accountId, doctorAccountId, ...(ownerAccountId ? [ownerAccountId] : [])]), dataKey: stored.key,
+      recipients, dataKey: stored.key,
     });
     await this.append(delegation);
     const pet = (await this.buildSnapshot()).pets.find((candidate) => candidate.petId === parent.petId) ?? null;
@@ -443,49 +540,68 @@ export class MedicalRepository {
         metadata: { petId: parent.petId, ownerAccountId: pet.ownerAccountId, keyVersion: stored.version, grantId, parentGrantId },
         proofIds: [this.context.roleProofId, parentGrantId], cleartext: pet,
         parents: [...new Set([delegation.eventId, profileEvent?.eventId].filter((item): item is string => Boolean(item)))],
-        recipients: this.activeCertificates([this.context.accountId, doctorAccountId, ...(ownerAccountId ? [ownerAccountId] : [])]), dataKey: stored.key,
+        recipients, dataKey: stored.key,
       }));
     }
     return grantId;
   }
 
   async revokeGrant(grantId: string): Promise<void> {
+    await this.refreshProjection();
     const grant = this.control.signed.state.grants.get(grantId);
     if (!grant) throw new Error("Доступ не найден.");
+    const matchingGrants = [...this.control.signed.state.grants.values()].filter((candidate) =>
+      candidate.petId === grant.petId && candidate.granteeAccountId === grant.granteeAccountId &&
+      isGrantEffectivelyActive(this.control.signed.state, candidate),
+    );
+    if (!matchingGrants.length) return;
     const stored = await getPetKey(this.context.accountId, grant.petId);
     if (!stored) throw new Error("Ключ питомца недоступен.");
-    const revocationEventId = await this.appendGrantRevocation(grant, stored);
-    await this.rotatePetKey(grant.petId, stored, [revocationEventId]);
+    const revocationEventIds: string[] = [];
+    for (const matchingGrant of matchingGrants) {
+      revocationEventIds.push(await this.appendGrantRevocation(matchingGrant, stored));
+    }
+    await this.rotatePetKey(grant.petId, stored, revocationEventIds);
   }
 
   async relinquishAccess(grantId: string): Promise<void> {
+    await this.refreshProjection();
     const grant = this.control.signed.state.grants.get(grantId);
-    if (!grant || grant.granteeAccountId !== this.context.accountId || !isGrantEffectivelyActive(this.control.signed.state, grant)) {
-      throw new Error("Действующий доступ для отказа не найден.");
+    if (!grant || grant.granteeAccountId !== this.context.accountId) {
+      throw new Error("Доступ для отказа не найден.");
     }
+    const matchingGrants = [...this.control.signed.state.grants.values()].filter((candidate) =>
+      candidate.petId === grant.petId && candidate.granteeAccountId === this.context.accountId &&
+      isGrantEffectivelyActive(this.control.signed.state, candidate),
+    );
+    if (!matchingGrants.length) return;
     const stored = await getPetKey(this.context.accountId, grant.petId);
     if (!stored) throw new Error("Ключ питомца недоступен.");
-    const event = await this.factory.create({
-      database: "medical",
-      eventType: "grant.relinquished",
-      aggregateId: grant.petId,
-      resourceId: grant.grantId,
-      metadata: {
-        petId: grant.petId,
-        grantId: grant.grantId,
-        nextKeyVersion: stored.version + 1,
-        priorAuthorizedEventIds: this.events
-          .filter((candidate) => candidate.actorAccountId === grant.granteeAccountId && String(candidate.metadata.petId ?? candidate.aggregateId) === grant.petId)
-          .map((candidate) => candidate.eventId),
-      },
-      proofIds: [this.context.roleProofId, grant.grantId],
-      cleartext: { grantId: grant.grantId },
-      parents: this.events.filter((candidate) => candidate.resourceId === grant.grantId).map((candidate) => candidate.eventId).slice(-1),
-      recipients: this.activeCertificates([grant.grantorAccountId, grant.granteeAccountId]),
-      dataKey: stored.key,
-    });
-    await this.append(event);
-    await this.rotatePetKey(grant.petId, stored, [event.eventId], grant.grantId);
+    const relinquishmentEventIds: string[] = [];
+    for (const matchingGrant of matchingGrants) {
+      const event = await this.factory.create({
+        database: "medical",
+        eventType: "grant.relinquished",
+        aggregateId: matchingGrant.petId,
+        resourceId: matchingGrant.grantId,
+        metadata: {
+          petId: matchingGrant.petId,
+          grantId: matchingGrant.grantId,
+          nextKeyVersion: stored.version + 1,
+          priorAuthorizedEventIds: this.events
+            .filter((candidate) => candidate.actorAccountId === matchingGrant.granteeAccountId && String(candidate.metadata.petId ?? candidate.aggregateId) === matchingGrant.petId)
+            .map((candidate) => candidate.eventId),
+        },
+        proofIds: [this.context.roleProofId, matchingGrant.grantId],
+        cleartext: { grantId: matchingGrant.grantId },
+        parents: this.events.filter((candidate) => candidate.resourceId === matchingGrant.grantId).map((candidate) => candidate.eventId).slice(-1),
+        recipients: this.activeCertificates([matchingGrant.grantorAccountId, matchingGrant.granteeAccountId]),
+        dataKey: stored.key,
+      });
+      await this.append(event);
+      relinquishmentEventIds.push(event.eventId);
+    }
+    await this.rotatePetKey(grant.petId, stored, relinquishmentEventIds, matchingGrants[0]!.grantId);
   }
 
   async disableGrantDelegation(grantId: string): Promise<void> {
@@ -497,6 +613,7 @@ export class MedicalRepository {
   }
 
   private async updateGrantDelegation(grantId: string, enabled: boolean): Promise<void> {
+    await this.refreshProjection();
     const grant = this.control.signed.state.grants.get(grantId);
     if (!grant || !isGrantEffectivelyActive(this.control.signed.state, grant)) {
       throw new Error("Действующий доступ не найден.");
@@ -610,6 +727,7 @@ export class MedicalRepository {
   }
 
   async saveEncounter(input: MedicalEncounterInput, legacyTitle = "Что случилось"): Promise<string> {
+    await this.refreshProjection();
     if ("addendumTo" in input) throw new Error("Дополнения к медицинским записям не поддерживаются.");
     if (!/^\d{4}-\d{2}-\d{2}$/.test(input.encounterDate) || input.encounterDate > new Date().toISOString().slice(0, 10)) {
       throw new Error("Укажите корректную дату приёма.");
@@ -706,6 +824,7 @@ export class MedicalRepository {
   }
 
   async deleteRecord(petId: string, recordId: string): Promise<void> {
+    await this.refreshProjection();
     const record = (await this.buildSnapshot()).records.find((candidate) => candidate.petId === petId && candidate.recordId === recordId);
     if (!record) throw new Error("Медицинская запись не найдена.");
     if (this.control.signed.state.confirmedRecords.has(recordId)) {
@@ -741,6 +860,7 @@ export class MedicalRepository {
   }
 
   async confirmRecord(petId: string, recordId: string, revision: number): Promise<void> {
+    await this.refreshProjection();
     const stored = await getPetKey(this.context.accountId, petId);
     if (!stored) throw new Error("Ключ питомца недоступен.");
     const snapshot = await this.buildSnapshot();
@@ -815,7 +935,11 @@ export class MedicalRepository {
         const decrypted = await this.decryptWithKey<PetProfile>(event);
         if (decrypted) {
           const pet = normalizePetProfile(decrypted.value);
-          pets.set(pet.petId, pet);
+          const current = pets.get(pet.petId);
+          if (!current || pet.keyVersion > current.keyVersion ||
+            (pet.keyVersion === current.keyVersion && pet.updatedAt >= current.updatedAt)) {
+            pets.set(pet.petId, pet);
+          }
           await putPetKey(this.context.accountId, pet.petId, Number(event.metadata.keyVersion ?? pet.keyVersion), decrypted.key);
         }
       }
@@ -896,9 +1020,16 @@ export class MedicalRepository {
         ? request.ownerAccountId === this.context.accountId && accessiblePetIds.has(request.petId)
         : request.requesterAccountId === this.context.accountId);
     const accessibleRecords = [...records.values()].filter((record) => accessiblePetIds.has(record.petId));
+    const projectedGrants = [...this.control.signed.state.grants.values()].map((projected) => {
+      const decrypted = grants.get(projected.grantId);
+      const effectiveStatus = isGrantEffectivelyActive(this.control.signed.state, projected)
+        ? projected.status
+        : projected.status === "active" ? "revoked" : projected.status;
+      return { ...(decrypted ?? projected), ...projected, status: effectiveStatus };
+    });
     return {
       pets: [...pets.values()].filter((pet) => accessiblePetIds.has(pet.petId) && !pet.tombstoned),
-      grants: [...grants.values()].filter((grant) => accessiblePetIds.has(grant.petId)),
+      grants: projectedGrants.filter((grant) => accessiblePetIds.has(grant.petId)),
       accessRequests,
       records: accessibleRecords,
       confirmations: this.context.role === "owner"

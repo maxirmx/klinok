@@ -81,7 +81,12 @@ export class AuthClient {
   logoutAll() { return this.request<{ loggedOut: true }>("/api/auth/logout-all", { method: "POST" }); }
   forgotPassword(email: string) { return this.request<{ accepted: true }>("/api/auth/password/forgot", { method: "POST", body: JSON.stringify({ email }) }); }
   resetPassword(token: string, password: string) { return this.request<{ reset: true }>("/api/auth/password/reset", { method: "POST", body: JSON.stringify({ token, password }) }); }
-  updateProfile(profile: Record<string, string>) { return this.request<{ operationId: string }>("/api/auth/profile", { method: "PATCH", body: JSON.stringify(profile) }); }
+  updateProfile(profile: Record<string, string>) {
+    return this.request<{ operationId: string; profile?: DirectoryProfileDto }>("/api/auth/profile", {
+      method: "PATCH",
+      body: JSON.stringify(profile),
+    });
+  }
   updateCredentials(input: { email?: string; password?: string }) {
     return this.request<{ updated: true; email: string }>("/api/auth/credentials", { method: "PATCH", body: JSON.stringify(input) });
   }
@@ -138,6 +143,14 @@ export class AuthClient {
     return this.request<DirectoryProfileDto>("/api/auth/directory/profile", { method: "PUT", body: JSON.stringify(profile) });
   }
 
+  loadOwnDirectoryProfile() {
+    return this.request<DirectoryProfileDto>("/api/auth/directory/profile");
+  }
+
+  loadOwnedDirectoryPets() {
+    return this.request<{ pets: DirectoryPetDto[] }>("/api/auth/directory/owned-pets");
+  }
+
   searchDoctors(query = "", page = 1, pageSize = 20, sort = "name") {
     const params = new URLSearchParams({ query, page: String(page), pageSize: String(pageSize), sort });
     return this.request<DirectoryPageDto<DirectoryProfileDto>>(`/api/auth/directory/doctors?${params}`);
@@ -153,6 +166,13 @@ export class AuthClient {
       direction,
     });
     return this.request<DirectoryPageDto<DirectoryUserDto>>(`/api/auth/directory/users?${params}`);
+  }
+
+  lookupDirectoryProfiles(accountIds: string[]) {
+    return this.request<{ profiles: DirectoryProfileDto[] }>("/api/auth/directory/profiles/lookup", {
+      method: "POST",
+      body: JSON.stringify({ accountIds }),
+    });
   }
 
   updateDirectoryUserProfile(
