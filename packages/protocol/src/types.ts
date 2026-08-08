@@ -162,6 +162,7 @@ export interface DirectoryPageDto<T> {
   pageSize: number;
   total: number;
   pageCount: number;
+  pendingCount?: number;
 }
 
 export interface MedicalRecordConfirmation {
@@ -270,6 +271,7 @@ export interface ProtocolState {
   grants: Map<string, PetAccessGrant>;
   grantRequests: Map<string, PetAccessRequestProjection>;
   petOwners: Map<string, string>;
+  tombstonedPets: Set<string>;
   confirmedRecords: Set<string>;
   roleConflicts: Array<{ roleKey: string; losingEventId: string; winningEventId: string }>;
   invalidatedEvents: Map<string, string>;

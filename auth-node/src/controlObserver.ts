@@ -316,7 +316,12 @@ export class ControlPlaneObserver {
       );
     }
     if (event.eventType.startsWith("pet.") && event.metadata.ownerAccountId) {
-      await this.store.putObservedPetOwner(String(event.metadata.petId ?? event.aggregateId), String(event.metadata.ownerAccountId));
+      const petId = String(event.metadata.petId ?? event.aggregateId);
+      if (event.eventType === "pet.tombstoned") {
+        await this.store.deleteObservedPetOwner(petId);
+      } else {
+        await this.store.putObservedPetOwner(petId, String(event.metadata.ownerAccountId));
+      }
     }
     if (["grant.created", "grant.delegated"].includes(event.eventType) && event.metadata.grant) {
       await this.store.putObservedGrant(event.metadata.grant as never);
@@ -337,6 +342,10 @@ export class ControlPlaneObserver {
     const accountId = String(event.metadata.accountId ?? event.aggregateId);
     let account = await this.store.getAccount(accountId);
     if (account) {
+      if (event.eventType === "device.revoked") {
+        account = await this.store.applyObservedDeviceRevocation(accountId, event.resourceId);
+        if (!account) return;
+      }
       const pendingOperations = account.pendingOperations.filter((operation) => operation.operationId !== event.operationId);
       const setupComplete = Boolean(account.setup &&
         account.setup.requestedRoles.every((role) => this.state.roles.has(roleProjectionKey(account!.accountId, role))) &&
@@ -346,25 +355,7 @@ export class ControlPlaneObserver {
         await this.store.deleteCredentialAccount({ ...account, pendingOperations });
         account = null;
       } else if (pendingOperations.length !== account.pendingOperations.length || setupComplete) {
-        const updatedAt = new Date().toISOString();
-        if (setupComplete && account.setup) {
-          const { firstName, lastName, patronymic } = account.setup.profile;
-          await this.store.putDirectoryProfile({
-            accountId: account.accountId,
-            firstName,
-            lastName,
-            ...(patronymic ? { patronymic } : {}),
-            displayName: [firstName, patronymic, lastName].filter(Boolean).join(" "),
-            updatedAt,
-          });
-        }
-        account = {
-          ...account,
-          pendingOperations,
-          ...(setupComplete ? { setup: undefined } : {}),
-          updatedAt,
-        };
-        await this.store.putAccount(account);
+        account = await this.store.applyObservedAccountProgress(accountId, event.operationId, setupComplete);
       }
     }
     if (event.eventType !== "email.role-transition") return;

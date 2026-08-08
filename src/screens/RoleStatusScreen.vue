@@ -183,14 +183,17 @@ async function saveProfile() {
     return;
   }
   formError.value = "";
-  const saved = await action("Изменения профиля сохранены.", () => updateProfile({
-    firstName,
-    lastName,
-    patronymic,
-  }));
+  let directorySynchronized = true;
+  const saved = await action("Изменения профиля сохранены.", async () => {
+    const result = await updateProfile({ firstName, lastName, patronymic });
+    directorySynchronized = result?.synchronized !== false;
+  });
   if (saved) {
     Object.assign(savedProfile, { firstName, lastName, patronymic });
     Object.assign(profileDraft, { firstName, lastName, patronymic });
+    if (!directorySynchronized) {
+      alertStore.success("Профиль сохранён. Синхронизация продолжится автоматически.");
+    }
   }
 }
 

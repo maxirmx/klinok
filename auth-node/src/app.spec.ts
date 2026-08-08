@@ -286,13 +286,20 @@ describe("auth-node", () => {
   });
 
   it("keeps profile and deletion operations idempotent until P2P completion", async () => {
-    const { app, mailer } = await fixture();
+    const { app, mailer, store } = await fixture();
     const login = await verifiedLogin(app, mailer);
     const headers = { origin: "https://klinok.test", cookie: login.cookie, "x-csrf-token": login.csrf };
     const profilePayload = { firstName: "Иван", lastName: "Петров", patronymic: "Иванович" };
     const firstProfile = await app.inject({ method: "PATCH", url: "/api/auth/profile", headers, payload: profilePayload });
     const retriedProfile = await app.inject({ method: "PATCH", url: "/api/auth/profile", headers, payload: profilePayload });
     expect(retriedProfile.json().operationId).toBe(firstProfile.json().operationId);
+    expect(retriedProfile.json().profile).toEqual(firstProfile.json().profile);
+    expect(firstProfile.json().profile).toMatchObject({
+      accountId: login.accountId,
+      ...profilePayload,
+      displayName: "Иван Иванович Петров",
+    });
+    expect(await store.getDirectoryProfile(login.accountId)).toEqual(firstProfile.json().profile);
     const firstDelete = await app.inject({ method: "DELETE", url: "/api/auth/account", headers });
     const retriedDelete = await app.inject({ method: "DELETE", url: "/api/auth/account", headers });
     expect(retriedDelete.json().operationId).toBe(firstDelete.json().operationId);
@@ -304,6 +311,37 @@ describe("auth-node", () => {
         { operationId: firstDelete.json().operationId, kind: "account_delete" },
       ],
     });
+  });
+
+  it("keeps only the latest unsynchronized profile edit", async () => {
+    const { app, mailer } = await fixture();
+    const login = await verifiedLogin(app, mailer);
+    const headers = { origin: "https://klinok.test", cookie: login.cookie, "x-csrf-token": login.csrf };
+    const first = await app.inject({
+      method: "PATCH",
+      url: "/api/auth/profile",
+      headers,
+      payload: { firstName: "Анна", lastName: "Первая" },
+    });
+    const latest = await app.inject({
+      method: "PATCH",
+      url: "/api/auth/profile",
+      headers,
+      payload: { firstName: "Мария", lastName: "Последняя" },
+    });
+    expect(latest.json().operationId).not.toBe(first.json().operationId);
+
+    const session = await app.inject({ method: "GET", url: "/api/auth/session", headers: { cookie: login.cookie } });
+    expect(session.json().pendingOperations).toEqual([
+      expect.objectContaining({
+        operationId: latest.json().operationId,
+        kind: "profile",
+        payload: { firstName: "Мария", lastName: "Последняя" },
+      }),
+    ]);
+    expect(session.json().pendingOperations).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({ operationId: first.json().operationId }),
+    ]));
   });
 
   it("updates authenticated email and password credentials", async () => {
@@ -686,6 +724,7 @@ describe("auth-node", () => {
     });
     const pendingDoctorId = await addUser(1);
     await store.putObservedRole(pendingDoctorId, "doctor", "pending");
+    await store.putObservedRole(pendingDoctorId, "administrator", "pending");
     for (let index = 2; index <= 10; index += 1) await addUser(index);
     const deletedId = await addUser(11, "deleted");
     const uninitializedId = await addUser(12, "active", false);
@@ -707,7 +746,7 @@ describe("auth-node", () => {
     });
     expect(firstPage.statusCode).toBe(200);
     expect(firstPage.headers["cache-control"]).toBe("no-store");
-    expect(firstPage.json()).toMatchObject({ total: 12, page: 1, pageSize: 10, pageCount: 2 });
+    expect(firstPage.json()).toMatchObject({ total: 12, page: 1, pageSize: 10, pageCount: 2, pendingCount: 2 });
     expect(firstPage.json().items).toHaveLength(10);
     expect(JSON.stringify(firstPage.json())).not.toContain(deletedId);
     expect(JSON.stringify(firstPage.json())).not.toContain(uninitializedId);
@@ -872,6 +911,16 @@ describe("auth-node", () => {
     ]));
     expect(await store.getDirectoryProfile(target.accountId)).toEqual(updated.json().profile);
 
+    const lookup = await app.inject({
+      method: "POST",
+      url: "/api/auth/directory/profiles/lookup",
+      headers: { origin: "https://klinok.test", cookie: bootstrap.cookie, "x-csrf-token": bootstrap.csrf },
+      payload: { accountIds: [target.accountId, "missing-account"] },
+    });
+    expect(lookup.statusCode).toBe(200);
+    expect(lookup.headers["cache-control"]).toBe("no-store");
+    expect(lookup.json()).toEqual({ profiles: [updated.json().profile] });
+
     const repeated = await app.inject({
       method: "PATCH", url: path,
       headers: { origin: "https://klinok.test", cookie: bootstrap.cookie, "x-csrf-token": bootstrap.csrf },
@@ -927,6 +976,21 @@ describe("auth-node", () => {
     await store.putObservedRole(owner.accountId, "owner", "approved");
     await store.putObservedRole(doctor.accountId, "doctor", "approved");
     await store.putObservedRole(delegate.accountId, "doctor", "approved");
+    const delegateAccount = (await store.getAccount(delegate.accountId))!;
+    await store.putAccount({
+      ...delegateAccount,
+      devices: [{
+        deviceId: "directory-delegate-device",
+        accountId: delegate.accountId,
+        orbitIdentityId: "directory-delegate-orbit",
+        status: "active",
+        userKeyVersion: 1,
+        signingPublicKey: {},
+        encryptionPublicKey: {},
+        issuedAt: "2026-07-10T10:00:00.000Z",
+        attestation: "test-attestation",
+      }],
+    });
 
     async function putProfile(login: typeof owner, firstName: string, lastName: string) {
       return app.inject({
@@ -975,6 +1039,14 @@ describe("auth-node", () => {
     });
     expect(doctorById.statusCode).toBe(200);
     expect(doctorById.json()).toMatchObject({ total: 1, items: [{ accountId: delegate.accountId }] });
+
+    const unavailableDoctor = await app.inject({
+      method: "GET",
+      url: `/api/auth/directory/doctors?query=${encodeURIComponent(doctor.accountId)}&page=1&pageSize=10`,
+      headers: { cookie: owner.cookie },
+    });
+    expect(unavailableDoctor.statusCode).toBe(200);
+    expect(unavailableDoctor.json()).toMatchObject({ total: 0, items: [] });
 
     const doctorByPartialId = await app.inject({
       method: "GET",
@@ -1040,6 +1112,26 @@ describe("auth-node", () => {
     expect(exactPet.statusCode).toBe(200);
     expect(exactPet.json()).toMatchObject({ petId, ownerAccountId: owner.accountId, ownerDisplayName: "Ольга Владелец" });
 
+    const renamedProfile = await app.inject({
+      method: "PATCH",
+      url: "/api/auth/profile",
+      headers: { origin: "https://klinok.test", cookie: owner.cookie, "x-csrf-token": owner.csrf },
+      payload: { firstName: "Мария", lastName: "Владелец" },
+    });
+    expect(renamedProfile.statusCode).toBe(200);
+    const staleProfileWrite = await putProfile(owner, "Ольга", "Владелец");
+    expect(staleProfileWrite.statusCode).toBe(200);
+    expect(staleProfileWrite.json()).toMatchObject({ displayName: "Мария Владелец" });
+    const renamedPet = await app.inject({ method: "GET", url: `/api/auth/directory/pets/${petId}`, headers: { cookie: doctor.cookie } });
+    expect(renamedPet.json()).toMatchObject({ petId, ownerDisplayName: "Мария Владелец" });
+    const ownProfile = await app.inject({ method: "GET", url: "/api/auth/directory/profile", headers: { cookie: owner.cookie } });
+    expect(ownProfile.statusCode).toBe(200);
+    expect(ownProfile.headers["cache-control"]).toBe("no-store");
+    expect(ownProfile.json()).toMatchObject({ accountId: owner.accountId, displayName: "Мария Владелец" });
+    const ownedPets = await app.inject({ method: "GET", url: "/api/auth/directory/owned-pets", headers: { cookie: owner.cookie } });
+    expect(ownedPets.statusCode).toBe(200);
+    expect(ownedPets.json()).toEqual({ pets: [expect.objectContaining({ petId, ownerDisplayName: "Мария Владелец" })] });
+
     await store.putObservedGrant({
       grantId: "grant-directory-1",
       petId,
@@ -1098,6 +1190,28 @@ describe("auth-node", () => {
     const petSearchDenied = await app.inject({ method: "GET", url: "/api/auth/directory/pets?owner=Ольга&pet=Буся", headers: { cookie: owner.cookie } });
     expect(petSearchDenied.statusCode).toBe(403);
     expect(petSearchDenied.json().error.code).toBe("DOCTOR_ROLE_REQUIRED");
+
+    await store.deleteObservedPetOwner(secondPetId);
+    const staleUpsert = await app.inject({
+      method: "PUT",
+      url: `/api/auth/directory/pets/${secondPetId}`,
+      headers: { origin: "https://klinok.test", cookie: owner.cookie, "x-csrf-token": owner.csrf },
+      payload: { name: "Альфа", species: "Кошка" },
+    });
+    expect(staleUpsert.statusCode).toBe(410);
+    expect(staleUpsert.json().error.code).toBe("PET_TOMBSTONED");
+    const deletion = await app.inject({
+      method: "DELETE",
+      url: `/api/auth/directory/pets/${secondPetId}`,
+      headers: { origin: "https://klinok.test", cookie: owner.cookie, "x-csrf-token": owner.csrf },
+    });
+    expect(deletion.statusCode).toBe(204);
+    const repeatedDeletion = await app.inject({
+      method: "DELETE",
+      url: `/api/auth/directory/pets/${secondPetId}`,
+      headers: { origin: "https://klinok.test", cookie: owner.cookie, "x-csrf-token": owner.csrf },
+    });
+    expect(repeatedDeletion.statusCode).toBe(204);
   });
 
   it("serves one filtered, sorted, deduplicated page of the current Doctor's accesses", async () => {
@@ -1267,6 +1381,13 @@ describe("auth-node", () => {
     expect(bySpecies.json().total).toBe(6);
     expect(byPetId.json().items.map((item: { petId: string }) => item.petId)).toEqual([pets[5]!.petId]);
     expect(byPartialPetId.json().total).toBe(0);
+    await store.putDirectoryPet({ ...pets[0]!, name: pets[5]!.petId });
+    const exactPetAheadOfNameMatches = await getAccesses({ query: pets[5]!.petId, pageSize: "1" });
+    expect(exactPetAheadOfNameMatches.json()).toMatchObject({
+      total: 1,
+      items: [{ petId: pets[5]!.petId }],
+    });
+    await store.putDirectoryPet(pets[0]!);
 
     const ownerAscending = await getAccesses({ pageSize: "50", sort: "owner", direction: "asc" });
     const petAscending = await getAccesses({ pageSize: "50", sort: "pet", direction: "asc" });

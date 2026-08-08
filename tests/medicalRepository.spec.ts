@@ -55,6 +55,34 @@ const petInput = (name = "Шарик"): PetProfileInput => ({
 const encounterOutcome = () => ({ selectedIds: ["outcome.observation"], comment: "" });
 
 describe("medical authorization repository", () => {
+  it("refuses to create encrypted access before the target certificate is active", async () => {
+    const transport = new MemoryEventTransport();
+    await transport.initialize();
+    const owner = await client(transport, "recipient-owner", "owner");
+    await owner.control.initialize({
+      profile: { firstName: "Ольга", lastName: "Владелец" },
+      requestedRoles: ["owner"],
+    });
+    const ownerRole = (await owner.control.snapshot()).roles.find((entry) => entry.role === "owner")!;
+    owner.control.setActiveRole("owner", ownerRole.requestId);
+    await owner.medical.setActiveRole("owner", ownerRole.requestId);
+    const unavailableDoctor = await client(transport, "recipient-doctor", "doctor");
+    await unavailableDoctor.control.initialize({
+      profile: { firstName: "Анна", lastName: "Врач" },
+      requestedRoles: [],
+    });
+    await owner.medical.initialize();
+    const petId = await owner.medical.createPet(petInput());
+
+    await expect(owner.medical.grantDoctor(petId, "recipient-doctor", ["read"]))
+      .rejects.toMatchObject({ code: "GRANTEE_ROLE_PROJECTION_PENDING" });
+    await unavailableDoctor.control.revokeDevice("recipient-doctor-device");
+
+    await expect(owner.medical.grantDoctor(petId, "recipient-doctor", ["read"]))
+      .rejects.toMatchObject({ code: "GRANTEE_DEVICE_PROJECTION_PENDING" });
+    expect((await owner.medical.snapshot()).grants).toEqual([]);
+  });
+
   it("automatically approves an Owner-Doctor's request for their own pet", async () => {
     const transport = new MemoryEventTransport();
     await transport.initialize();
@@ -181,8 +209,19 @@ describe("medical authorization repository", () => {
     const petId = await owner.medical.createPet(petInput("Буся"));
     const grantId = await owner.medical.grantDoctor(petId, "encounter-doctor", ["read", "write_unconfirmed", "delegate"]);
     await waitFor(async () => (await doctor.medical.snapshot()).pets.some((pet) => pet.petId === petId));
-    const delegatedGrantId = await doctor.medical.delegateGrant(grantId, "encounter-delegate", ["read"]);
+    const delegatedGrantId = await doctor.medical.delegateGrant(
+      grantId,
+      "encounter-delegate",
+      ["read"],
+      { granteeDisplayName: "Дина Врач" },
+    );
     await tick();
+    expect((await owner.medical.snapshot()).grants.find((grant) => grant.grantId === delegatedGrantId))
+      .toMatchObject({ granteeDisplayName: "Дина Врач" });
+    const publicDelegation = owner.control.signed.list()
+      .find((event) => event.eventType === "grant.delegated" && event.resourceId === delegatedGrantId)
+      ?.metadata.grant as Record<string, unknown>;
+    expect(publicDelegation).not.toHaveProperty("granteeDisplayName");
     await expect(doctor.medical.saveEncounter({
       petId,
       encounterDate: "2026-07-21",
@@ -461,7 +500,15 @@ describe("medical authorization repository", () => {
     await tick();
     expect((await doctor.medical.snapshot()).pets).toEqual([expect.objectContaining({ petId, name: "Шарик" })]);
     await doctor.medical.delegateGrant(grantId, "delegated-doctor-account", ["read"]);
-    expect((await delegatedDoctor.medical.snapshot()).pets).toEqual([expect.objectContaining({ petId, name: "Шарик" })]);
+    const delegatedSnapshot = await delegatedDoctor.medical.snapshot();
+    expect(delegatedSnapshot.pets).toEqual([expect.objectContaining({ petId, name: "Шарик" })]);
+    expect(delegatedSnapshot.grants).toEqual(expect.arrayContaining([
+      expect.objectContaining({ grantId, granteeAccountId: "doctor-account" }),
+      expect.objectContaining({
+        parentGrantId: grantId,
+        granteeAccountId: "delegated-doctor-account",
+      }),
+    ]));
 
     await owner.medical.disableGrantDelegation(grantId);
     await tick();
@@ -534,7 +581,9 @@ describe("medical authorization repository", () => {
 
     const petId = await owner.medical.createPet({ ...petInput("Боня"), birthDate: undefined, birthYear: 2021 });
     await waitFor(() => doctor.control.signed.state.petOwners.get(petId) === "owner-account");
-    const requestId = await doctor.medical.requestAccess(petId);
+    await expect(doctor.medical.requestAccess(petId, "stale-owner"))
+      .rejects.toMatchObject({ code: "PET_DIRECTORY_STALE" });
+    const requestId = await doctor.medical.requestAccess(petId, "owner-account");
     await tick();
     expect((await owner.medical.snapshot()).accessRequests).toEqual([
       expect.objectContaining({

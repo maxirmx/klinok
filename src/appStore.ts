@@ -6,6 +6,7 @@ import { computed, reactive, readonly } from "vue";
 import {
   exportUserKeySet,
   generateUserKeySet,
+  stableSerialize,
   type AuthSessionDto,
   type DirectoryPageDto,
   type DirectoryPetDto,
@@ -39,7 +40,17 @@ import {
 import { KlinokRepository } from "./repositories";
 import type { ControlSnapshot, MedicalSnapshot } from "./repositories/types";
 import type { EventSyncStatus, SyncNotification } from "./repositories/eventTransport";
-import { reconcileDirectorySnapshot, type DirectoryPetInput } from "./directoryReconciliation";
+import {
+  enqueueDirectoryPet,
+  enqueueDirectoryPetDeletion,
+  enqueueDirectoryProfile,
+  discardDirectoryProfileOperation,
+  flushDirectoryOutbox,
+  listDirectoryOutbox,
+  type DirectoryOutboxFailure,
+  type DirectoryPetInput,
+  type DirectoryProfileInput,
+} from "./directoryOutbox";
 import { logInitializationError } from "./diagnostics";
 import { useAlertStore } from "./stores/alert";
 
@@ -77,6 +88,7 @@ const state = reactive({
   devicePending: false,
   keyRecoveryRequired: false,
   sync: emptySync,
+  directoryPendingCount: 0,
   repositoryConnected: false,
 });
 
@@ -87,6 +99,9 @@ let keys: UserKeySet | null = null;
 let controlUnsubscribe: (() => void) | null = null;
 let medicalUnsubscribe: (() => void) | null = null;
 let syncUnsubscribe: (() => void) | null = null;
+let directoryRetryTimer: ReturnType<typeof setTimeout> | null = null;
+let directoryRetryDelayMs = 5_000;
+let directoryMutationQueue: Promise<void> = Promise.resolve();
 
 function setAuthFeedback(input: { kind: "success"; code: AuthSuccessCode } | { kind: "error"; reason: unknown } | null) {
   const alertStore = useAlertStore();
@@ -183,15 +198,169 @@ function chooseInitialRole(session: AuthSessionDto): Role {
   return session.setup?.requestedRoles.includes("owner") ? "owner" : session.setup?.requestedRoles[0] ?? "owner";
 }
 
+async function reconcileAuthDevices(activeRepository: KlinokRepository, session: AuthSessionDto): Promise<void> {
+  if (!session.accountId || !session.device) return;
+  await activeRepository.control.refreshProjection();
+  let snapshot = await activeRepository.control.snapshot();
+  const authDevices = new Map((session.devices ?? []).map((device) => [device.deviceId, device]));
+  const projectedCurrent = snapshot.devices.find((device) => device.deviceId === session.device?.deviceId);
+  if (!projectedCurrent || projectedCurrent.status !== "active") {
+    throw new Error("Состояние текущего устройства расходится с защищённым журналом. Повторите вход после синхронизации службы авторизации.");
+  }
+  const signingKeyMatches = stableSerialize(projectedCurrent.signingPublicKey) === stableSerialize(session.device.signingPublicKey);
+  const encryptionKeyMatches = stableSerialize(projectedCurrent.encryptionPublicKey) === stableSerialize(session.device.encryptionPublicKey);
+  if (projectedCurrent.userKeyVersion === session.device.userKeyVersion) {
+    if (!signingKeyMatches || !encryptionKeyMatches) {
+      throw new Error("Сертификаты текущего устройства конфликтуют. Повторно зарегистрируйте устройство.");
+    }
+  } else if (session.device.userKeyVersion !== projectedCurrent.userKeyVersion + 1) {
+    throw new Error("Версии ключей устройства расходятся более чем на один шаг. Требуется повторная регистрация устройства.");
+  } else if (typeof activeRepository.control.rotateCurrentDevice === "function") {
+    await activeRepository.control.rotateCurrentDevice(session.device);
+  }
+  snapshot = await activeRepository.control.snapshot();
+  for (const device of snapshot.devices) {
+    if (device.deviceId !== session.device.deviceId && device.status === "active" &&
+      authDevices.get(device.deviceId)?.status === "revoked") {
+      await activeRepository.control.revokeDevice(device.deviceId);
+    }
+  }
+}
+
+function updateDirectoryPendingCount(accountId = state.session.accountId): void {
+  state.directoryPendingCount = accountId ? listDirectoryOutbox(accountId).length : 0;
+}
+
+function cancelDirectoryRetry(resetDelay = true): void {
+  if (directoryRetryTimer) clearTimeout(directoryRetryTimer);
+  directoryRetryTimer = null;
+  if (resetDelay) directoryRetryDelayMs = 5_000;
+}
+
+function scheduleDirectoryRetry(client: AuthClient, accountId: string, shouldContinue: () => boolean): void {
+  if (directoryRetryTimer || !shouldContinue() || !listDirectoryOutbox(accountId).length) return;
+  const delay = directoryRetryDelayMs;
+  directoryRetryDelayMs = Math.min(directoryRetryDelayMs * 2, 60_000);
+  directoryRetryTimer = setTimeout(() => {
+    directoryRetryTimer = null;
+    if (!shouldContinue()) return;
+    void flushDirectoryMutations(client, accountId, shouldContinue)
+      .catch((reason) => console.warn("Directory reconciliation retry failed.", reason));
+  }, delay);
+}
+
+function runDirectoryMutation<T>(task: () => Promise<T>): Promise<T> {
+  const operation = directoryMutationQueue.then(task);
+  directoryMutationQueue = operation.then(() => undefined, () => undefined);
+  return operation;
+}
+
+function directoryFailureCode(reason: unknown): string {
+  return reason && typeof reason === "object" && "code" in reason ? String(reason.code) : "";
+}
+
+function isPermanentDirectoryFailure(reason: unknown): boolean {
+  return [
+    "PET_TOMBSTONED",
+    "PET_OWNER_REQUIRED",
+    "DIRECTORY_PET_INVALID",
+    "DIRECTORY_PROFILE_INVALID",
+  ].includes(directoryFailureCode(reason));
+}
+
+async function performDirectoryFlush(
+  client: AuthClient,
+  accountId: string,
+  shouldContinue: () => boolean = () => state.session.authenticated === true && state.session.accountId === accountId,
+): Promise<DirectoryOutboxFailure[]> {
+  const failures = await flushDirectoryOutbox({
+    accountId,
+    syncProfile: (profile) => client.syncDirectoryProfile(profile),
+    syncPet: (pet) => syncDirectoryPetWithClient(client, pet),
+    deletePet: (petId) => client.deleteDirectoryPet(petId),
+    shouldContinue,
+    isPermanentFailure: ({ reason }) => isPermanentDirectoryFailure(reason),
+    onFailure: ({ operation, reason }) => {
+      console.warn(`Directory operation ${operation.kind} reconciliation failed.`, reason);
+    },
+  });
+  if (state.session.accountId === accountId) updateDirectoryPendingCount(accountId);
+  if (listDirectoryOutbox(accountId).length) scheduleDirectoryRetry(client, accountId, shouldContinue);
+  else cancelDirectoryRetry();
+  return failures;
+}
+
+function flushDirectoryMutations(
+  client: AuthClient,
+  accountId: string,
+  shouldContinue: () => boolean = () => state.session.authenticated === true && state.session.accountId === accountId,
+): Promise<DirectoryOutboxFailure[]> {
+  return runDirectoryMutation(() => performDirectoryFlush(client, accountId, shouldContinue));
+}
+
+async function reconcileDirectoryState(
+  client: AuthClient,
+  accountId: string,
+  profile: DirectoryProfileInput | null,
+  pets: Array<DirectoryPetInput & { updatedAt: string }>,
+  shouldContinue: () => boolean,
+): Promise<void> {
+  await runDirectoryMutation(async () => {
+    await performDirectoryFlush(client, accountId, shouldContinue);
+    if (!shouldContinue()) return;
+
+    const pending = listDirectoryOutbox(accountId);
+    if (profile && !pending.some((operation) => operation.kind === "profile.upsert")) {
+      try {
+        await client.loadOwnDirectoryProfile();
+      } catch (reason) {
+        const code = reason && typeof reason === "object" && "code" in reason ? String(reason.code) : "";
+        if (code === "DIRECTORY_PROFILE_NOT_FOUND") {
+          enqueueDirectoryProfile(accountId, profile);
+        } else {
+          console.warn("Directory profile comparison failed.", reason);
+        }
+      }
+    }
+
+    try {
+      const publishedPets = new Map((await client.loadOwnedDirectoryPets()).pets.map((pet) => [pet.petId, pet]));
+      if (!shouldContinue()) return;
+      const currentPending = listDirectoryOutbox(accountId);
+      for (const pet of pets) {
+        const alreadyPending = currentPending.some((operation) => operation.kind !== "profile.upsert" &&
+          (operation.kind === "pet.delete" ? operation.petId : operation.pet.petId) === pet.petId);
+        const published = publishedPets.get(pet.petId);
+        const locallyNewer = !published || pet.updatedAt > published.updatedAt;
+        const contentDiffers = !published || published.species !== pet.species || published.name !== pet.name;
+        if (!alreadyPending && locallyNewer && contentDiffers) {
+          enqueueDirectoryPet(accountId, { petId: pet.petId, species: pet.species, name: pet.name });
+        }
+      }
+    } catch (reason) {
+      console.warn("Directory pet comparison failed.", reason);
+    }
+
+    updateDirectoryPendingCount(accountId);
+    await performDirectoryFlush(client, accountId, shouldContinue);
+  });
+}
+
 async function connectRepository(session: AuthSessionDto) {
+  cancelDirectoryRetry();
   state.repositoryConnected = false;
   controlUnsubscribe?.(); controlUnsubscribe = null;
   medicalUnsubscribe?.(); medicalUnsubscribe = null;
   syncUnsubscribe?.(); syncUnsubscribe = null;
   await repository?.dispose();
   repository = null;
+  state.activeRole = null;
+  state.control = emptyControl;
+  state.medical = emptyMedical;
+  state.conflicts = [];
   state.sync = emptySync;
   state.syncNotifications = [];
+  updateDirectoryPendingCount(session.accountId);
   if (!session.accountId || !session.device || !keys || state.keyRecoveryRequired) return;
   const accountId = session.accountId;
   const deviceId = session.device.deviceId;
@@ -205,15 +374,17 @@ async function connectRepository(session: AuthSessionDto) {
   const connectedRepository = repository;
   const connectedAuth = auth;
   state.repositoryConnected = true;
+  await reconcileAuthDevices(connectedRepository, session);
   for (const operation of session.pendingOperations ?? []) {
     if (operation.kind === "profile" && operation.payload) {
-      const snapshot = await repository.control.snapshot();
       const firstName = String(operation.payload.firstName ?? "");
       const lastName = String(operation.payload.lastName ?? "");
       const patronymic = String(operation.payload.patronymic ?? "");
       if (firstName && lastName) await repository.control.updateProfile({
         accountId: session.accountId,
-        revision: (snapshot.profile?.revision ?? 0) + 1,
+        revision: typeof repository.control.nextProfileRevision === "function"
+          ? await repository.control.nextProfileRevision(session.accountId)
+          : ((await repository.control.snapshot()).profile?.revision ?? 0) + 1,
         firstName,
         lastName,
         ...(patronymic ? { patronymic } : {}),
@@ -224,6 +395,7 @@ async function connectRepository(session: AuthSessionDto) {
   }
   let roleSwitchQueue = Promise.resolve();
   const applyControlSnapshot = async (snapshot: ControlSnapshot): Promise<void> => {
+    if (repository !== connectedRepository) return;
     state.control = snapshot;
     const approved = snapshot.roles.filter((role) => role.status === "approved");
     if (!state.activeRole || !approved.some((role) => role.role === state.activeRole)) {
@@ -248,16 +420,26 @@ async function connectRepository(session: AuthSessionDto) {
       if (repository === connectedRepository) setAuthFeedback({ kind: "error", reason });
     });
   });
-  state.medical = await connectedRepository.medical.snapshot();
-  medicalUnsubscribe = connectedRepository.medical.subscribe((snapshot) => { state.medical = snapshot; });
-  syncUnsubscribe = repository.subscribeSyncStatus((status) => {
+  const initialMedical = await connectedRepository.medical.snapshot();
+  if (repository !== connectedRepository) return;
+  state.medical = initialMedical;
+  medicalUnsubscribe = connectedRepository.medical.subscribe((snapshot) => {
+    if (repository === connectedRepository) state.medical = snapshot;
+  });
+  syncUnsubscribe = connectedRepository.subscribeSyncStatus((status) => {
+    if (repository !== connectedRepository) return;
     state.sync = status;
     void (connectedRepository.notifications?.() ?? Promise.resolve([])).then((notifications) => {
       if (repository === connectedRepository) state.syncNotifications = notifications;
     });
   });
-  state.conflicts = await repository.conflicts();
-  state.syncNotifications = await (repository.notifications?.() ?? Promise.resolve([]));
+  const [conflicts, notifications] = await Promise.all([
+    connectedRepository.conflicts(),
+    connectedRepository.notifications?.() ?? Promise.resolve([]),
+  ]);
+  if (repository !== connectedRepository) return;
+  state.conflicts = conflicts;
+  state.syncNotifications = notifications;
   const directoryProfile = state.control.profile
     ? {
         firstName: state.control.profile.firstName,
@@ -265,20 +447,18 @@ async function connectRepository(session: AuthSessionDto) {
         ...(state.control.profile.patronymic ? { patronymic: state.control.profile.patronymic } : {}),
       }
     : null;
-  const directoryPets = state.activeRole === "owner"
-    ? state.medical.pets.map((pet) => ({ petId: pet.petId, species: pet.species, name: pet.name }))
+  const directoryPets = state.control.roles.some((role) => role.role === "owner" && role.status === "approved")
+    ? state.medical.pets
+      .filter((pet) => pet.ownerAccountId === accountId)
+      .map((pet) => ({ petId: pet.petId, species: pet.species, name: pet.name, updatedAt: pet.updatedAt }))
     : [];
-  void reconcileDirectorySnapshot({
-    profile: directoryProfile,
-    pets: directoryPets,
-    syncProfile: (profile) => connectedAuth.syncDirectoryProfile(profile),
-    syncPet: (pet) => syncDirectoryPetWithClient(connectedAuth, pet),
-    shouldContinue: () => repository === connectedRepository && auth === connectedAuth,
-    onFailure: (failure) => {
-      const target = failure.kind === "profile" ? "profile" : `pet ${failure.petId}`;
-      console.warn(`Directory ${target} reconciliation failed.`, failure.reason);
-    },
-  }).catch((reason) => console.warn("Directory reconciliation failed.", reason));
+  void reconcileDirectoryState(
+    connectedAuth,
+    accountId,
+    directoryProfile,
+    directoryPets,
+    () => repository === connectedRepository && auth === connectedAuth,
+  ).catch((reason) => console.warn("Directory reconciliation failed.", reason));
 }
 
 export async function bootstrapApp(force = false) {
@@ -304,8 +484,15 @@ export async function bootstrapApp(force = false) {
       state.activeRole = null;
       state.control = emptyControl;
       state.medical = emptyMedical;
+      state.directoryPendingCount = 0;
     }
   } catch (reason) {
+    cancelDirectoryRetry();
+    controlUnsubscribe?.(); controlUnsubscribe = null;
+    medicalUnsubscribe?.(); medicalUnsubscribe = null;
+    syncUnsubscribe?.(); syncUnsubscribe = null;
+    await repository?.dispose(); repository = null;
+    state.repositoryConnected = false;
     logInitializationError("app.bootstrap.failed", stage, reason);
     setAuthFeedback({ kind: "error", reason });
   } finally {
@@ -344,6 +531,7 @@ export async function login(email: string, password: string, deviceName?: string
 }
 
 export async function logout(all = false) {
+  cancelDirectoryRetry();
   state.busy = true;
   setAuthFeedback(null);
   try { if (all) await auth.logoutAll(); else await auth.logout(); } finally {
@@ -351,42 +539,67 @@ export async function logout(all = false) {
     medicalUnsubscribe?.(); medicalUnsubscribe = null;
     syncUnsubscribe?.(); syncUnsubscribe = null;
     await repository?.dispose(); repository = null; keys = null;
-    state.session = { authenticated: false }; state.activeRole = null; state.control = emptyControl; state.medical = emptyMedical; state.sync = emptySync; state.syncNotifications = []; state.repositoryConnected = false; state.busy = false;
+    state.session = { authenticated: false }; state.activeRole = null; state.control = emptyControl; state.medical = emptyMedical; state.sync = emptySync; state.syncNotifications = []; state.directoryPendingCount = 0; state.repositoryConnected = false; state.busy = false;
   }
 }
 
 export async function revokeDevice(deviceId: string) {
   const activeRepository = requireRepository();
   const currentDeviceId = state.session.device?.deviceId;
-  if (currentDeviceId && currentDeviceId !== deviceId && keys) {
-    const nextKeys = await generateUserKeySet(keys.version + 1);
-    const exported = await exportUserKeySet(nextKeys);
-    const result = await auth.revokeDevice(deviceId, exported);
-    for (const revokedId of result.revokedDeviceIds) await activeRepository.control.revokeDevice(revokedId);
-    if (result.certificate) {
-      await activeRepository.control.rotateCurrentDevice(result.certificate);
+  let projectionFailure: unknown;
+  let authRevoked = false;
+  try {
+    if (currentDeviceId && currentDeviceId !== deviceId && keys) {
+      const nextKeys = await generateUserKeySet(keys.version + 1);
+      const exported = await exportUserKeySet(nextKeys);
+      const result = await auth.revokeDevice(deviceId, exported);
+      authRevoked = true;
       keys = await storeExportedUserKeys(state.session.accountId!, exported);
+      try {
+        const revokedDeviceIds = new Set([deviceId, ...result.revokedDeviceIds]);
+        if (result.certificate) revokedDeviceIds.delete(result.certificate.deviceId);
+        for (const revokedId of revokedDeviceIds) await activeRepository.control.revokeDevice(revokedId);
+        if (result.certificate) await activeRepository.control.rotateCurrentDevice(result.certificate);
+      } catch (reason) {
+        projectionFailure = reason;
+      }
+    } else {
+      await auth.revokeDevice(deviceId);
+      authRevoked = true;
+      try {
+        await activeRepository.control.revokeDevice(deviceId);
+      } catch (reason) {
+        projectionFailure = reason;
+      }
+      if (currentDeviceId === deviceId) clearDeviceId();
     }
-  } else {
-    await activeRepository.control.revokeDevice(deviceId);
-    await auth.revokeDevice(deviceId);
-    if (currentDeviceId === deviceId) clearDeviceId();
+  } finally {
+    if (authRevoked) {
+      cancelDirectoryRetry();
+      await repository?.dispose();
+      repository = null;
+      controlUnsubscribe?.(); controlUnsubscribe = null;
+      medicalUnsubscribe?.(); medicalUnsubscribe = null;
+      syncUnsubscribe?.(); syncUnsubscribe = null;
+      state.session = { authenticated: false };
+      state.activeRole = null;
+      state.control = emptyControl;
+      state.medical = emptyMedical;
+      state.repositoryConnected = false;
+      state.sync = emptySync;
+      state.syncNotifications = [];
+      state.directoryPendingCount = 0;
+    }
   }
-  await repository?.dispose();
-  repository = null;
-  controlUnsubscribe?.(); controlUnsubscribe = null;
-  medicalUnsubscribe?.(); medicalUnsubscribe = null;
-  syncUnsubscribe?.(); syncUnsubscribe = null;
-  state.session = { authenticated: false };
-  state.activeRole = null;
-  state.repositoryConnected = false;
-  state.sync = emptySync;
-  state.syncNotifications = [];
+  if (projectionFailure) {
+    throw new Error("Устройство отозвано в службе входа, но защищённый журнал ещё не обновлён. Войдите снова: синхронизация продолжится автоматически.", { cause: projectionFailure });
+  }
 }
 
 export async function deleteAccount() {
   const activeRepository = requireRepository();
   const { operationId } = await auth.deleteAccount();
+  cancelDirectoryRetry();
   await activeRepository.control.deleteAccount(operationId);
   await repository?.dispose();
   repository = null;
@@ -398,6 +611,7 @@ export async function deleteAccount() {
   state.repositoryConnected = false;
   state.sync = emptySync;
   state.syncNotifications = [];
+  state.directoryPendingCount = 0;
 }
 
 export async function forgotPassword(email: string) {
@@ -426,17 +640,44 @@ export async function resetPassword(token: string, password: string) {
   }
 }
 
-export async function updateProfile(input: { firstName: string; lastName: string; patronymic?: string }) {
+export interface DirectorySynchronizationResult {
+  synchronized: boolean;
+}
+
+export async function updateProfile(input: DirectoryProfileInput): Promise<DirectorySynchronizationResult> {
   if (!state.session.accountId) throw new Error("Необходимо войти в аккаунт.");
   const activeRepository = requireRepository();
-  const operation = await auth.updateProfile(input);
-  await activeRepository.control.updateProfile({
-    accountId: state.session.accountId,
-    revision: (state.control.profile?.revision ?? 0) + 1,
-    ...input,
-    updatedAt: new Date().toISOString(),
-  }, operation.operationId);
-  await auth.syncDirectoryProfile(input);
+  const accountId = state.session.accountId;
+  const activeAuth = auth;
+  const operation = await runDirectoryMutation(async () => {
+    if (state.session.authenticated !== true || state.session.accountId !== accountId || auth !== activeAuth) {
+      throw new Error("Сеанс изменился до сохранения профиля. Повторите операцию.");
+    }
+    const result = await activeAuth.updateProfile(input);
+    if (result.profile) discardDirectoryProfileOperation(accountId);
+    else enqueueDirectoryProfile(accountId, input);
+    updateDirectoryPendingCount(accountId);
+    return result;
+  });
+  let projectionSynchronized = true;
+  try {
+    await activeRepository.control.updateProfile({
+      accountId,
+      revision: typeof activeRepository.control.nextProfileRevision === "function"
+        ? await activeRepository.control.nextProfileRevision(accountId)
+        : (state.control.profile?.revision ?? 0) + 1,
+      ...input,
+      updatedAt: new Date().toISOString(),
+    }, operation.operationId);
+  } catch (reason) {
+    projectionSynchronized = false;
+    console.warn("Protected profile projection update is pending.", reason);
+  }
+  await flushDirectoryMutations(activeAuth, accountId);
+  return {
+    synchronized: projectionSynchronized &&
+      !listDirectoryOutbox(accountId).some((item) => item.kind === "profile.upsert"),
+  };
 }
 
 export function searchDoctorDirectory(query = "", page = 1, pageSize = 20, sort = "name"): Promise<DirectoryPageDto<DirectoryProfileDto>> {
@@ -447,25 +688,41 @@ export function loadAdministratorUsers(query = "", pendingOnly = false, page = 1
   return auth.searchUsers(query, pendingOnly, page, pageSize, sort, direction);
 }
 
+export async function lookupAdministratorProfiles(accountIds: string[]): Promise<DirectoryProfileDto[]> {
+  if (!accountIds.length) return [];
+  const uniqueIds = [...new Set(accountIds)];
+  const profiles: DirectoryProfileDto[] = [];
+  for (let index = 0; index < uniqueIds.length; index += 200) {
+    profiles.push(...(await auth.lookupDirectoryProfiles(uniqueIds.slice(index, index + 200))).profiles);
+  }
+  return profiles;
+}
+
 export async function updateAdministratorUserProfile(
   accountId: string,
   input: Pick<DirectoryProfileDto, "firstName" | "lastName" | "patronymic">,
-): Promise<DirectoryProfileDto> {
+): Promise<{ profile: DirectoryProfileDto; projectionSynchronized: boolean }> {
   if (state.session.accountId !== config?.p2p.bootstrapAccountId || state.activeRole !== "administrator") {
     throw new Error("Изменять профили других пользователей может только начальный администратор.");
   }
   const activeRepository = requireRepository();
   const result = await auth.updateDirectoryUserProfile(accountId, input);
-  const current = state.control.profiles.find((profile) => profile.accountId === accountId);
-  await activeRepository.control.updateProfile({
-    accountId,
-    revision: (current?.revision ?? 0) + 1,
-    firstName: result.profile.firstName,
-    lastName: result.profile.lastName,
-    ...(result.profile.patronymic ? { patronymic: result.profile.patronymic } : {}),
-    updatedAt: result.profile.updatedAt,
-  }, result.operationId);
-  return result.profile;
+  try {
+    await activeRepository.control.updateProfile({
+      accountId,
+      revision: typeof activeRepository.control.nextProfileRevision === "function"
+        ? await activeRepository.control.nextProfileRevision(accountId)
+        : (state.control.profiles.find((profile) => profile.accountId === accountId)?.revision ?? 0) + 1,
+      firstName: result.profile.firstName,
+      lastName: result.profile.lastName,
+      ...(result.profile.patronymic ? { patronymic: result.profile.patronymic } : {}),
+      updatedAt: result.profile.updatedAt,
+    }, result.operationId);
+    return { profile: result.profile, projectionSynchronized: true };
+  } catch (reason) {
+    console.warn("Protected administrator profile projection update is pending.", reason);
+    return { profile: result.profile, projectionSynchronized: false };
+  }
 }
 
 export function lookupPetDirectory(petId: string): Promise<DirectoryPetDto> {
@@ -496,12 +753,44 @@ async function syncDirectoryPetWithClient(client: AuthClient, pet: DirectoryPetI
   throw lastError;
 }
 
-export function syncDirectoryPet(pet: DirectoryPetInput): Promise<void> {
-  return syncDirectoryPetWithClient(auth, pet);
+export async function syncDirectoryPet(pet: DirectoryPetInput): Promise<DirectorySynchronizationResult> {
+  const accountId = state.session.accountId;
+  if (!accountId) throw new Error("Необходимо войти в аккаунт.");
+  const activeAuth = auth;
+  return runDirectoryMutation(async () => {
+    if (state.session.authenticated !== true || state.session.accountId !== accountId || auth !== activeAuth) {
+      throw new Error("Сеанс изменился до публикации питомца. Повторите операцию.");
+    }
+    const operation = enqueueDirectoryPet(accountId, pet);
+    updateDirectoryPendingCount(accountId);
+    const failures = await performDirectoryFlush(activeAuth, accountId);
+    const permanentFailure = failures.find((failure) => failure.operation.operationId === operation.operationId &&
+      isPermanentDirectoryFailure(failure.reason));
+    if (permanentFailure) throw permanentFailure.reason;
+    const synchronized = !listDirectoryOutbox(accountId).some((candidate) =>
+      candidate.kind === "pet.upsert" && candidate.pet.petId === pet.petId);
+    return { synchronized };
+  });
 }
 
-export function deleteDirectoryPet(petId: string): Promise<void> {
-  return auth.deleteDirectoryPet(petId);
+export async function deleteDirectoryPet(petId: string): Promise<DirectorySynchronizationResult> {
+  const accountId = state.session.accountId;
+  if (!accountId) throw new Error("Необходимо войти в аккаунт.");
+  const activeAuth = auth;
+  return runDirectoryMutation(async () => {
+    if (state.session.authenticated !== true || state.session.accountId !== accountId || auth !== activeAuth) {
+      throw new Error("Сеанс изменился до удаления питомца из каталога. Повторите операцию.");
+    }
+    const operation = enqueueDirectoryPetDeletion(accountId, petId);
+    updateDirectoryPendingCount(accountId);
+    const failures = await performDirectoryFlush(activeAuth, accountId);
+    const permanentFailure = failures.find((failure) => failure.operation.operationId === operation.operationId &&
+      directoryFailureCode(failure.reason) === "PET_OWNER_REQUIRED");
+    if (permanentFailure) throw permanentFailure.reason;
+    const synchronized = !listDirectoryOutbox(accountId).some((candidate) =>
+      candidate.kind === "pet.delete" && candidate.petId === petId);
+    return { synchronized };
+  });
 }
 
 export async function updateCredentials(input: { email?: string; password?: string }) {
@@ -519,10 +808,32 @@ export async function switchRole(role: Role): Promise<void> {
 
 export async function requestRole(role: Role) { await requireRepository().control.requestRole(role, state.control.profile?.revision ?? 1); }
 export async function cancelRole(role: Role) { await requireRepository().control.cancelRole(role); }
-export async function decideRole(request: Pick<RoleRequest, "accountId" | "role">, status: "approved" | "rejected" | "revoked", reason?: string) {
+export async function decideRole(
+  request: Pick<RoleRequest, "accountId" | "role"> & Partial<Pick<RoleRequest, "status">>,
+  status: "approved" | "rejected" | "revoked",
+  reason?: string,
+) {
   const activeRepository = requireRepository();
-  await activeRepository.control.refreshProjection();
-  await activeRepository.control.decideRole({ accountId: request.accountId, role: request.role, status, ...(reason ? { reason } : {}) });
+  let lastError: unknown;
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    await activeRepository.control.refreshProjection();
+    try {
+      await activeRepository.control.decideRole({
+        accountId: request.accountId,
+        role: request.role,
+        status,
+        ...(request.status ? { expectedStatus: request.status } : {}),
+        ...(reason ? { reason } : {}),
+      });
+      return;
+    } catch (reason) {
+      lastError = reason;
+      const retryable = reason instanceof Error && reason.message === "Заявка роли не найдена.";
+      if (!retryable) throw reason;
+      if (attempt < 4) await new Promise((resolve) => setTimeout(resolve, 100 * (attempt + 1)));
+    }
+  }
+  throw new Error("Заявка уже видна в каталоге, но ещё синхронизируется с защищённым журналом. Повторите решение через несколько секунд.", { cause: lastError });
 }
 export function getRepository() { return repository; }
 export function requireRepository() {

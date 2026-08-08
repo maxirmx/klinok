@@ -39,6 +39,7 @@ export function createProtocolState(bootstrapAccountId = "bootstrap-administrato
     grants: new Map(),
     grantRequests: new Map(),
     petOwners: new Map(),
+    tombstonedPets: new Set(),
     confirmedRecords: new Set(),
     roleConflicts: [],
     invalidatedEvents: new Map(),
@@ -323,6 +324,9 @@ function capabilityResult(event: SignedEvent, state: ProtocolState): Verificatio
   }
   const petId = String(event.metadata.petId ?? event.aggregateId);
   const ownerId = state.petOwners.get(petId);
+  if (state.tombstonedPets.has(petId)) {
+    return { accepted: false, code: "PET_TOMBSTONED", message: "A tombstoned pet cannot be modified." };
+  }
   if (event.eventType === "pet.created") {
     return hasActiveRoleProof(state, event, "owner")
       ? { accepted: true }

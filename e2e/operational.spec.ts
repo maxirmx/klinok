@@ -254,8 +254,12 @@ test("fresh provisioning, Doctor approval, grant, draft, and confirmation", asyn
   const medicalCard = doctorPage.locator(".doctor-access-table tbody tr").filter({ hasText: petId });
   await expect(medicalCard).toBeVisible({ timeout: replicationTimeout });
   await medicalCard.getByRole("link", { name: "Открыть медицинскую карту" }).click();
-  await expect(doctorPage).toHaveURL(new RegExp(`/doctor/pets/${petId}$`));
-  await doctorPage.getByRole("button", { name: "Всё хорошо, необходимо", exact: true }).click();
+  await expect(doctorPage).toHaveURL(new RegExp(
+    `/doctor/pets/${petId}\\?grantId=[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$`,
+    "i",
+  ));
+  await doctorPage.getByRole("tree", { name: "Всё хорошо, необходимо", exact: true })
+    .locator("summary").click();
   await doctorPage.getByLabel("Контрольный осмотр", { exact: true }).check();
   await doctorPage.locator(".encounter-what-happened").getByLabel("Комментарий").fill("Состояние стабильное");
   await doctorPage.getByLabel("В стадии наблюдения", { exact: true }).check();

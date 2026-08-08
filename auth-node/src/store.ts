@@ -70,6 +70,8 @@ function isNotFound(error: unknown): boolean {
 
 export class AuthStore {
   private readonly db: ClassicLevel<string, unknown>;
+  private readonly directoryProfileMutations = new Map<string, Promise<void>>();
+  private readonly directoryPetMutations = new Map<string, Promise<void>>();
 
   constructor(private readonly dataDir: string) {
     this.db = new ClassicLevel(join(dataDir, "leveldb"), { valueEncoding: "json" });
@@ -91,6 +93,32 @@ export class AuthStore {
     } catch (error) {
       if (isNotFound(error)) return null;
       throw error;
+    }
+  }
+
+  private async runDirectoryProfileMutation<T>(accountId: string, task: () => Promise<T>): Promise<T> {
+    const previous = this.directoryProfileMutations.get(accountId) ?? Promise.resolve();
+    const operation = previous.then(task, task);
+    const settled = operation.then(() => undefined, () => undefined);
+    this.directoryProfileMutations.set(accountId, settled);
+    try {
+      return await operation;
+    } finally {
+      if (this.directoryProfileMutations.get(accountId) === settled) {
+        this.directoryProfileMutations.delete(accountId);
+      }
+    }
+  }
+
+  private async runDirectoryPetMutation<T>(petId: string, task: () => Promise<T>): Promise<T> {
+    const previous = this.directoryPetMutations.get(petId) ?? Promise.resolve();
+    const operation = previous.then(task, task);
+    const settled = operation.then(() => undefined, () => undefined);
+    this.directoryPetMutations.set(petId, settled);
+    try {
+      return await operation;
+    } finally {
+      if (this.directoryPetMutations.get(petId) === settled) this.directoryPetMutations.delete(petId);
     }
   }
 
@@ -212,6 +240,21 @@ export class AuthStore {
     return updated;
   }
 
+  async applyObservedDeviceRevocation(accountId: string, deviceId: string): Promise<AuthAccount | null> {
+    return this.runDirectoryProfileMutation(accountId, async () => {
+      const account = await this.getAccount(accountId);
+      if (!account) return null;
+      if (!account.devices.some((device) => device.deviceId === deviceId && device.status === "active")) return account;
+      return this.revokeAccountSessions({
+        ...account,
+        devices: account.devices.map((device) =>
+          device.deviceId === deviceId ? { ...device, status: "revoked" as const } : device),
+        enrollments: account.enrollments.map((enrollment) =>
+          enrollment.deviceId === deviceId ? { ...enrollment, status: "revoked" as const } : enrollment),
+      });
+    });
+  }
+
   async replaceAllSessionsForAccount(session: AuthSessionRecord, account: AuthAccount): Promise<AuthAccount> {
     const updated = {
       ...account,
@@ -228,19 +271,28 @@ export class AuthStore {
   }
 
   async deleteCredentialAccount(account: AuthAccount): Promise<AuthAccount> {
-    const updated: AuthAccount = {
-      ...account,
-      credentialStatus: "deleted",
-      setup: undefined,
-      encryptedUserKeySet: undefined,
-      pendingOperations: [],
-      sessionDigests: [],
-      updatedAt: new Date().toISOString(),
-    };
-    const batch = this.db.batch().del(`email:${account.email}`).put(`account:${account.accountId}`, updated);
-    for (const digest of account.sessionDigests) batch.del(`session:${digest}`);
-    await batch.write();
-    return updated;
+    return this.runDirectoryProfileMutation(account.accountId, async () => {
+      const current = await this.getAccount(account.accountId) ?? account;
+      const directoryPets = (await this.listDirectoryPets())
+        .filter((pet) => pet.ownerAccountId === current.accountId);
+      const updated: AuthAccount = {
+        ...current,
+        credentialStatus: "deleted",
+        setup: undefined,
+        encryptedUserKeySet: undefined,
+        pendingOperations: [],
+        sessionDigests: [],
+        updatedAt: new Date().toISOString(),
+      };
+      const batch = this.db.batch()
+        .del(`email:${current.email}`)
+        .del(`directory:profile:${current.accountId}`)
+        .put(`account:${current.accountId}`, updated);
+      for (const digest of current.sessionDigests) batch.del(`session:${digest}`);
+      for (const pet of directoryPets) batch.del(`directory:pet:${pet.petId}`);
+      await batch.write();
+      return updated;
+    });
   }
 
   async hasMarker(id: string): Promise<boolean> {
@@ -252,14 +304,72 @@ export class AuthStore {
   }
 
   async putDirectoryProfile(profile: DirectoryProfileDto): Promise<void> {
-    await this.db.put(`directory:profile:${profile.accountId}`, profile);
+    await this.runDirectoryProfileMutation(profile.accountId, () =>
+      this.db.put(`directory:profile:${profile.accountId}`, profile));
+  }
+
+  async createDirectoryProfile(profile: DirectoryProfileDto): Promise<DirectoryProfileDto> {
+    return this.runDirectoryProfileMutation(profile.accountId, async () => {
+      const account = await this.getAccount(profile.accountId);
+      if (!account || account.credentialStatus === "deleted") {
+        throw Object.assign(new Error("The directory account is unavailable."), { code: "ACCOUNT_DELETED" });
+      }
+      const existing = await this.getDirectoryProfile(profile.accountId);
+      if (existing) return existing;
+      await this.db.put(`directory:profile:${profile.accountId}`, profile);
+      return profile;
+    });
   }
 
   async putAccountAndDirectoryProfile(account: AuthAccount, profile: DirectoryProfileDto): Promise<void> {
-    await this.db.batch()
-      .put(`account:${account.accountId}`, account)
-      .put(`directory:profile:${profile.accountId}`, profile)
-      .write();
+    await this.runDirectoryProfileMutation(profile.accountId, async () => {
+      const current = await this.getAccount(account.accountId);
+      if (current?.credentialStatus === "deleted") {
+        throw Object.assign(new Error("The directory account is unavailable."), { code: "ACCOUNT_DELETED" });
+      }
+      await this.db.batch()
+        .put(`account:${account.accountId}`, account)
+        .put(`directory:profile:${profile.accountId}`, profile)
+        .write();
+    });
+  }
+
+  async applyObservedAccountProgress(
+    accountId: string,
+    operationId: string,
+    setupComplete: boolean,
+  ): Promise<AuthAccount | null> {
+    return this.runDirectoryProfileMutation(accountId, async () => {
+      const account = await this.getAccount(accountId);
+      if (!account) return null;
+      const pendingOperations = account.pendingOperations
+        .filter((operation) => operation.operationId !== operationId);
+      if (pendingOperations.length === account.pendingOperations.length && !(setupComplete && account.setup)) {
+        return account;
+      }
+
+      const updatedAt = new Date().toISOString();
+      const updated: AuthAccount = {
+        ...account,
+        pendingOperations,
+        ...(setupComplete ? { setup: undefined } : {}),
+        updatedAt,
+      };
+      const batch = this.db.batch().put(`account:${accountId}`, updated);
+      if (setupComplete && account.setup && !await this.getDirectoryProfile(accountId)) {
+        const { firstName, lastName, patronymic } = account.setup.profile;
+        batch.put(`directory:profile:${accountId}`, {
+          accountId,
+          firstName,
+          lastName,
+          ...(patronymic ? { patronymic } : {}),
+          displayName: [firstName, patronymic, lastName].filter(Boolean).join(" "),
+          updatedAt,
+        } satisfies DirectoryProfileDto);
+      }
+      await batch.write();
+      return updated;
+    });
   }
 
   async getDirectoryProfile(accountId: string): Promise<DirectoryProfileDto | null> {
@@ -274,16 +384,27 @@ export class AuthStore {
     return profiles;
   }
 
-  async putDirectoryPet(pet: DirectoryPetDto): Promise<void> {
-    await this.db.put(`directory:pet:${pet.petId}`, pet);
+  async putDirectoryPet(pet: DirectoryPetDto): Promise<boolean> {
+    return this.runDirectoryProfileMutation(pet.ownerAccountId, async () => {
+      const account = await this.getAccount(pet.ownerAccountId);
+      if (account?.credentialStatus === "deleted") return false;
+      return this.runDirectoryPetMutation(pet.petId, async () => {
+        if (await this.isObservedPetTombstoned(pet.petId)) return false;
+        await this.db.put(`directory:pet:${pet.petId}`, pet);
+        return true;
+      });
+    });
   }
 
   async getDirectoryPet(petId: string): Promise<DirectoryPetDto | null> {
-    return this.get<DirectoryPetDto>(`directory:pet:${petId}`);
+    const pet = await this.get<DirectoryPetDto>(`directory:pet:${petId}`);
+    if (!pet) return null;
+    const profile = await this.getDirectoryProfile(pet.ownerAccountId);
+    return profile ? { ...pet, ownerDisplayName: profile.displayName } : pet;
   }
 
   async deleteDirectoryPet(petId: string): Promise<void> {
-    await this.db.del(`directory:pet:${petId}`);
+    await this.runDirectoryPetMutation(petId, () => this.db.del(`directory:pet:${petId}`));
   }
 
   async listDirectoryPets(): Promise<DirectoryPetDto[]> {
@@ -291,7 +412,11 @@ export class AuthStore {
     for await (const [, value] of this.db.iterator({ gte: "directory:pet:", lt: "directory:pet;" })) {
       pets.push(value as DirectoryPetDto);
     }
-    return pets;
+    const displayNames = new Map((await this.listDirectoryProfiles())
+      .map((profile) => [profile.accountId, profile.displayName]));
+    return pets.map((pet) => displayNames.has(pet.ownerAccountId)
+      ? { ...pet, ownerDisplayName: displayNames.get(pet.ownerAccountId)! }
+      : pet);
   }
 
   async putObservedRole(accountId: string, role: Role, status: RoleStatus): Promise<void> {
@@ -315,7 +440,22 @@ export class AuthStore {
   }
 
   async putObservedPetOwner(petId: string, ownerAccountId: string): Promise<void> {
-    await this.db.put(`projection:pet-owner:${petId}`, ownerAccountId);
+    await this.runDirectoryPetMutation(petId, async () => {
+      if (await this.isObservedPetTombstoned(petId)) return;
+      await this.db.put(`projection:pet-owner:${petId}`, ownerAccountId);
+    });
+  }
+
+  async deleteObservedPetOwner(petId: string): Promise<void> {
+    await this.runDirectoryPetMutation(petId, () => this.db.batch()
+      .del(`directory:pet:${petId}`)
+      .del(`projection:pet-owner:${petId}`)
+      .put(`projection:pet-tombstone:${petId}`, true)
+      .write());
+  }
+
+  async isObservedPetTombstoned(petId: string): Promise<boolean> {
+    return await this.get<boolean>(`projection:pet-tombstone:${petId}`) === true;
   }
 
   async getObservedPetOwner(petId: string): Promise<string | null> {

@@ -304,6 +304,8 @@ describe("durable browser event storage", () => {
     const userKeys = await createAndStoreUserKeys("account");
     const dataKey = await crypto.subtle.generateKey({ name: "AES-GCM", length: 256 }, true, ["encrypt", "decrypt"]);
     await putPetKey("account", "pet", 3, dataKey);
+    const staleDataKey = await crypto.subtle.generateKey({ name: "AES-GCM", length: 256 }, true, ["encrypt", "decrypt"]);
+    await putPetKey("account", "pet", 2, staleDataKey);
 
     expect((await loadUserKeys("account"))?.version).toBe(userKeys.version);
     expect(await getPetKey("account", "pet")).toMatchObject({ version: 3, key: expect.any(CryptoKey) });

@@ -17,11 +17,17 @@ async function db(): Promise<IDBDatabase> {
 }
 
 export async function putPetKey(accountId: string, petId: string, version: number, key: CryptoKey): Promise<void> {
-  const database = await db();
   const value: StoredPetKey = { version, jwk: await crypto.subtle.exportKey("jwk", key) };
+  const database = await db();
   await new Promise<void>((resolve, reject) => {
     const tx = database.transaction(STORE, "readwrite");
-    tx.objectStore(STORE).put(value, `${accountId}:${petId}`);
+    const store = tx.objectStore(STORE);
+    const storageKey = `${accountId}:${petId}`;
+    const current = store.get(storageKey);
+    current.onsuccess = () => {
+      const stored = current.result as StoredPetKey | undefined;
+      if (!stored || stored.version < version) store.put(value, storageKey);
+    };
     tx.oncomplete = () => resolve();
     tx.onerror = () => reject(tx.error);
   });

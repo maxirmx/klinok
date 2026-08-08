@@ -53,6 +53,12 @@ const status = computed(() => {
     title: "Синхронизация временно недоступна. Приложение повторит попытку автоматически.",
     actionable: false,
   };
+  if (appState.directoryPendingCount) return {
+    kind: "pending",
+    label: `Ожидает публикации: ${appState.directoryPendingCount}`,
+    title: "Изменения сохранены в защищённом журнале и будут опубликованы в каталоге автоматически.",
+    actionable: false,
+  };
   if (appState.sync.deferredCount) return {
     kind: "pending",
     label: `Ожидает связанных данных: ${appState.sync.deferredCount}`,
