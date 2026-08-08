@@ -9,6 +9,7 @@ WORKDIR /app
 
 COPY package*.json ./
 COPY packages/node-datachannel-disabled/package.json packages/node-datachannel-disabled/package.json
+COPY packages/react-native-webrtc-disabled/package.json packages/react-native-webrtc-disabled/package.json
 RUN npm ci --ignore-scripts
 
 COPY . .

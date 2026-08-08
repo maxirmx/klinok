@@ -99,7 +99,7 @@ function removeProblem(id: string) {
 }
 
 function updateProblemTherapy(problem: TherapeuticProblemDraft) {
-  if (problem.priorTherapyId === "problem.therapy.none") {
+  if (problem.priorTherapyId !== "problem.therapy.performed") {
     problem.medicationUseId = undefined;
     problem.medicationIds = [];
     problem.medicationDynamicsId = undefined;

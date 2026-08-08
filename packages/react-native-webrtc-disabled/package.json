@@ -1,0 +1,15 @@
+{
+  "name": "react-native-webrtc",
+  "version": "124.0.8",
+  "private": true,
+  "description": "Заглушка React Native WebRTC для Klinok, не использующего React Native",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./index.d.ts",
+      "import": "./index.js",
+      "default": "./index.js"
+    }
+  },
+  "sideEffects": false
+}
