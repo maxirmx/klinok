@@ -7,6 +7,7 @@ WORKDIR /app
 COPY --chown=node:node package*.json ./
 COPY packages/protocol/package.json packages/protocol/package.json
 COPY packages/node-datachannel-disabled packages/node-datachannel-disabled
+COPY packages/react-native-webrtc-disabled packages/react-native-webrtc-disabled
 COPY p2p-node/package.json p2p-node/package.json
 RUN npm ci --workspace @klinok/protocol --workspace @klinok/p2p-node --include-workspace-root
 COPY packages/protocol packages/protocol

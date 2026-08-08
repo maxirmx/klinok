@@ -163,6 +163,32 @@ describe("TherapeuticAppointmentForm", () => {
     expect(problem.findAll("select")).toHaveLength(5);
   });
 
+  it("clears medication fields when prior therapy is reset to unspecified", async () => {
+    const { wrapper, draft } = mountForm();
+    await wrapper.get('button[aria-label="Добавить проблему"]').trigger("click");
+    const problem = wrapper.get(".therapeutic-problem-card");
+    await problem.findAll("select")[2]!.setValue("problem.therapy.performed");
+    await problem.findAll("select")[3]!.setValue("problem.medication.used");
+    await problem.get<HTMLInputElement>('.therapeutic-problem-medications input[type="checkbox"]').setValue(true);
+    await problem.findAll("select")[4]!.setValue("problem.dynamics.positive");
+
+    expect(draft.diseaseAnamnesis.problems[0]).toMatchObject({
+      medicationUseId: "problem.medication.used",
+      medicationIds: ["problem.medication.type.analgesic"],
+      medicationDynamicsId: "problem.dynamics.positive",
+    });
+
+    await problem.findAll("select")[2]!.setValue("");
+
+    expect(draft.diseaseAnamnesis.problems[0]).toMatchObject({
+      medicationUseId: undefined,
+      medicationIds: [],
+      medicationDynamicsId: undefined,
+    });
+    expect(problem.findAll("select")).toHaveLength(3);
+    expect(problem.find(".therapeutic-problem-medications").exists()).toBe(false);
+  });
+
   it("focuses newly added problems and deletes only the selected card", async () => {
     const { wrapper, draft } = mountForm({ attachToDocument: true });
     try {

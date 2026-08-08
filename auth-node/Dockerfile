@@ -7,6 +7,7 @@ WORKDIR /app
 COPY package*.json ./
 COPY packages/protocol/package.json packages/protocol/package.json
 COPY packages/node-datachannel-disabled packages/node-datachannel-disabled
+COPY packages/react-native-webrtc-disabled packages/react-native-webrtc-disabled
 COPY auth-node/package.json auth-node/package.json
 RUN npm ci --workspace @klinok/protocol --workspace @klinok/auth-node --include-workspace-root
 COPY packages/protocol packages/protocol
