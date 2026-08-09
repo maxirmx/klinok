@@ -66,6 +66,22 @@ export class InMemorySignedEventRepository {
     for (const event of events) {
       if (!this.events.has(event.eventId) && !this.permanentConflicts.has(event.eventId)) candidates.set(event.eventId, event);
     }
+    const quarantined: ProjectionConflict[] = [];
+    for (const [eventId, event] of candidates) {
+      if (!this.verificationOptions.replayQuarantineEventIds?.has(eventId)) continue;
+      const result = await verifySignedEvent(event, this.state, {
+        ...this.verificationOptions,
+        allowUnknownDevice: event.eventType === "device.attested",
+      });
+      if (result.code !== "BOOTSTRAP_ANCHOR_MISMATCH") continue;
+      const conflict = { event, result };
+      candidates.delete(eventId);
+      this.deferred.delete(eventId);
+      this.state.knownEvents.add(eventId);
+      if (!this.permanentConflicts.has(eventId)) this.newConflicts.push(conflict);
+      this.permanentConflicts.set(eventId, conflict);
+      quarantined.push(conflict);
+    }
     const projection = await reduceSignedEvents([...candidates.values()], this.state, this.verificationOptions);
     for (const eventId of candidates.keys()) this.deferred.delete(eventId);
     for (const event of projection.accepted) {
@@ -78,10 +94,10 @@ export class InMemorySignedEventRepository {
       this.permanentConflicts.set(conflict.event.eventId, conflict);
     }
     reconcileEffectiveEvents(this.list(), this.state);
-    if (projection.accepted.length || projection.conflicts.length) {
+    if (projection.accepted.length || projection.conflicts.length || quarantined.length) {
       for (const listener of this.listeners) listener(this.list());
     }
-    return projection;
+    return { ...projection, conflicts: [...quarantined, ...projection.conflicts] };
   }
 
   async replace(events: SignedEvent[]): Promise<ProjectionResult> {

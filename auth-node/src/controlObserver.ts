@@ -81,6 +81,7 @@ function observerAccessController(
   authAttestationPublicKey: JsonWebKey,
   bootstrapSigningPublicKey: JsonWebKey | undefined,
   database: "control" | "medical",
+  replayQuarantineEventIds: ReadonlySet<string>,
 ) {
   const type = ACCESS_CONTROLLER_TYPES[database];
   const factory = async () => ({
@@ -114,6 +115,16 @@ function observerAccessController(
         return true;
       }
       if (!result.accepted) {
+        if (result.code === "BOOTSTRAP_ANCHOR_MISMATCH" && replayQuarantineEventIds.has(event.eventId)) {
+          console.warn(JSON.stringify({
+            level: "warn",
+            event: "auth.control-observer.authorization.quarantined",
+            code: result.code,
+            eventId: event.eventId,
+            eventType: event.eventType,
+          }));
+          return true;
+        }
         console.warn(JSON.stringify({
           level: "warn",
           event: "auth.control-observer.authorization.rejected",
@@ -146,6 +157,7 @@ export class ControlPlaneObserver {
       authAttestationPublicKey,
       bootstrapSigningPublicKey: config.bootstrapSigningPublicKey,
       requireTrustedAttestation: true,
+      replayQuarantineEventIds: new Set(config.controlObserver.replayQuarantineEventIds),
     });
     this.ready = !config.controlObserver.enabled;
   }
@@ -161,7 +173,7 @@ export class ControlPlaneObserver {
   metrics() {
     return {
       ready: this.ready,
-      accepted: this.state.knownEvents.size,
+      accepted: this.projector.list().length,
       deferred: this.projector.listDeferred().length,
       conflicts: this.projector.listConflicts().length,
     };
@@ -179,8 +191,9 @@ export class ControlPlaneObserver {
       import("@libp2p/gossipsub"), import("@chainsafe/libp2p-noise"), import("@chainsafe/libp2p-yamux"), import("@multiformats/multiaddr"), import("blockstore-level"),
     ]);
     this.ready = false;
-    const controlAccess = observerAccessController(this.state, this.authAttestationPublicKey, this.config.bootstrapSigningPublicKey, "control");
-    const medicalAccess = observerAccessController(this.state, this.authAttestationPublicKey, this.config.bootstrapSigningPublicKey, "medical");
+    const replayQuarantineEventIds = new Set(this.config.controlObserver.replayQuarantineEventIds);
+    const controlAccess = observerAccessController(this.state, this.authAttestationPublicKey, this.config.bootstrapSigningPublicKey, "control", replayQuarantineEventIds);
+    const medicalAccess = observerAccessController(this.state, this.authAttestationPublicKey, this.config.bootstrapSigningPublicKey, "medical", replayQuarantineEventIds);
     useIdentityProvider(KlinokIdentityProvider);
     useAccessController(controlAccess);
     useAccessController(medicalAccess);

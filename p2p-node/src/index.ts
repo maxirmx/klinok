@@ -49,6 +49,7 @@ const tlsFiles = getTlsFilePaths();
 const privateKey = await loadOrCreateLibp2pPrivateKey({ dataDir });
 const bootstrapList = splitEnvList("KLINOK_P2P_BOOTSTRAP");
 const announce = splitEnvList("KLINOK_P2P_ANNOUNCE");
+const replayQuarantineEventIds = new Set(splitEnvList("KLINOK_REPLAY_QUARANTINE_EVENT_IDS"));
 const authAttestationPublicKey = optionalEnv("KLINOK_AUTH_ATTESTATION_PUBLIC_KEY")
   ? JSON.parse(optionalEnv("KLINOK_AUTH_ATTESTATION_PUBLIC_KEY")!) as JsonWebKey
   : undefined;
@@ -59,6 +60,7 @@ const projector = new InMemorySignedEventRepository(process.env.KLINOK_BOOTSTRAP
   authAttestationPublicKey,
   bootstrapSigningPublicKey,
   requireTrustedAttestation: true,
+  replayQuarantineEventIds,
 });
 const state = projector.state;
 const counters = createP2pOperationalCounters();
@@ -102,19 +104,23 @@ async function databaseEvents(db: { iterator(): AsyncIterable<unknown> }, databa
   return events;
 }
 
-const controlAccess = createDynamicAccessController({ state, database: "control", authAttestationPublicKey, bootstrapSigningPublicKey, requireTrustedAttestation: true, onRejected: (event, code, details) => {
+const controlAccess = createDynamicAccessController({ state, database: "control", authAttestationPublicKey, bootstrapSigningPublicKey, requireTrustedAttestation: true, replayQuarantineEventIds, onRejected: (event, code, details) => {
   recordAuthorizationRejection(counters, code);
   console.warn(JSON.stringify({ level: "warn", event: "authorization.rejected", database: "control", eventId: event?.eventId, eventType: event?.eventType, code, ...details }));
   logOperationalCounters(counters, state.roleConflicts.length);
 }, onDeferred: (event, code, details) => {
   console.log(JSON.stringify({ level: "info", event: "authorization.deferred", database: "control", eventId: event.eventId, eventType: event.eventType, code, ...details }));
+}, onQuarantined: (event, code, details) => {
+  console.warn(JSON.stringify({ level: "warn", event: "authorization.quarantined", database: "control", eventId: event.eventId, eventType: event.eventType, code, ...details }));
 } });
-const medicalAccess = createDynamicAccessController({ state, database: "medical", authAttestationPublicKey, bootstrapSigningPublicKey, requireTrustedAttestation: true, onRejected: (event, code, details) => {
+const medicalAccess = createDynamicAccessController({ state, database: "medical", authAttestationPublicKey, bootstrapSigningPublicKey, requireTrustedAttestation: true, replayQuarantineEventIds, onRejected: (event, code, details) => {
   recordAuthorizationRejection(counters, code);
   console.warn(JSON.stringify({ level: "warn", event: "authorization.rejected", database: "medical", eventId: event?.eventId, eventType: event?.eventType, code, ...details }));
   logOperationalCounters(counters, state.roleConflicts.length);
 }, onDeferred: (event, code, details) => {
   console.log(JSON.stringify({ level: "info", event: "authorization.deferred", database: "medical", eventId: event.eventId, eventType: event.eventType, code, ...details }));
+}, onQuarantined: (event, code, details) => {
+  console.warn(JSON.stringify({ level: "warn", event: "authorization.quarantined", database: "medical", eventId: event.eventId, eventType: event.eventType, code, ...details }));
 } });
 useAccessController(controlAccess);
 useAccessController(medicalAccess);
@@ -198,7 +204,7 @@ console.log(JSON.stringify({
   level: "info",
   event: "p2p.replay.complete",
   events: startupControlEvents.length + startupMedicalEvents.length,
-  accepted: state.knownEvents.size,
+  accepted: projector.list().length,
   deferred: projector.listDeferred().length,
   conflicts: projector.listConflicts().length,
   dataGeneration,
@@ -208,11 +214,11 @@ const ingestServer = await startEventIngestServer({
   service: new EventIngestService({
     state,
     databases: { control: controlDb, medical: medicalDb },
-    verification: { authAttestationPublicKey, bootstrapSigningPublicKey, requireTrustedAttestation: true },
+    verification: { authAttestationPublicKey, bootstrapSigningPublicKey, requireTrustedAttestation: true, replayQuarantineEventIds },
     projectEvents: (events) => projectEvents(events, false),
     onPersisted: notifyAuthObserver,
     projectionStats: () => ({
-      accepted: state.knownEvents.size,
+      accepted: projector.list().length,
       deferred: projector.listDeferred().length,
       conflicts: projector.listConflicts().length,
     }),

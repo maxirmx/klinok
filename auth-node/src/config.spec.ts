@@ -13,6 +13,7 @@ describe("auth configuration", () => {
     expect(config.escrowKeyPath).toBe(".klinok-auth/user-key-escrow-key.json");
     expect(config.bootstrapAccountId).toBe("bootstrap-administrator");
     expect(config.bootstrapSigningPublicKey).toBeUndefined();
+    expect(config.controlObserver.replayQuarantineEventIds).toEqual([]);
     expect(config.rateLimit).toEqual(DEFAULT_AUTH_RATE_LIMITS);
   });
 
@@ -38,5 +39,11 @@ describe("auth configuration", () => {
       KLINOK_BOOTSTRAP_SIGNING_PUBLIC_KEY: JSON.stringify(key),
     })).toMatchObject({ bootstrapAccountId: "root-account", bootstrapSigningPublicKey: key });
     expect(() => loadAuthConfig({ KLINOK_BOOTSTRAP_SIGNING_PUBLIC_KEY: "invalid" })).toThrow(/JSON Web Key/);
+  });
+
+  it("parses exact replay quarantine event IDs", () => {
+    expect(loadAuthConfig({
+      KLINOK_REPLAY_QUARANTINE_EVENT_IDS: "bad-event-1, bad-event-2",
+    }).controlObserver.replayQuarantineEventIds).toEqual(["bad-event-1", "bad-event-2"]);
   });
 });

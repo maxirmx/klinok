@@ -3,7 +3,15 @@
 // This file is a part of Klinok application
 
 import { describe, expect, it, vi } from "vitest";
-import { ACCESS_CONTROLLER_TYPES, type SignedEvent } from "@klinok/protocol";
+import {
+  ACCESS_CONTROLLER_TYPES,
+  exportUserKeySet,
+  generateUserKeySet,
+  InMemorySignedEventRepository,
+  signEvent,
+  type DeviceCertificate,
+  type SignedEvent,
+} from "@klinok/protocol";
 import { createDynamicAccessController } from "../p2p-node/src/accessController";
 
 describe("trusted node access controllers", () => {
@@ -36,7 +44,11 @@ describe("trusted node access controllers", () => {
       database: "control",
       orbitIdentityId: "event-orbit",
     } as SignedEvent;
-    const factory = createDynamicAccessController({ database: "control", onRejected });
+    const factory = createDynamicAccessController({
+      database: "control",
+      replayQuarantineEventIds: new Set([event.eventId]),
+      onRejected,
+    });
     const controller = await factory();
 
     await expect(controller.canAppend({ identity: "identity-hash", payload: { value: { op: "ADD", key: null, value: event } } })).resolves.toBe(false);
@@ -107,5 +119,73 @@ describe("trusted node access controllers", () => {
 
     await expect(controller.canAppend({ identity: "identity-hash", payload: { value: { op: "ADD", value: event } } })).resolves.toBe(true);
     expect(onDeferred).toHaveBeenCalledWith(event, "DEVICE_UNKNOWN", expect.any(Object));
+  });
+
+  it("admits only an explicitly quarantined anchor mismatch into transport replay", async () => {
+    const unrelatedKeys = await generateUserKeySet();
+    const unrelated = await exportUserKeySet(unrelatedKeys);
+    const anchor = await exportUserKeySet(await generateUserKeySet());
+    const certificate: DeviceCertificate = {
+      deviceId: "bad-bootstrap-device",
+      accountId: "bootstrap-administrator",
+      orbitIdentityId: "klinok-device-bad-bootstrap-device",
+      status: "active",
+      userKeyVersion: unrelated.version,
+      signingPublicKey: unrelated.signingPublicKey,
+      encryptionPublicKey: unrelated.encryptionPublicKey,
+      issuedAt: "2026-07-10T00:00:00.000Z",
+      attestation: "legacy-attestation",
+    };
+    const event = await signEvent({
+      schemaVersion: 1,
+      database: "control",
+      eventId: "known-bad-event",
+      operationId: "known-bad-operation",
+      eventType: "device.attested",
+      aggregateId: certificate.accountId,
+      resourceId: certificate.deviceId,
+      createdAt: certificate.issuedAt,
+      actorAccountId: certificate.accountId,
+      actorDeviceId: certificate.deviceId,
+      orbitIdentityId: certificate.orbitIdentityId,
+      activeRole: "administrator",
+      parents: [],
+      keyVersion: certificate.userKeyVersion,
+      proofIds: [],
+      metadata: { accountId: certificate.accountId, certificate },
+      keyring: [],
+      payload: { algorithm: "AES-GCM-256", iv: "iv", ciphertext: "ciphertext" },
+    }, unrelatedKeys.signingPrivateKey);
+    const entry = { identity: "identity-hash", payload: { value: { op: "ADD", value: event } } };
+    const onRejected = vi.fn();
+    const regular = await createDynamicAccessController({
+      database: "control",
+      bootstrapSigningPublicKey: anchor.signingPublicKey,
+      onRejected,
+    })();
+    await expect(regular.canAppend(entry)).resolves.toBe(false);
+    expect(onRejected).toHaveBeenCalledWith(event, "BOOTSTRAP_ANCHOR_MISMATCH", expect.any(Object));
+
+    const onQuarantined = vi.fn();
+    const quarantined = await createDynamicAccessController({
+      database: "control",
+      bootstrapSigningPublicKey: anchor.signingPublicKey,
+      replayQuarantineEventIds: new Set([event.eventId]),
+      onQuarantined,
+    })();
+    await expect(quarantined.canAppend(entry)).resolves.toBe(true);
+    expect(onQuarantined).toHaveBeenCalledWith(event, "BOOTSTRAP_ANCHOR_MISMATCH", expect.any(Object));
+
+    const projector = new InMemorySignedEventRepository("bootstrap-administrator", {
+      bootstrapSigningPublicKey: anchor.signingPublicKey,
+      replayQuarantineEventIds: new Set([event.eventId]),
+    });
+    const projection = await projector.import([event]);
+    expect(projection.conflicts).toEqual([expect.objectContaining({
+      event,
+      result: expect.objectContaining({ code: "BOOTSTRAP_ANCHOR_MISMATCH" }),
+    })]);
+    expect(projector.state.knownEvents.has(event.eventId)).toBe(true);
+    expect(projector.state.devices.size).toBe(0);
   });
 });

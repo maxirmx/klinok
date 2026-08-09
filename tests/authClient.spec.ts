@@ -79,6 +79,13 @@ describe("auth client", () => {
   });
 
   it("requests and answers a bootstrap replacement challenge with CSRF protection", async () => {
+    const userKeySet = {
+      version: 1,
+      signingPublicKey: { kty: "EC" },
+      signingPrivateKey: { kty: "EC", d: "private-signing" },
+      encryptionPublicKey: { kty: "RSA" },
+      encryptionPrivateKey: { kty: "RSA", d: "private-encryption" },
+    };
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(new Response(JSON.stringify({ authenticated: true, csrfToken: "csrf" }), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify({ challenge: "nonce", expiresAt: "2026-07-21T00:05:00.000Z" }), { status: 200 }))
@@ -97,7 +104,7 @@ describe("auth client", () => {
       userKeyVersion: 1,
       signingPublicKey: { kty: "EC" },
       encryptionPublicKey: { kty: "RSA" },
-    }, "signed-proof");
+    }, "signed-proof", userKeySet);
 
     expect(fetchMock.mock.calls[1][0]).toBe("/api/auth/bootstrap-device-replacement/challenge");
     expect(fetchMock.mock.calls[2][0]).toBe("/api/auth/bootstrap-device-replacement");
@@ -106,6 +113,7 @@ describe("auth client", () => {
     expect(JSON.parse(fetchMock.mock.calls[2][1].body as string)).toMatchObject({
       payload: { deviceId: "new-device", challenge: "nonce" },
       signature: "signed-proof",
+      userKeySet,
     });
   });
 

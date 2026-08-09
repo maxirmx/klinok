@@ -288,6 +288,7 @@ export interface VerificationOptions {
   authAttestationPublicKey?: JsonWebKey;
   bootstrapSigningPublicKey?: JsonWebKey;
   requireTrustedAttestation?: boolean;
+  replayQuarantineEventIds?: ReadonlySet<string>;
 }
 
 export interface AuthErrorBody {

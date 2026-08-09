@@ -79,6 +79,7 @@ describe("Klinok repository facade", () => {
         controlDatabaseName: "klinok-control-v2",
         medicalDatabaseName: "klinok-medical-v4",
         trustedNodeMultiaddrs: [],
+        replayQuarantineEventIds: [],
         bootstrapAccountId: "bootstrap-administrator",
       },
     } satisfies AppRuntimeConfig;

@@ -14,6 +14,7 @@ export interface P2PClientConfig {
   controlDatabaseAddress?: string;
   medicalDatabaseAddress?: string;
   trustedNodeMultiaddrs: string[];
+  replayQuarantineEventIds: string[];
   bootstrapAccountId: string;
   bootstrapSigningPublicKey?: JsonWebKey;
   authAttestationPublicKey?: JsonWebKey;
@@ -66,6 +67,7 @@ export function createDefaultRuntimeConfig(isDevelopment = import.meta.env.DEV):
       controlDatabaseName: "klinok-control-v2",
       medicalDatabaseName: "klinok-medical-v4",
       trustedNodeMultiaddrs: [isDevelopment ? DEVELOPMENT_TRUSTED_NODE_MULTIADDR : PRODUCTION_TRUSTED_NODE_MULTIADDR],
+      replayQuarantineEventIds: [],
       bootstrapAccountId: "bootstrap-administrator",
     },
   };
@@ -105,6 +107,7 @@ export function normalizeRuntimeConfig(input: AppRuntimeConfigInput, defaults = 
       ...(input.p2p?.controlDatabaseAddress ? { controlDatabaseAddress: input.p2p.controlDatabaseAddress } : {}),
       ...(input.p2p?.medicalDatabaseAddress ? { medicalDatabaseAddress: input.p2p.medicalDatabaseAddress } : {}),
       trustedNodeMultiaddrs: strings(input.p2p?.trustedNodeMultiaddrs, defaults.p2p.trustedNodeMultiaddrs),
+      replayQuarantineEventIds: strings(input.p2p?.replayQuarantineEventIds, defaults.p2p.replayQuarantineEventIds),
       bootstrapAccountId: text(input.p2p?.bootstrapAccountId, defaults.p2p.bootstrapAccountId),
       ...(input.p2p?.bootstrapSigningPublicKey ? { bootstrapSigningPublicKey: input.p2p.bootstrapSigningPublicKey } : {}),
       ...(input.p2p?.authAttestationPublicKey ? { authAttestationPublicKey: input.p2p.authAttestationPublicKey } : {}),

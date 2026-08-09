@@ -72,13 +72,13 @@ export function createAppRouter(pinia: Pinia) {
     await bootstrapApp();
     if (to.meta.public) {
       if (appState.session.authenticated && to.path === "/auth/login") {
-        if (appState.keyRecoveryRequired || appState.devicePending) return "/profile";
+        if (appState.keyRecoveryRequired || appState.bootstrapRecoveryRequired || appState.devicePending) return "/profile";
         return roleHomePath(appState.activeRole);
       }
       return true;
     }
     if (!appState.session.authenticated) return { path: "/auth/login", query: { continue: to.fullPath } };
-    if (appState.keyRecoveryRequired || appState.devicePending) return to.path === "/profile" ? true : "/profile";
+    if (appState.keyRecoveryRequired || appState.bootstrapRecoveryRequired || appState.devicePending) return to.path === "/profile" ? true : "/profile";
     const role = to.meta.role as Role | undefined;
     if (!role) return true;
     const approved = appState.control.roles.find((request) => request.role === role && request.status === "approved");

@@ -17,6 +17,7 @@
     "controlDatabaseName": "klinok-control-v2",
     "medicalDatabaseName": "klinok-medical-v4",
     "trustedNodeMultiaddrs": ["/dns4/klinok.sw.consulting/tcp/8089/tls/ws"],
+    "replayQuarantineEventIds": [],
     "bootstrapAccountId": "bootstrap-administrator"
   }
 }

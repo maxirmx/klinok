@@ -16,8 +16,17 @@ PERSONAL_DATA_VERSION=${KLINOK_PERSONAL_DATA_CONSENT_VERSION:-2026-07-10}
 USER_AGREEMENT_VERSION=${KLINOK_USER_AGREEMENT_VERSION:-2026-07-10}
 AUTH_ATTESTATION_PUBLIC_KEY=${KLINOK_AUTH_ATTESTATION_PUBLIC_KEY:-null}
 BOOTSTRAP_SIGNING_PUBLIC_KEY=${KLINOK_BOOTSTRAP_SIGNING_PUBLIC_KEY:-null}
+REPLAY_QUARANTINE_EVENT_IDS=${KLINOK_REPLAY_QUARANTINE_EVENT_IDS:-}
 
 case "$ENABLE_LOG" in true|false) ;; *) ENABLE_LOG=false ;; esac
+case "$REPLAY_QUARANTINE_EVENT_IDS" in
+  *[!A-Za-z0-9,_-]*) echo "KLINOK_REPLAY_QUARANTINE_EVENT_IDS contains invalid characters." >&2; exit 1 ;;
+esac
+if [ -n "$REPLAY_QUARANTINE_EVENT_IDS" ]; then
+  REPLAY_QUARANTINE_JSON="[\"$(printf '%s' "$REPLAY_QUARANTINE_EVENT_IDS" | sed 's/,/","/g')\"]"
+else
+  REPLAY_QUARANTINE_JSON="[]"
+fi
 
 cat > "$CONFIG_PATH" <<EOF
 {
@@ -33,6 +42,7 @@ cat > "$CONFIG_PATH" <<EOF
     "controlDatabaseName": "$CONTROL_DB",
     "medicalDatabaseName": "$MEDICAL_DB",
     "trustedNodeMultiaddrs": ["$TRUSTED_NODE"],
+    "replayQuarantineEventIds": $REPLAY_QUARANTINE_JSON,
     "bootstrapAccountId": "$BOOTSTRAP_ACCOUNT_ID",
     "authAttestationPublicKey": $AUTH_ATTESTATION_PUBLIC_KEY,
     "bootstrapSigningPublicKey": $BOOTSTRAP_SIGNING_PUBLIC_KEY

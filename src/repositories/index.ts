@@ -57,6 +57,7 @@ export class KlinokRepository {
         authAttestationPublicKey: options.config.p2p.authAttestationPublicKey,
         bootstrapSigningPublicKey: options.config.p2p.bootstrapSigningPublicKey,
         requireTrustedAttestation: options.config.p2p.enabled,
+        replayQuarantineEventIds: new Set(options.config.p2p.replayQuarantineEventIds),
       });
       stage = "transport.create";
       const transport = options.transport ?? (options.config.p2p.enabled

@@ -144,9 +144,10 @@ function controller(
   state: ProtocolState,
   database: DatabaseKind,
   reject: (event: SignedEvent | undefined, code: string, details: Record<string, unknown>) => void,
-  trust: Pick<P2PClientConfig, "authAttestationPublicKey" | "bootstrapSigningPublicKey">,
+  trust: Pick<P2PClientConfig, "authAttestationPublicKey" | "bootstrapSigningPublicKey" | "replayQuarantineEventIds">,
 ) {
   const type = ACCESS_CONTROLLER_TYPES[database];
+  const replayQuarantineEventIds = new Set(trust.replayQuarantineEventIds);
   const factory = async () => ({
     type,
     address: `/${type}`,
@@ -183,6 +184,16 @@ function controller(
         return true;
       }
       if (!result.accepted) {
+        if (result.code === "BOOTSTRAP_ANCHOR_MISMATCH" && replayQuarantineEventIds.has(event.eventId)) {
+          logP2p("warn", "p2p.authorization.quarantined", {
+            code: result.code,
+            eventId: event.eventId,
+            eventType: event.eventType,
+            database: event.database,
+            ...details,
+          });
+          return true;
+        }
         reject(event, result.code ?? "EVENT_REJECTED", details);
         return false;
       }
@@ -218,6 +229,7 @@ export class OrbitEventTransport extends IndexedDbEventTransport {
       authAttestationPublicKey: config.authAttestationPublicKey,
       bootstrapSigningPublicKey: config.bootstrapSigningPublicKey,
       requireTrustedAttestation: true,
+      replayQuarantineEventIds: new Set(config.replayQuarantineEventIds),
     });
   }
 
