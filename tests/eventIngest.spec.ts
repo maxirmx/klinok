@@ -228,6 +228,66 @@ describe("trusted-node event ingestion", () => {
     });
   });
 
+  it("acknowledges a quarantined event after persistence even when projection fails", async () => {
+    const unrelatedKeys = await generateUserKeySet();
+    const unrelated = await exportUserKeySet(unrelatedKeys);
+    const anchor = await exportUserKeySet(await generateUserKeySet());
+    const certificate: DeviceCertificate = {
+      deviceId: "bad-bootstrap-device",
+      accountId: "bootstrap-administrator",
+      orbitIdentityId: "klinok-device-bad-bootstrap-device",
+      status: "active",
+      userKeyVersion: unrelated.version,
+      signingPublicKey: unrelated.signingPublicKey,
+      encryptionPublicKey: unrelated.encryptionPublicKey,
+      issuedAt: "2026-07-10T00:00:00.000Z",
+      attestation: "legacy-attestation",
+    };
+    const event = await signEvent({
+      schemaVersion: 1,
+      database: "control",
+      eventId: "known-bad-event",
+      operationId: "known-bad-operation",
+      eventType: "device.attested",
+      aggregateId: certificate.accountId,
+      resourceId: certificate.deviceId,
+      createdAt: certificate.issuedAt,
+      actorAccountId: certificate.accountId,
+      actorDeviceId: certificate.deviceId,
+      orbitIdentityId: certificate.orbitIdentityId,
+      activeRole: "administrator",
+      parents: [],
+      keyVersion: certificate.userKeyVersion,
+      proofIds: [],
+      metadata: { accountId: certificate.accountId, certificate },
+      keyring: [],
+      payload: { algorithm: "AES-GCM-256", iv: "iv", ciphertext: "ciphertext" },
+    }, unrelatedKeys.signingPrivateKey);
+    const add = vi.fn().mockResolvedValue(undefined);
+    const projectEvents = vi.fn().mockRejectedValue(new Error("projection unavailable"));
+    const ingest = new EventIngestService({
+      state: createProtocolState("bootstrap-administrator"),
+      databases: { control: { add }, medical: { add } },
+      verification: {
+        bootstrapSigningPublicKey: anchor.signingPublicKey,
+        requireTrustedAttestation: false,
+        replayQuarantineEventIds: new Set([event.eventId]),
+      },
+      projectEvents,
+    });
+
+    expect(await ingest.ingest([event])).toEqual({
+      results: [expect.objectContaining({
+        eventId: event.eventId,
+        status: "persisted",
+        code: "EVENT_QUARANTINED",
+        message: expect.stringContaining("projection unavailable"),
+      })],
+    });
+    expect(add).toHaveBeenCalledOnce();
+    expect(projectEvents).toHaveBeenCalledOnce();
+  });
+
   it("defers acknowledgement until auth observer notification succeeds", async () => {
     const firstEvent = (await generatedEvents())[0]!;
     const onPersisted = vi.fn()

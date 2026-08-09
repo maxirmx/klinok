@@ -147,6 +147,7 @@ function controller(
   trust: Pick<P2PClientConfig, "authAttestationPublicKey" | "bootstrapSigningPublicKey" | "replayQuarantineEventIds">,
 ) {
   const type = ACCESS_CONTROLLER_TYPES[database];
+  const replayQuarantineEventIds = new Set(trust.replayQuarantineEventIds);
   const factory = async () => ({
     type,
     address: `/${type}`,
@@ -183,7 +184,7 @@ function controller(
         return true;
       }
       if (!result.accepted) {
-        if (result.code === "BOOTSTRAP_ANCHOR_MISMATCH" && trust.replayQuarantineEventIds.includes(event.eventId)) {
+        if (result.code === "BOOTSTRAP_ANCHOR_MISMATCH" && replayQuarantineEventIds.has(event.eventId)) {
           logP2p("warn", "p2p.authorization.quarantined", {
             code: result.code,
             eventId: event.eventId,
