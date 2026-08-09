@@ -87,6 +87,7 @@ const state = reactive({
   syncNotifications: [] as SyncNotification[],
   devicePending: false,
   keyRecoveryRequired: false,
+  bootstrapRecoveryRequired: false,
   sync: emptySync,
   directoryPendingCount: 0,
   repositoryConnected: false,
@@ -205,16 +206,22 @@ async function reconcileAuthDevices(activeRepository: KlinokRepository, session:
   const authDevices = new Map((session.devices ?? []).map((device) => [device.deviceId, device]));
   const projectedCurrent = snapshot.devices.find((device) => device.deviceId === session.device?.deviceId);
   if (!projectedCurrent || projectedCurrent.status !== "active") {
-    throw new Error("Состояние текущего устройства расходится с защищённым журналом. Повторите вход после синхронизации службы авторизации.");
+    throw Object.assign(new Error("Состояние текущего устройства расходится с защищённым журналом. Повторите вход после синхронизации службы авторизации."), {
+      code: "PROTECTED_DEVICE_UNAVAILABLE",
+    });
   }
   const signingKeyMatches = stableSerialize(projectedCurrent.signingPublicKey) === stableSerialize(session.device.signingPublicKey);
   const encryptionKeyMatches = stableSerialize(projectedCurrent.encryptionPublicKey) === stableSerialize(session.device.encryptionPublicKey);
   if (projectedCurrent.userKeyVersion === session.device.userKeyVersion) {
     if (!signingKeyMatches || !encryptionKeyMatches) {
-      throw new Error("Сертификаты текущего устройства конфликтуют. Повторно зарегистрируйте устройство.");
+      throw Object.assign(new Error("Сертификаты текущего устройства конфликтуют. Повторно зарегистрируйте устройство."), {
+        code: "DEVICE_CERTIFICATE_CONFLICT",
+      });
     }
   } else if (session.device.userKeyVersion !== projectedCurrent.userKeyVersion + 1) {
-    throw new Error("Версии ключей устройства расходятся более чем на один шаг. Требуется повторная регистрация устройства.");
+    throw Object.assign(new Error("Версии ключей устройства расходятся более чем на один шаг. Требуется повторная регистрация устройства."), {
+      code: "DEVICE_KEY_VERSION_CONFLICT",
+    });
   } else if (typeof activeRepository.control.rotateCurrentDevice === "function") {
     await activeRepository.control.rotateCurrentDevice(session.device);
   }
@@ -464,6 +471,7 @@ async function connectRepository(session: AuthSessionDto) {
 export async function bootstrapApp(force = false) {
   if (state.initialized && !force) return;
   state.busy = true;
+  state.bootstrapRecoveryRequired = false;
   if (useAlertStore().alert?.kind === "error") setAuthFeedback(null);
   let stage = "runtime-config.load";
   try {
@@ -493,6 +501,18 @@ export async function bootstrapApp(force = false) {
     syncUnsubscribe?.(); syncUnsubscribe = null;
     await repository?.dispose(); repository = null;
     state.repositoryConnected = false;
+    const code = reason && typeof reason === "object" && "code" in reason ? String(reason.code) : "";
+    state.bootstrapRecoveryRequired = stage === "repository.connect"
+      && state.session.authenticated === true
+      && state.session.accountId === config?.p2p.bootstrapAccountId
+      && [
+        "BOOTSTRAP_ANCHOR_MISMATCH",
+        "PROTECTED_DEVICE_UNAVAILABLE",
+        "DEVICE_CERTIFICATE_CONFLICT",
+        "DEVICE_KEY_VERSION_CONFLICT",
+        "DEVICE_ROTATION_SOURCE_UNAVAILABLE",
+        "DEVICE_ROTATION_KEY_UNAVAILABLE",
+      ].includes(code);
     logInitializationError("app.bootstrap.failed", stage, reason);
     setAuthFeedback({ kind: "error", reason });
   } finally {
@@ -539,7 +559,7 @@ export async function logout(all = false) {
     medicalUnsubscribe?.(); medicalUnsubscribe = null;
     syncUnsubscribe?.(); syncUnsubscribe = null;
     await repository?.dispose(); repository = null; keys = null;
-    state.session = { authenticated: false }; state.activeRole = null; state.control = emptyControl; state.medical = emptyMedical; state.sync = emptySync; state.syncNotifications = []; state.directoryPendingCount = 0; state.repositoryConnected = false; state.busy = false;
+    state.session = { authenticated: false }; state.activeRole = null; state.control = emptyControl; state.medical = emptyMedical; state.sync = emptySync; state.syncNotifications = []; state.directoryPendingCount = 0; state.repositoryConnected = false; state.bootstrapRecoveryRequired = false; state.busy = false;
   }
 }
 
@@ -878,10 +898,17 @@ export async function replaceLostBootstrapDevice(bundleText: string, passphrase:
     if (!accountId || accountId !== config.p2p.bootstrapAccountId) {
       throw new Error("Замена утраченного устройства доступна только начальному администратору.");
     }
-    const deviceId = getDeviceId();
-    const enrollment = state.session.enrollments?.find((candidate) =>
+    let deviceId = getDeviceId();
+    let enrollment = state.session.enrollments?.find((candidate) =>
       candidate.deviceId === deviceId && candidate.status === "pending");
-    if (!deviceId || !enrollment) throw new Error("Запрос текущего устройства не найден. Обновите страницу и повторите попытку.");
+    if (state.bootstrapRecoveryRequired) {
+      clearDeviceId();
+      deviceId = getOrCreateDeviceId();
+      enrollment = undefined;
+    }
+    if (!deviceId || (!enrollment && !state.bootstrapRecoveryRequired)) {
+      throw new Error("Запрос текущего устройства не найден. Обновите страницу и повторите попытку.");
+    }
 
     const recoveredKeys = await importBootstrapRecoveryBundle(accountId, bundleText, passphrase);
     const exported = await exportUserKeySet(recoveredKeys);
@@ -891,8 +918,8 @@ export async function replaceLostBootstrapDevice(bundleText: string, passphrase:
       challenge,
       accountId,
       deviceId,
-      deviceName: enrollment.deviceName ?? getOrCreateDeviceName(),
-      orbitIdentityId: enrollment.orbitIdentityId,
+      deviceName: enrollment?.deviceName ?? getOrCreateDeviceName(),
+      orbitIdentityId: enrollment?.orbitIdentityId ?? `klinok-device-${deviceId}`,
       userKeyVersion: exported.version,
       signingPublicKey: exported.signingPublicKey,
       encryptionPublicKey: exported.encryptionPublicKey,
@@ -900,8 +927,10 @@ export async function replaceLostBootstrapDevice(bundleText: string, passphrase:
     const replacement = await auth.replaceBootstrapDevice(
       payload,
       await signBootstrapDeviceReplacement(payload, recoveredKeys.signingPrivateKey),
+      exported,
     );
     keys = recoveredKeys;
+    state.bootstrapRecoveryRequired = false;
     state.initialized = false;
     await bootstrapApp(true);
     const activeRepository = requireRepository();

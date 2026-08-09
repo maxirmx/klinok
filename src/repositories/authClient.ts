@@ -107,14 +107,14 @@ export class AuthClient {
     return this.request<{ challenge: string; expiresAt: string }>("/api/auth/bootstrap-device-replacement/challenge", { method: "POST" });
   }
 
-  replaceBootstrapDevice(payload: BootstrapDeviceReplacementPayload, signature: string) {
+  replaceBootstrapDevice(payload: BootstrapDeviceReplacementPayload, signature: string, userKeySet: ExportedUserKeySet) {
     return this.request<{
       certificate: DeviceCertificate;
       enrollment: DeviceEnrollmentDto;
       revokedDeviceIds: string[];
     }>("/api/auth/bootstrap-device-replacement", {
       method: "POST",
-      body: JSON.stringify({ payload, signature }),
+      body: JSON.stringify({ payload, signature, userKeySet }),
     });
   }
 

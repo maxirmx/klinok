@@ -259,7 +259,24 @@ async function confirmDeviceRevocation() {
 <template>
   <WorkspaceShell :role="appState.activeRole" title="Настройки" :profile-name="profileName" settings @sign-out="signOut()">
     <div class="profile-page">
-    <section v-if="appState.keyRecoveryRequired" class="panel critical-panel" role="alert">
+    <section v-if="appState.bootstrapRecoveryRequired" class="panel critical-panel" role="alert">
+      <h2>Защищённая история устройства требует восстановления</h2>
+      <p>Служба входа подтверждает это устройство, но его сертификат нельзя безопасно связать с защищённым журналом. Загрузите автономный пакет начального администратора. Прежние устройства и сеансы будут отозваны; подтверждённые данные в журнале сохранятся.</p>
+      <form class="form-stack" @submit.prevent="action('Устройство начального администратора восстановлено.', () => replaceLostBootstrapDevice(recoveryText, recoveryPassphrase))">
+        <label><span>Пакет восстановления</span><input type="file" accept="application/json,.json" required @change="readRecoveryFile" /></label>
+        <PasswordInput v-model="recoveryPassphrase" label="Пароль пакета" required />
+        <button
+          class="primary-action inline profile-icon-action"
+          :disabled="appState.busy || !recoveryText || recoveryPassphrase.length < 16"
+          title="Восстановить устройство"
+          aria-label="Восстановить устройство"
+        >
+          <AppIcon name="restore" />
+        </button>
+      </form>
+    </section>
+
+    <section v-else-if="appState.keyRecoveryRequired" class="panel critical-panel" role="alert">
       <h2>Ключи этого аккаунта отсутствуют на устройстве</h2>
       <template v-if="appState.session.accountId === getConfig()?.p2p.bootstrapAccountId && !appState.session.devices?.length">
         <p>Для первого устройства начального администратора загрузите автономный пакет, созданный при подготовке системы.</p>

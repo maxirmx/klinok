@@ -18,6 +18,7 @@ vi.mock("../src/appStore", async () => {
     busy: false,
     devicePending: false,
     keyRecoveryRequired: false,
+    bootstrapRecoveryRequired: false,
   });
   return {
     AUTH_SUCCESS_MESSAGES: { registration: "Централизованное сообщение о регистрации" },

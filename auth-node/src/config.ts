@@ -36,6 +36,7 @@ export interface AuthConfig {
     medicalDatabaseName?: string;
     medicalDatabaseAddress?: string;
     trustedNodeMultiaddrs: string[];
+    replayQuarantineEventIds: string[];
   };
 }
 
@@ -151,6 +152,7 @@ export function loadAuthConfig(env: NodeJS.ProcessEnv = process.env): AuthConfig
       medicalDatabaseName: env.KLINOK_MEDICAL_DB ?? "klinok-medical-v4",
       ...(env.KLINOK_MEDICAL_DB_ADDRESS ? { medicalDatabaseAddress: env.KLINOK_MEDICAL_DB_ADDRESS } : {}),
       trustedNodeMultiaddrs: (env.KLINOK_P2P_TRUSTED_NODES ?? "").split(",").map((item) => item.trim()).filter(Boolean),
+      replayQuarantineEventIds: (env.KLINOK_REPLAY_QUARANTINE_EVENT_IDS ?? "").split(",").map((item) => item.trim()).filter(Boolean),
     },
   };
 }

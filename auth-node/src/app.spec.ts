@@ -64,6 +64,7 @@ async function fixture(options: {
       databaseName: "klinok-control-v2",
       medicalDatabaseName: "klinok-medical-v4",
       trustedNodeMultiaddrs: [],
+      replayQuarantineEventIds: [],
     },
   };
   const mailer = options.mailer ?? new MemoryMailer();
@@ -1538,7 +1539,7 @@ describe("auth-node", () => {
       method: "POST",
       url: "/api/auth/bootstrap-device-replacement",
       headers: replacementHeaders,
-      payload: { payload: invalidPayload, signature: "invalid" },
+      payload: { payload: invalidPayload, signature: "invalid", userKeySet: exported },
     });
     expect(invalid.statusCode).toBe(403);
     expect(invalid.json().error.code).toBe("BOOTSTRAP_RECOVERY_PROOF_INVALID");
@@ -1554,7 +1555,7 @@ describe("auth-node", () => {
       method: "POST",
       url: "/api/auth/bootstrap-device-replacement",
       headers: replacementHeaders,
-      payload: { payload, signature },
+      payload: { payload, signature, userKeySet: exported },
     });
     expect(replaced.statusCode).toBe(200);
     expect(replaced.json()).toMatchObject({
@@ -1577,10 +1578,76 @@ describe("auth-node", () => {
       method: "POST",
       url: "/api/auth/bootstrap-device-replacement",
       headers: replacementHeaders,
-      payload: { payload, signature },
+      payload: { payload, signature, userKeySet: exported },
     });
     expect(replayed.statusCode).toBe(400);
     expect(replayed.json().error.code).toBe("BOOTSTRAP_CHALLENGE_INVALID");
+  });
+
+  it("replaces an auth-active bootstrap device when the recovery root proves a fresh identity", async () => {
+    const { app, bootstrapKeys } = await fixture({ bootstrap: true });
+    const exported = await exportUserKeySet(bootstrapKeys!);
+    const login = await app.inject({
+      method: "POST",
+      url: "/api/auth/login",
+      headers: { origin: "https://klinok.test" },
+      payload: { email: "administrator@example.ru", password: "bootstrap-password-2026" },
+    });
+    const headers = {
+      origin: "https://klinok.test",
+      cookie: login.headers["set-cookie"]!,
+      "x-csrf-token": login.json().csrfToken as string,
+    };
+    const enrollment = await app.inject({
+      method: "POST",
+      url: "/api/auth/device-enrollments",
+      headers,
+      payload: {
+        deviceId: "auth-active-device",
+        deviceName: "Старое устройство",
+        orbitIdentityId: "klinok-device-auth-active-device",
+        signingPublicKey: exported.signingPublicKey,
+        encryptionPublicKey: exported.encryptionPublicKey,
+        userKeySet: exported,
+      },
+    });
+    expect(enrollment.statusCode).toBe(200);
+
+    const challenge = await app.inject({
+      method: "POST",
+      url: "/api/auth/bootstrap-device-replacement/challenge",
+      headers,
+    });
+    expect(challenge.statusCode).toBe(200);
+    const payload = {
+      action: "bootstrap-device-replacement" as const,
+      challenge: challenge.json().challenge as string,
+      accountId: "bootstrap-administrator",
+      deviceId: "fresh-recovery-device",
+      deviceName: "Восстановленное устройство",
+      orbitIdentityId: "klinok-device-fresh-recovery-device",
+      userKeyVersion: exported.version,
+      signingPublicKey: exported.signingPublicKey,
+      encryptionPublicKey: exported.encryptionPublicKey,
+    };
+    const signature = Buffer.from(await crypto.subtle.sign(
+      { name: "ECDSA", hash: "SHA-256" },
+      bootstrapKeys!.signingPrivateKey,
+      new TextEncoder().encode(stableSerialize(payload)),
+    )).toString("base64url");
+    const replaced = await app.inject({
+      method: "POST",
+      url: "/api/auth/bootstrap-device-replacement",
+      headers,
+      payload: { payload, signature, userKeySet: exported },
+    });
+    expect(replaced.statusCode).toBe(200);
+    expect(replaced.json()).toMatchObject({
+      certificate: { deviceId: "fresh-recovery-device", status: "active" },
+      revokedDeviceIds: ["auth-active-device"],
+    });
+    expect((await app.inject({ method: "GET", url: "/api/auth/user-key-set", headers })).json())
+      .toEqual({ userKeySet: exported });
   });
 
   it("uses generic password recovery and revokes sessions after reset", async () => {

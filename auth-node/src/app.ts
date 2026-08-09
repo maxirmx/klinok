@@ -79,6 +79,7 @@ interface CredentialsBody {
 interface BootstrapDeviceReplacementBody {
   payload: BootstrapDeviceReplacementPayload;
   signature: string;
+  userKeySet: ExportedUserKeySet;
 }
 
 class RateLimitError extends Error {
@@ -1183,14 +1184,11 @@ export async function buildAuthApp(options: AuthAppOptions): Promise<FastifyInst
     if (!options.config.bootstrapSigningPublicKey) {
       return error(reply, 503, "BOOTSTRAP_ANCHOR_MISSING", "Публичный ключ восстановления начального администратора не настроен.");
     }
-    const currentDevice = current.account.devices.find((device) =>
-      device.deviceId === current.session.deviceId && device.status === "active");
-    if (currentDevice) {
-      return error(reply, 409, "BOOTSTRAP_REPLACEMENT_NOT_REQUIRED", "Текущее устройство уже подтверждено.");
-    }
     const pending = current.account.enrollments.find((enrollment) =>
       enrollment.deviceId === current.session.deviceId && enrollment.status === "pending");
-    if (!pending) {
+    const currentDevice = current.account.devices.find((device) =>
+      device.deviceId === current.session.deviceId && device.status === "active");
+    if (!pending && !currentDevice) {
       return error(reply, 409, "BOOTSTRAP_REPLACEMENT_NOT_READY", "Сначала создайте запрос для этого устройства.");
     }
     for (const [sessionDigest, existing] of bootstrapReplacementChallenges) {
@@ -1223,16 +1221,42 @@ export async function buildAuthApp(options: AuthAppOptions): Promise<FastifyInst
     const payload = request.body.payload;
     const pending = current.account.enrollments.find((enrollment) =>
       enrollment.deviceId === current.session.deviceId && enrollment.status === "pending");
+    const currentDevice = current.account.devices.find((device) =>
+      device.deviceId === current.session.deviceId && device.status === "active");
+    const replacesActiveDevice = Boolean(currentDevice && !pending);
+    const identityAvailable = replacesActiveDevice
+      && payload?.deviceId !== currentDevice?.deviceId
+      && !current.account.devices.some((device) => device.deviceId === payload?.deviceId)
+      && !current.account.enrollments.some((enrollment) => enrollment.deviceId === payload?.deviceId);
+    const identityMatches = pending
+      ? payload?.deviceId === pending.deviceId
+        && payload.deviceName === pending.deviceName
+        && payload.orbitIdentityId === pending.orbitIdentityId
+      : identityAvailable
+        && typeof payload?.deviceName === "string"
+        && payload.deviceName.trim().length > 0
+        && payload.orbitIdentityId === `klinok-device-${payload.deviceId}`;
     const validPayload = payload?.action === "bootstrap-device-replacement"
       && payload.accountId === current.account.accountId
-      && payload.deviceId === pending?.deviceId
-      && payload.deviceName === pending?.deviceName
-      && payload.orbitIdentityId === pending?.orbitIdentityId
+      && typeof payload.deviceId === "string"
+      && payload.deviceId.length > 0
+      && payload.deviceId.length <= 128
+      && typeof payload.deviceName === "string"
+      && payload.deviceName.trim().length > 0
+      && payload.deviceName.length <= 200
+      && typeof payload.orbitIdentityId === "string"
+      && payload.orbitIdentityId.length > 0
+      && payload.orbitIdentityId.length <= 256
+      && identityMatches
       && Number.isSafeInteger(payload.userKeyVersion)
       && payload.userKeyVersion > 0
       && stableSerialize(payload.signingPublicKey) === stableSerialize(anchor)
-      && payload.encryptionPublicKey && typeof payload.encryptionPublicKey === "object";
-    if (!validPayload || !pending || !request.body.signature) {
+      && payload.encryptionPublicKey && typeof payload.encryptionPublicKey === "object"
+      && await validUserKeySet(request.body.userKeySet)
+      && request.body.userKeySet.version === payload.userKeyVersion
+      && stableSerialize(request.body.userKeySet.signingPublicKey) === stableSerialize(payload.signingPublicKey)
+      && stableSerialize(request.body.userKeySet.encryptionPublicKey) === stableSerialize(payload.encryptionPublicKey);
+    if (!validPayload || (!pending && !currentDevice) || !request.body.signature) {
       return error(reply, 400, "BOOTSTRAP_REPLACEMENT_INVALID", "Данные замены устройства неполны.");
     }
     let proofValid = false;
@@ -1251,7 +1275,15 @@ export async function buildAuthApp(options: AuthAppOptions): Promise<FastifyInst
     }
 
     const replacementEnrollment: DeviceEnrollmentDto = {
-      ...pending,
+      ...(pending ?? {
+        enrollmentId: randomUUID(),
+        operationId: randomUUID(),
+        accountId: current.account.accountId,
+        deviceId: payload.deviceId,
+        deviceName: payload.deviceName,
+        orbitIdentityId: payload.orbitIdentityId,
+        createdAt: now().toISOString(),
+      }),
       status: "active",
       signingPublicKey: payload.signingPublicKey,
       encryptionPublicKey: payload.encryptionPublicKey,
@@ -1268,16 +1300,18 @@ export async function buildAuthApp(options: AuthAppOptions): Promise<FastifyInst
       certificate,
     ];
     const enrollments = current.account.enrollments.map((enrollment) => {
-      if (enrollment.enrollmentId === pending.enrollmentId) return replacementEnrollment;
+      if (enrollment.enrollmentId === pending?.enrollmentId) return replacementEnrollment;
       return enrollment.status === "active" || enrollment.status === "pending"
         ? { ...enrollment, status: "revoked" as const }
         : enrollment;
     });
+    if (!pending) enrollments.push(replacementEnrollment);
     const replacedAt = now().toISOString();
     const updatedAccount: AuthAccount = {
       ...current.account,
       devices,
       enrollments,
+      encryptedUserKeySet: await escrow.encrypt(current.account.accountId, request.body.userKeySet),
       pendingOperations: [
         ...current.account.pendingOperations.filter((operation) => operation.kind !== "device"),
         {

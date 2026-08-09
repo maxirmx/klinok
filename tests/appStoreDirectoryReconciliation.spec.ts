@@ -513,6 +513,7 @@ describe("app-store directory reconciliation", () => {
     expect(authMocks.logout).toHaveBeenCalledOnce();
     expect(repositoryMocks.dispose).toHaveBeenCalled();
     expect(appState.repositoryConnected).toBe(false);
+    expect(appState.bootstrapRecoveryRequired).toBe(false);
     expect(appState.syncNotifications).toEqual([]);
   });
 
@@ -908,6 +909,23 @@ describe("app-store directory reconciliation", () => {
       code: "BOOTSTRAP_ANCHOR_MISMATCH",
     });
     const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    authMocks.session.mockResolvedValueOnce({
+      authenticated: true,
+      accountId: "bootstrap-administrator",
+      serverKeySetAvailable: true,
+      setup: { requestedRoles: ["administrator"] },
+      device: {
+        deviceId: "bootstrap-device",
+        accountId: "bootstrap-administrator",
+        orbitIdentityId: "klinok-device-bootstrap-device",
+        status: "active",
+        userKeyVersion: 1,
+        signingPublicKey: {},
+        encryptionPublicKey: {},
+        issuedAt: "2026-07-22T00:00:00.000Z",
+        attestation: "attestation",
+      },
+    });
     repositoryMocks.create.mockRejectedValueOnce(originalError);
 
     await bootstrapApp(true);
@@ -923,6 +941,7 @@ describe("app-store directory reconciliation", () => {
       errorCode: "BOOTSTRAP_ANCHOR_MISMATCH",
     });
     expect(appState.repositoryConnected).toBe(false);
+    expect(appState.bootstrapRecoveryRequired).toBe(true);
     consoleError.mockRestore();
   });
 });

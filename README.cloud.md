@@ -61,6 +61,15 @@ The P2P container runs as a non-root Node user. It must be able to write its dat
 
 The bootstrap script records overrides in `klinok.env`. Prefer an immutable `KLINOK_IMAGE_TAG` over `latest`.
 
+The HTTPS hostname and the P2P TLS hostname can be configured separately. If the public hostname is a DNS alias whose TLS proxy does not answer with that alias as SNI, set the canonical TLS hostname without changing the public application URL:
+
+```env
+KLINOK_DOMAIN=klinok.sw.consulting
+KLINOK_P2P_DOMAIN=kreel2.sw.consulting
+```
+
+The certificate must cover both names. The generated browser configuration, the auth observer, and the P2P announcement all use `KLINOK_P2P_DOMAIN`.
+
 The UI [`config/nginx.conf`](config/nginx.conf) also hard-codes `klinok.sw.consulting`. For another hostname, either rebuild the UI image after changing the file or mount a customized configuration into the container.
 
 Use the same certificate for:
@@ -230,6 +239,18 @@ For a consistent filesystem backup, briefly stop the affected containers or use 
 The authentication service can decrypt all account key sets. This prototype therefore relies on the authentication host as a trusted key custodian and does not provide strict end-to-end key custody. A successful password login or email password reset authorizes automatic enrollment and key delivery to a new browser.
 
 Never deploy either backend service with ephemeral storage. Do not run `docker compose down -v` against an operational deployment, because it can delete persistent volumes.
+
+### Quarantine one known malformed replay event
+
+An old, permanently invalid event can prevent OrbitDB from importing the branch that contains otherwise valid history. Do not delete a persistent database or relax authorization globally. Configure only the exact event IDs already confirmed in authorization logs:
+
+```env
+KLINOK_REPLAY_QUARANTINE_EVENT_IDS=32801e42-cf42-4b26-94e7-91f3d119d59b
+```
+
+Restart all three services after changing the value. The listed event may then traverse OrbitDB during replication, but every protocol projector still rejects it with `BOOTSTRAP_ANCHOR_MISMATCH`; it cannot change account, role, device, or medical state. Other invalid events remain blocked. Keep this value configured while the original database addresses are in service. It can be removed only after a verified compaction into new databases that physically omit the event.
+
+If the bootstrap account is authenticated but its active device certificate cannot be reconciled with the protected journal, the Settings screen offers recovery with `bootstrap-recovery.bundle.json`. A successful recovery creates a fresh device identity, revokes all previous devices and sessions, and restores the recovered key set to encrypted auth escrow. Accepted journal history remains intact; only invalid or incomplete device operations remain excluded.
 
 ## 7. Updates
 

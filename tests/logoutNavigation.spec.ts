@@ -52,6 +52,7 @@ vi.mock("../src/appStore", async () => {
     sync: { pendingCount: 0, failedCount: 0, syncing: false, lastError: "" },
     repositoryConnected: true,
     keyRecoveryRequired: false,
+    bootstrapRecoveryRequired: false,
     devicePending: false,
   });
   return {
@@ -60,6 +61,7 @@ vi.mock("../src/appStore", async () => {
     setMockActiveRole: (role: "owner" | "doctor" | "administrator" | null) => { state.activeRole = role; },
     setMockDevices: (devices: typeof state.session.devices) => { state.session.devices = devices; },
     setMockDevicePending: (pending: boolean) => { state.devicePending = pending; },
+    setMockBootstrapRecoveryRequired: (required: boolean) => { state.bootstrapRecoveryRequired = required; },
     setMockServerKeySetAvailable: (available: boolean) => { state.session.serverKeySetAvailable = available; },
     setMockProfile: (profile: typeof state.control.profile) => { state.control.profile = profile; },
     setMockSync: (sync: typeof state.sync) => { state.sync = sync; },
@@ -107,6 +109,7 @@ beforeEach(async () => {
     setMockActiveRole: (role: "owner" | "doctor" | "administrator" | null) => void;
     setMockDevices: (devices: Array<{ deviceId: string; deviceName: string; status: string }>) => void;
     setMockDevicePending: (pending: boolean) => void;
+    setMockBootstrapRecoveryRequired: (required: boolean) => void;
     setMockServerKeySetAvailable: (available: boolean) => void;
     setMockProfile: (profile: {
       accountId: string;
@@ -125,6 +128,7 @@ beforeEach(async () => {
     { deviceId: "revoked-device", deviceName: "Старый телефон", status: "revoked" },
   ]);
   mockedStore.setMockDevicePending(false);
+  mockedStore.setMockBootstrapRecoveryRequired(false);
   mockedStore.setMockServerKeySetAvailable(false);
   mockedStore.setMockProfile({
     accountId: "account-1",
@@ -274,6 +278,32 @@ describe("logout navigation", () => {
 
     expect(replaceLostBootstrapDevice).toHaveBeenCalledWith("recovery", "offline recovery passphrase");
     expect(wrapper.text()).toContain("Утраченное устройство заменено.");
+  });
+
+  it("offers offline replacement when an auth-active bootstrap device is journal-untrusted", async () => {
+    const mockedStore = await import("../src/appStore") as typeof import("../src/appStore") & {
+      setMockAccountId: (accountId: string) => void;
+      setMockBootstrapRecoveryRequired: (required: boolean) => void;
+    };
+    mockedStore.setMockAccountId("bootstrap-administrator");
+    mockedStore.setMockBootstrapRecoveryRequired(true);
+    const { wrapper } = await mountAt(RoleStatusScreen, "/profile", { scenarioId: "user-profile" });
+
+    expect(wrapper.text()).toContain("Защищённая история устройства требует восстановления");
+    expect(wrapper.text()).toContain("подтверждённые данные в журнале сохранятся");
+    const fileInput = wrapper.get<HTMLInputElement>('input[type="file"]');
+    Object.defineProperty(fileInput.element, "files", {
+      configurable: true,
+      value: [new File(["recovery"], "bootstrap-recovery.bundle.json", { type: "application/json" })],
+    });
+    await fileInput.trigger("change");
+    await flushPromises();
+    await wrapper.get<HTMLInputElement>('input[type="password"]').setValue("offline recovery passphrase");
+    await wrapper.get(".critical-panel form").trigger("submit");
+    await flushPromises();
+
+    expect(replaceLostBootstrapDevice).toHaveBeenCalledWith("recovery", "offline recovery passphrase");
+    expect(wrapper.text()).toContain("Устройство начального администратора восстановлено.");
   });
 
   it("hides legacy approval and recovery controls after server key migration", async () => {

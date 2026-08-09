@@ -30,9 +30,11 @@ export interface DynamicAccessControllerOptions {
   database?: "control" | "medical";
   onRejected?: (event: SignedEvent | undefined, code: string, details: AccessRejectionDetails) => void;
   onDeferred?: (event: SignedEvent, code: string, details: AccessRejectionDetails) => void;
+  onQuarantined?: (event: SignedEvent, code: string, details: AccessRejectionDetails) => void;
   authAttestationPublicKey?: JsonWebKey;
   bootstrapSigningPublicKey?: JsonWebKey;
   requireTrustedAttestation?: boolean;
+  replayQuarantineEventIds?: ReadonlySet<string>;
 }
 
 export function createDynamicAccessController(options: DynamicAccessControllerOptions = {}) {
@@ -72,6 +74,10 @@ export function createDynamicAccessController(options: DynamicAccessControllerOp
         return true;
       }
       if (!result.accepted) {
+        if (result.code === "BOOTSTRAP_ANCHOR_MISMATCH" && options.replayQuarantineEventIds?.has(event.eventId)) {
+          options.onQuarantined?.(event, result.code, details);
+          return true;
+        }
         options.onRejected?.(event, result.code ?? "EVENT_REJECTED", details);
         return false;
       }

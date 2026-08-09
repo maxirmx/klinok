@@ -90,7 +90,22 @@ export class EventIngestService {
           allowUnknownDevice: event.eventType === "device.attested",
         });
         if (!verification.accepted) {
-          if (shouldDeferEventVerification(verification)) {
+          if (verification.code === "BOOTSTRAP_ANCHOR_MISMATCH"
+            && this.options.verification.replayQuarantineEventIds?.has(event.eventId)) {
+            try {
+              await this.options.databases[event.database].add(event);
+              await this.options.projectEvents?.([event]);
+              results[item.index] = { eventId: event.eventId, status: "persisted", code: "EVENT_QUARANTINED" };
+              stateProgressed = true;
+            } catch (reason) {
+              results[item.index] = {
+                eventId: event.eventId,
+                status: "deferred",
+                code: reason && typeof reason === "object" && "code" in reason ? String(reason.code) : "EVENT_WRITE_FAILED",
+                message: reason instanceof Error ? reason.message : "The trusted node could not persist the quarantined event.",
+              };
+            }
+          } else if (shouldDeferEventVerification(verification)) {
             if (this.options.projectEvents) {
               try {
                 await this.options.databases[event.database].add(event);

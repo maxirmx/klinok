@@ -23,6 +23,7 @@ describe("operational runtime config", () => {
     expect(config.p2p.controlDatabaseName).toBe("klinok-control-v2");
     expect(config.p2p.medicalDatabaseName).toBe("klinok-medical-v4");
     expect(config.p2p.trustedNodeMultiaddrs).toEqual([DEVELOPMENT_TRUSTED_NODE_MULTIADDR]);
+    expect(config.p2p.replayQuarantineEventIds).toEqual([]);
     expect(Object.keys(config.p2p)).not.toContain("writeIdentityIds");
     expect(Object.keys(config.p2p)).not.toContain("participantPrivateKey");
   });
@@ -50,11 +51,17 @@ describe("operational runtime config", () => {
     const fetchMock = vi.spyOn(globalThis, "fetch");
     fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({
       authBaseUrl: "https://auth.example/",
-      p2p: { trustedNodeMultiaddrs: ["  /dns4/node.example/tcp/443/wss  "] },
+      p2p: {
+        trustedNodeMultiaddrs: ["  /dns4/node.example/tcp/443/wss  "],
+        replayQuarantineEventIds: [" bad-event ", ""],
+      },
     })));
     await expect(loadRuntimeConfig()).resolves.toMatchObject({
       authBaseUrl: "https://auth.example",
-      p2p: { trustedNodeMultiaddrs: ["/dns4/node.example/tcp/443/wss"] },
+      p2p: {
+        trustedNodeMultiaddrs: ["/dns4/node.example/tcp/443/wss"],
+        replayQuarantineEventIds: ["bad-event"],
+      },
     });
 
     fetchMock.mockRejectedValueOnce(new Error("offline"));
