@@ -136,7 +136,8 @@ function updateVaccination() {
   vaccinationErrors.value = {};
 }
 
-function updateTherapeuticAppointment() {
+function updateTherapeuticAppointment(value: TherapeuticAppointmentDraft) {
+  therapeuticAppointment.value = value;
   therapeuticErrors.value = {};
 }
 
@@ -342,12 +343,11 @@ function submit() {
       </template>
       <template v-else-if="kind === 'therapeutic-appointment' && texts[kind] === undefined">
         <TherapeuticAppointmentForm
-          v-model="therapeuticAppointment"
+          :model-value="therapeuticAppointment"
           :what-happened-ids="selectedIds"
           :what-happened-comment="comment"
           :errors="therapeuticErrors"
-          @input="updateTherapeuticAppointment"
-          @change="updateTherapeuticAppointment"
+          @update:model-value="updateTherapeuticAppointment"
         />
       </template>
       <template v-else>
