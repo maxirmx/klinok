@@ -16,6 +16,7 @@ async function confirmVaccinationAgainst(current: { confirmed: unknown; profile:
     }, created_at: timestamp, updated_at: timestamp,
   };
   const query = vi.fn(async (sql: string, _params?: unknown[]) => {
+    void _params;
     if (sql.startsWith("SELECT pg_advisory_xact_lock")) return { rows: [], rowCount: 1 };
     if (sql.startsWith("SELECT actor_account_id")) return { rows: [], rowCount: 0 };
     if (sql.startsWith("SELECT credential_status")) return { rows: [{ credential_status: "active" }], rowCount: 1 };
