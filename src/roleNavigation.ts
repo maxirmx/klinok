@@ -2,7 +2,7 @@
 // All rights reserved.
 // This file is a part of Klinok application
 
-import type { Role } from "@klinok/protocol";
+import type { Role } from "@klinok/contracts";
 
 export function roleHomePath(role: Role | null | undefined): string {
   if (role === "administrator") return "/admin/home";

@@ -14,13 +14,12 @@ import {
 
 describe("русские пользовательские сообщения", () => {
   it("maps synchronization codes without exposing backend prose", () => {
-    expect(syncReasonKeyForCode("DEVICE_UNKNOWN")).toBe("device");
     expect(syncReasonKeyForCode("EVENT_PARENT_MISSING")).toBe("parent");
     expect(syncReasonKeyForCode("ROLE_DECISION_FORBIDDEN")).toBe("permission");
     expect(syncReasonKeyForCode("EVENT_TOO_LARGE")).toBe("size");
     expect(syncReasonKeyForCode("DATABASE_MISMATCH")).toBe("invalid");
     expect(syncOperationText("medical.record.created")).toBe("Создание медицинской записи");
-    expect(syncActionText("device")).toBe("Настроить устройство");
+    expect(syncActionText("permissions")).toBe("Проверить права");
     expect(syncNotificationText({ reasonKey: "unknown", diagnosticId: "diagnostic-1" }))
       .toBe("Не удалось сохранить изменение. Локальные данные возвращены в предыдущее состояние. Код диагностики: diagnostic-1.");
   });

@@ -2,13 +2,11 @@
 // All rights reserved.
 // This file is a part of Klinok application
 
-import type { SyncNotification, SyncNotificationAction, SyncReasonKey } from "./repositories/eventTransport";
+import type { SyncNotification, SyncNotificationAction, SyncReasonKey } from "./repositories/offlineStore";
 
 const SYNC_REASONS = {
-  device: "Устройство не прошло проверку. Локальные данные возвращены в предыдущее состояние.",
   permission: "Для этого изменения недостаточно действующих прав. Локальные данные возвращены в предыдущее состояние.",
   parent: "Связанное изменение не найдено. Локальные данные возвращены в предыдущее состояние.",
-  signature: "Подлинность изменения не подтверждена. Локальные данные возвращены в предыдущее состояние.",
   size: "Изменение превышает допустимый размер. Локальные данные возвращены в предыдущее состояние.",
   invalid: "Данные изменения не прошли проверку. Локальные данные возвращены в предыдущее состояние.",
   unknown: "Не удалось сохранить изменение. Локальные данные возвращены в предыдущее состояние.",
@@ -16,16 +14,12 @@ const SYNC_REASONS = {
 
 const SYNC_ACTIONS = {
   return: "Вернуться к записи",
-  device: "Настроить устройство",
   permissions: "Проверить права",
   none: "",
 } as const satisfies Record<SyncNotificationAction, string>;
 
 const EVENT_LABELS: Record<string, string> = {
   "profile.updated": "Изменение профиля",
-  "device.attested": "Подтверждение устройства",
-  "device.rotated": "Обновление ключей устройства",
-  "device.revoked": "Отзыв устройства",
   "role.requested": "Запрос роли",
   "role.resubmitted": "Повторный запрос роли",
   "role.approved": "Подтверждение роли",
@@ -48,44 +42,68 @@ const EVENT_LABELS: Record<string, string> = {
 const AUTH_ERRORS: Record<string, string> = {
   RATE_LIMITED: "Слишком много запросов. Повторите попытку позже.",
   AUTH_REQUIRED: "Необходимо войти в аккаунт.",
+  SESSION_INVALID: "Сеанс завершён. Войдите в систему снова.",
+  VALIDATION_FAILED: "Проверьте введённые данные.",
   CSRF_REJECTED: "Защитный токен недействителен. Обновите страницу и повторите попытку.",
+  CSRF_INVALID: "Защитный токен недействителен. Обновите страницу и повторите попытку.",
   ORIGIN_REJECTED: "Запрос с другого сайта отклонён.",
+  ORIGIN_INVALID: "Запрос с другого сайта отклонён.",
   REGISTRATION_INVALID: "Проверьте регистрационные данные и согласия.",
+  CONSENT_REQUIRED: "Подтвердите согласие с условиями использования.",
+  LEGAL_VERSION_MISMATCH: "Условия использования обновились. Ознакомьтесь с ними и повторите регистрацию.",
   EMAIL_DELIVERY_FAILED: "Письмо для подтверждения не отправлено. Проверьте адрес электронной почты и повторите регистрацию. Если адрес верен, повторите попытку позже.",
   VERIFICATION_TOKEN_INVALID: "Ссылка подтверждения недействительна или устарела.",
   LOGIN_FAILED: "Неверная электронная почта или пароль.",
+  INVALID_CREDENTIALS: "Неверная электронная почта или пароль.",
   EMAIL_NOT_VERIFIED: "Сначала подтвердите электронную почту.",
-  ACTIVE_DEVICE_REQUIRED: "Для этой операции требуется действующее устройство.",
-  USER_KEY_SET_NOT_FOUND: "Серверная копия ключей ещё не создана.",
-  USER_KEY_SET_MISMATCH: "Ключи не соответствуют сертификату устройства.",
-  USER_KEY_SET_INVALID: "Набор ключей пользователя недействителен.",
-  USER_KEY_SET_STALE: "Нельзя использовать устаревшую версию ключей.",
   PASSWORD_INVALID: "Пароль должен содержать от 6 до 128 символов.",
   RESET_TOKEN_INVALID: "Ссылка восстановления недействительна или устарела.",
+  TOKEN_INVALID: "Ссылка недействительна или устарела.",
   PROFILE_INVALID: "Имя и фамилия обязательны.",
   DIRECTORY_PROFILE_INVALID: "Имя и фамилия обязательны.",
   DIRECTORY_ROLE_REQUIRED: "Требуется подтверждённая роль владельца или врача.",
   ADMINISTRATOR_ROLE_REQUIRED: "Требуется подтверждённая роль администратора.",
+  ADMINISTRATOR_REQUIRED: "Требуется подтверждённая роль администратора.",
+  ACTIVE_ROLE_MISMATCH: "Операция недоступна для выбранной роли.",
+  ROLE_REQUIRED: "Требуется подтверждённая активная роль.",
+  ROLE_ALREADY_ACTIVE: "Роль уже подтверждена или ожидает решения.",
+  ROLE_NOT_PENDING: "Статус заявки уже изменился.",
+  ROLE_REQUEST_NOT_FOUND: "Заявка на роль не найдена.",
   BOOTSTRAP_ADMINISTRATOR_REQUIRED: "Изменять профили других пользователей может только начальный администратор.",
   DIRECTORY_USER_NOT_FOUND: "Пользователь не найден в каталоге.",
+  PROFILE_NOT_FOUND: "Профиль пользователя не найден.",
   DOCTOR_ROLE_REQUIRED: "Требуется подтверждённая роль врача.",
   OWNER_ROLE_REQUIRED: "Требуется подтверждённая роль владельца.",
   PET_NOT_FOUND: "Питомец с таким идентификатором не найден.",
   PET_SEARCH_INVALID: "Укажите кличку или полный идентификатор питомца.",
-  PET_PROJECTION_PENDING: "Профиль питомца ещё не подтверждён хранилищем. Повторите попытку.",
   PET_TOMBSTONED: "Питомец уже удалён.",
+  OWNER_SCOPE_FORBIDDEN: "Операция доступна только текущему владельцу питомца.",
+  PET_GRANT_REQUIRED: "Действующего права на изменение медицинской карты больше нет.",
   DIRECTORY_PET_INVALID: "Вид и кличка обязательны.",
-  PROFILE_DIRECTORY_MISSING: "Сначала синхронизируйте профиль владельца.",
   PET_OWNER_REQUIRED: "Операция доступна только владельцу питомца.",
   EMAIL_INVALID: "Введите корректный адрес электронной почты.",
   CREDENTIALS_UNCHANGED: "Укажите новый адрес или пароль.",
   EMAIL_IN_USE: "Этот адрес электронной почты уже используется.",
+  EMAIL_ALREADY_REGISTERED: "Этот адрес электронной почты уже используется.",
+  REVISION_CONFLICT: "Данные изменились на другом устройстве. Обновите страницу и повторите действие.",
   BOOTSTRAP_PROTECTED: "Начальный аккаунт администратора нельзя удалить.",
+  BOOTSTRAP_ACCOUNT_IMMUTABLE: "Начальный аккаунт администратора нельзя удалить.",
+  BOOTSTRAP_ROLE_IMMUTABLE: "Роль начального администратора нельзя изменить.",
   DEVICE_INVALID: "Данные устройства неполны.",
   DEVICE_NAME_INVALID: "Название устройства не должно превышать 80 символов.",
   DEVICE_NOT_FOUND: "Устройство не найдено.",
-  ENROLLMENT_NOT_FOUND: "Запрос устройства не найден.",
-  ENROLLMENT_APPROVAL_INVALID: "Пакет ключей устройства неполон.",
+  ACCESS_ALREADY_GRANTED: "Доступ этому врачу уже предоставлен.",
+  ACCESS_ALREADY_REQUESTED: "Запрос доступа уже ожидает решения.",
+  ACCESS_REQUEST_NOT_PENDING: "Статус запроса доступа уже изменился.",
+  ACCESS_REQUEST_STALE: "Запрос доступа изменился. Обновите список и повторите действие.",
+  GRANT_DELEGATION_FORBIDDEN: "Делегирование больше не разрешено или запрошенные права превышают исходные.",
+  GRANT_NOT_ACTIVE: "Доступ уже закрыт.",
+  CONFIRMED_RECORD_IMMUTABLE: "Подтверждённую медицинскую запись нельзя изменить.",
+  RECORD_ALREADY_CONFIRMED: "Медицинская запись уже подтверждена.",
+  RECORD_NOT_FOUND: "Медицинская запись не найдена.",
+  DEPENDENCY_REJECTED: "Связанное более раннее изменение не было сохранено.",
+  OPERATION_ID_REUSED: "Идентификатор операции уже использован для другого изменения.",
+  LEDGER_INVALID: "Проверка журнала изменений не пройдена. Изменения временно запрещены.",
 };
 
 export function syncReasonText(reason: SyncReasonKey): string {
@@ -93,10 +111,8 @@ export function syncReasonText(reason: SyncReasonKey): string {
 }
 
 export function syncReasonKeyForCode(code: string): SyncReasonKey {
-  if (code.includes("DEVICE") || code.includes("KEY_")) return "device";
   if (code.includes("ROLE") || code.includes("GRANT") || code.includes("FORBIDDEN") || code.includes("PROOF")) return "permission";
   if (code.includes("PARENT")) return "parent";
-  if (code.includes("SIGNATURE")) return "signature";
   if (code.includes("TOO_LARGE")) return "size";
   if (code.includes("SCHEMA") || code.includes("INVALID") || code.includes("MISMATCH")) return "invalid";
   return "unknown";
@@ -105,10 +121,8 @@ export function syncReasonKeyForCode(code: string): SyncReasonKey {
 export function localOperationErrorText(code: string): string {
   if (code === "PET_TOMBSTONED") return "Питомец уже удалён.";
   const messages: Record<SyncReasonKey, string> = {
-    device: "Устройство не прошло проверку. Проверьте его состояние в настройках.",
     permission: "Для этой операции недостаточно действующих прав.",
     parent: "Связанные данные ещё не готовы. Дождитесь синхронизации и повторите попытку.",
-    signature: "Не удалось подтвердить подлинность изменения.",
     size: "Изменение превышает допустимый размер.",
     invalid: "Данные изменения не прошли проверку.",
     unknown: "Не удалось выполнить операцию.",
@@ -120,8 +134,8 @@ export function syncActionText(action: SyncNotificationAction): string {
   return SYNC_ACTIONS[action];
 }
 
-export function syncOperationText(eventType: string): string {
-  return EVENT_LABELS[eventType] ?? "Изменение данных";
+export function syncOperationText(commandAction: string): string {
+  return EVENT_LABELS[commandAction] ?? "Изменение данных";
 }
 
 export function syncNotificationText(notification: Readonly<Pick<SyncNotification, "reasonKey" | "diagnosticId">>): string {

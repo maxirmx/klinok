@@ -5,13 +5,13 @@
 import type { Component } from "vue";
 import type { Pinia } from "pinia";
 import { createRouter, createWebHistory, type RouteRecordRaw, type Router } from "vue-router";
-import type { Role } from "@klinok/protocol";
+import type { Role } from "@klinok/contracts";
 import AuthScreen from "./screens/AuthScreen.vue";
 import RoleStatusScreen from "./screens/RoleStatusScreen.vue";
 import OwnerScreen from "./screens/OwnerScreen.vue";
 import DoctorScreen from "./screens/DoctorScreen.vue";
 import AdministratorScreen from "./screens/AdministratorScreen.vue";
-import { appState, bootstrapApp } from "./appStore";
+import { appState, bootstrapApp, switchRole } from "./appStore";
 import { roleHomePath } from "./roleNavigation";
 import { scenarioRegistry, type ScenarioComponentName } from "./scenarios";
 import { useAlertStore } from "./stores/alert";
@@ -72,18 +72,16 @@ export function createAppRouter(pinia: Pinia) {
     await bootstrapApp();
     if (to.meta.public) {
       if (appState.session.authenticated && to.path === "/auth/login") {
-        if (appState.keyRecoveryRequired || appState.bootstrapRecoveryRequired || appState.devicePending) return "/profile";
         return roleHomePath(appState.activeRole);
       }
       return true;
     }
     if (!appState.session.authenticated) return { path: "/auth/login", query: { continue: to.fullPath } };
-    if (appState.keyRecoveryRequired || appState.bootstrapRecoveryRequired || appState.devicePending) return to.path === "/profile" ? true : "/profile";
     const role = to.meta.role as Role | undefined;
     if (!role) return true;
     const approved = appState.control.roles.find((request) => request.role === role && request.status === "approved");
     if (!approved) return "/profile";
-    if (appState.activeRole !== role) return { path: "/profile", query: { switch: role, continue: to.fullPath } };
+    if (appState.activeRole !== role) await switchRole(role);
     return true;
   });
   return router;

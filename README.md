@@ -1,237 +1,59 @@
-[![ci](https://github.com/maxirmx/klinok/actions/workflows/ci.yml/badge.svg)](https://github.com/maxirmx/klinok/actions/workflows/ci.yml)
-[![codecov](https://codecov.io/gh/maxirmx/klinok/graph/badge.svg?token=MVZxjomaeV)](https://codecov.io/gh/maxirmx/klinok)
-
 # Klinok
 
-Klinok is a Russian-language, local-first veterinary application with operational email/password authentication and signed P2P authorization.
+Klinok is a Russian-language veterinary record application. Version 3 keeps the existing Vue workflows while using a deliberately small backend: one Fastify API and one PostgreSQL database.
 
 ## Architecture
 
-- `src/` — Vue UI. It starts with `GET /api/auth/session`, caches private user keys in IndexedDB, and opens P2P databases only for an authenticated, attested device.
-- `auth-node/` — Fastify/LevelDB authentication service for credentials, email verification, password recovery, HTTP sessions, automatic device enrollment, encrypted user-key escrow, and SMTP delivery.
-- `p2p-node/` — untrusted OrbitDB storage/transport node. It verifies signed envelopes but receives no passwords or user private keys.
-- `packages/protocol/` — shared event contracts, cryptography, authorization rules, and deterministic reducers used by browser and Node runtimes.
+- `src/` — Vue UI, API repository, and the seven-day IndexedDB offline cache.
+- `packages/contracts/` — shared domain DTOs and command contracts.
+- `api-node/` — Fastify API, handwritten PostgreSQL migration, authentication, authorization, email outbox, and audit ledger.
+- `docker-compose.yml` — local UI, API, PostgreSQL, and Mailpit.
 
-The current clean-bootstrap generation is `v2`, using `klinok-control-v2` and `klinok-medical-v4`. There is no migration or runtime fallback from earlier demo data.
+PostgreSQL is authoritative. Every successful user or domain mutation is committed atomically with an operation receipt and a SHA-256 hash-chained audit block. Audit blocks retain their complete before/after JSON snapshots, and every medical-record revision, deletion, and confirmation stores a complete record state. The chain is tamper-evident relative to trusted backups or checkpoints; it is not independently immutable and has no cryptocurrency, mining, smart contracts, P2P replication, or public-chain anchoring.
 
-Roles, profiles, pets, grants, and medical records are encrypted signed events in these OrbitDB databases; they are not rows in the authentication LevelDB. The browser keeps an IndexedDB cache and durable outbox. A change is shown as fully saved only after `p2p-node` acknowledges that the event was written to its persistent `/data` volume; offline changes remain visible with a pending-sync status and are retried in dependency order.
+The browser may show cached data for seven days. Only pet creates/edits and unconfirmed medical-record creates/edits are queued offline. Authentication, role, grant, confirmation, session, and destructive operations require the API.
 
-## Development
+## Local development
 
-The easiest way to start the complete application locally is Docker Compose:
-
-```sh
-./scripts/run-local.sh
-```
-
-The script builds the images, provisions a local bootstrap Administrator, connects the
-services with the generated trust keys, and waits for the application to become ready.
-It prints the local credentials when it finishes. The application is available at
-`http://localhost:8080` and Mailpit at `http://localhost:8025`.
-
-After the complete stack is running, rebuild and restart only the UI service with:
-
-```sh
-./scripts/rebuild-ui.sh
-```
-
-The script preserves the running auth, P2P, and mail services and reuses their current
-trust configuration.
-
-### Смешанный режим разработки
-
-Чтобы запустить сервисы аутентификации, P2P и почты в Docker, а интерфейс — через
-Vite с горячей перезагрузкой, выполните:
-
-```sh
-./scripts/run-mixed-dev.sh
-```
-
-Скрипт временно останавливает контейнеры `ui` и `auth`, но сохраняет и переиспользует
-те же локальные тома и данные, что и полный Docker-стек. Он выполняет provision при первом запуске,
-получает публичные ключи доверия и идентификатор P2P-узла, формирует локальную
-runtime-конфигурацию, публикует API приёма P2P-событий только на `127.0.0.1:8091`
-и запускает `npm run dev`. Vite перенаправляет `/api/events` в этот API. Интерфейс
-доступен по каноническому адресу `http://localhost:8080`, совпадающему с адресом
-полного Docker-стека, а Mailpit — по адресу `http://localhost:8025`. Vite и локальный
-Nginx перенаправляют запросы с альтернативных имён хоста на канонический адрес до
-загрузки приложения, чтобы идентификатор устройства оставался в одном browser origin.
-Пока backend-контейнеры продолжают работать, последующие запуски интерфейса можно
-выполнять обычной командой `npm run dev`: Vite автоматически использует созданную
-конфигурацию из `.klinok-local/`.
-
-После первого запуска сборку backend-образов можно пропустить:
-
-```sh
-KLINOK_SKIP_BUILD=true ./scripts/run-mixed-dev.sh
-```
-
-Остановить backend-контейнеры можно командой, которую скрипт выводит перед запуском
-Vite.
-
-Docker with Compose v2 and `curl` are required. To rebuild less often after the first
-run, use `KLINOK_SKIP_BUILD=true ./scripts/run-local.sh`. Stop the stack with:
-
-```sh
-COMPOSE_PROJECT_NAME=klinok_local docker compose down
-```
-
-### Clean local reset
-
-An ordinary `docker compose down` preserves the authentication LevelDB and P2P
-OrbitDB data in Docker volumes. To remove all local containers and database data and
-start from scratch, run:
-
-```sh
-COMPOSE_PROJECT_NAME=klinok_local docker compose down -v --remove-orphans
-rm -rf .klinok-local
-./scripts/run-local.sh
-```
-
-The `-v` option permanently removes the local authentication accounts, roles, pets,
-medical records, and P2P history. Removing `.klinok-local` also removes the generated
-mixed-development configuration and the local copy of the bootstrap recovery bundle.
-Save that recovery bundle elsewhere first if it is needed for an existing deployment.
-
-The `v2` cutover uses new browser database and local-storage names, so data from the
-first demo generation is ignored automatically. Users do not need to clear unrelated
-site data when moving from the old demo to `v2`.
-
-For another destructive reset while keeping the same `v2` generation, clear the
-Klinok site storage so that a `v2` browser identity is not reused with a newly
-provisioned trust anchor:
-
-1. Close every open Klinok tab except one.
-2. Open `http://localhost:8080` and the browser Developer Tools.
-3. In Chrome or Edge, select **Application → Storage → Clear site data**. In Firefox,
-   select **Storage → Indexed DB**, delete the Klinok databases, and clear the site
-   cookies and local storage for `localhost`.
-4. Reload the application and sign in with the credentials printed by
-   `./scripts/run-local.sh`.
-
-A new browser profile can be used instead. A private/incognito window is appropriate
-for short tests only because its device identity is deleted when the window closes.
-Browser storage does not need to be cleared for ordinary restarts or UI rebuilds.
-For a `v2` account with a server key copy, clearing browser storage is recoverable:
-sign in again and complete device enrollment.
-
-### Clean `v2` demo deployment
-
-The `v2` deployment is intentionally incompatible with the first demo generation.
-Schedule maintenance and stop UI, authentication, and P2P services together. An
-optional copy of the old authentication and P2P data may be retained for diagnostics,
-but it must not be mounted into the `v2` services.
-
-Use the `auth-v2` and `p2p-v2` volumes from `docker-compose.yml`, or the
-`klinok.auth.v2` and `klinok.p2p.v2` directories from
-`docker-compose-ghrc.yml`. Provision the bootstrap administrator exactly once, save
-the new recovery bundle offline, and provide the resulting attestation and bootstrap
-public keys to all three services. Start P2P and wait for `/readyz`, then start
-authentication and wait for `/readyz`, and finally start the UI.
-
-Verify that `/metrics` reports `dataGeneration: "v2"` and that the trust
-fingerprints in the authentication, P2P, and browser logs agree. All former demo
-users and devices must register again. Do not copy events, identities, keys, or
-credentials from the first generation into `v2`.
-
-If Compose crashes with `SIGBUS` or reports an input/output error under WSL, quit
-Docker Desktop, run `wsl --shutdown` in Windows PowerShell, and restart Docker Desktop.
-
-For local Node.js checks outside Docker:
+Requirements: Node.js 24+, Docker with Compose, and Chromium for the E2E suite.
 
 ```sh
 npm ci
-npm test
 npm run build
+npm test
+npm run lint:check
 ```
 
-## Bootstrap Administrator
-
-Provision exactly once with secrets supplied through the environment or Docker secrets:
+Run the complete local stack:
 
 ```sh
-export KLINOK_BOOTSTRAP_EMAIL="${KLINOK_BOOTSTRAP_EMAIL:-maxirmx@sw.consulting}"
-export KLINOK_BOOTSTRAP_PASSWORD="${KLINOK_BOOTSTRAP_PASSWORD:-Password&Spaniel&26}"
-export KLINOK_RECOVERY_PASSPHRASE="${KLINOK_RECOVERY_PASSPHRASE:-Bene facta me clarum non fecerunt}"
-npm run build:auth && npm run auth:provision
+docker compose up -d postgres mail
+KLINOK_BOOTSTRAP_EMAIL=administrator@example.ru \
+KLINOK_BOOTSTRAP_PASSWORD=bootstrap-password-2026 \
+docker compose run --rm -T api node api-node/dist/provision.js
+docker compose up -d api ui
 ```
 
-Newly provisioned bootstrap keys are encrypted by the authentication service and can
-be restored after an ordinary sign-in, including after browser storage is cleared.
-Store `bootstrap-recovery.bundle.json` and `KLINOK_RECOVERY_PASSPHRASE` separately
-offline as an emergency and legacy-migration backup. The bootstrap account remains
-protected from deletion.
+The UI is at `http://localhost:8080`; Mailpit is at `http://localhost:8025`. The bootstrap command is idempotent and creates the undeletable Administrator plus the genesis audit block.
 
-The authentication service stores every account's exported private keys encrypted
-with `/data/user-key-escrow-key.json`. It can decrypt these keys, so this prototype
-does not provide strict end-to-end key custody. Back up the authentication data volume
-as one unit: losing the escrow master-key file makes the encrypted account key copies
-unrecoverable. `KLINOK_BOOTSTRAP_ACCOUNT_ID` and
-`KLINOK_BOOTSTRAP_SIGNING_PUBLIC_KEY` must remain identical for the UI,
-authentication service, and P2P node; the supplied Docker Compose files wire these
-values automatically.
+For UI development against the Compose API:
 
-## Ограничение частоты запросов к сервису аутентификации
+```sh
+docker compose -f docker-compose.yml -f docker-compose.mixed-dev.yml up -d postgres mail api
+npm run dev
+```
 
-Сервис аутентификации применяет ограничения до выполнения операций с LevelDB,
-Argon2, SMTP и аттестационным ключом. Первый уровень учитывает адрес клиента и
-защищает каждый маршрут от перебора и истощения ресурсов. Второй уровень объединяет
-запросы по нормализованному адресу электронной почты, хешу токена или идентификатору
-аккаунта, поэтому смена адреса клиента не обходит ограничения для одной учётной записи.
-Адреса электронной почты и идентификаторы аккаунтов не сохраняются в ключах счётчиков:
-для них используется HMAC-SHA-256 со случайным ключом процесса.
+## Required validation
 
-Начальные значения ограничений:
+```sh
+npm test
+npm run build
+npm run lint:check
+npm run test:e2e:compose
+```
 
-| Операция | По адресу клиента | Дополнительное ограничение |
-| --- | ---: | ---: |
-| Регистрация | 5 запросов в час | 1 письмо в сутки на адрес электронной почты |
-| Вход | 30 запросов за 15 минут | 5 неудачных попыток за 15 минут на аккаунт |
-| Запрос восстановления пароля | 10 запросов в час | 3 письма в час на аккаунт |
-| Подтверждение почты и сброс пароля | 20 запросов за 15 минут | 5 попыток за 15 минут на хеш токена |
-| Чтение сессии | 300 запросов в минуту | — |
-| Изменение профиля и обычный выход | 60 запросов в минуту | 60 изменений в минуту на аккаунт |
-| Выход на всех устройствах, удаление аккаунта и операции с устройствами | 10 запросов в минуту | 10 чувствительных изменений в минуту на аккаунт |
+The Compose E2E suite starts with an empty v3 database and removes its test volume afterward.
 
-При превышении публичного ограничения сервис отвечает кодом `429`, возвращает
-`error.code` со значением `RATE_LIMITED` и заголовок `Retry-After`. Ограничения на
-повторную отправку писем не раскрывают существование аккаунта: сервис сохраняет
-одинаковый ответ `202 {"accepted":true}`, но не выполняет повторную отправку.
-Прежняя сохраняемая в аккаунте блокировка `lockedUntil` больше не используется как
-основной механизм защиты; неудачные входы учитываются во временном счётчике.
+## Production
 
-Сервис по умолчанию не доверяет `X-Forwarded-For`. Параметр
-`KLINOK_AUTH_TRUST_PROXY` должен содержать точное число доверенных промежуточных
-узлов либо доверенный адрес или диапазон сети. Значение `true` нельзя использовать
-при доступности порта сервиса из недоверенной сети. В локальном Docker Compose
-установлено значение `1`, поскольку порт контейнера `auth` не опубликован и запросы
-приходят только через nginx контейнера `ui`.
-
-Пороговые значения настраиваются переменными окружения:
-
-- `KLINOK_RATE_LIMIT_REGISTRATION_IP_PER_HOUR`;
-- `KLINOK_RATE_LIMIT_REGISTRATION_EMAIL_PER_DAY`;
-- `KLINOK_RATE_LIMIT_LOGIN_IP_PER_15_MINUTES`;
-- `KLINOK_RATE_LIMIT_LOGIN_FAILURES_PER_ACCOUNT_15_MINUTES`;
-- `KLINOK_RATE_LIMIT_RECOVERY_IP_PER_HOUR`;
-- `KLINOK_RATE_LIMIT_RECOVERY_ACCOUNT_PER_HOUR`;
-- `KLINOK_RATE_LIMIT_TOKEN_IP_PER_15_MINUTES`;
-- `KLINOK_RATE_LIMIT_TOKEN_PER_15_MINUTES`;
-- `KLINOK_RATE_LIMIT_SESSION_IP_PER_MINUTE`;
-- `KLINOK_RATE_LIMIT_MUTATION_IP_PER_MINUTE`;
-- `KLINOK_RATE_LIMIT_SENSITIVE_MUTATION_IP_PER_MINUTE`;
-- `KLINOK_RATE_LIMIT_MUTATION_ACCOUNT_PER_MINUTE`;
-- `KLINOK_RATE_LIMIT_SENSITIVE_MUTATION_ACCOUNT_PER_MINUTE`.
-
-Все значения должны быть положительными целыми числами. Счётчики находятся в памяти
-процесса. Такая конфигурация рассчитана на один экземпляр `auth-node`; перед запуском
-нескольких экземпляров необходимо подключить общее отказоустойчивое хранилище
-счётчиков и единый секрет для формирования приватных ключей ограничений.
-
-## Security boundaries
-
-- Roles are `administrator`, `doctor`, and `owner`; users explicitly select one active role for every route and signed write.
-- Profiles and medical records are encrypted with AES-GCM. Keys are wrapped with RSA-OAEP-256 and event envelopes are signed with ECDSA P-256.
-- Administrators manage accounts and roles but receive no medical key envelopes.
-- Revoking pet access rotates the key for future records; historical data already decrypted by a recipient cannot be clawed back.
-- Legal document text, versions, retention schedules, SMTP, credentials, and persistent volumes are deployment-owned configuration.
+See [README.cloud.md](README.cloud.md). The v2 authentication, OrbitDB, and P2P services are not part of v3. An old deployment can remain separately available as a read-only archive, but its data is not migrated into the v3 database.

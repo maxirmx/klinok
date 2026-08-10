@@ -9,7 +9,8 @@ coverage:
         informational: true
     patch:
       default:
-        informational: true
+        target: 90%
+        informational: false
 
 
 # When modifying this file, please validate using

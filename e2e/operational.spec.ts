@@ -88,7 +88,7 @@ async function newPage(context: BrowserContext, label: string): Promise<Page> {
   page.setDefaultTimeout(30_000);
   page.on("console", (message) => {
     const text = message.text();
-    if (text.includes('"event":"p2p.') || message.type() === "error" || message.type() === "warning") {
+    if (message.type() === "error" || message.type() === "warning") {
       console.log(`[browser:${label}:${message.type()}] ${text}`);
     }
   });
@@ -155,11 +155,11 @@ async function clearBrowserStorage(page: Page) {
   });
 }
 
-async function restartTrustedNode() {
-  await execFile("docker", ["compose", "restart", "p2p"], { cwd: process.cwd(), env: process.env });
+async function restartApi() {
+  await execFile("docker", ["compose", "restart", "api"], { cwd: process.cwd(), env: process.env });
   for (let attempt = 0; attempt < 60; attempt += 1) {
     try {
-      await execFile("docker", ["compose", "exec", "-T", "p2p", "node", "-e", "fetch('http://127.0.0.1:8091/healthz').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"], {
+      await execFile("docker", ["compose", "exec", "-T", "api", "node", "-e", "fetch('http://127.0.0.1:8090/readyz').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"], {
         cwd: process.cwd(), env: process.env,
       });
       return;
@@ -167,7 +167,14 @@ async function restartTrustedNode() {
       await new Promise((resolve) => setTimeout(resolve, 500));
     }
   }
-  throw new Error("Trusted P2P node did not become healthy after restart.");
+  throw new Error("API did not become ready after restart.");
+}
+
+async function queryPostgres(sql: string): Promise<string> {
+  const result = await execFile("docker", [
+    "compose", "exec", "-T", "postgres", "psql", "-U", "klinok", "-d", "klinok", "-At", "-c", sql,
+  ], { cwd: process.cwd(), env: process.env });
+  return result.stdout.trim();
 }
 
 test("fresh provisioning, Doctor approval, grant, draft, and confirmation", async ({ browser, request }) => {
@@ -192,9 +199,11 @@ test("fresh provisioning, Doctor approval, grant, draft, and confirmation", asyn
   await expect(approvalDialog).toBeVisible();
   await approvalDialog.getByRole("button", { name: "Одобрить", exact: true }).click();
   await expect(approvalDialog).toBeHidden();
-  await expectEmailText(request, doctorEmail, "Ваша роль «Врач» подтверждена.");
+  await expectEmailText(request, doctorEmail, "Роль «Ветеринар» одобрена.");
 
   await doctorPage.bringToFront();
+  const approvedDoctorRole = doctorPage.locator(".role-selection-card").filter({ hasText: "Ветеринар" });
+  await expect(approvedDoctorRole.getByText("Одобрена", { exact: true })).toBeVisible({ timeout: replicationTimeout });
   const doctorHome = doctorPage.locator(".workspace-sidebar").getByRole("link", { name: "Мед. карты" });
   await expect(doctorHome).toBeVisible({ timeout: replicationTimeout });
   await doctorHome.click();
@@ -301,8 +310,10 @@ test("fresh provisioning, Doctor approval, grant, draft, and confirmation", asyn
     return rows;
   }, []));
   expect(wideTabRows).toHaveLength(1);
+  await doctorPage.context().setOffline(true);
   await doctorPage.getByRole("button", { name: "Сохранить запись" }).click();
   await expect(doctorPage.locator(".medical-record-entry-details").filter({ hasText: "Всё хорошо" })).toBeVisible();
+  await doctorPage.context().setOffline(false);
 
   await ownerPage.bringToFront();
   const ownerRecord = ownerPage.locator(".medical-record-entry-details").filter({ hasText: "Всё хорошо" });
@@ -317,9 +328,23 @@ test("fresh provisioning, Doctor approval, grant, draft, and confirmation", asyn
   await expect(ownerRecord.getByText("14.3 кг", { exact: true })).toBeVisible();
   const profileWeight = ownerPage.locator(".pet-profile-view-fields > div").filter({ hasText: "Вес" });
   await expect(profileWeight).toContainText("12.4 кг");
+  const recordElementId = await ownerRecord.getAttribute("id");
+  if (!recordElementId?.startsWith("encounter-")) throw new Error("Medical record element has no record identifier.");
+  const recordId = recordElementId.slice("encounter-".length);
+  expect(recordId).toMatch(/^[0-9a-f-]{36}$/i);
   await ownerRecord.getByRole("button", { name: "Подтвердить запись" }).click();
   await expect(ownerRecord.getByText("Подтверждена", { exact: true })).toBeVisible();
   await expect(profileWeight).toContainText("14.3 кг");
+  expect(await queryPostgres(`SELECT count(*) FROM audit_blocks
+    WHERE aggregate_type='medicalRecord' AND aggregate_id='${recordId}' AND action='record.created'
+      AND before_state='null'::jsonb AND after_state->>'status'='unconfirmed'
+      AND after_state->'record'->>'recordId'='${recordId}'
+      AND after_state->'record'->'sections'->'what-happened' IS NOT NULL`)).toBe("1");
+  expect(await queryPostgres(`SELECT count(*) FROM audit_blocks
+    WHERE aggregate_type='medicalRecord' AND aggregate_id='${recordId}' AND action='record.confirmed'
+      AND before_state->>'status'='unconfirmed' AND after_state->>'status'='confirmed'
+      AND after_state->'record'->>'recordId'='${recordId}'
+      AND after_state->'confirmation'->>'recordId'='${recordId}'`)).toBe("1");
   await openProfileAndWaitForSync(ownerPage);
   await ownerPage.locator(".workspace-sidebar").getByRole("link", { name: "Шарик", exact: true }).click();
   await expect(ownerPage).toHaveURL(new RegExp(`/owner/pets/${petId}$`));
@@ -329,7 +354,13 @@ test("fresh provisioning, Doctor approval, grant, draft, and confirmation", asyn
   await expect(ownerPage.getByText("Доступ отозван.")).toBeVisible();
   await openProfileAndWaitForSync(ownerPage);
 
-  if (process.env.KLINOK_E2E_RESTART_P2P === "true") await restartTrustedNode();
+  await administratorPage.bringToFront();
+  await administratorPage.locator(".workspace-sidebar").getByRole("link", { name: "Журнал" }).click();
+  await expect(administratorPage).toHaveURL(/\/admin\/audit/);
+  await expect(administratorPage.getByText(/Блокчейн проверен · блок/)).toBeVisible();
+  await expect(administratorPage.locator(".administrator-audit-table tbody tr").first()).toBeVisible();
+
+  if (process.env.KLINOK_E2E_RESTART_API === "true") await restartApi();
   await ownerPage.getByRole("button", { name: "Выйти", exact: true }).click();
   await expect(ownerPage).toHaveURL(/\/auth\/login/);
   await clearBrowserStorage(ownerPage);

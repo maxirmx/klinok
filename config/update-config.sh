@@ -7,47 +7,26 @@ set -eu
 
 CONFIG_PATH=${CONFIG_PATH:-/var/www/klinok/config.json}
 ENABLE_LOG=${ENABLE_LOG:-false}
-DATA_GENERATION=${KLINOK_DATA_GENERATION:-v2}
-CONTROL_DB=${KLINOK_CONTROL_DB:-klinok-control-v2}
-MEDICAL_DB=${KLINOK_MEDICAL_DB:-klinok-medical-v4}
-TRUSTED_NODE=${KLINOK_TRUSTED_NODE:-/dns4/klinok.sw.consulting/tcp/8089/tls/ws}
 BOOTSTRAP_ACCOUNT_ID=${KLINOK_BOOTSTRAP_ACCOUNT_ID:-bootstrap-administrator}
+OFFLINE_LEASE_DAYS=${KLINOK_OFFLINE_LEASE_DAYS:-7}
 PERSONAL_DATA_VERSION=${KLINOK_PERSONAL_DATA_CONSENT_VERSION:-2026-07-10}
 USER_AGREEMENT_VERSION=${KLINOK_USER_AGREEMENT_VERSION:-2026-07-10}
-AUTH_ATTESTATION_PUBLIC_KEY=${KLINOK_AUTH_ATTESTATION_PUBLIC_KEY:-null}
-BOOTSTRAP_SIGNING_PUBLIC_KEY=${KLINOK_BOOTSTRAP_SIGNING_PUBLIC_KEY:-null}
-REPLAY_QUARANTINE_EVENT_IDS=${KLINOK_REPLAY_QUARANTINE_EVENT_IDS:-}
 
 case "$ENABLE_LOG" in true|false) ;; *) ENABLE_LOG=false ;; esac
-case "$REPLAY_QUARANTINE_EVENT_IDS" in
-  *[!A-Za-z0-9,_-]*) echo "KLINOK_REPLAY_QUARANTINE_EVENT_IDS contains invalid characters." >&2; exit 1 ;;
-esac
-if [ -n "$REPLAY_QUARANTINE_EVENT_IDS" ]; then
-  REPLAY_QUARANTINE_JSON="[\"$(printf '%s' "$REPLAY_QUARANTINE_EVENT_IDS" | sed 's/,/","/g')\"]"
-else
-  REPLAY_QUARANTINE_JSON="[]"
-fi
+case "$OFFLINE_LEASE_DAYS" in ''|*[!0-9]*) OFFLINE_LEASE_DAYS=7 ;; esac
 
 cat > "$CONFIG_PATH" <<EOF
 {
   "enableLog": $ENABLE_LOG,
-  "authBaseUrl": "",
+  "apiBaseUrl": "",
+  "dataGeneration": "v3",
+  "bootstrapAccountId": "$BOOTSTRAP_ACCOUNT_ID",
+  "offlineLeaseDays": $OFFLINE_LEASE_DAYS,
   "legal": {
     "personalDataConsent": { "version": "$PERSONAL_DATA_VERSION", "href": "/legal/personal-data-consent" },
     "userAgreement": { "version": "$USER_AGREEMENT_VERSION", "href": "/legal/user-agreement" }
-  },
-  "p2p": {
-    "enabled": true,
-    "dataGeneration": "$DATA_GENERATION",
-    "controlDatabaseName": "$CONTROL_DB",
-    "medicalDatabaseName": "$MEDICAL_DB",
-    "trustedNodeMultiaddrs": ["$TRUSTED_NODE"],
-    "replayQuarantineEventIds": $REPLAY_QUARANTINE_JSON,
-    "bootstrapAccountId": "$BOOTSTRAP_ACCOUNT_ID",
-    "authAttestationPublicKey": $AUTH_ATTESTATION_PUBLIC_KEY,
-    "bootstrapSigningPublicKey": $BOOTSTRAP_SIGNING_PUBLIC_KEY
   }
 }
 EOF
 
-echo "Klinok public runtime configuration updated."
+echo "Klinok v3 public runtime configuration updated."

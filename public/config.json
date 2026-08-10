@@ -1,6 +1,9 @@
 {
   "enableLog": false,
-  "authBaseUrl": "",
+  "apiBaseUrl": "",
+  "dataGeneration": "v3",
+  "bootstrapAccountId": "bootstrap-administrator",
+  "offlineLeaseDays": 7,
   "legal": {
     "personalDataConsent": {
       "version": "2026-07-10",
@@ -10,14 +13,5 @@
       "version": "2026-07-10",
       "href": "/legal/user-agreement"
     }
-  },
-  "p2p": {
-    "enabled": true,
-    "dataGeneration": "v2",
-    "controlDatabaseName": "klinok-control-v2",
-    "medicalDatabaseName": "klinok-medical-v4",
-    "trustedNodeMultiaddrs": ["/dns4/klinok.sw.consulting/tcp/8089/tls/ws"],
-    "replayQuarantineEventIds": [],
-    "bootstrapAccountId": "bootstrap-administrator"
   }
 }

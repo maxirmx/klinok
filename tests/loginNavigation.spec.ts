@@ -16,18 +16,18 @@ vi.mock("../src/appStore", async () => {
   const state = reactive({
     activeRole: "doctor",
     busy: false,
-    devicePending: false,
-    keyRecoveryRequired: false,
-    bootstrapRecoveryRequired: false,
   });
   return {
     AUTH_SUCCESS_MESSAGES: { registration: "Централизованное сообщение о регистрации" },
     appState: readonly(state),
     forgotPassword: vi.fn(),
+    getDeviceName: vi.fn(() => "Это устройство"),
     getConfig: vi.fn(() => ({ legal: { personalDataConsent: {}, userAgreement: {} } })),
+    hasDeviceIdentity: vi.fn(() => false),
     login: vi.fn().mockResolvedValue(undefined),
     register: vi.fn(),
     resetPassword: vi.fn(),
+    suggestedDeviceName: vi.fn(() => "Это устройство"),
     verifyEmail: vi.fn(),
   };
 });

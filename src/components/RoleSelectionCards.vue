@@ -4,7 +4,7 @@
 // This file is a part of Klinok application
 
 import { computed, useId, useSlots } from "vue";
-import type { Role, RoleStatus } from "@klinok/protocol";
+import type { Role, RoleStatus } from "@klinok/contracts";
 import AppIcon from "./AppIcon.vue";
 
 const props = withDefaults(defineProps<{

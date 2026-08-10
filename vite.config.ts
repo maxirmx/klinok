@@ -59,29 +59,14 @@ function mixedDevRuntimeConfig(path = process.env.KLINOK_DEV_CONFIG ?? (existsSy
 
 export default defineConfig({
   plugins: [canonicalOriginRedirect(), mixedDevRuntimeConfig(), vue()],
-  resolve: {
-    alias: {
-      events: "events/",
-    },
-  },
   server: {
     host: "127.0.0.1",
     port: canonicalDevPort,
     strictPort: true,
     allowedHosts: [canonicalDevUrl.hostname],
-    watch: {
-      // Auth's local LevelDB directory is runtime data, not UI source. In
-      // particular, it can contain user-created symlinks that must not bring
-      // down Vite's file watcher.
-      ignored: ["**/.klinok-auth", "**/.klinok-auth/**"],
-    },
     proxy: {
-      "/api/auth": {
-        target: process.env.KLINOK_AUTH_DEV_TARGET ?? "http://127.0.0.1:8090",
-      },
-      "/api/events": {
-        target: process.env.KLINOK_P2P_DEV_TARGET ?? "http://127.0.0.1:8091",
-        rewrite: () => "/events",
+      "/api": {
+        target: process.env.KLINOK_API_DEV_TARGET ?? "http://127.0.0.1:8090",
       },
     },
   },

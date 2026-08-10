@@ -5,7 +5,7 @@
 
 import { computed, reactive, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import type { Role, RoleStatus } from "@klinok/protocol";
+import type { Role, RoleStatus } from "@klinok/contracts";
 import AppIcon from "../components/AppIcon.vue";
 import ConfirmationDialog from "../components/ConfirmationDialog.vue";
 import PasswordInput from "../components/PasswordInput.vue";
@@ -13,19 +13,14 @@ import PersonIdentity from "../components/PersonIdentity.vue";
 import RoleSelectionCards from "../components/RoleSelectionCards.vue";
 import SyncStatus from "../components/SyncStatus.vue";
 import WorkspaceShell from "../components/WorkspaceShell.vue";
-import { getDeviceName } from "../repositories/deviceVault";
 import { useAlertStore } from "../stores/alert";
 import {
   appState,
-  approveDeviceEnrollment,
-  bootstrapApp,
   cancelRole,
   deleteAccount,
+  getDeviceName,
   getConfig,
   logout,
-  importBootstrapRecovery,
-  rejectDeviceEnrollment,
-  replaceLostBootstrapDevice,
   requestRole,
   revokeDevice,
   switchRole,
@@ -50,8 +45,6 @@ const roleStatuses = computed<Partial<Record<Role, RoleStatus | "not_requested">
 }));
 const disabledRoleSelection = computed<Role[]>(() => (["owner", "doctor", "administrator"] as Role[])
   .filter((role) => requests.value.get(role)?.status !== "approved"));
-const recoveryText = ref("");
-const recoveryPassphrase = ref("");
 const accountDeletionConfirmation = ref(false);
 const devicePendingRevocation = ref<{ deviceId: string; deviceName: string } | null>(null);
 const formError = ref("");
@@ -102,7 +95,7 @@ const visibleDevices = computed(() => (appState.session.devices ?? [])
 const canRevokeDevice = computed(() => visibleDevices.value.length > 1);
 const isBootstrapAccount = computed(() => Boolean(
   appState.session.accountId
-  && appState.session.accountId === getConfig()?.p2p.bootstrapAccountId,
+  && appState.session.accountId === getConfig()?.bootstrapAccountId,
 ));
 
 const deviceName = (device: { deviceId: string; deviceName?: string }) => device.deviceName?.trim()
@@ -146,14 +139,8 @@ function restoreCredentials() {
   formError.value = "";
 }
 
-async function readRecoveryFile(event: Event) {
-  const file = (event.target as HTMLInputElement).files?.[0];
-  recoveryText.value = file ? await file.text() : "";
-}
-
 async function signOut(all = false) {
-  await logout(all);
-  await router.replace("/auth/login");
+  if (await logout(all)) await router.replace("/auth/login");
 }
 
 async function copyAccountId() {
@@ -183,17 +170,12 @@ async function saveProfile() {
     return;
   }
   formError.value = "";
-  let directorySynchronized = true;
   const saved = await action("Изменения профиля сохранены.", async () => {
-    const result = await updateProfile({ firstName, lastName, patronymic });
-    directorySynchronized = result?.synchronized !== false;
+    await updateProfile({ firstName, lastName, patronymic });
   });
   if (saved) {
     Object.assign(savedProfile, { firstName, lastName, patronymic });
     Object.assign(profileDraft, { firstName, lastName, patronymic });
-    if (!directorySynchronized) {
-      alertStore.success("Профиль сохранён. Синхронизация продолжится автоматически.");
-    }
   }
 }
 
@@ -259,66 +241,7 @@ async function confirmDeviceRevocation() {
 <template>
   <WorkspaceShell :role="appState.activeRole" title="Настройки" :profile-name="profileName" settings @sign-out="signOut()">
     <div class="profile-page">
-    <section v-if="appState.bootstrapRecoveryRequired" class="panel critical-panel" role="alert">
-      <h2>Защищённая история устройства требует восстановления</h2>
-      <p>Служба входа подтверждает это устройство, но его сертификат нельзя безопасно связать с защищённым журналом. Загрузите автономный пакет начального администратора. Прежние устройства и сеансы будут отозваны; подтверждённые данные в журнале сохранятся.</p>
-      <form class="form-stack" @submit.prevent="action('Устройство начального администратора восстановлено.', () => replaceLostBootstrapDevice(recoveryText, recoveryPassphrase))">
-        <label><span>Пакет восстановления</span><input type="file" accept="application/json,.json" required @change="readRecoveryFile" /></label>
-        <PasswordInput v-model="recoveryPassphrase" label="Пароль пакета" required />
-        <button
-          class="primary-action inline profile-icon-action"
-          :disabled="appState.busy || !recoveryText || recoveryPassphrase.length < 16"
-          title="Восстановить устройство"
-          aria-label="Восстановить устройство"
-        >
-          <AppIcon name="restore" />
-        </button>
-      </form>
-    </section>
-
-    <section v-else-if="appState.keyRecoveryRequired" class="panel critical-panel" role="alert">
-      <h2>Ключи этого аккаунта отсутствуют на устройстве</h2>
-      <template v-if="appState.session.accountId === getConfig()?.p2p.bootstrapAccountId && !appState.session.devices?.length">
-        <p>Для первого устройства начального администратора загрузите автономный пакет, созданный при подготовке системы.</p>
-        <form class="form-stack" @submit.prevent="importBootstrapRecovery(recoveryText, recoveryPassphrase)">
-          <label><span>Пакет восстановления</span><input type="file" accept="application/json,.json" required @change="readRecoveryFile" /></label>
-          <PasswordInput v-model="recoveryPassphrase" label="Пароль пакета" required />
-          <button
-            class="primary-action inline profile-icon-action"
-            :disabled="!recoveryText || recoveryPassphrase.length < 16"
-            title="Импортировать ключи"
-            aria-label="Импортировать ключи"
-          >
-            <AppIcon name="upload" />
-          </button>
-        </form>
-      </template>
-      <p v-else>Восстановление пароля не возвращает ключи распределённого хранилища. Подтвердите новое устройство с уже действующего устройства. Если все ключи потеряны, обратитесь к администратору и зарегистрируйте новый аккаунт.</p>
-    </section>
-
-    <section v-else-if="appState.devicePending" class="panel profile-gate" role="status">
-      <h2>Устройство ожидает подтверждения</h2>
-      <p>Откройте Клинок на действующем устройстве и подтвердите перенос ключей.</p>
-      <template v-if="isBootstrapAccount && !appState.session.serverKeySetAvailable">
-        <h3>Все действующие устройства утрачены?</h3>
-        <p>Замените их только с помощью офлайн-пакета начального администратора. Все прежние устройства и сеансы будут отозваны.</p>
-        <form class="form-stack" @submit.prevent="action('Утраченное устройство заменено.', () => replaceLostBootstrapDevice(recoveryText, recoveryPassphrase))">
-          <label><span>Пакет восстановления</span><input type="file" accept="application/json,.json" required @change="readRecoveryFile" /></label>
-          <PasswordInput v-model="recoveryPassphrase" label="Пароль пакета" required />
-          <button
-            class="primary-action inline profile-icon-action"
-            :disabled="appState.busy || !recoveryText || recoveryPassphrase.length < 16"
-            title="Заменить утраченное устройство"
-            aria-label="Заменить утраченное устройство"
-          >
-            <AppIcon name="restore" />
-          </button>
-        </form>
-      </template>
-      <button class="outline-action inline profile-icon-action" title="Проверить статус" aria-label="Проверить статус" @click="bootstrapApp(true)"><AppIcon name="restore" /></button>
-    </section>
-
-      <div v-else class="profile-layout">
+      <div class="profile-layout">
       <section class="panel profile-section">
         <div class="profile-section-heading">
           <div><h2>Личные данные</h2><p>Измените личные данные.</p></div>
@@ -475,21 +398,8 @@ async function confirmDeviceRevocation() {
       </section>
 
       <section id="devices" class="panel profile-section device-security">
-        <div class="profile-section-heading"><div><h2>Устройства</h2><p>Управляйте подтверждёнными устройствами.</p></div></div>
-
-        <template v-if="!appState.session.serverKeySetAvailable && appState.session.enrollments?.some(item => item.status === 'pending' && item.ephemeralPublicKey) && appState.session.device">
-          <h3>Новые устройства</h3>
-          <p>Подтверждайте только свои устройства. Передача ключей зашифрована для конкретного запроса.</p>
-          <div v-for="enrollment in appState.session.enrollments.filter(item => item.status === 'pending' && item.ephemeralPublicKey)" :key="enrollment.enrollmentId" class="list-row">
-            <div><strong>{{ deviceName(enrollment) }}</strong><span>Идентификатор: {{ enrollment.deviceId }}</span><small>Запрошено {{ enrollment.createdAt }}</small></div>
-            <div class="row-actions">
-              <button class="primary-action inline profile-icon-action" title="Подтвердить устройство и передать ключи" aria-label="Подтвердить устройство и передать ключи" @click="action('Устройство подтверждено.', () => approveDeviceEnrollment(enrollment.enrollmentId))"><AppIcon name="check" /></button>
-              <button class="outline-action inline danger-link profile-icon-action" title="Отклонить устройство" aria-label="Отклонить устройство" @click="action('Запрос устройства отклонён.', () => rejectDeviceEnrollment(enrollment.enrollmentId))"><AppIcon name="close" /></button>
-            </div>
-          </div>
-        </template>
-
-        <p v-if="appState.session.serverKeySetAvailable">Отозванное устройство отключается, но может быть зарегистрировано снова после успешного входа в аккаунт.</p>
+        <div class="profile-section-heading"><div><h2>Устройства</h2><p>Управляйте действующими сеансами входа.</p></div></div>
+        <p>Вход на новом устройстве выполняется сразу. Отзыв завершает все его активные сеансы.</p>
 
         <div v-for="device in visibleDevices" :key="device.deviceId" class="list-row">
           <div><strong>{{ deviceName(device) }}</strong><span>{{ device.deviceId === appState.session.device?.deviceId ? 'Это устройство' : 'Действующее устройство' }}</span><small>Идентификатор: {{ device.deviceId }}</small></div>
@@ -509,14 +419,14 @@ async function confirmDeviceRevocation() {
     <ConfirmationDialog
       v-model="accountDeletionConfirmation"
       title="Удалить аккаунт?"
-      description="Удаление необратимо. Медицинская карта останется в журнале, но аккаунт потеряет доступ."
+      description="Удаление необратимо. Аккаунт потеряет доступ, а связанные данные будут скрыты."
       confirm-label="Удалить аккаунт"
       @confirm="confirmAccountDeletion"
     />
     <ConfirmationDialog
       :model-value="Boolean(devicePendingRevocation)"
       :title="`Отозвать устройство «${devicePendingRevocation?.deviceName ?? ''}»?`"
-      description="Устройство потеряет доступ к аккаунту и больше не сможет использовать сохранённые ключи."
+      description="Все активные сеансы этого устройства будут завершены."
       confirm-label="Отозвать устройство"
       @update:model-value="value => { if (!value) devicePendingRevocation = null; }"
       @confirm="confirmDeviceRevocation"

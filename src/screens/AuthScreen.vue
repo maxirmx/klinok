@@ -5,13 +5,12 @@
 
 import { computed, onMounted, reactive, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import type { Role } from "@klinok/protocol";
+import type { Role } from "@klinok/contracts";
 import AppAlert from "../components/AppAlert.vue";
 import BrandLogo from "../components/BrandLogo.vue";
 import PasswordInput from "../components/PasswordInput.vue";
 import RoleSelectionCards from "../components/RoleSelectionCards.vue";
-import { AUTH_SUCCESS_MESSAGES, appState, forgotPassword, login, register, resetPassword, verifyEmail } from "../appStore";
-import { getDeviceId, getOrCreateDeviceName, suggestedDeviceName } from "../repositories/deviceVault";
+import { AUTH_SUCCESS_MESSAGES, appState, forgotPassword, getDeviceName, hasDeviceIdentity, login, register, resetPassword, suggestedDeviceName, verifyEmail } from "../appStore";
 import { roleHomePath } from "../roleNavigation";
 import { APP_VERSION } from "../version";
 
@@ -20,8 +19,8 @@ const route = useRoute();
 const router = useRouter();
 const email = ref("");
 const password = ref("");
-const isNewDevice = !getDeviceId();
-const deviceName = ref(isNewDevice ? suggestedDeviceName() : getOrCreateDeviceName());
+const isNewDevice = !hasDeviceIdentity();
+const deviceName = ref(isNewDevice ? suggestedDeviceName() : getDeviceName());
 const confirmPassword = ref("");
 const registrationConfirmPassword = ref("");
 const initialRole = ref<Role>("owner");
@@ -43,9 +42,7 @@ const title = computed(() => ({
 async function submitLogin() {
   try {
     await login(email.value, password.value, deviceName.value);
-    const destination = appState.keyRecoveryRequired || appState.devicePending
-      ? "/profile"
-      : roleHomePath(appState.activeRole);
+    const destination = roleHomePath(appState.activeRole);
     await router.replace(destination);
   } catch { /* app store exposes a localized error */ }
 }
@@ -123,7 +120,7 @@ onMounted(async () => {
         <form v-if="mode === 'login'" class="form-stack" @submit.prevent="submitLogin">
           <label class="auth-field-label"><span>Электронная почта</span><input v-model="email" type="email" autocomplete="email" required /></label>
           <PasswordInput v-model="password" label="Пароль" autocomplete="current-password" required />
-          <label v-if="isNewDevice" class="auth-field-label"><span>Название этого устройства</span><input v-model="deviceName" maxlength="80" autocomplete="off" required /><small>Например, «Домашний ноутбук». Название увидят при подтверждении устройства.</small></label>
+          <label v-if="isNewDevice" class="auth-field-label"><span>Название этого устройства</span><input v-model="deviceName" maxlength="80" autocomplete="off" required /><small>Например, «Домашний ноутбук». Название будет видно в списке сеансов.</small></label>
           <div v-else class="auth-device-name" aria-label="Название этого устройства">
             <span>Название этого устройства</span>
             <strong>{{ deviceName }}</strong>

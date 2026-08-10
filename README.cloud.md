@@ -1,265 +1,69 @@
-# Klinok cloud bootstrap
+# Klinok v3 deployment
 
-The deployment model that best fits the current architecture is a single persistent Linux VM running Docker Compose. Avoid an autoscaling container platform for now: `auth-node` uses LevelDB and in-memory rate limits, while `p2p-node` requires persistent OrbitDB storage and a stable peer identity.
+The supported production layout is a single API instance backed by PostgreSQL, with nginx serving the static Vue application and proxying `/api/` to the API. TLS terminates at nginx. There is no public P2P port or trust-key configuration.
 
-For the `klinok.sw.consulting` deployment, the bootstrap can be run from the repository root after DNS, the host firewall, Docker Compose, and TLS files `/srv/klinok/certificate/s.crt` and `/srv/klinok/certificate/s.key` are ready:
+## Host preparation
 
-```sh
-export KLINOK_BOOTSTRAP_EMAIL='administrator@example.com'
-export KLINOK_BOOTSTRAP_PASSWORD='a-long-unique-password'
-export KLINOK_RECOVERY_PASSPHRASE='a-separate-long-offline-passphrase'
-
-./scripts/bootstrap-cloud.sh
-```
-
-The script validates the certificate, prepares `/srv/klinok`, pulls the GHCR images, provisions or reuses the bootstrap Administrator, writes the protected `klinok.env`, exports `bootstrap-recovery.bundle.json`, starts the services in dependency order, and verifies HTTPS locally with the production hostname. SMTP defaults to the `klinok@sw.consulting` mailbox at `mail.nic.ru` over implicit TLS on port `465`; any `KLINOK_SMTP_*` value can be overridden in the environment. Move the recovery bundle to encrypted offline storage immediately after bootstrap and keep its passphrase separately. Use `KLINOK_IMAGE_TAG` to select an immutable release tag instead of the default `latest`.
-
-## Deployment layout
+Install Docker with Compose and prepare:
 
 ```text
-Internet
-   ├── 80/443 ── UI nginx
-   │                ├── /api/auth/* → auth-node:8090
-   │                └── /api/events → p2p-node:8091
-   └── 8089 ─── P2P TLS WebSocket
-
-auth-node ── outbound SMTP
+/srv/klinok/certificate/s.crt
+/srv/klinok/certificate/s.key
+/srv/klinok/postgres.v3/data
 ```
 
-Only ports `80`, `443`, and `8089` should be public. Ports `8090` and `8091` must remain internal.
+Create `klinok.env` with at least:
 
-## 1. Prepare the cloud host
-
-Provision a Linux VM with:
-
-- a persistent system disk or attached data disk;
-- a static public IP;
-- Docker Engine and Docker Compose v2;
-- DNS `A` and, if applicable, `AAAA` records for the deployment hostname;
-- inbound firewall access to TCP ports `80`, `443`, and `8089`;
-- restricted SSH access;
-- outbound access to the selected SMTP provider.
-
-Create persistent directories for the service data and TLS certificate:
-
-```text
-/srv/klinok/auth.v2/data
-/srv/klinok/p2p.v2/data
-/srv/klinok/certificate
-```
-
-The P2P container runs as a non-root Node user. It must be able to write its data directory and read the TLS private key.
-
-## 2. Customize the production Compose configuration
-
-[`docker-compose-ghrc.yml`](docker-compose-ghrc.yml) is the production template. Its defaults are:
-
-- `klinok.sw.consulting`;
-- `/srv/klinok/...` storage and certificate paths;
-- `latest` container tags;
-- certificate names `s.crt` and `s.key`.
-
-The bootstrap script records overrides in `klinok.env`. Prefer an immutable `KLINOK_IMAGE_TAG` over `latest`.
-
-The HTTPS hostname and the P2P TLS hostname can be configured separately. If the public hostname is a DNS alias whose TLS proxy does not answer with that alias as SNI, set the canonical TLS hostname without changing the public application URL:
-
-```env
+```dotenv
 KLINOK_DOMAIN=klinok.sw.consulting
-KLINOK_P2P_DOMAIN=kreel2.sw.consulting
-```
-
-The certificate must cover both names. The generated browser configuration, the auth observer, and the P2P announcement all use `KLINOK_P2P_DOMAIN`.
-
-The UI [`config/nginx.conf`](config/nginx.conf) also hard-codes `klinok.sw.consulting`. For another hostname, either rebuild the UI image after changing the file or mount a customized configuration into the container.
-
-Use the same certificate for:
-
-- HTTPS on port `443`;
-- the P2P TLS WebSocket on port `8089`.
-
-If using Let's Encrypt, copy the certificate into the expected `s.crt` and `s.key` paths. Restart both `ui-blue` and `p2p-blue` after certificate renewal because the P2P process reads its certificate at startup.
-
-Add the following environment value to `auth-blue` when nginx is its only proxy:
-
-```yaml
-KLINOK_AUTH_TRUST_PROXY: "1"
-```
-
-This allows authentication rate limiting to use the client address supplied by the trusted nginx proxy. Do not use the unrestricted value `true` when the authentication service is reachable from an untrusted network.
-
-Configure the production SMTP service through the Compose environment:
-
-```env
-KLINOK_SMTP_HOST=mail.nic.ru
+KLINOK_POSTGRES_PASSWORD=replace-with-a-long-random-password
+KLINOK_BOOTSTRAP_EMAIL=administrator@example.ru
+KLINOK_BOOTSTRAP_PASSWORD=replace-with-a-long-bootstrap-password
+KLINOK_SMTP_HOST=mail.example.ru
 KLINOK_SMTP_PORT=465
 KLINOK_SMTP_SECURE=true
-KLINOK_SMTP_USER=klinok@sw.consulting
-KLINOK_SMTP_PASSWORD=Klinok$123
-KLINOK_SMTP_FROM="Клинок <klinok@sw.consulting>"
+KLINOK_SMTP_USER=klinok@example.ru
+KLINOK_SMTP_PASSWORD=replace-with-the-smtp-password
+KLINOK_SMTP_FROM=Клинок <klinok@example.ru>
 ```
 
-Port `587` normally uses STARTTLS with `KLINOK_SMTP_SECURE=false`. Implicit TLS on port `465` normally uses `KLINOK_SMTP_SECURE=true`. Follow the SMTP provider's requirements.
+Protect this file with mode `0600`. The database password is used only between the API and PostgreSQL. TLS and encrypted host/database backups are responsible for data-at-rest protection; v3 intentionally does not apply application-level or end-to-end encryption.
 
-Protect the runtime environment file:
+## Initial provisioning
+
+From the repository root:
 
 ```sh
-chmod 600 klinok.env
+chmod +x scripts/bootstrap-cloud.sh
+scripts/bootstrap-cloud.sh
 ```
 
-If the GHCR packages are private, authenticate before pulling them:
+The script validates Compose, starts PostgreSQL, runs the idempotent bootstrap Administrator CLI, then starts the API and UI. Provisioning records the genesis audit block. The bootstrap account and its Administrator role cannot be deleted or revoked.
+
+After the first successful start, remove `KLINOK_BOOTSTRAP_PASSWORD` from persistent shell history and keep it in an approved password manager. It is needed only to sign in, not to start containers.
+
+## Updates
 
 ```sh
-docker login ghcr.io
+scripts/update-cloud.sh
 ```
 
-## 3. Provision the bootstrap Administrator exactly once
+The API runs SQL migrations before accepting traffic and verifies the complete audit chain at startup. If verification fails, `/readyz` remains unhealthy and mutations return `LEDGER_INVALID`; diagnostic health and database reads remain available for investigation.
 
-Provisioning creates the permanent trust root for an operational deployment. Run it before starting `auth-blue`, and never generate a second bootstrap identity over existing operational data.
+## Backups and ledger checkpoints
 
-Supply the bootstrap secrets through the environment or a secret manager rather than committing them:
+Use encrypted PostgreSQL backups and regularly test restoration. Audit blocks contain complete before/after JSON snapshots, including sensitive medical-record revisions, so backup access must be restricted accordingly. Retain the corresponding ledger head (`height` and `block_hash`) as a trusted checkpoint outside the database. The internal chain detects reordered, deleted, or altered audit blocks or state snapshots relative to that checkpoint, but it is not a public blockchain and an attacker able to replace both the database and every trusted backup/checkpoint could rewrite it.
+
+An existing v2 deployment may be kept separately as a read-only archive. Version 3 starts with an empty database and performs no account, pet, grant, or medical-history migration.
+
+## Operations
+
+Useful checks:
 
 ```sh
-export KLINOK_BOOTSTRAP_EMAIL='administrator@example.com'
-export KLINOK_BOOTSTRAP_PASSWORD='a-long-unique-password'
-export KLINOK_RECOVERY_PASSPHRASE='a-separate-long-offline-passphrase'
-
-docker compose --env-file klinok.env -f docker-compose-ghrc.yml run --rm --no-deps -T \
-  -e KLINOK_BOOTSTRAP_EMAIL \
-  -e KLINOK_BOOTSTRAP_PASSWORD \
-  -e KLINOK_RECOVERY_PASSPHRASE \
-  auth-blue node auth-node/dist/provision.js
-```
-
-This creates:
-
-- the immutable bootstrap Administrator account;
-- the authentication attestation private key;
-- the user-key escrow master key;
-- the bootstrap signing anchor;
-- an encrypted recovery bundle.
-
-Extract the authentication attestation public key:
-
-```sh
-docker compose --env-file klinok.env -f docker-compose-ghrc.yml run --rm --no-deps -T \
-  auth-blue node -e \
-  "const fs=require('fs');process.stdout.write(JSON.stringify(JSON.parse(fs.readFileSync('/data/provisioned/auth-attestation-public-key.json'))))"
-```
-
-Extract the bootstrap signing public key:
-
-```sh
-docker compose --env-file klinok.env -f docker-compose-ghrc.yml run --rm --no-deps -T \
-  auth-blue node -e \
-  "const fs=require('fs');process.stdout.write(JSON.stringify(JSON.parse(fs.readFileSync('/data/provisioned/bootstrap-public-anchor.json')).signingPublicKey))"
-```
-
-Store the compact JSON results in the protected `klinok.env` file:
-
-```env
-KLINOK_AUTH_ATTESTATION_PUBLIC_KEY={"kty":"EC",...}
-KLINOK_BOOTSTRAP_SIGNING_PUBLIC_KEY={"kty":"EC",...}
-```
-
-These public keys must be identical in the UI, authentication service, and P2P node.
-
-Copy the recovery bundle to secure offline storage:
-
-```sh
-umask 077
-
-docker compose --env-file klinok.env -f docker-compose-ghrc.yml run --rm --no-deps -T \
-  auth-blue node -e \
-  "const fs=require('fs');process.stdout.write(fs.readFileSync('/data/provisioned/bootstrap-recovery.bundle.json','utf8'))" \
-  > bootstrap-recovery.bundle.json
-```
-
-Keep its passphrase separately as an emergency and legacy-migration backup. New installations also keep the bootstrap account's encrypted private-key copy in the authentication data directory, so a successfully authenticated replacement browser is approved automatically. Remove the bootstrap password and recovery passphrase from the shell after provisioning:
-
-```sh
-unset KLINOK_BOOTSTRAP_EMAIL KLINOK_BOOTSTRAP_PASSWORD KLINOK_RECOVERY_PASSPHRASE
-```
-
-## 4. Start the services
-
-Pull the configured image versions and start the trusted P2P node first:
-
-```sh
-docker compose --env-file klinok.env -f docker-compose-ghrc.yml pull
-docker compose --env-file klinok.env -f docker-compose-ghrc.yml up -d p2p-blue
 docker compose --env-file klinok.env -f docker-compose-ghrc.yml ps
+docker compose --env-file klinok.env -f docker-compose-ghrc.yml logs --tail=200 api-blue ui-blue postgres-blue
+curl --fail https://klinok.sw.consulting/api/auth/session
 ```
 
-Wait until `p2p-blue` is healthy, and then start authentication and the UI:
-
-```sh
-docker compose --env-file klinok.env -f docker-compose-ghrc.yml up -d auth-blue
-docker compose --env-file klinok.env -f docker-compose-ghrc.yml up -d ui-blue
-docker compose --env-file klinok.env -f docker-compose-ghrc.yml ps
-```
-
-The resulting startup order is:
-
-1. `p2p-blue` starts with the bootstrap and attestation public keys.
-2. `auth-blue` starts and observes the trusted control database.
-3. `ui-blue` starts after both backend services are healthy and publishes the same trust configuration in `config.json`.
-
-## 5. Verify the deployment
-
-Check the public endpoints:
-
-```sh
-curl -fsS https://your-domain.example/api/auth/session
-curl -fsS https://your-domain.example/config.json
-```
-
-Confirm that:
-
-- all three containers are healthy;
-- `config.json` contains both public keys rather than `null`;
-- the trusted P2P multiaddress uses the public hostname and `/tls/ws`;
-- the `p2p-blue` logs contain a `p2p.started` event;
-- a user can register, receive the SMTP verification message, verify the address, and sign in.
-
-Use service logs when troubleshooting:
-
-```sh
-docker compose --env-file klinok.env -f docker-compose-ghrc.yml logs --tail=200 ui-blue auth-blue p2p-blue
-```
-
-## 6. Backups and recovery
-
-Back up both persistent data directories:
-
-- `auth/data` contains accounts, encrypted user private-key sets, the attestation private key, and `user-key-escrow-key.json`;
-- `p2p/data` contains control and medical events plus the stable P2P identity.
-
-For a consistent filesystem backup, briefly stop the affected containers or use a quiesced disk snapshot. Store backups encrypted and test restoration periodically. The auth data directory must be restored as one unit: without `user-key-escrow-key.json`, none of its encrypted account key sets can be recovered.
-
-The authentication service can decrypt all account key sets. This prototype therefore relies on the authentication host as a trusted key custodian and does not provide strict end-to-end key custody. A successful password login or email password reset authorizes automatic enrollment and key delivery to a new browser.
-
-Never deploy either backend service with ephemeral storage. Do not run `docker compose down -v` against an operational deployment, because it can delete persistent volumes.
-
-### Quarantine one known malformed replay event
-
-An old, permanently invalid event can prevent OrbitDB from importing the branch that contains otherwise valid history. Do not delete a persistent database or relax authorization globally. Configure only the exact event IDs already confirmed in authorization logs:
-
-```env
-KLINOK_REPLAY_QUARANTINE_EVENT_IDS=32801e42-cf42-4b26-94e7-91f3d119d59b
-```
-
-Restart all three services after changing the value. The listed event may then traverse OrbitDB during replication, but every protocol projector still rejects it with `BOOTSTRAP_ANCHOR_MISMATCH`; it cannot change account, role, device, or medical state. Other invalid events remain blocked. Keep this value configured while the original database addresses are in service. It can be removed only after a verified compaction into new databases that physically omit the event.
-
-If the bootstrap account is authenticated but its active device certificate cannot be reconciled with the protected journal, the Settings screen offers recovery with `bootstrap-recovery.bundle.json`. A successful recovery creates a fresh device identity, revokes all previous devices and sessions, and restores the recovered key set to encrypted auth escrow. Accepted journal history remains intact; only invalid or incomplete device operations remain excluded.
-
-## 7. Updates
-
-Back up the deployment, select a tested immutable image tag, and then update the containers:
-
-```sh
-./scripts/update-cloud.sh
-```
-
-The update script validates the Compose configuration and pulls every configured image before changing the running deployment. It then gracefully recreates `p2p-blue`, `auth-blue`, and `ui-blue` in dependency order, waiting for each backend to become healthy and the UI container to run before continuing. Docker gives each replaced container up to 30 seconds to stop cleanly. Override the defaults with `KLINOK_COMPOSE_FILE`, `KLINOK_ENV_FILE`, `COMPOSE_PROJECT_NAME`, `KLINOK_HEALTH_TIMEOUT`, or `KLINOK_STOP_TIMEOUT` when needed.
-
-Verify login, email delivery, and P2P synchronization after every update. The current `auth-node` design is intended for one instance, so an auth update can cause a brief authentication interruption; do not horizontally scale it until LevelDB and the in-memory rate-limit counters are replaced with shared services.
+Only ports 80 and 443 need to be public. PostgreSQL and the API remain on the Compose network. Keep one API instance because rate limiting and the email worker are intentionally designed for the stated single-instance deployment.

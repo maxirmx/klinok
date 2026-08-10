@@ -32,7 +32,7 @@ describe("pet profile normalization", () => {
         recordId: " record-vaccination ",
       },
       legacyOptionalField: "drop-me",
-      keyVersion: 1,
+      revision: 1,
       tombstoned: false,
       updatedAt: "2026-07-17T10:00:00.000Z",
     });
