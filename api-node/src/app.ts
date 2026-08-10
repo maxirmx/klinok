@@ -227,7 +227,7 @@ export async function buildApi(config: ApiConfig, provided?: { db?: Database; le
           );
         }
         await client.query("INSERT INTO auth_tokens(token_digest,kind,account_id,created_at,expires_at) VALUES ($1,'verification',$2,now(),now()+interval '24 hours')", [sha256(token), accountId]);
-        await client.query("INSERT INTO email_outbox(email_id,recipient,subject,text_body) VALUES ($1,$2,$3,$4)", [randomUUID(), email, "Подтвердите почту в Клинке", emailBody(config, "/auth/verify-email", token, "Подтвердите адрес электронной почты:")]);
+        await client.query("INSERT INTO email_outbox(email_id,recipient,subject,text_body) VALUES ($1,$2,$3,$4)", [randomUUID(), email, "Подтвердите адрес электронной почты", emailBody(config, "/auth/verify-email", token, "Подтвердите адрес электронной почты:")]);
       });
     } catch (reason) {
       if (reason && typeof reason === "object" && "code" in reason && reason.code === "23505") throw new ApiError(409, "EMAIL_ALREADY_REGISTERED", "Email is already registered.");

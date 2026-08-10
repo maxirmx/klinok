@@ -281,6 +281,8 @@ test("fresh provisioning, Doctor approval, grant, draft, and confirmation", asyn
   await expect(therapeuticTabs).toHaveCount(5);
   await therapeuticCard.getByRole("button", { name: "Импортировать из «Что случилось»" }).click();
   await expect(therapeuticCard.getByLabel("Проблема", { exact: true })).toHaveValue("Контрольный осмотр");
+  await therapeuticCard.getByLabel("Как давно началось").selectOption("problem.onset.today");
+  await expect(therapeuticCard.getByLabel("Как давно началось")).toHaveValue("problem.onset.today");
   await therapeuticCard.getByRole("tab", { name: "Рекомендации" }).click();
   await therapeuticCard.getByLabel("Текст рекомендаций").fill("Повторный осмотр через неделю");
   await therapeuticCard.getByRole("tab", { name: "Назначения" }).click();
@@ -324,6 +326,23 @@ test("fresh provisioning, Doctor approval, grant, draft, and confirmation", asyn
   await expect(ownerRecord.getByText("Контроль через неделю", { exact: true })).toBeVisible();
   await expect(ownerRecord.getByText("Повторный осмотр через неделю", { exact: true })).toBeVisible();
   await expect(ownerRecord.getByText("Проблема 1: Контрольный осмотр", { exact: true })).toBeVisible();
+  const ownerProblem = ownerRecord.locator(".therapeutic-history-problems article").filter({ hasText: "Контрольный осмотр" });
+  await expect(ownerProblem.getByText("Как давно началось", { exact: true })).toBeVisible();
+  await expect(ownerProblem.getByText("Сегодня", { exact: true })).toBeVisible();
+  const ownerWhatHappened = ownerRecord.locator(".encounter-history-section").filter({
+    has: ownerPage.getByRole("heading", { name: "Что случилось", exact: true }),
+  });
+  const historyFont = async (locator: ReturnType<Page["locator"]>) => locator.evaluate((element) => {
+    const style = getComputedStyle(element);
+    return {
+      family: style.fontFamily,
+      size: style.fontSize,
+      weight: style.fontWeight,
+      lineHeight: style.lineHeight,
+    };
+  });
+  expect(await historyFont(ownerProblem.locator("dd").first()))
+    .toEqual(await historyFont(ownerWhatHappened.locator("li").first()));
   await expect(ownerRecord.getByText("Щадящий режим", { exact: true })).toBeVisible();
   await expect(ownerRecord.getByText("14.3 кг", { exact: true })).toBeVisible();
   const profileWeight = ownerPage.locator(".pet-profile-view-fields > div").filter({ hasText: "Вес" });

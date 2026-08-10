@@ -163,6 +163,30 @@ describe("TherapeuticAppointmentForm", () => {
     expect(problem.findAll("select")).toHaveLength(5);
   });
 
+  it("emits a new draft instead of mutating the incoming problem model", async () => {
+    const original = emptyTherapeuticAppointmentDraft();
+    original.diseaseAnamnesis.problems.push({
+      id: "problem-1",
+      title: "Снижение аппетита",
+      medicationIds: [],
+    });
+    const wrapper = mount(TherapeuticAppointmentForm, {
+      props: {
+        modelValue: original,
+        whatHappenedIds: [],
+        whatHappenedComment: "",
+        errors: {},
+      },
+    });
+
+    await wrapper.get(".therapeutic-problem-card select").setValue("problem.onset.today");
+
+    expect(original.diseaseAnamnesis.problems[0]?.onsetId).toBeUndefined();
+    const updates = wrapper.emitted<TherapeuticAppointmentDraft[]>("update:modelValue");
+    expect(updates).toHaveLength(1);
+    expect(updates?.[0]?.[0].diseaseAnamnesis.problems[0]?.onsetId).toBe("problem.onset.today");
+  });
+
   it("clears medication fields when prior therapy is reset to unspecified", async () => {
     const { wrapper, draft } = mountForm();
     await wrapper.get('button[aria-label="Добавить проблему"]').trigger("click");

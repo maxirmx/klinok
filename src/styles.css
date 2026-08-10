@@ -1039,7 +1039,7 @@ dd {
 .therapeutic-history-problems { display: grid; gap: 7px; }
 .therapeutic-history-problems > article { display: grid; gap: 5px; padding: 8px; border: 1px solid var(--line); border-radius: 8px; }
 .therapeutic-history-values { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 7px 14px; margin: 0; }
-.therapeutic-history-values > div { display: grid; min-width: 0; gap: 2px; }
+.therapeutic-history-values > div { display: grid; min-width: 0; gap: 2px; font: inherit; }
 .therapeutic-history-values dt { color: var(--text-muted); font-size: 10px; font-weight: 600; }
 .therapeutic-history-values dd { min-width: 0; margin: 0; overflow-wrap: anywhere; }
 .general-data-pressure {

@@ -44,6 +44,46 @@ const importableSourceIds = computed(() => {
 });
 const canImport = computed(() => importableSourceIds.value.length > 0
   || Boolean(props.whatHappenedComment.trim() && !therapeutic.value.diseaseAnamnesis.text.trim()));
+const diseaseSelectedIds = computed({
+  get: () => therapeutic.value.diseaseAnamnesis.selectedIds,
+  set: (selectedIds: string[]) => updateDiseaseAnamnesis({ selectedIds }),
+});
+const diseaseText = computed({
+  get: () => therapeutic.value.diseaseAnamnesis.text,
+  set: (text: string) => updateDiseaseAnamnesis({ text }),
+});
+const lifeSelectedIds = computed({
+  get: () => therapeutic.value.lifeAnamnesis.selectedIds,
+  set: (selectedIds: string[]) => updateLifeAnamnesis({ selectedIds }),
+});
+const lifeCurrentMedications = computed({
+  get: () => therapeutic.value.lifeAnamnesis.currentMedications,
+  set: (currentMedications: string) => updateLifeAnamnesis({ currentMedications }),
+});
+const lifeAllergies = computed({
+  get: () => therapeutic.value.lifeAnamnesis.allergies,
+  set: (allergies: string) => updateLifeAnamnesis({ allergies }),
+});
+const lifeText = computed({
+  get: () => therapeutic.value.lifeAnamnesis.text,
+  set: (text: string) => updateLifeAnamnesis({ text }),
+});
+const examinationSelectedIds = computed({
+  get: () => therapeutic.value.examination.selectedIds,
+  set: (selectedIds: string[]) => updateExamination({ selectedIds }),
+});
+const examinationText = computed({
+  get: () => therapeutic.value.examination.text,
+  set: (text: string) => updateExamination({ text }),
+});
+const recommendations = computed({
+  get: () => therapeutic.value.recommendations,
+  set: (value: string) => updateTherapeutic({ ...therapeutic.value, recommendations: value }),
+});
+const prescriptions = computed({
+  get: () => therapeutic.value.prescriptions,
+  set: (value: string) => updateTherapeutic({ ...therapeutic.value, prescriptions: value }),
+});
 
 watch(() => props.errors.tab, (tab) => {
   if (tab) activeTab.value = tab;
@@ -68,11 +108,68 @@ function handleTabKeydown(event: KeyboardEvent, index: number) {
   activateTab(THERAPEUTIC_TABS[target]!.id, true);
 }
 
+function updateTherapeutic(value: TherapeuticAppointmentDraft) {
+  therapeutic.value = value;
+}
+
+function updateDiseaseAnamnesis(update: Partial<TherapeuticAppointmentDraft["diseaseAnamnesis"]>) {
+  updateTherapeutic({
+    ...therapeutic.value,
+    diseaseAnamnesis: { ...therapeutic.value.diseaseAnamnesis, ...update },
+  });
+}
+
+function updateLifeAnamnesis(update: Partial<TherapeuticAppointmentDraft["lifeAnamnesis"]>) {
+  updateTherapeutic({
+    ...therapeutic.value,
+    lifeAnamnesis: { ...therapeutic.value.lifeAnamnesis, ...update },
+  });
+}
+
+function updateExamination(update: Partial<TherapeuticAppointmentDraft["examination"]>) {
+  updateTherapeutic({
+    ...therapeutic.value,
+    examination: { ...therapeutic.value.examination, ...update },
+  });
+}
+
+function updateProblem(id: string, update: (problem: TherapeuticProblemDraft) => TherapeuticProblemDraft) {
+  updateDiseaseAnamnesis({
+    problems: therapeutic.value.diseaseAnamnesis.problems.map((problem) => problem.id === id
+      ? update({ ...problem, medicationIds: [...problem.medicationIds] })
+      : problem),
+  });
+}
+
+function updateProblemTitle(id: string, event: Event) {
+  const title = (event.target as HTMLInputElement).value;
+  updateProblem(id, (problem) => ({ ...problem, title }));
+}
+
+type ProblemSelectField = "onsetId" | "frequencyId" | "priorTherapyId" | "medicationUseId" | "medicationDynamicsId";
+
+function updateProblemSelect(id: string, field: ProblemSelectField, event: Event) {
+  const value = (event.target as HTMLSelectElement).value || undefined;
+  updateProblem(id, (problem) => {
+    const next = { ...problem, [field]: value };
+    if (field === "priorTherapyId" && value !== "problem.therapy.performed") {
+      next.medicationUseId = undefined;
+      next.medicationIds = [];
+      next.medicationDynamicsId = undefined;
+    }
+    if (field === "medicationUseId" && value !== "problem.medication.used") {
+      next.medicationIds = [];
+      next.medicationDynamicsId = undefined;
+    }
+    return next;
+  });
+}
+
 function addProblem() {
-  therapeutic.value.diseaseAnamnesis.problems = [
+  updateDiseaseAnamnesis({ problems: [
     ...therapeutic.value.diseaseAnamnesis.problems,
     newTherapeuticProblem(),
-  ];
+  ] });
   void nextTick(() => {
     const inputs = formRoot.value?.querySelectorAll<HTMLInputElement>(".therapeutic-problem-title input");
     if (inputs?.length) inputs[inputs.length - 1]?.focus();
@@ -84,39 +181,27 @@ function importWhatHappened() {
     const path = whatHappenedPath(id);
     return newTherapeuticProblem(id, path.split(" › ").at(-1) ?? path);
   });
-  therapeutic.value.diseaseAnamnesis.problems = [
-    ...therapeutic.value.diseaseAnamnesis.problems,
-    ...imported,
-  ];
-  if (!therapeutic.value.diseaseAnamnesis.text.trim() && props.whatHappenedComment.trim()) {
-    therapeutic.value.diseaseAnamnesis.text = props.whatHappenedComment;
-  }
+  updateDiseaseAnamnesis({
+    problems: [...therapeutic.value.diseaseAnamnesis.problems, ...imported],
+    ...(!therapeutic.value.diseaseAnamnesis.text.trim() && props.whatHappenedComment.trim()
+      ? { text: props.whatHappenedComment }
+      : {}),
+  });
 }
 
 function removeProblem(id: string) {
-  therapeutic.value.diseaseAnamnesis.problems = therapeutic.value.diseaseAnamnesis.problems
-    .filter((problem) => problem.id !== id);
-}
-
-function updateProblemTherapy(problem: TherapeuticProblemDraft) {
-  if (problem.priorTherapyId !== "problem.therapy.performed") {
-    problem.medicationUseId = undefined;
-    problem.medicationIds = [];
-    problem.medicationDynamicsId = undefined;
-  }
-}
-
-function updateProblemMedicationUse(problem: TherapeuticProblemDraft) {
-  if (problem.medicationUseId !== "problem.medication.used") {
-    problem.medicationIds = [];
-    problem.medicationDynamicsId = undefined;
-  }
+  updateDiseaseAnamnesis({
+    problems: therapeutic.value.diseaseAnamnesis.problems.filter((problem) => problem.id !== id),
+  });
 }
 
 function toggleProblemMedication(problem: TherapeuticProblemDraft, id: string) {
-  problem.medicationIds = problem.medicationIds.includes(id)
-    ? problem.medicationIds.filter((candidate) => candidate !== id)
-    : [...problem.medicationIds, id];
+  updateProblem(problem.id, (current) => ({
+    ...current,
+    medicationIds: current.medicationIds.includes(id)
+      ? current.medicationIds.filter((candidate) => candidate !== id)
+      : [...current.medicationIds, id],
+  }));
 }
 
 function tabId(tab: TherapeuticTab) {
@@ -190,16 +275,17 @@ function panelId(tab: TherapeuticTab) {
           <label class="therapeutic-problem-title">
             <span>Проблема</span>
             <input
-              v-model="problem.title"
+              :value="problem.title"
               type="text"
+              @input="updateProblemTitle(problem.id, $event)"
             />
             <small v-if="errors.problems?.[problem.id]" class="field-error">{{ errors.problems[problem.id] }}</small>
           </label>
           <div class="therapeutic-problem-fields">
-            <label><span>Как давно началось</span><select v-model="problem.onsetId"><option value="">Не указано</option><option v-for="option in PROBLEM_ONSET_OPTIONS" :key="option.id" :value="option.id">{{ option.label }}</option></select></label>
-            <label><span>Периодичность проявления</span><select v-model="problem.frequencyId"><option value="">Не указано</option><option v-for="option in PROBLEM_FREQUENCY_OPTIONS" :key="option.id" :value="option.id">{{ option.label }}</option></select></label>
-            <label><span>Терапия до осмотра</span><select v-model="problem.priorTherapyId" @change="updateProblemTherapy(problem)"><option value="">Не указано</option><option v-for="option in PROBLEM_THERAPY_OPTIONS" :key="option.id" :value="option.id">{{ option.label }}</option></select></label>
-            <label v-if="problem.priorTherapyId === 'problem.therapy.performed'"><span>Препараты</span><select v-model="problem.medicationUseId" @change="updateProblemMedicationUse(problem)"><option value="">Не указано</option><option v-for="option in PROBLEM_MEDICATION_USE_OPTIONS" :key="option.id" :value="option.id">{{ option.label }}</option></select></label>
+            <label><span>Как давно началось</span><select :value="problem.onsetId ?? ''" @change="updateProblemSelect(problem.id, 'onsetId', $event)"><option value="">Не указано</option><option v-for="option in PROBLEM_ONSET_OPTIONS" :key="option.id" :value="option.id">{{ option.label }}</option></select></label>
+            <label><span>Периодичность проявления</span><select :value="problem.frequencyId ?? ''" @change="updateProblemSelect(problem.id, 'frequencyId', $event)"><option value="">Не указано</option><option v-for="option in PROBLEM_FREQUENCY_OPTIONS" :key="option.id" :value="option.id">{{ option.label }}</option></select></label>
+            <label><span>Терапия до осмотра</span><select :value="problem.priorTherapyId ?? ''" @change="updateProblemSelect(problem.id, 'priorTherapyId', $event)"><option value="">Не указано</option><option v-for="option in PROBLEM_THERAPY_OPTIONS" :key="option.id" :value="option.id">{{ option.label }}</option></select></label>
+            <label v-if="problem.priorTherapyId === 'problem.therapy.performed'"><span>Препараты</span><select :value="problem.medicationUseId ?? ''" @change="updateProblemSelect(problem.id, 'medicationUseId', $event)"><option value="">Не указано</option><option v-for="option in PROBLEM_MEDICATION_USE_OPTIONS" :key="option.id" :value="option.id">{{ option.label }}</option></select></label>
             <fieldset v-if="problem.medicationUseId === 'problem.medication.used'" class="medical-card-option-panel therapeutic-problem-medications">
               <legend class="visually-hidden">Применявшиеся препараты</legend>
               <span class="therapeutic-group-label" aria-hidden="true">Применявшиеся препараты</span>
@@ -207,15 +293,15 @@ function panelId(tab: TherapeuticTab) {
                 <label v-for="option in PROBLEM_MEDICATION_OPTIONS" :key="option.id" class="check-row"><input type="checkbox" :checked="problem.medicationIds.includes(option.id)" @change="toggleProblemMedication(problem, option.id)" /><span>{{ option.label }}</span></label>
               </div>
             </fieldset>
-            <label v-if="problem.medicationUseId === 'problem.medication.used'"><span>Динамика</span><select v-model="problem.medicationDynamicsId"><option value="">Не указано</option><option v-for="option in PROBLEM_DYNAMICS_OPTIONS" :key="option.id" :value="option.id">{{ option.label }}</option></select></label>
+            <label v-if="problem.medicationUseId === 'problem.medication.used'"><span>Динамика</span><select :value="problem.medicationDynamicsId ?? ''" @change="updateProblemSelect(problem.id, 'medicationDynamicsId', $event)"><option value="">Не указано</option><option v-for="option in PROBLEM_DYNAMICS_OPTIONS" :key="option.id" :value="option.id">{{ option.label }}</option></select></label>
           </div>
         </article>
       </div>
-      <TherapeuticQuestionGroups v-model="therapeutic.diseaseAnamnesis.selectedIds" :categories="DISEASE_ANAMNESIS_CATEGORIES" />
+      <TherapeuticQuestionGroups v-model="diseaseSelectedIds" :categories="DISEASE_ANAMNESIS_CATEGORIES" />
       <section class="medical-card-comment-section">
         <h5>Комментарий</h5>
         <textarea
-          v-model="therapeutic.diseaseAnamnesis.text"
+          v-model="diseaseText"
           class="medical-card-comment"
           rows="2"
           aria-label="Комментарий"
@@ -231,11 +317,11 @@ function panelId(tab: TherapeuticTab) {
       :hidden="activeTab !== 'life'"
     >
       <h4>Анамнез жизни</h4>
-      <TherapeuticQuestionGroups v-model="therapeutic.lifeAnamnesis.selectedIds" :categories="LIFE_ANAMNESIS_CATEGORIES" />
+      <TherapeuticQuestionGroups v-model="lifeSelectedIds" :categories="LIFE_ANAMNESIS_CATEGORIES" />
       <section class="therapeutic-category therapeutic-short-text">
         <h5>Получаемые в данный момент препараты</h5>
         <textarea
-          v-model="therapeutic.lifeAnamnesis.currentMedications"
+          v-model="lifeCurrentMedications"
           class="medical-card-comment"
           rows="2"
           aria-label="Получаемые в данный момент препараты"
@@ -244,7 +330,7 @@ function panelId(tab: TherapeuticTab) {
       <section class="therapeutic-category therapeutic-short-text">
         <h5>Аллергии</h5>
         <textarea
-          v-model="therapeutic.lifeAnamnesis.allergies"
+          v-model="lifeAllergies"
           class="medical-card-comment"
           rows="2"
           aria-label="Аллергии"
@@ -253,7 +339,7 @@ function panelId(tab: TherapeuticTab) {
       <section class="medical-card-comment-section">
         <h5>Комментарий</h5>
         <textarea
-          v-model="therapeutic.lifeAnamnesis.text"
+          v-model="lifeText"
           class="medical-card-comment"
           rows="2"
           aria-label="Комментарий"
@@ -269,11 +355,11 @@ function panelId(tab: TherapeuticTab) {
       :hidden="activeTab !== 'examination'"
     >
       <h4>Осмотр</h4>
-      <TherapeuticQuestionGroups v-model="therapeutic.examination.selectedIds" :categories="EXAMINATION_CATEGORIES" />
+      <TherapeuticQuestionGroups v-model="examinationSelectedIds" :categories="EXAMINATION_CATEGORIES" />
       <section class="medical-card-comment-section">
         <h5>Комментарий</h5>
         <textarea
-          v-model="therapeutic.examination.text"
+          v-model="examinationText"
           class="medical-card-comment"
           rows="2"
           aria-label="Комментарий"
@@ -291,7 +377,7 @@ function panelId(tab: TherapeuticTab) {
       <section class="medical-card-comment-section">
         <h4>Рекомендации</h4>
         <textarea
-          v-model="therapeutic.recommendations"
+          v-model="recommendations"
           class="therapeutic-primary-text"
           rows="6"
           aria-label="Текст рекомендаций"
@@ -309,7 +395,7 @@ function panelId(tab: TherapeuticTab) {
       <section class="medical-card-comment-section">
         <h4>Назначения</h4>
         <textarea
-          v-model="therapeutic.prescriptions"
+          v-model="prescriptions"
           class="therapeutic-primary-text"
           rows="6"
           aria-label="Текст назначений"

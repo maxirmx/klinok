@@ -993,6 +993,27 @@ describe("Doctor pages", () => {
     expect(repositoryMocks.saveEncounter).not.toHaveBeenCalled();
     expect(card.get(".field-error").text()).toContain("хотя бы один");
 
+    await card.get('button[title="Импортировать из «Что случилось»"]').trigger("click");
+    const problem = card.get(".therapeutic-problem-card");
+    const problemSelects = problem.findAll<HTMLSelectElement>("select");
+    problemSelects[0]!.element.value = "problem.onset.today";
+    await problemSelects[0]!.trigger("input");
+    expect(problemSelects[0]!.element.value).toBe("problem.onset.today");
+    await problemSelects[0]!.trigger("change");
+    await problemSelects[1]!.setValue("problem.frequency.daily-1");
+    await problemSelects[2]!.setValue("problem.therapy.none");
+    await flushPromises();
+    expect(problemSelects.map((select) => select.element.value)).toEqual([
+      "problem.onset.today",
+      "problem.frequency.daily-1",
+      "problem.therapy.none",
+    ]);
+    const activity = card.findAll(".therapeutic-category")
+      .find((category) => category.get("h5").text() === "Активность")!;
+    await activity.get<HTMLSelectElement>("select").setValue("disease.activity.state.unchanged");
+    await flushPromises();
+    expect(activity.get<HTMLSelectElement>("select").element.value).toBe("disease.activity.state.unchanged");
+
     await tabs[3]!.trigger("click");
     await card.get<HTMLTextAreaElement>('#' + tabs[3]!.attributes("aria-controls") + ' textarea')
       .setValue("Контроль через неделю");
@@ -1002,6 +1023,15 @@ describe("Doctor pages", () => {
       petId: "pet-1",
       sections: expect.objectContaining({
         "therapeutic-appointment": expect.objectContaining({
+          diseaseAnamnesis: expect.objectContaining({
+            selectedIds: expect.arrayContaining(["disease.activity.state.unchanged"]),
+            problems: [expect.objectContaining({
+              title: "Не ест",
+              onsetId: "problem.onset.today",
+              frequencyId: "problem.frequency.daily-1",
+              priorTherapyId: "problem.therapy.none",
+            })],
+          }),
           recommendations: "Контроль через неделю",
           prescriptions: "",
         }),

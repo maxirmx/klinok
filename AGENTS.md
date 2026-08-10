@@ -28,6 +28,7 @@
 - Lay out visible single-select questions in pairs when both selectors are compact. Treat a selector as naturally wide when its question label or any option label exceeds 40 characters.
 - Promote selectors to the full content width according to these rules: when a group has no second selector, the first selector is always wide; when the second selector is conditionally hidden, the first visible selector grows wide; and when the second visible selector is naturally wide, both the first and second selectors are wide. Naturally wide selectors always span the full content width themselves.
 - Set medical-card comment textareas to `rows="2"` and apply the shared `medical-card-comment` class so global textarea minimum heights do not enlarge them. Keep larger textareas for standalone free-text sections whose primary content is not a comment.
+- In read-only medical-record history, structured section body text and values must inherit the same font family, size, weight, and line height as the `Что случилось` section. Labels may use the shared smaller muted-label treatment, but nested templates must not introduce a different body typography scale.
 
 ## User-facing alerts
 

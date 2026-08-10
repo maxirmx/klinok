@@ -18,5 +18,5 @@ if [[ "${KLINOK_SKIP_BUILD:-false}" != "true" ]]; then "${compose[@]}" build api
 for _ in {1..60}; do curl --fail --silent http://127.0.0.1:8090/readyz >/dev/null && break; sleep 1; done
 curl --fail --silent http://127.0.0.1:8090/readyz >/dev/null
 
-printf '\nKlinok v3 backend is ready. Starting Vite at http://localhost:8080\n'
+printf '\nKlinok v3 backend is ready. Stop it with: COMPOSE_PROJECT_NAME=%s docker compose down\nStarting Vite at http://localhost:8080\n' "$COMPOSE_PROJECT_NAME"
 npm run dev
