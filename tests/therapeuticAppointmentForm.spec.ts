@@ -42,6 +42,19 @@ describe("TherapeuticAppointmentForm", () => {
       '#' + tabs[1]!.attributes("aria-controls") + ' textarea[aria-label="Комментарий"]',
     ).attributes("rows")).toBe("2");
 
+    await tabs[1]!.trigger("keydown", { key: "ArrowDown" });
+    expect(tabs[2]!.attributes("aria-selected")).toBe("true");
+    await tabs[2]!.trigger("keydown", { key: "ArrowLeft" });
+    expect(tabs[1]!.attributes("aria-selected")).toBe("true");
+    await tabs[1]!.trigger("keydown", { key: "ArrowUp" });
+    expect(tabs[0]!.attributes("aria-selected")).toBe("true");
+    await tabs[0]!.trigger("keydown", { key: "End" });
+    expect(tabs[4]!.attributes("aria-selected")).toBe("true");
+    await tabs[4]!.trigger("keydown", { key: "Home" });
+    expect(tabs[0]!.attributes("aria-selected")).toBe("true");
+    await tabs[0]!.trigger("keydown", { key: "Enter" });
+    expect(tabs[0]!.attributes("aria-selected")).toBe("true");
+
     await wrapper.setProps({ errors: { section: "Заполните назначения", tab: "prescriptions" } });
     expect(tabs[4]!.attributes("aria-selected")).toBe("true");
   });
@@ -149,6 +162,41 @@ describe("TherapeuticAppointmentForm", () => {
     expect(rows.map((row) => row.get("textarea").attributes("rows"))).toEqual(["2", "2"]);
   });
 
+  it("updates every nested narrative and life selection through the draft model", async () => {
+    const { wrapper, draft } = mountForm();
+    const panels = wrapper.findAll("[role='tabpanel']");
+    const diseasePanel = panels[0]!;
+    const lifePanel = panels[1]!;
+    const examinationPanel = panels[2]!;
+    const origin = lifePanel.findAll(".therapeutic-category")
+      .find((category) => category.text().includes("Где приобрели/откуда взяли"))!;
+
+    await diseasePanel.get<HTMLTextAreaElement>('textarea[aria-label="Комментарий"]').setValue("Анамнез болезни");
+    await origin.get("select").setValue("life.origin.source.shelter");
+    await lifePanel.get<HTMLTextAreaElement>('textarea[aria-label="Получаемые в данный момент препараты"]')
+      .setValue("Препарат");
+    await lifePanel.get<HTMLTextAreaElement>('textarea[aria-label="Аллергии"]').setValue("Не выявлены");
+    await lifePanel.get<HTMLTextAreaElement>('textarea[aria-label="Комментарий"]').setValue("Анамнез жизни");
+    await examinationPanel.get<HTMLTextAreaElement>('textarea[aria-label="Комментарий"]').setValue("Осмотр");
+    await panels[3]!.get<HTMLTextAreaElement>('textarea[aria-label="Текст рекомендаций"]')
+      .setValue("Рекомендация");
+    await panels[4]!.get<HTMLTextAreaElement>('textarea[aria-label="Текст назначений"]')
+      .setValue("Назначение");
+
+    expect(draft).toMatchObject({
+      diseaseAnamnesis: { text: "Анамнез болезни" },
+      lifeAnamnesis: {
+        selectedIds: ["life.origin.source.shelter"],
+        currentMedications: "Препарат",
+        allergies: "Не выявлены",
+        text: "Анамнез жизни",
+      },
+      examination: { text: "Осмотр" },
+      recommendations: "Рекомендация",
+      prescriptions: "Назначение",
+    });
+  });
+
   it("adds problem cards and reveals medication controls progressively", async () => {
     const { wrapper, draft } = mountForm();
     await wrapper.get('button[aria-label="Добавить проблему"]').trigger("click");
@@ -187,13 +235,14 @@ describe("TherapeuticAppointmentForm", () => {
     expect(updates?.[0]?.[0].diseaseAnamnesis.problems[0]?.onsetId).toBe("problem.onset.today");
   });
 
-  it("clears medication fields when prior therapy is reset to unspecified", async () => {
+  it("clears medication fields when medication use or prior therapy is reset", async () => {
     const { wrapper, draft } = mountForm();
     await wrapper.get('button[aria-label="Добавить проблему"]').trigger("click");
     const problem = wrapper.get(".therapeutic-problem-card");
     await problem.findAll("select")[2]!.setValue("problem.therapy.performed");
     await problem.findAll("select")[3]!.setValue("problem.medication.used");
-    await problem.get<HTMLInputElement>('.therapeutic-problem-medications input[type="checkbox"]').setValue(true);
+    const medication = problem.get<HTMLInputElement>('.therapeutic-problem-medications input[type="checkbox"]');
+    await medication.setValue(true);
     await problem.findAll("select")[4]!.setValue("problem.dynamics.positive");
 
     expect(draft.diseaseAnamnesis.problems[0]).toMatchObject({
@@ -201,6 +250,19 @@ describe("TherapeuticAppointmentForm", () => {
       medicationIds: ["problem.medication.type.analgesic"],
       medicationDynamicsId: "problem.dynamics.positive",
     });
+
+    await medication.setValue(false);
+    expect(draft.diseaseAnamnesis.problems[0]?.medicationIds).toEqual([]);
+    await medication.setValue(true);
+    await problem.findAll("select")[3]!.setValue("problem.medication.none");
+
+    expect(draft.diseaseAnamnesis.problems[0]).toMatchObject({
+      priorTherapyId: "problem.therapy.performed",
+      medicationUseId: "problem.medication.none",
+      medicationIds: [],
+      medicationDynamicsId: undefined,
+    });
+    expect(problem.findAll("select")).toHaveLength(4);
 
     await problem.findAll("select")[2]!.setValue("");
 
