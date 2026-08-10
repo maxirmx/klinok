@@ -331,6 +331,41 @@ describe("Klinok repository facade", () => {
     await repository.dispose();
   });
 
+  it("flushes more than fifty queued commands in ordered API-sized batches", async () => {
+    const queued = Array.from({ length: 51 }, (_, index) => command("pet.update", `op-${index}`, `pet-${index}`));
+    offlineState.commands = queued.map((item) => ({ accountId: "account-1", role: "owner", command: item }));
+    const execute = vi.fn(async (batch: ClientCommand[]) => ({
+      results: batch.map((item) => ({ operationId: item.operationId, status: "applied" as const })),
+    }));
+    const repository = bareRepository(client({ execute }));
+
+    await repository.flush();
+
+    expect(execute.mock.calls.map(([batch]) => batch.map((item: ClientCommand) => item.operationId))).toEqual([
+      queued.slice(0, 50).map((item) => item.operationId),
+      [queued[50]!.operationId],
+    ]);
+    expect(offlineState.commands).toEqual([]);
+    await repository.dispose();
+  });
+
+  it("keeps only the unprocessed tail when a later outbox batch fails", async () => {
+    vi.useFakeTimers();
+    const queued = Array.from({ length: 51 }, (_, index) => command("pet.update", `op-${index}`, `pet-${index}`));
+    offlineState.commands = queued.map((item) => ({ accountId: "account-1", role: "owner", command: item }));
+    const execute = vi.fn()
+      .mockResolvedValueOnce({ results: queued.slice(0, 50).map((item) => ({ operationId: item.operationId, status: "applied" as const })) })
+      .mockRejectedValueOnce(new AuthClientError("NETWORK_UNAVAILABLE", "offline", 0));
+    const repository = bareRepository(client({ execute }));
+
+    await expect(repository.flush()).rejects.toMatchObject({ code: "NETWORK_UNAVAILABLE" });
+
+    expect(execute.mock.calls.map(([batch]) => batch.length)).toEqual([50, 1]);
+    expect(offlineState.commands.map((item) => item.command.operationId)).toEqual(["op-50"]);
+    await expect(repository.syncStatus()).resolves.toMatchObject({ pendingCount: 1, connectionState: "disconnected" });
+    await repository.dispose();
+  });
+
   it("tracks server, network, authentication, and concurrent flush outcomes", async () => {
     vi.useFakeTimers();
     const queued = command("pet.create", "op-1", "pet-new");
@@ -388,6 +423,32 @@ describe("Klinok repository facade", () => {
     await expect(repository.setActiveRole("administrator")).rejects.toMatchObject({ code: "NETWORK_UNAVAILABLE" });
     state.mockRejectedValueOnce(new Error("bad role"));
     await expect(repository.setActiveRole("administrator")).rejects.toThrow("bad role");
+    await repository.dispose();
+  });
+
+  it("ignores a refresh response older than the snapshot already applied", async () => {
+    let resolveOlder!: (value: AppSnapshotDto) => void;
+    let resolveNewer!: (value: AppSnapshotDto) => void;
+    const olderResponse = new Promise<AppSnapshotDto>((resolve) => { resolveOlder = resolve; });
+    const newerResponse = new Promise<AppSnapshotDto>((resolve) => { resolveNewer = resolve; });
+    const state = vi.fn().mockReturnValueOnce(olderResponse).mockReturnValueOnce(newerResponse);
+    const repository = bareRepository(client({ state }));
+    const older = snapshot();
+    older.revision = 5;
+    older.medical.pets[0]!.name = "Старый ответ";
+    const newer = snapshot();
+    newer.revision = 6;
+    newer.medical.pets[0]!.name = "Новый ответ";
+
+    const firstRefresh = repository.refresh();
+    const secondRefresh = repository.refresh();
+    resolveNewer(newer);
+    await secondRefresh;
+    resolveOlder(older);
+    await firstRefresh;
+
+    expect(repository.current).toMatchObject({ revision: 6, medical: { pets: [expect.objectContaining({ name: "Новый ответ" })] } });
+    expect(offlineState.snapshots.get("account-1:owner")).toMatchObject({ revision: 6 });
     await repository.dispose();
   });
 

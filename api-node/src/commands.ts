@@ -33,6 +33,16 @@ function object(value: unknown): Record<string, unknown> {
   return value as Record<string, unknown>;
 }
 
+function isNewerVaccination(candidate: { date: string; recordId?: string }, current: unknown): boolean {
+  if (!current || typeof current !== "object" || Array.isArray(current)) return true;
+  const currentValue = current as Record<string, unknown>;
+  const currentDate = typeof currentValue.date === "string" ? currentValue.date : "";
+  if (!currentDate || candidate.date !== currentDate) return candidate.date > currentDate;
+  if (!candidate.recordId) return false;
+  const currentRecordId = typeof currentValue.recordId === "string" ? currentValue.recordId : "";
+  return candidate.recordId > currentRecordId;
+}
+
 function expected(command: ClientCommand, current: number): void {
   if (command.expectedRevision !== current) {
     throw new ApiError(409, "REVISION_CONFLICT", "The authoritative record changed before this operation was applied.");
@@ -587,25 +597,31 @@ async function handleRecord(client: PoolClient, actor: Actor, command: ClientCom
   const currentVaccineName = typeof vaccination?.currentVaccineName === "string" && vaccination.currentVaccineName.trim()
     ? vaccination.currentVaccineName.trim() : undefined;
   const latestVaccination = currentVaccineName ? { date: record.encounterDate, name: currentVaccineName, recordId: record.recordId } : undefined;
+  const confirmedVaccinationUpdate = latestVaccination && isNewerVaccination(latestVaccination, pet.latest_confirmed_vaccination)
+    ? latestVaccination : undefined;
+  const profileVaccination = latestVaccination ? { date: latestVaccination.date, name: latestVaccination.name } : undefined;
+  const profileVaccinationUpdate = profileVaccination && isNewerVaccination(profileVaccination, pet.latest_vaccination)
+    ? profileVaccination : undefined;
   const confirmationId = randomUUID();
   const insertedConfirmation = await client.query(
     `INSERT INTO medical_record_confirmations(confirmation_id, pet_id, record_id, record_revision, owner_account_id,
      confirmed_at, applied_profile_weight_kg, applied_profile_chip, applied_profile_latest_vaccination)
      VALUES ($1,$2,$3,$4,$5,now(),$6,$7,$8::jsonb) RETURNING *`,
-    [confirmationId, record.petId, record.recordId, record.revision, actor.accountId, weight ?? null, chip ?? null, JSON.stringify(latestVaccination ?? null)],
+    [confirmationId, record.petId, record.recordId, record.revision, actor.accountId, weight ?? null, chip ?? null,
+      JSON.stringify(confirmedVaccinationUpdate ?? null)],
   );
   const confirmation = confirmationFromRow(insertedConfirmation.rows[0]);
   await client.query(
     `UPDATE pets SET revision=revision+1, weight_kg=COALESCE($2, weight_kg), chip=COALESCE($3, chip),
      latest_confirmed_vaccination=COALESCE($4::jsonb, latest_confirmed_vaccination),
      latest_vaccination=COALESCE($5::jsonb, latest_vaccination), updated_at=now() WHERE pet_id=$1`,
-    [record.petId, weight ?? null, chip ?? null, JSON.stringify(latestVaccination ?? null),
-      JSON.stringify(latestVaccination ? { date: latestVaccination.date, name: latestVaccination.name } : null)],
+    [record.petId, weight ?? null, chip ?? null, JSON.stringify(confirmedVaccinationUpdate ?? null),
+      JSON.stringify(profileVaccinationUpdate ?? null)],
   );
   return { value: { confirmationId }, revision: record.revision, audit: {
     action: "record.confirmed", aggregateType: "medicalRecord", aggregateId: command.entityId,
     metadata: { petId: record.petId, recordRevision: record.revision, updatesWeight: weight !== undefined,
-      updatesChip: Boolean(chip), updatesVaccination: Boolean(latestVaccination) },
+      updatesChip: Boolean(chip), updatesVaccination: Boolean(confirmedVaccinationUpdate || profileVaccinationUpdate) },
     beforeState: medicalRecordAuditState(record, "unconfirmed"),
     afterState: medicalRecordAuditState(record, "confirmed", { confirmation }),
   } };

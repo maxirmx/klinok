@@ -114,6 +114,8 @@ export class AuthClient {
       throw new AuthClientError(code, authErrorText(code), response.status);
     }
     const value = payload as AppSnapshotDto;
+    const latest = this.snapshots.get(role);
+    if (latest && value.revision < latest.value.revision) return latest.value;
     this.snapshots.set(role, { etag: response.headers.get("ETag") ?? "", value });
     return value;
   }

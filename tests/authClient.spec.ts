@@ -127,6 +127,27 @@ describe("v3 API client", () => {
     await expect(client.state("doctor")).rejects.toMatchObject<AuthClientError>({ code: "ROLE_REQUIRED", status: 403 });
   });
 
+  it("does not let an older concurrent response regress the role snapshot cache", async () => {
+    let resolveOlder!: (response: Response) => void;
+    let resolveNewer!: (response: Response) => void;
+    const fetchMock = vi.fn()
+      .mockImplementationOnce(() => new Promise<Response>((resolve) => { resolveOlder = resolve; }))
+      .mockImplementationOnce(() => new Promise<Response>((resolve) => { resolveNewer = resolve; }));
+    vi.stubGlobal("fetch", fetchMock);
+    const client = new AuthClient();
+    const olderRequest = client.state("owner");
+    const newerRequest = client.state("owner");
+
+    resolveNewer(new Response(JSON.stringify(snapshot(6)), { status: 200, headers: { ETag: '"owner-6"' } }));
+    await expect(newerRequest).resolves.toMatchObject({ revision: 6 });
+    resolveOlder(new Response(JSON.stringify(snapshot(5)), { status: 200, headers: { ETag: '"owner-5"' } }));
+    await expect(olderRequest).resolves.toMatchObject({ revision: 6 });
+
+    fetchMock.mockResolvedValueOnce(new Response(null, { status: 304 }));
+    await expect(client.state("owner")).resolves.toMatchObject({ revision: 6 });
+    expect((fetchMock.mock.calls[2]![1].headers as Headers).get("If-None-Match")).toBe('"owner-6"');
+  });
+
   it("covers the complete authentication and directory request surface", async () => {
     const fetchMock = vi.fn(async (input: string | URL | Request) => {
       const url = String(input);

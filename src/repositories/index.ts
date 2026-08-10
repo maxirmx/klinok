@@ -36,6 +36,7 @@ import {
 
 type Listener<T> = (snapshot: T) => void;
 type RoleDecisionInput = { accountId: string; requestId: string; revision: number; role: Role; status: "approved" | "rejected" | "revoked"; expectedStatus?: RoleRequest["status"]; reason?: string };
+const COMMAND_BATCH_SIZE = 50;
 
 function commandAction(type: ClientCommand["type"]): string {
   return {
@@ -375,16 +376,19 @@ export class KlinokRepository {
     if (!queued.length) return;
     this.syncing = true; await this.emitSync();
     try {
-      const response = await this.client.execute(queued);
       let focusedError: AuthClientError | null = null;
-      for (const result of response.results) {
-        const command = queued.find((candidate) => candidate.operationId === result.operationId);
-        if (!command) continue;
-        if (result.status === "applied" || result.status === "duplicate") await removeCommand(command.operationId);
-        else {
-          await this.rejection(command, result);
-          await removeCommand(command.operationId);
-          if (focusOperationId === command.operationId) focusedError = new AuthClientError(result.error?.code ?? "COMMAND_REJECTED", result.error?.message ?? "Операция не выполнена.", result.status === "conflict" ? 409 : 400);
+      for (let offset = 0; offset < queued.length; offset += COMMAND_BATCH_SIZE) {
+        const batch = queued.slice(offset, offset + COMMAND_BATCH_SIZE);
+        const response = await this.client.execute(batch);
+        for (const result of response.results) {
+          const command = batch.find((candidate) => candidate.operationId === result.operationId);
+          if (!command) continue;
+          if (result.status === "applied" || result.status === "duplicate") await removeCommand(command.operationId);
+          else {
+            await this.rejection(command, result);
+            await removeCommand(command.operationId);
+            if (focusOperationId === command.operationId) focusedError = new AuthClientError(result.error?.code ?? "COMMAND_REJECTED", result.error?.message ?? "Операция не выполнена.", result.status === "conflict" ? 409 : 400);
+          }
         }
       }
       this.connectionState = "connected"; this.lastError = "";
@@ -411,12 +415,14 @@ export class KlinokRepository {
 
   async refresh(): Promise<void> {
     if (this.disposed) return;
+    const role = this.role;
     try {
-      const snapshot = await this.client.state(this.role);
-      if (this.disposed) return;
+      const snapshot = await this.client.state(role);
+      if (this.disposed || role !== this.role || (this.current.role === role && snapshot.revision < this.current.revision)) return;
       const pending = await listCommands(this.accountId);
-      this.current = applyOptimistic(snapshot, pending.filter((command) => command.activeRole === this.role));
-      await putCachedSnapshot(this.accountId, this.role, snapshot);
+      if (this.disposed || role !== this.role || (this.current.role === role && snapshot.revision < this.current.revision)) return;
+      this.current = applyOptimistic(snapshot, pending.filter((command) => command.activeRole === role));
+      await putCachedSnapshot(this.accountId, role, snapshot);
       this.connectionState = "connected"; this.lastError = ""; this.emit(); await this.emitSync();
     } catch (reason) {
       if (reason instanceof AuthClientError && reason.code === "NETWORK_UNAVAILABLE") {
