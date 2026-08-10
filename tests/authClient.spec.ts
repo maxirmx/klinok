@@ -3,11 +3,28 @@
 // This file is a part of Klinok application
 
 import { afterEach, describe, expect, it, vi } from "vitest";
+import type { AppSnapshotDto } from "@klinok/contracts";
 import { AuthClient, AuthClientError } from "../src/repositories/authClient";
 
 afterEach(() => vi.unstubAllGlobals());
 
 describe("v3 API client", () => {
+  const snapshot = (revision: number): AppSnapshotDto => ({
+    revision,
+    role: "owner",
+    control: {
+      profile: null,
+      profiles: [],
+      roles: [],
+      allRoles: [],
+      pendingQueue: [],
+      notifications: [],
+      roleAudit: [],
+      ledger: { valid: true, height: revision, headHash: "a".repeat(64), verifiedAt: "2026-08-10T00:00:00.000Z" },
+    },
+    medical: { pets: [], grants: [], accessRequests: [], records: [], confirmations: [], confirmedRecordIds: [] },
+  });
+
   it("uses same-origin credentials and forwards the session CSRF token", async () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(new Response(JSON.stringify({ authenticated: true, accountId: "a1", csrfToken: "csrf" }), { status: 200 }))
@@ -75,5 +92,89 @@ describe("v3 API client", () => {
     await client.revokeDevice("old/device");
     expect(fetchMock.mock.calls[1]![0]).toBe("/api/auth/devices/old%2Fdevice");
     expect(fetchMock.mock.calls[1]![1].body).toBeUndefined();
+  });
+
+  it("wraps network failures for regular and snapshot requests", async () => {
+    const failure = new Error("offline");
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(failure));
+
+    await expect(new AuthClient().register({
+      firstName: "Анна",
+      lastName: "Иванова",
+      email: "anna@example.ru",
+      password: "password",
+      ageConfirmed: true,
+      personalDataConsentVersion: "v1",
+      userAgreementVersion: "v1",
+      requestedRoles: ["owner"],
+    })).rejects.toMatchObject<AuthClientError>({ code: "NETWORK_UNAVAILABLE", status: 0, cause: failure });
+    await expect(new AuthClient().state("owner"))
+      .rejects.toMatchObject<AuthClientError>({ code: "NETWORK_UNAVAILABLE", status: 0, cause: failure });
+  });
+
+  it("caches role snapshots by ETag and maps snapshot API errors", async () => {
+    const owner = snapshot(3);
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify(owner), { status: 200, headers: { ETag: '"owner-3"' } }))
+      .mockResolvedValueOnce(new Response(null, { status: 304 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ error: { code: "ROLE_REQUIRED" } }), { status: 403 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const client = new AuthClient("/backend");
+
+    await expect(client.state("owner")).resolves.toEqual(owner);
+    await expect(client.state("owner")).resolves.toEqual(owner);
+    expect((fetchMock.mock.calls[1]![1].headers as Headers).get("If-None-Match")).toBe('"owner-3"');
+    await expect(client.state("doctor")).rejects.toMatchObject<AuthClientError>({ code: "ROLE_REQUIRED", status: 403 });
+  });
+
+  it("covers the complete authentication and directory request surface", async () => {
+    const fetchMock = vi.fn(async (input: string | URL | Request) => {
+      const url = String(input);
+      if (url.endsWith("/api/auth/login")) {
+        return new Response(JSON.stringify({ authenticated: true, accountId: "account-1", csrfToken: "csrf" }), { status: 200 });
+      }
+      if (url.endsWith("/api/auth/credentials")) {
+        return new Response(JSON.stringify({ updated: true, email: "new@example.ru" }), { status: 200 });
+      }
+      return new Response(JSON.stringify({ accepted: true, verified: true, loggedOut: true, reset: true, items: [], profiles: [] }), { status: 200 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const client = new AuthClient("/backend");
+    client.setCsrfToken(undefined);
+
+    await client.register({
+      firstName: "Анна", lastName: "Иванова", email: "anna@example.ru", password: "password",
+      ageConfirmed: true, personalDataConsentVersion: "v1", userAgreementVersion: "v1", requestedRoles: ["owner"],
+    });
+    await client.verifyEmail("verification/token");
+    await client.login("anna@example.ru", "password", "device-1", "Ноутбук");
+    await client.logoutAll();
+    await client.forgotPassword("anna@example.ru");
+    await client.resetPassword("reset/token", "new-password");
+    await client.updateProfile({ firstName: "Анна", lastName: "Иванова", expectedRevision: 1 });
+    await expect(client.updateCredentials({ email: "new@example.ru" })).resolves.toMatchObject({ email: "new@example.ru" });
+    await client.deleteAccount();
+    await client.searchDoctors("Анна", 2, 10, "name");
+    await client.lookupDirectoryProfiles(["account-1"]);
+    await client.lookupDirectoryPet("pet/1");
+    await client.getMyDirectoryPets("Барс", 2, 10, "pet", "desc");
+    await client.getMyPetAccesses("Барс", "granted", 2, 10, "pet", "desc");
+
+    expect(fetchMock.mock.calls.map(([url]) => String(url))).toEqual(expect.arrayContaining([
+      "/backend/api/auth/register",
+      "/backend/api/auth/verify-email",
+      "/backend/api/auth/login",
+      "/backend/api/auth/logout-all",
+      "/backend/api/auth/password/forgot",
+      "/backend/api/auth/password/reset",
+      "/backend/api/auth/profile",
+      "/backend/api/auth/credentials",
+      "/backend/api/auth/account",
+      "/backend/api/directory/doctors?query=%D0%90%D0%BD%D0%BD%D0%B0&page=2&pageSize=10&sort=name",
+      "/backend/api/directory/profiles/lookup",
+      "/backend/api/directory/pets/pet%2F1",
+      "/backend/api/directory/my-pets?query=%D0%91%D0%B0%D1%80%D1%81&page=2&pageSize=10&sort=pet&direction=desc",
+      "/backend/api/directory/my-pet-accesses?query=%D0%91%D0%B0%D1%80%D1%81&status=granted&page=2&pageSize=10&sort=pet&direction=desc",
+    ]));
   });
 });

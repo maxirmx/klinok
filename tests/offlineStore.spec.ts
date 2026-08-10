@@ -3,7 +3,7 @@
 // This file is a part of Klinok application
 
 import "fake-indexeddb/auto";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AppSnapshotDto, ClientCommand } from "@klinok/contracts";
 import {
   clearOfflineAccount,
@@ -14,7 +14,11 @@ import {
   listNotifications,
   putCachedSnapshot,
   recordNotification,
+  removeCommand,
+  dismissNotification,
 } from "../src/repositories/offlineStore";
+
+afterEach(() => vi.unstubAllGlobals());
 
 function snapshot(revision: number): AppSnapshotDto {
   return {
@@ -62,5 +66,36 @@ describe("account-scoped offline storage", () => {
     expect(await listNotifications(firstAccount)).toEqual([]);
     expect(await listCommands(secondAccount)).toHaveLength(1);
     await clearOfflineAccount(secondAccount);
+  });
+
+  it("supports the in-memory fallback when IndexedDB is unavailable", async () => {
+    vi.stubGlobal("indexedDB", undefined);
+    const accountId = crypto.randomUUID();
+    const otherAccountId = crypto.randomUUID();
+    const queued = command("memory-command", "2026-08-10T00:00:00.000Z");
+
+    await putCachedSnapshot(accountId, "owner", snapshot(7));
+    await putCachedSnapshot(otherAccountId, "doctor", { ...snapshot(8), role: "doctor" });
+    await enqueueCommand(accountId, "owner", queued);
+    await recordNotification({
+      notificationId: `${accountId}:memory-command`, accountId, operationId: "memory-command", entityId: "pet-memory",
+      commandAction: "pet.created", code: "COMMAND_REJECTED", reasonKey: "invalid", diagnosticId: "diag-memory",
+      createdAt: "2026-08-10T00:00:00.000Z", action: "return", localDraft: queued,
+    });
+
+    await expect(getCachedSnapshot(accountId, "owner", 7)).resolves.toMatchObject({ revision: 7 });
+    await expect(lastOfflineAccount(7)).resolves.toBe(otherAccountId);
+    await expect(listCommands(accountId)).resolves.toEqual([queued]);
+    await dismissNotification(accountId, "missing-notification");
+    await dismissNotification(accountId, `${accountId}:memory-command`);
+    await expect(listNotifications(accountId)).resolves.toMatchObject([{ dismissedAt: expect.any(String) }]);
+    await removeCommand("memory-command");
+    await expect(listCommands(accountId)).resolves.toEqual([]);
+
+    await clearOfflineAccount(accountId);
+    await expect(getCachedSnapshot(accountId, "owner", 7)).resolves.toBeNull();
+    await expect(listNotifications(accountId)).resolves.toEqual([]);
+    await expect(getCachedSnapshot(otherAccountId, "doctor", 7)).resolves.toMatchObject({ revision: 8 });
+    await clearOfflineAccount(otherAccountId);
   });
 });

@@ -154,7 +154,16 @@ export async function buildApi(config: ApiConfig, provided?: { db?: Database; le
   const snapshots = new SnapshotService(db, ledger);
   const app = Fastify({ logger: true, trustProxy: config.trustProxy, bodyLimit: 2_000_000 });
   await app.register(cookie);
-  await app.register(rateLimit, { global: true, max: 300, timeWindow: "1 minute" });
+  await app.register(rateLimit, {
+    global: true,
+    max: 300,
+    timeWindow: "1 minute",
+    errorResponseBuilder: (_request, context) => new ApiError(
+      context.statusCode,
+      "RATE_LIMITED",
+      `Rate limit exceeded, retry in ${context.after}.`,
+    ),
+  });
 
   app.decorate("klinok", { db, ledger });
   app.addHook("onRequest", async (request) => {
