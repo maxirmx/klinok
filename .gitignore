@@ -35,7 +35,10 @@ node_modules/
 dist/
 .vite/
 coverage/
+*.tsbuildinfo
 .tmp*/
+.klinok-v3/
+# Optional local v2 archive data is never part of v3 source control.
 .klinok-p2p/
 .klinok-auth/
 .klinok-local/

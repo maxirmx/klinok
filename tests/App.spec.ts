@@ -14,7 +14,6 @@ import AuthScreen from "../src/screens/AuthScreen.vue";
 import RoleStatusScreen from "../src/screens/RoleStatusScreen.vue";
 import OwnerScreen from "../src/screens/OwnerScreen.vue";
 import AdministratorScreen from "../src/screens/AdministratorScreen.vue";
-import { getOrCreateDeviceId, setDeviceName } from "../src/repositories/deviceVault";
 import { routes } from "../src/router";
 
 beforeEach(() => localStorage.clear());
@@ -41,8 +40,8 @@ describe("operational Russian UI", () => {
   });
 
   it("shows the saved device name as non-editable text for an existing device", async () => {
-    getOrCreateDeviceId();
-    setDeviceName("Домашний ноутбук");
+    localStorage.setItem("klinok:v3:device-id", "device-1");
+    localStorage.setItem("klinok:v3:device-name", "Домашний ноутбук");
     const wrapper = await mountScreen(AuthScreen, "/auth/login", { scenarioId: "auth-login" });
     expect(wrapper.find('input[autocomplete="off"]').exists()).toBe(false);
     expect(wrapper.get(".auth-device-name").text()).toContain("Домашний ноутбук");

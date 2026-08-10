@@ -24,10 +24,6 @@ const repositoryMocks = vi.hoisted(() => ({
 }));
 const clipboardWriteText = vi.fn().mockResolvedValue(undefined);
 const searchDoctorDirectory = vi.hoisted(() => vi.fn());
-const directoryMutationMocks = vi.hoisted(() => ({
-  syncPet: vi.fn(),
-  deletePet: vi.fn(),
-}));
 
 vi.mock("../src/appStore", async () => {
   const { reactive, readonly } = await import("vue");
@@ -38,7 +34,6 @@ vi.mock("../src/appStore", async () => {
     records: [],
     confirmations: [],
     confirmedRecordIds: [],
-    events: [],
   };
   const state = reactive({
     feedback: null as { kind: "success" | "error"; text: string } | null,
@@ -50,18 +45,17 @@ vi.mock("../src/appStore", async () => {
       devices: [],
       pendingQueue: [],
       notifications: [],
-      events: [],
+      roleAudit: [],
+      ledger: { valid: true, height: 0, headHash: "0".repeat(64), verifiedAt: "2026-07-17T00:00:00.000Z" },
     },
     medical: emptyMedical,
   });
   return {
     appState: readonly(state),
-    deleteDirectoryPet: directoryMutationMocks.deletePet,
     logout: vi.fn().mockResolvedValue(undefined),
     requireRepository: () => ({ medical: repositoryMocks }),
     searchDoctorDirectory,
     setOwnerMedicalState: (medical: MedicalSnapshot) => { state.medical = medical; },
-    syncDirectoryPet: directoryMutationMocks.syncPet,
   };
 });
 
@@ -78,7 +72,7 @@ const pet: PetProfile = {
   latestConfirmedVaccination: { date: "2026-04-15", name: "Рабикан", recordId: "record-vaccination" },
   weightKg: 12.4,
   notes: "Любит длительные прогулки",
-  keyVersion: 1,
+  revision: 1,
   tombstoned: false,
   updatedAt: "2026-07-17T10:00:00.000Z",
 };
@@ -114,7 +108,6 @@ function snapshot(overrides: Partial<MedicalSnapshot> = {}): MedicalSnapshot {
     records: [],
     confirmations: [],
     confirmedRecordIds: [],
-    events: [],
     ...overrides,
   };
 }
@@ -165,8 +158,6 @@ beforeEach(async () => {
   repositoryMocks.createPet.mockResolvedValue("pet-new");
   repositoryMocks.grantDoctor.mockResolvedValue("grant-new");
   repositoryMocks.approveAccessRequest.mockResolvedValue("grant-approved");
-  directoryMutationMocks.syncPet.mockResolvedValue({ synchronized: true });
-  directoryMutationMocks.deletePet.mockResolvedValue({ synchronized: true });
   searchDoctorDirectory.mockResolvedValue({ items: [], page: 1, pageSize: 50, total: 0, pageCount: 1 });
   await setMedical(snapshot());
 });
@@ -254,7 +245,7 @@ describe("Owner pages", () => {
     expect(wrapper.text()).not.toContain("Любит длительные прогулки");
   });
 
-  it("shows one medical card and refreshes confirmation status from the verified projection", async () => {
+  it("shows one medical card and refreshes confirmation status from the current snapshot", async () => {
     await setMedical(snapshot({ pets: [pet], records: [medicalRecord] }));
     const wrapper = await mountAt("/owner/pets/pet-1", "owner-pet-detail");
 
@@ -285,7 +276,6 @@ describe("Owner pages", () => {
   });
 
   it("offers fixed species and sex values and creates a complete profile with notes", async () => {
-    directoryMutationMocks.syncPet.mockResolvedValueOnce({ synchronized: false });
     const wrapper = await mountAt("/owner/pets/new", "owner-pet-create");
     expect(wrapper.get(".workspace-topbar h1").text()).toBe("Кабинет владельца");
     expect(wrapper.get(".owner-section-heading h2").text()).toBe("Добавить питомца");
@@ -329,14 +319,8 @@ describe("Owner pages", () => {
       weightKg: 4.8,
       notes: "Не любит переноску",
     }));
-    expect(directoryMutationMocks.syncPet).toHaveBeenCalledWith({
-      petId: "pet-new",
-      species: "Кошка",
-      name: "Боня",
-    });
     expect(repositoryMocks.createPet).toHaveBeenCalledOnce();
     expect(wrapper.vm.$route.path).toBe("/owner/pets/pet-new");
-    expect(wrapper.get('[role="status"]').text()).toContain("Публикация в каталоге продолжится автоматически");
   });
 
   it("creates only one pet when the form is submitted repeatedly while saving", async () => {
@@ -363,7 +347,6 @@ describe("Owner pages", () => {
     resolveCreatePet("pet-new");
     await flushPromises();
 
-    expect(directoryMutationMocks.syncPet).toHaveBeenCalledOnce();
     expect(wrapper.vm.$route.path).toBe("/owner/pets/pet-new");
   });
 
@@ -448,7 +431,7 @@ describe("Owner pages", () => {
           granteeAccountId: "doctor-2",
           granteeDisplayName: "Борис Врач",
           actions: ["read", "write_unconfirmed", "delegate"],
-          petKeyVersion: 1,
+          revision: 1,
           status: "active",
           createdAt: "2026-07-17T10:00:00.000Z",
         },
@@ -459,7 +442,7 @@ describe("Owner pages", () => {
           granteeAccountId: "doctor-3",
           granteeDisplayName: "Виктор Врач",
           actions: ["read"],
-          petKeyVersion: 1,
+          revision: 1,
           status: "revoked",
           createdAt: "2026-07-16T10:00:00.000Z",
           revokedAt: "2026-07-17T10:00:00.000Z",
@@ -471,7 +454,7 @@ describe("Owner pages", () => {
           granteeAccountId: "doctor-2",
           granteeDisplayName: "Борис Врач",
           actions: ["read"],
-          petKeyVersion: 1,
+          revision: 1,
           status: "revoked",
           createdAt: "2026-07-15T10:00:00.000Z",
           revokedAt: "2026-07-16T10:00:00.000Z",
@@ -483,7 +466,7 @@ describe("Owner pages", () => {
           granteeAccountId: "doctor-4",
           granteeDisplayName: "Галина Врач",
           actions: ["read", "write_unconfirmed"],
-          petKeyVersion: 1,
+          revision: 1,
           status: "active",
           createdAt: "2026-07-17T11:00:00.000Z",
         },
@@ -640,7 +623,7 @@ describe("Owner pages", () => {
         granteeAccountId: `doctor-${index}`,
         granteeDisplayName: `Врач ${String(index).padStart(2, "0")}`,
         actions: ["read" as const],
-        petKeyVersion: 1,
+        revision: 1,
         status: "active" as const,
         createdAt: "2026-07-17T10:00:00.000Z",
       })),
@@ -773,16 +756,13 @@ describe("Owner pages", () => {
     repositoryMocks.deletePet.mockImplementationOnce(async () => {
       await setMedical(snapshot());
     });
-    directoryMutationMocks.deletePet.mockResolvedValueOnce({ synchronized: false });
     await detail.get('[role="alertdialog"]').findAll("button")
       .find((button) => button.text() === "Удалить питомца")!
       .trigger("click");
     await flushPromises();
 
     expect(repositoryMocks.deletePet).toHaveBeenCalledWith("pet-1");
-    expect(directoryMutationMocks.deletePet).toHaveBeenCalledWith("pet-1");
     expect(detail.vm.$route.path).toBe("/owner/home");
-    expect(detail.get('[role="status"]').text()).toContain("Удаление из каталога продолжится автоматически");
   });
 
   it("shows an age interval and birth year in one age field when no exact birth date is stored", async () => {

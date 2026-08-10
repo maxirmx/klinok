@@ -5,7 +5,7 @@
 
 import { computed, onBeforeUnmount, reactive, ref, watch } from "vue";
 import { useRouter } from "vue-router";
-import { normalizeRussianSearchText, type AccountProfile, type DirectoryProfileDto, type DirectoryUserDto, type Role, type RoleRequest, type RoleStatus } from "@klinok/protocol";
+import { normalizeRussianSearchText, type AccountProfile, type DirectoryProfileDto, type DirectoryUserDto, type Role, type RoleRequest, type RoleStatus } from "@klinok/contracts";
 import AppIcon from "../components/AppIcon.vue";
 import AppPaginator from "../components/AppPaginator.vue";
 import ModalDialog from "../components/ModalDialog.vue";
@@ -29,7 +29,7 @@ type SortField = "name" | Role;
 type SortDirection = "asc" | "desc";
 type DecisionAction = "approve" | "reject" | "revoke" | "restore";
 type AuditCategory = "request" | "approve" | "restore" | "reject" | "revoke" | "bootstrap";
-type RoleActionTarget = Pick<RoleRequest, "accountId" | "role" | "status">;
+type RoleActionTarget = Pick<RoleRequest, "accountId" | "requestId" | "revision" | "role" | "status">;
 
 type AdministratorRow = DirectoryUserDto;
 
@@ -65,8 +65,8 @@ const userTotal = ref(0);
 const directoryPendingRoleCount = ref<number | null>(null);
 const usersLoading = ref(false);
 let usersRefreshId = 0;
-let directoryReconciliationTimer: ReturnType<typeof setTimeout> | null = null;
-let directoryReconciliationAttempts = 0;
+let directoryRefreshTimer: ReturnType<typeof setTimeout> | null = null;
+let directoryRefreshAttempts = 0;
 const roleStatusOverrides = reactive(new Map<string, { status: RoleStatus; sourceStatus: RoleStatus }>());
 const decision = ref<{ request: RoleActionTarget; action: DecisionAction; displayName: string } | null>(null);
 const decisionReason = ref("");
@@ -144,15 +144,15 @@ const localRoleRevision = computed(() => appState.control.allRoles
   .map((request) => `${request.accountId}:${request.role}:${request.requestId}:${request.status}`)
   .sort()
   .join("|"));
-const mayEditProfiles = computed(() => appState.session.accountId === getConfig()?.p2p.bootstrapAccountId
+const mayEditProfiles = computed(() => appState.session.accountId === getConfig()?.bootstrapAccountId
   && appState.activeRole === "administrator");
 
-function clearDirectoryReconciliationTimer() {
-  if (directoryReconciliationTimer !== null) clearTimeout(directoryReconciliationTimer);
-  directoryReconciliationTimer = null;
+function clearDirectoryRefreshTimer() {
+  if (directoryRefreshTimer !== null) clearTimeout(directoryRefreshTimer);
+  directoryRefreshTimer = null;
 }
 
-function directoryProjectionMayBeBehind(): boolean {
+function directorySnapshotMayBeStale(): boolean {
   if (directoryPendingRoleCount.value === null) return true;
   if (administratorPendingRequestCount(appState.control) !== directoryPendingRoleCount.value) return true;
   const localRoles = new Map(appState.control.allRoles.map((request) => [`${request.accountId}:${request.role}`, request.status]));
@@ -160,16 +160,16 @@ function directoryProjectionMayBeBehind(): boolean {
     localRoles.get(`${user.accountId}:${role}`) === "pending" && user.roleStatuses[role] !== "pending"));
 }
 
-function scheduleDirectoryReconciliation(delay = 0) {
-  if (directoryReconciliationTimer !== null || directoryReconciliationAttempts <= 0 || isAudit.value) return;
-  directoryReconciliationTimer = setTimeout(async () => {
-    directoryReconciliationTimer = null;
-    directoryReconciliationAttempts -= 1;
+function scheduleDirectoryRefresh(delay = 0) {
+  if (directoryRefreshTimer !== null || directoryRefreshAttempts <= 0 || isAudit.value) return;
+  directoryRefreshTimer = setTimeout(async () => {
+    directoryRefreshTimer = null;
+    directoryRefreshAttempts -= 1;
     await refreshUsers();
-    if (directoryReconciliationAttempts > 0 && directoryProjectionMayBeBehind()) {
-      scheduleDirectoryReconciliation(500);
+    if (directoryRefreshAttempts > 0 && directorySnapshotMayBeStale()) {
+      scheduleDirectoryRefresh(500);
     } else {
-      directoryReconciliationAttempts = 0;
+      directoryRefreshAttempts = 0;
     }
   }, delay);
 }
@@ -188,13 +188,13 @@ function sortAria(field: SortField): "ascending" | "descending" | "none" {
 }
 
 function isBootstrapAdministrator(request: RoleActionTarget): boolean {
-  return request.role === "administrator" && request.accountId === getConfig()?.p2p.bootstrapAccountId;
+  return request.role === "administrator" && request.accountId === getConfig()?.bootstrapAccountId;
 }
 
 function requestFor(row: AdministratorRow, role: Role): RoleActionTarget | undefined {
   if (role === "owner") return undefined;
-  const status = row.roleStatuses[role];
-  return status === "not_requested" ? undefined : { accountId: row.accountId, role, status };
+  const request = row.roleRequests[role];
+  return !request || request.status === "not_requested" ? undefined : { accountId: row.accountId, ...request };
 }
 
 async function refreshUsers() {
@@ -257,20 +257,22 @@ async function submitProfileEdit() {
   profileEditError.value = "";
   profileEditBusy.value = true;
   try {
-    const result = await updateAdministratorUserProfile(profileEdit.value.accountId, {
+    await updateAdministratorUserProfile(profileEdit.value.accountId, {
       firstName,
       lastName,
+      expectedRevision: profileEdit.value.revision,
       ...(patronymic ? { patronymic } : {}),
     });
     profileEdit.value = null;
-    alertStore.success(result?.projectionSynchronized !== false
-      ? "ФИО пользователя изменено."
-      : "ФИО изменено в каталоге. Защищённая копия обновится при подключении устройства пользователя.");
+    alertStore.success("ФИО пользователя изменено.");
     await refreshUsers();
   } catch (reason) {
     profileEditError.value = reason instanceof Error && /[А-Яа-яЁё]/.test(reason.message)
       ? reason.message
       : "Не удалось изменить ФИО пользователя.";
+    await refreshUsers();
+    const currentProfile = users.value.find((user) => user.accountId === profileEdit.value?.accountId);
+    if (currentProfile) profileEdit.value = currentProfile;
   } finally {
     profileEditBusy.value = false;
   }
@@ -315,7 +317,9 @@ async function submitDecision() {
       "name",
       "asc",
     )).items.find((user) => user.accountId === current.request.accountId);
-    if (!latestUser || latestUser.roleStatuses[current.request.role] !== current.request.status) {
+    const latestRequest = latestUser?.roleRequests[current.request.role];
+    if (!latestUser || !latestRequest || latestRequest.requestId !== current.request.requestId
+      || latestRequest.revision !== current.request.revision || latestRequest.status !== current.request.status) {
       throw new Error("Статус заявки изменился. Закройте окно и повторите действие с обновлённым списком.");
     }
     const status = current.action === "reject"
@@ -349,52 +353,16 @@ async function submitDecision() {
   }
 }
 
-function transitionAction(event: (typeof appState.control.events)[number]): Pick<AuditRow, "category" | "action"> | null {
-  if (event.eventType === "role.requested") return { category: "request", action: "Роль запрошена" };
-  if (event.eventType === "role.resubmitted") return { category: "request", action: "Роль запрошена повторно" };
-  if (event.eventType === "role.approved") return { category: "approve", action: "Роль одобрена" };
-  if (event.eventType === "role.restored") return { category: "restore", action: "Роль восстановлена" };
-  if (event.eventType === "role.rejected") return { category: "reject", action: "В запросе отказано" };
-  if (event.eventType === "role.cancelled") return { category: "revoke", action: "Запрос отозван пользователем" };
-  if (event.eventType === "role.revoked") return { category: "revoke", action: "Роль отозвана" };
-  return null;
-}
-
-const auditRows = computed<AuditRow[]>(() => {
-  const events = appState.control.events;
-  const byId = new Map(events.map((event) => [event.eventId, event]));
-  const rows: AuditRow[] = [];
-  for (const audit of events.filter((event) => event.eventType === "audit.role-transition")) {
-    const transition = audit.parents.map((parent) => byId.get(parent)).find((event) => event?.eventType.startsWith("role."));
-    if (!transition) continue;
-    const role = String(transition.metadata.role);
-    if (role !== "doctor" && role !== "administrator") continue;
-    const action = transitionAction(transition);
-    if (!action) continue;
-    rows.push({
-      eventId: audit.eventId,
-      createdAt: transition.createdAt,
-      ...action,
-      role,
-      targetAccountId: transition.aggregateId,
-      actorAccountId: transition.actorAccountId,
-      reason: String(transition.metadata.reason ?? ""),
-    });
-  }
-  for (const event of events.filter((candidate) => candidate.eventType === "account.bootstrap")) {
-    rows.push({
-      eventId: `bootstrap-${event.eventId}`,
-      createdAt: event.createdAt,
-      category: "bootstrap",
-      action: "Роль назначена при инициализации",
-      role: "administrator",
-      targetAccountId: event.aggregateId,
-      actorAccountId: event.actorAccountId,
-      reason: "",
-    });
-  }
-  return rows.sort((left, right) => right.createdAt.localeCompare(left.createdAt) || right.eventId.localeCompare(left.eventId));
-});
+const auditRows = computed<AuditRow[]>(() => appState.control.roleAudit.map((entry) => ({
+  eventId: entry.blockHash,
+  createdAt: entry.createdAt,
+  category: entry.category,
+  action: entry.action,
+  role: entry.role as AdvancedRole,
+  targetAccountId: entry.targetAccountId,
+  actorAccountId: entry.actorAccountId,
+  reason: entry.reason,
+})));
 
 const filteredAuditRows = computed(() => {
   const query = normalize(auditSearch.value);
@@ -439,13 +407,12 @@ function formatDate(value: string): string {
 }
 
 async function signOut() {
-  await logout();
-  await router.replace("/auth/login");
+  if (await logout()) await router.replace("/auth/login");
 }
 
 watch([search, pendingOnly, sortField, sortDirection, page, pageSize, isAudit], (current, previous) => {
   if (isAudit.value) {
-    clearDirectoryReconciliationTimer();
+    clearDirectoryRefreshTimer();
     usersRefreshId += 1;
     usersLoading.value = false;
     return;
@@ -467,9 +434,9 @@ watch([search, pendingOnly, sortField, sortDirection, page, pageSize, isAudit], 
   void refreshUsers();
 }, { immediate: true });
 watch(localRoleRevision, () => {
-  directoryReconciliationAttempts = 60;
-  clearDirectoryReconciliationTimer();
-  scheduleDirectoryReconciliation();
+  directoryRefreshAttempts = 60;
+  clearDirectoryRefreshTimer();
+  scheduleDirectoryRefresh();
 });
 watch(pendingRoleCount, (count) => { if (!count) pendingOnly.value = false; });
 watch(pageSize, (value) => localStorage.setItem(cabinetPageSizeKey, String(value)));
@@ -481,7 +448,7 @@ watch(
   () => { void refreshAuditProfiles(); },
   { immediate: true },
 );
-onBeforeUnmount(clearDirectoryReconciliationTimer);
+onBeforeUnmount(clearDirectoryRefreshTimer);
 </script>
 
 <template>
@@ -677,6 +644,13 @@ onBeforeUnmount(clearDirectoryReconciliationTimer);
           <div>
             <h2>Журнал действий с ролями</h2>
             <p>История запросов и решений.</p>
+            <p
+              class="status-badge"
+              :class="appState.control.ledger.valid ? 'approved' : 'rejected'"
+              :title="`Головной хеш: ${appState.control.ledger.headHash}`"
+            >
+              {{ appState.control.ledger.valid ? `Блокчейн проверен · блок ${appState.control.ledger.height}` : 'Блокчейн поврежден' }}
+            </p>
           </div>
           <RouterLink
             class="outline-action inline administrator-audit-link administrator-icon-action"

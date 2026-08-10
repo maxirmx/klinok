@@ -5,7 +5,7 @@
 
 import { computed, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import type { Role } from "@klinok/protocol";
+import type { Role } from "@klinok/contracts";
 import packageJson from "../../package.json";
 import AppIcon from "./AppIcon.vue";
 import AppAlert from "./AppAlert.vue";

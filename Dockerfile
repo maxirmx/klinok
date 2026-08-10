@@ -8,9 +8,8 @@ FROM node:24.18.0-alpine3.24 AS build
 WORKDIR /app
 
 COPY package*.json ./
-COPY packages/node-datachannel-disabled/package.json packages/node-datachannel-disabled/package.json
-COPY packages/react-native-webrtc-disabled/package.json packages/react-native-webrtc-disabled/package.json
-RUN npm ci --ignore-scripts
+COPY packages/contracts/package.json packages/contracts/package.json
+RUN npm ci --ignore-scripts --workspace @klinok/contracts --include-workspace-root
 
 COPY . .
 RUN npm run build:ui
@@ -26,7 +25,7 @@ COPY config/update-config.sh /docker-entrypoint.d/40-update-config.sh
 RUN sed -i 's/\r$//' /docker-entrypoint.d/40-update-config.sh \
     && chmod +x /docker-entrypoint.d/40-update-config.sh
 
-EXPOSE 8082
-EXPOSE 8083
+EXPOSE 80
+EXPOSE 443
 
 CMD ["nginx", "-g", "daemon off;"]

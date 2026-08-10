@@ -7,7 +7,7 @@ import { computed, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import { appState, dismissSyncNotification } from "../appStore";
 import { syncActionText, syncNotificationText, syncOperationText } from "../russianMessages";
-import type { SyncNotification } from "../repositories/eventTransport";
+import type { SyncNotification } from "../repositories/offlineStore";
 import AppIcon from "./AppIcon.vue";
 import AppPaginator from "./AppPaginator.vue";
 import ModalDialog from "./ModalDialog.vue";
@@ -53,12 +53,6 @@ const status = computed(() => {
     title: "Синхронизация временно недоступна. Приложение повторит попытку автоматически.",
     actionable: false,
   };
-  if (appState.directoryPendingCount) return {
-    kind: "pending",
-    label: `Ожидает публикации: ${appState.directoryPendingCount}`,
-    title: "Изменения сохранены в защищённом журнале и будут опубликованы в каталоге автоматически.",
-    actionable: false,
-  };
   if (appState.sync.deferredCount) return {
     kind: "pending",
     label: `Ожидает связанных данных: ${appState.sync.deferredCount}`,
@@ -91,10 +85,22 @@ async function dismiss(notificationId: string): Promise<void> {
   if (!unreadNotifications.value.length) notificationsOpen.value = false;
 }
 
-async function performAction(notification: Readonly<Pick<SyncNotification, "relatedRoute" | "action">>): Promise<void> {
+async function performAction(notification: {
+  readonly notificationId: string;
+  readonly relatedRoute?: string;
+  readonly action: SyncNotification["action"];
+  readonly localDraft?: { readonly type: string };
+}): Promise<void> {
   if (!notification.relatedRoute || notification.action === "none") return;
   notificationsOpen.value = false;
-  await router.push(notification.relatedRoute);
+  const destination = router.resolve(notification.relatedRoute);
+  const recoverable = notification.localDraft
+    && ["pet.create", "pet.update", "record.create", "record.update"].includes(notification.localDraft.type);
+  await router.push({
+    path: destination.path,
+    query: { ...destination.query, ...(recoverable ? { recover: notification.notificationId } : {}) },
+    hash: destination.hash,
+  });
 }
 </script>
 
@@ -124,7 +130,7 @@ async function performAction(notification: Readonly<Pick<SyncNotification, "rela
         <header>
           <div>
             <h3>Изменение не сохранено</h3>
-            <strong>{{ syncOperationText(notification.eventType) }}</strong>
+            <strong>{{ syncOperationText(notification.commandAction) }}</strong>
           </div>
           <time :datetime="notification.createdAt">{{ formattedDate(notification.createdAt) }}</time>
         </header>

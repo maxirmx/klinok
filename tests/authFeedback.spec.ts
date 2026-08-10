@@ -16,12 +16,14 @@ const authMocks = vi.hoisted(() => ({
 
 vi.mock("../src/runtimeConfig", () => ({
   loadRuntimeConfig: vi.fn(async () => ({
-    authBaseUrl: "",
+    apiBaseUrl: "",
+    dataGeneration: "v3",
+    bootstrapAccountId: "bootstrap-administrator",
+    offlineLeaseDays: 7,
     legal: {
       personalDataConsent: { version: "consent-v1", href: "/consent" },
       userAgreement: { version: "terms-v1", href: "/terms" },
     },
-    p2p: { bootstrapAccountId: "bootstrap-administrator" },
   })),
 }));
 

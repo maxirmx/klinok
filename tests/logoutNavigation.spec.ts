@@ -8,7 +8,7 @@ import { createPinia } from "pinia";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import AppIcon from "../src/components/AppIcon.vue";
 import RoleStatusScreen from "../src/screens/RoleStatusScreen.vue";
-import { deleteAccount, logout, replaceLostBootstrapDevice, revokeDevice, switchRole, updateCredentials, updateProfile } from "../src/appStore";
+import { deleteAccount, logout, revokeDevice, switchRole, updateCredentials, updateProfile } from "../src/appStore";
 
 const clipboardWriteText = vi.fn().mockResolvedValue(undefined);
 
@@ -27,15 +27,6 @@ vi.mock("../src/appStore", async () => {
         { deviceId: "current-device", deviceName: "Домашний ноутбук", status: "active" },
         { deviceId: "revoked-device", deviceName: "Старый телефон", status: "revoked" },
       ],
-      enrollments: [{
-        enrollmentId: "pending-enrollment",
-        deviceId: "pending-device",
-        deviceName: "Телефон Максима",
-        status: "pending",
-        ephemeralPublicKey: { kty: "EC" },
-        createdAt: "2026-07-15T00:00:00.000Z",
-      }],
-      serverKeySetAvailable: false,
     },
     control: {
       profile: { accountId: "account-1", revision: 1, firstName: "Максим", patronymic: "Сергеевич", lastName: "Иванов", updatedAt: "2026-07-15T00:00:00.000Z" },
@@ -45,37 +36,27 @@ vi.mock("../src/appStore", async () => {
         { requestId: "doctor-role", role: "doctor", status: "approved" },
         { requestId: "administrator-role", role: "administrator", status: "pending" },
       ],
-      pendingQueue: [], notifications: [], events: [],
+      allRoles: [], pendingQueue: [], notifications: [], roleAudit: [],
+      ledger: { valid: true, height: 1, headHash: "a".repeat(64), verifiedAt: "2026-07-15T00:00:00.000Z" },
     },
-    medical: { pets: [], grants: [], accessRequests: [], records: [], confirmations: [], confirmedRecordIds: [], events: [] },
-    conflicts: [],
+    medical: { pets: [], grants: [], accessRequests: [], records: [], confirmations: [], confirmedRecordIds: [] },
     sync: { pendingCount: 0, failedCount: 0, syncing: false, lastError: "" },
     repositoryConnected: true,
-    keyRecoveryRequired: false,
-    bootstrapRecoveryRequired: false,
-    devicePending: false,
   });
   return {
     appState: readonly(state),
     setMockAccountId: (accountId: string) => { state.session.accountId = accountId; },
     setMockActiveRole: (role: "owner" | "doctor" | "administrator" | null) => { state.activeRole = role; },
     setMockDevices: (devices: typeof state.session.devices) => { state.session.devices = devices; },
-    setMockDevicePending: (pending: boolean) => { state.devicePending = pending; },
-    setMockBootstrapRecoveryRequired: (required: boolean) => { state.bootstrapRecoveryRequired = required; },
-    setMockServerKeySetAvailable: (available: boolean) => { state.session.serverKeySetAvailable = available; },
     setMockProfile: (profile: typeof state.control.profile) => { state.control.profile = profile; },
     setMockSync: (sync: typeof state.sync) => { state.sync = sync; },
-    approveDeviceEnrollment: vi.fn(),
     bootstrapApp: vi.fn(),
     cancelRole: vi.fn(),
     decideRole: vi.fn(),
     deleteAccount: vi.fn(),
-    getConfig: vi.fn(() => ({ p2p: { bootstrapAccountId: "bootstrap-administrator" } })),
+    getConfig: vi.fn(() => ({ bootstrapAccountId: "bootstrap-administrator" })),
     getRepository: vi.fn(),
-    importBootstrapRecovery: vi.fn(),
-    logout: vi.fn().mockResolvedValue(undefined),
-    rejectDeviceEnrollment: vi.fn(),
-    replaceLostBootstrapDevice: vi.fn(),
+    logout: vi.fn().mockResolvedValue(true),
     requestRole: vi.fn(),
     revokeDevice: vi.fn(),
     switchRole: vi.fn(),
@@ -108,9 +89,6 @@ beforeEach(async () => {
     setMockAccountId: (accountId: string) => void;
     setMockActiveRole: (role: "owner" | "doctor" | "administrator" | null) => void;
     setMockDevices: (devices: Array<{ deviceId: string; deviceName: string; status: string }>) => void;
-    setMockDevicePending: (pending: boolean) => void;
-    setMockBootstrapRecoveryRequired: (required: boolean) => void;
-    setMockServerKeySetAvailable: (available: boolean) => void;
     setMockProfile: (profile: {
       accountId: string;
       revision: number;
@@ -127,9 +105,6 @@ beforeEach(async () => {
     { deviceId: "current-device", deviceName: "Домашний ноутбук", status: "active" },
     { deviceId: "revoked-device", deviceName: "Старый телефон", status: "revoked" },
   ]);
-  mockedStore.setMockDevicePending(false);
-  mockedStore.setMockBootstrapRecoveryRequired(false);
-  mockedStore.setMockServerKeySetAvailable(false);
   mockedStore.setMockProfile({
     accountId: "account-1",
     revision: 1,
@@ -142,7 +117,6 @@ beforeEach(async () => {
   vi.mocked(deleteAccount).mockClear();
   vi.mocked(logout).mockClear();
   vi.mocked(revokeDevice).mockClear();
-  vi.mocked(replaceLostBootstrapDevice).mockClear();
   vi.mocked(updateCredentials).mockClear();
   vi.mocked(updateProfile).mockClear();
   vi.mocked(switchRole).mockClear();
@@ -163,14 +137,12 @@ describe("logout navigation", () => {
       "Питомцы", "Добавить питомца",
     ]);
     expect(wrapper.find(".workspace-sidebar-footer .workspace-nav-item.active").text()).toContain("Настройки");
-    expect(wrapper.text()).toContain("Телефон Максима");
     expect(wrapper.text()).toContain("Домашний ноутбук");
     expect(wrapper.get(".account-security").text()).toContain("Управляйте идентификатором и сеансами аккаунта.");
-    expect(wrapper.get(".device-security").text()).toContain("Управляйте подтверждёнными устройствами.");
+    expect(wrapper.get(".device-security").text()).toContain("Управляйте действующими сеансами входа.");
     expect(wrapper.get(".profile-account-identity .person-identity-name").text()).toBe("Максим Сергеевич Иванов");
     expect(wrapper.get(".profile-account-identity .person-identity-id").text()).toBe("account-1");
-    expect(wrapper.text()).not.toContain("новое устройство подтверждается автоматически");
-    expect(wrapper.text()).toContain("Идентификатор: pending-device");
+    expect(wrapper.text()).toContain("Вход на новом устройстве выполняется сразу.");
     expect(wrapper.text()).toContain("Это устройство");
     expect(wrapper.text()).not.toContain("Старый телефон");
     expect(wrapper.text()).not.toContain("revoked-device");
@@ -252,69 +224,11 @@ describe("logout navigation", () => {
     expect(deleteAccount).not.toHaveBeenCalled();
   });
 
-  it("offers offline replacement when a bootstrap device is pending", async () => {
+  it("does not render legacy approval or recovery controls", async () => {
     const mockedStore = await import("../src/appStore") as typeof import("../src/appStore") & {
       setMockAccountId: (accountId: string) => void;
-      setMockDevicePending: (pending: boolean) => void;
     };
     mockedStore.setMockAccountId("bootstrap-administrator");
-    mockedStore.setMockDevicePending(true);
-    const { wrapper } = await mountAt(RoleStatusScreen, "/profile", { scenarioId: "user-profile" });
-
-    expect(wrapper.text()).toContain("Все действующие устройства утрачены?");
-    expect(wrapper.text()).toContain("Все прежние устройства и сеансы будут отозваны.");
-    const fileInput = wrapper.get<HTMLInputElement>('input[type="file"]');
-    Object.defineProperty(fileInput.element, "files", {
-      configurable: true,
-      value: [new File(["recovery"], "bootstrap-recovery.bundle.json", { type: "application/json" })],
-    });
-    await fileInput.trigger("change");
-    await flushPromises();
-    await wrapper.get<HTMLInputElement>('input[aria-label="Пароль пакета"], input[type="password"]').setValue("offline recovery passphrase");
-    const replaceButton = wrapper.get<HTMLButtonElement>("button.primary-action");
-    expect(replaceButton.element.disabled).toBe(false);
-    await wrapper.get(".profile-gate form").trigger("submit");
-    await flushPromises();
-
-    expect(replaceLostBootstrapDevice).toHaveBeenCalledWith("recovery", "offline recovery passphrase");
-    expect(wrapper.text()).toContain("Утраченное устройство заменено.");
-  });
-
-  it("offers offline replacement when an auth-active bootstrap device is journal-untrusted", async () => {
-    const mockedStore = await import("../src/appStore") as typeof import("../src/appStore") & {
-      setMockAccountId: (accountId: string) => void;
-      setMockBootstrapRecoveryRequired: (required: boolean) => void;
-    };
-    mockedStore.setMockAccountId("bootstrap-administrator");
-    mockedStore.setMockBootstrapRecoveryRequired(true);
-    const { wrapper } = await mountAt(RoleStatusScreen, "/profile", { scenarioId: "user-profile" });
-
-    expect(wrapper.text()).toContain("Защищённая история устройства требует восстановления");
-    expect(wrapper.text()).toContain("подтверждённые данные в журнале сохранятся");
-    const fileInput = wrapper.get<HTMLInputElement>('input[type="file"]');
-    Object.defineProperty(fileInput.element, "files", {
-      configurable: true,
-      value: [new File(["recovery"], "bootstrap-recovery.bundle.json", { type: "application/json" })],
-    });
-    await fileInput.trigger("change");
-    await flushPromises();
-    await wrapper.get<HTMLInputElement>('input[type="password"]').setValue("offline recovery passphrase");
-    await wrapper.get(".critical-panel form").trigger("submit");
-    await flushPromises();
-
-    expect(replaceLostBootstrapDevice).toHaveBeenCalledWith("recovery", "offline recovery passphrase");
-    expect(wrapper.text()).toContain("Устройство начального администратора восстановлено.");
-  });
-
-  it("hides legacy approval and recovery controls after server key migration", async () => {
-    const mockedStore = await import("../src/appStore") as typeof import("../src/appStore") & {
-      setMockAccountId: (accountId: string) => void;
-      setMockDevicePending: (pending: boolean) => void;
-      setMockServerKeySetAvailable: (available: boolean) => void;
-    };
-    mockedStore.setMockAccountId("bootstrap-administrator");
-    mockedStore.setMockDevicePending(true);
-    mockedStore.setMockServerKeySetAvailable(true);
     const { wrapper } = await mountAt(RoleStatusScreen, "/profile", { scenarioId: "user-profile" });
 
     expect(wrapper.text()).not.toContain("Все действующие устройства утрачены?");

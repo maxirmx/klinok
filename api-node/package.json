@@ -1,0 +1,31 @@
+{
+  "name": "@klinok/api-node",
+  "version": "0.10.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/server.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/server.js",
+    "dev": "tsx src/server.ts",
+    "provision": "node dist/provision.js",
+    "test": "vitest run --run --config vitest.config.ts"
+  },
+  "dependencies": {
+    "@fastify/cookie": "^11.0.2",
+    "@fastify/rate-limit": "^11.1.0",
+    "@klinok/contracts": "*",
+    "argon2": "^0.44.0",
+    "fastify": "^5.4.0",
+    "nodemailer": "^9.0.5",
+    "pg": "^8.16.3"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "@types/nodemailer": "^7.0.0",
+    "@types/pg": "^8.15.5",
+    "tsx": "^4.20.0",
+    "typescript": "^5.8.3",
+    "vitest": "^4.1.9"
+  }
+}

@@ -2,7 +2,7 @@
 // All rights reserved.
 // This file is a part of Klinok application
 
-import { PET_SEXES, type PetSex } from "@klinok/protocol";
+import { PET_SEXES, type PetSex } from "@klinok/contracts";
 import type { PetProfile, PetProfileInput } from "./repositories/types";
 
 export const MAX_PET_PHOTO_SOURCE_BYTES = 10 * 1024 * 1024;
@@ -46,6 +46,7 @@ export function normalizePetProfile(value: PetProfile | Record<string, unknown>)
   return {
     petId: String(value.petId ?? ""),
     ownerAccountId: String(value.ownerAccountId ?? ""),
+    revision: Number(value.revision) || 1,
     name: String(value.name ?? ""),
     species: String(value.species ?? ""),
     breed: String(value.breed ?? ""),
@@ -65,7 +66,6 @@ export function normalizePetProfile(value: PetProfile | Record<string, unknown>)
     } : {}),
     ...(weightKg ? { weightKg } : {}),
     ...(optionalText(value.notes) ? { notes: optionalText(value.notes) } : {}),
-    keyVersion: Number(value.keyVersion) || 1,
     tombstoned: Boolean(value.tombstoned),
     updatedAt: String(value.updatedAt ?? new Date(0).toISOString()),
   };

@@ -6,7 +6,7 @@ import { flushPromises, mount } from "@vue/test-utils";
 import { createMemoryHistory, createRouter } from "vue-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import SyncStatus from "../src/components/SyncStatus.vue";
-import type { SyncNotification } from "../src/repositories/eventTransport";
+import type { SyncNotification } from "../src/repositories/offlineStore";
 
 vi.mock("../src/appStore", async () => {
   const { reactive, readonly } = await import("vue");
@@ -47,13 +47,11 @@ function notification(index: number): SyncNotification {
     notificationId: `notification-${index}`,
     accountId: "account-1",
     operationId: `operation-${index}`,
-    rootEventId: `event-${index}`,
-    database: "medical",
-    eventType: "medical.record.created",
+    entityId: `record-${index}`,
+    commandAction: "medical.record.created",
     code: `CODE-${index}`,
     reasonKey: "permission",
     diagnosticId: `diagnostic-${index}`,
-    affectedEventIds: [`event-${index}`],
     createdAt: `2026-07-${String(index).padStart(2, "0")}T10:00:00.000Z`,
     action: "none",
   };
@@ -164,6 +162,30 @@ describe("SyncStatus", () => {
     await wrapper.get(".sync-notification-actions .primary-action").trigger("click");
     await flushPromises();
     expect(wrapper.text()).not.toContain("Уведомления о синхронизации");
+  });
+
+  it("links a recoverable draft back to its editor", async () => {
+    await setNotifications([{
+      ...notification(1),
+      action: "return",
+      relatedRoute: "/doctor/pets/pet-1",
+      localDraft: {
+        operationId: "operation-1",
+        type: "record.update",
+        activeRole: "doctor",
+        entityId: "record-1",
+        expectedRevision: 1,
+        createdAt: "2026-07-01T10:00:00.000Z",
+        payload: { input: { petId: "pet-1" } },
+      },
+    }]);
+    const { wrapper, router } = await mountStatus();
+    router.addRoute({ path: "/doctor/pets/:petId", component: { template: "<div />" } });
+    await wrapper.get('button[aria-label="Открыть уведомления о синхронизации"]').trigger("click");
+    await wrapper.get(".sync-notification-actions .outline-action").trigger("click");
+    await flushPromises();
+
+    expect(router.currentRoute.value.fullPath).toBe("/doctor/pets/pet-1?recover=notification-1");
   });
 
   it("ignores notifications without an action and supports closing the dialog", async () => {

@@ -11,7 +11,7 @@ import {
   type DirectoryProfileDto,
   type DoctorPetAccessDto,
   type PetGrantAction,
-} from "@klinok/protocol";
+} from "@klinok/contracts";
 import AccessStatusField from "../components/AccessStatusField.vue";
 import AppIcon from "../components/AppIcon.vue";
 import AppPaginator from "../components/AppPaginator.vue";
@@ -77,7 +77,7 @@ interface DoctorHomeAccessRow {
   permissions?: readonly PetGrantAction[];
   grantId?: string;
   requestId?: string;
-  projectionReady: boolean;
+  actionable: boolean;
 }
 const route = useRoute();
 const router = useRouter();
@@ -161,7 +161,7 @@ const homeRows = computed<DoctorHomeAccessRow[]>(() => homeAccesses.value.map((a
   ownerDisplayName: access.ownerDisplayName || "ФИО не указано",
   species: access.species ?? "",
   name: access.name ?? "Данные питомца недоступны",
-  projectionReady: (() => {
+  actionable: (() => {
     if (access.status === "requested") {
       return Boolean(access.requestId && appState.medical.accessRequests.some((request) =>
         request.requestId === access.requestId && request.petId === access.petId &&
@@ -253,8 +253,7 @@ async function performModal(error: { value: string }, task: () => Promise<unknow
 }
 
 async function signOut() {
-  await logout();
-  await router.replace("/auth/login");
+  if (await logout()) await router.replace("/auth/login");
 }
 
 async function refreshAccesses() {
@@ -451,6 +450,39 @@ function editRecord(record: (typeof appState.medical.records)[number]) {
   }));
 }
 
+function recoverRecordDraft(command: {
+  readonly type: string;
+  readonly entityId: string;
+  readonly payload: unknown;
+}): void {
+  if (command.type !== "record.create" && command.type !== "record.update") return;
+  const payload = command.payload as { input?: Parameters<ReturnType<typeof requireRepository>["medical"]["saveEncounter"]>[0] };
+  const input = payload.input;
+  if (!input || input.petId !== petId.value) return;
+  encounter.recordId = command.type === "record.update" ? command.entityId : "";
+  encounter.date = input.encounterDate;
+  const what = input.sections["what-happened"];
+  encounter.selectedIds = isWhatHappenedValue(what) ? [...what.selectedIds] : [];
+  encounter.comment = isWhatHappenedValue(what) ? what.comment : "";
+  const outcome = input.sections.outcome;
+  encounter.outcomeSelectedIds = isOutcomeValue(outcome) ? [...outcome.selectedIds] : [];
+  encounter.outcomeComment = isOutcomeValue(outcome) ? outcome.comment : "";
+  encounter.optionalKinds = OPTIONAL_ENCOUNTER_SECTION_KINDS.filter((kind) => Boolean(input.sections[kind]));
+  const generalDataValue = input.sections["general-data"];
+  encounter.generalData = isGeneralDataValue(generalDataValue) ? generalDataDraft(generalDataValue) : emptyGeneralDataDraft();
+  const vaccinationValue = input.sections.vaccination;
+  encounter.vaccination = isVaccinationValue(vaccinationValue) ? vaccinationDraft(vaccinationValue) : emptyVaccinationDraft();
+  const therapeuticValue = input.sections["therapeutic-appointment"];
+  encounter.therapeuticAppointment = isTherapeuticAppointmentValue(therapeuticValue)
+    ? therapeuticAppointmentDraft(therapeuticValue)
+    : emptyTherapeuticAppointmentDraft();
+  encounter.texts = Object.fromEntries(encounter.optionalKinds.flatMap((kind) => {
+    const value = input.sections[kind];
+    return isFreeTextValue(value) ? [[kind, value.text]] : [];
+  }));
+  alertStore.success("Черновик восстановлен. Проверьте актуальные данные и сохраните его повторно.");
+}
+
 function openRecordDelete(record: MedicalRecordDraft) {
   recordDeleteTarget.value = record;
   recordDeleteConfirm.value = true;
@@ -536,11 +568,11 @@ async function openRelinquish(pet: Pick<DirectoryPetDto, "petId" | "name"> & { g
     if (!pet.grantId) throw new Error("Идентификатор доступа ещё не синхронизирован. Обновите список.");
     await requireCurrentGrantedAccess(pet.petId, pet.grantId);
     const medical = requireRepository().medical;
-    if (typeof medical.refreshProjection === "function") await medical.refreshProjection();
+    await medical.refresh();
     const grant = appState.medical.grants.find((candidate) => candidate.grantId === pet.grantId);
     if (!grant || grant.petId !== pet.petId || grant.granteeAccountId !== appState.session.accountId ||
       !localGrantEffectivelyActive(grant.grantId)) {
-      throw new Error("Данные доступа ещё синхронизируются или доступ уже закрыт. Обновите список и повторите попытку.");
+      throw new Error("Данные доступа изменились или доступ уже закрыт. Обновите список и повторите попытку.");
     }
     relinquishTarget.value = { petId: pet.petId, petName: pet.name, grantId: grant.grantId };
     relinquishConfirm.value = true;
@@ -576,6 +608,19 @@ watch([homeQuery, homeFilter, homeSort, homeSortDirection, homePage, homePageSiz
   void refreshAccesses();
 }, { immediate: true });
 watch(petId, (id) => { void refreshSelectedDirectoryPet(id); }, { immediate: true });
+let recoveredOperationId = "";
+watch(
+  [() => route.query.recover, () => appState.syncNotifications],
+  ([notificationId, notifications]) => {
+    if (typeof notificationId !== "string") return;
+    const notification = notifications.find((item) => item.notificationId === notificationId);
+    if (!notification?.localDraft || notification.operationId === recoveredOperationId) return;
+    if (notification.localDraft.type !== "record.create" && notification.localDraft.type !== "record.update") return;
+    recoveredOperationId = notification.operationId;
+    recoverRecordDraft(notification.localDraft);
+  },
+  { immediate: true },
+);
 watch(() => props.scenarioId, (scenarioId) => {
   if (scenarioId === "doctor-pet-request-access") openRequestDialog();
 });
@@ -654,7 +699,7 @@ watch(delegationPageCount, (pageCount) => {
                 <div class="owner-access-controlled">
                   <div class="doctor-access-pet-identity">
                     <RouterLink
-                      v-if="row.status === 'granted' && row.projectionReady"
+                      v-if="row.status === 'granted' && row.actionable"
                       class="doctor-access-pet-link"
                       :to="{ path: `/doctor/pets/${row.petId}`, query: { grantId: row.grantId } }"
                     >
@@ -662,9 +707,9 @@ watch(delegationPageCount, (pageCount) => {
                     </RouterLink>
                     <strong v-else>{{ [row.species, row.name].filter(Boolean).join(' ') }}</strong>
                     <small>{{ row.petId }}</small>
-                    <small v-if="(row.status === 'granted' || row.status === 'requested') && !row.projectionReady">Данные синхронизируются…</small>
+                    <small v-if="(row.status === 'granted' || row.status === 'requested') && !row.actionable">Данные обновляются…</small>
                   </div>
-                  <div v-if="row.status === 'granted' && row.projectionReady" class="row-actions">
+                  <div v-if="row.status === 'granted' && row.actionable" class="row-actions">
                     <RouterLink
                       class="primary-action inline access-icon-action"
                       :to="{ path: `/doctor/pets/${row.petId}`, query: { grantId: row.grantId } }"
@@ -682,7 +727,7 @@ watch(delegationPageCount, (pageCount) => {
               <td data-label="Доступ">
                 <AccessStatusField :status="row.status">
                   <button
-                    v-if="row.status === 'requested' && row.requestId && row.projectionReady"
+                    v-if="row.status === 'requested' && row.requestId && row.actionable"
                     class="outline-action inline danger-outline access-icon-action"
                     type="button"
                     :disabled="busy"
@@ -693,7 +738,7 @@ watch(delegationPageCount, (pageCount) => {
                     <AppIcon name="close" />
                   </button>
                   <button
-                    v-else-if="row.status === 'granted' && row.grantId && row.projectionReady"
+                    v-else-if="row.status === 'granted' && row.grantId && row.actionable"
                     class="outline-action inline danger-outline access-icon-action"
                     type="button"
                     :disabled="busy"
@@ -715,7 +760,7 @@ watch(delegationPageCount, (pageCount) => {
                   :delegation-allowed="row.permissions?.includes('delegate')"
                 >
                   <RouterLink
-                    v-if="row.status === 'granted' && row.projectionReady && row.permissions?.includes('delegate')"
+                    v-if="row.status === 'granted' && row.actionable && row.permissions?.includes('delegate')"
                     class="outline-action inline access-icon-action"
                     :to="{ path: `/doctor/pets/${row.petId}/delegate`, query: { grantId: row.grantId } }"
                     title="Делегировать доступ"

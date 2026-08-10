@@ -22,7 +22,7 @@ const pet: PetProfile = {
   latestVaccination: { date: "2026-04-15", name: "Рабикан" },
   weightKg: 11.8,
   notes: "Боится громких звуков",
-  keyVersion: 1,
+  revision: 1,
   tombstoned: false,
   updatedAt: "2026-07-21T10:00:00.000Z",
 };

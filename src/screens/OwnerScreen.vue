@@ -10,7 +10,7 @@ import {
   normalizeRussianSearchText,
   type DirectoryProfileDto,
   type PetSex,
-} from "@klinok/protocol";
+} from "@klinok/contracts";
 import AppIcon from "../components/AppIcon.vue";
 import AppPaginator from "../components/AppPaginator.vue";
 import ConfirmationDialog from "../components/ConfirmationDialog.vue";
@@ -22,7 +22,7 @@ import PetColorCombobox from "../components/PetColorCombobox.vue";
 import PetProfileView from "../components/PetProfileView.vue";
 import PersonIdentity from "../components/PersonIdentity.vue";
 import WorkspaceShell from "../components/WorkspaceShell.vue";
-import { appState, deleteDirectoryPet, logout, requireRepository, searchDoctorDirectory, syncDirectoryPet } from "../appStore";
+import { appState, logout, requireRepository, searchDoctorDirectory } from "../appStore";
 import {
   ENCOUNTER_SECTION_LABELS,
   encounterSummary,
@@ -259,6 +259,29 @@ function hydrateDraft(pet: PetProfile | null) {
   birthMode.value = pet.birthDate ? "date" : "year";
 }
 
+function recoverPetDraft(command: {
+  readonly type: string;
+  readonly entityId: string;
+  readonly expectedRevision?: number;
+  readonly createdAt: string;
+  readonly payload: unknown;
+}): void {
+  if (command.type !== "pet.create" && command.type !== "pet.update") return;
+  const payload = command.type === "pet.update"
+    ? (command.payload as { input?: PetProfileInput }).input
+    : command.payload as unknown as PetProfileInput;
+  if (!payload) return;
+  hydrateDraft({
+    ...normalizePetInput(payload),
+    petId: command.entityId,
+    ownerAccountId: appState.session.accountId ?? "",
+    revision: command.expectedRevision ?? 0,
+    tombstoned: false,
+    updatedAt: command.createdAt,
+  });
+  alertStore.success("Черновик восстановлен. Проверьте актуальные данные и сохраните его повторно.");
+}
+
 watch(
   [() => props.scenarioId, () => selectedPet.value?.petId, () => selectedPet.value?.updatedAt],
   () => {
@@ -268,9 +291,22 @@ watch(
   { immediate: true },
 );
 
+let recoveredOperationId = "";
+watch(
+  [() => route.query.recover, () => appState.syncNotifications],
+  ([notificationId, notifications]) => {
+    if (typeof notificationId !== "string") return;
+    const notification = notifications.find((item) => item.notificationId === notificationId);
+    if (!notification?.localDraft || notification.operationId === recoveredOperationId) return;
+    if (notification.localDraft.type !== "pet.create" && notification.localDraft.type !== "pet.update") return;
+    recoveredOperationId = notification.operationId;
+    recoverPetDraft(notification.localDraft);
+  },
+  { immediate: true },
+);
+
 async function signOut() {
-  await logout();
-  await router.replace("/auth/login");
+  if (await logout()) await router.replace("/auth/login");
 }
 
 async function action(task: () => Promise<unknown>, success = ""): Promise<boolean> {
@@ -336,13 +372,10 @@ async function savePet() {
   }
   formError.value = "";
   petSaveBusy.value = true;
-  let directoryPending = false;
   try {
-    const saved = await action(async () => {
+    await action(async () => {
       if (isCreate.value) {
         const petId = await requireRepository().medical.createPet(petInput());
-        const result = await syncDirectoryPet({ petId, species: draft.species.trim(), name: draft.name.trim() });
-        directoryPending = result?.synchronized === false;
         await router.push(`/owner/pets/${petId}`);
         return;
       }
@@ -350,7 +383,7 @@ async function savePet() {
       await requireRepository().medical.updatePet({
         petId: selectedPet.value.petId,
         ownerAccountId: selectedPet.value.ownerAccountId,
-        keyVersion: selectedPet.value.keyVersion,
+        revision: selectedPet.value.revision,
         tombstoned: false,
         updatedAt: selectedPet.value.updatedAt,
         ...petInput(),
@@ -358,13 +391,8 @@ async function savePet() {
           ? { latestConfirmedVaccination: selectedPet.value.latestConfirmedVaccination }
           : {}),
       });
-      const result = await syncDirectoryPet({ petId: selectedPet.value.petId, species: draft.species.trim(), name: draft.name.trim() });
-      directoryPending = result?.synchronized === false;
       await router.push(`/owner/pets/${selectedPet.value.petId}`);
     });
-    if (saved && directoryPending) {
-      alertStore.success("Питомец сохранён. Публикация в каталоге продолжится автоматически.");
-    }
   } finally {
     petSaveBusy.value = false;
   }
@@ -479,16 +507,10 @@ async function deletePet() {
   if (!selectedPet.value) return;
   const petId = selectedPet.value.petId;
   deleteConfirmation.value = false;
-  let directoryPending = false;
-  const deleted = await action(async () => {
+  await action(async () => {
     await requireRepository().medical.deletePet(petId);
     await router.replace("/owner/home");
-    const result = await deleteDirectoryPet(petId);
-    directoryPending = result?.synchronized === false;
   });
-  if (deleted && directoryPending) {
-    alertStore.success("Питомец удалён. Удаление из каталога продолжится автоматически.");
-  }
 }
 
 function confirmMedicalRecord(record: MedicalRecordDraft) {

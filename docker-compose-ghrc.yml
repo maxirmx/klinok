@@ -3,88 +3,65 @@
 # This file is a part of Klinok application
 
 services:
-  ui-blue:
-    image: ghcr.io/maxirmx/klinok.ui:${KLINOK_IMAGE_TAG:-latest}
+  postgres-blue:
+    image: postgres:17-alpine
+    restart: always
+    environment:
+      POSTGRES_DB: klinok
+      POSTGRES_USER: klinok
+      POSTGRES_PASSWORD: ${KLINOK_POSTGRES_PASSWORD:?KLINOK_POSTGRES_PASSWORD must be set}
+    volumes:
+      - ${KLINOK_POSTGRES_DATA_DIR:-/srv/klinok/postgres.v3/data}:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U klinok -d klinok"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  api-blue:
+    image: ghcr.io/maxirmx/klinok.api-node:${KLINOK_IMAGE_TAG:-latest}
     restart: always
     depends_on:
-      auth-blue:
+      postgres-blue:
         condition: service_healthy
-      p2p-blue:
-        condition: service_healthy
-    ports:
-      - "80:80"
-      - "443:443"
     environment:
-      KLINOK_DATA_GENERATION: v2
-      KLINOK_CONTROL_DB: klinok-control-v2
-      KLINOK_MEDICAL_DB: klinok-medical-v4
-      KLINOK_TRUSTED_NODE: /dns4/${KLINOK_P2P_DOMAIN:-${KLINOK_DOMAIN:-klinok.sw.consulting}}/tcp/8089/tls/ws
-      KLINOK_REPLAY_QUARANTINE_EVENT_IDS: ${KLINOK_REPLAY_QUARANTINE_EVENT_IDS:-}
-      KLINOK_BOOTSTRAP_ACCOUNT_ID: bootstrap-administrator
-      KLINOK_AUTH_ATTESTATION_PUBLIC_KEY: ${KLINOK_AUTH_ATTESTATION_PUBLIC_KEY}
-      KLINOK_BOOTSTRAP_SIGNING_PUBLIC_KEY: ${KLINOK_BOOTSTRAP_SIGNING_PUBLIC_KEY}
-      KLINOK_INTERNAL_EVENT_TOKEN: ${KLINOK_INTERNAL_EVENT_TOKEN:?KLINOK_INTERNAL_EVENT_TOKEN must be set}
-    volumes:
-      - ${KLINOK_CERTIFICATE_DIR:-/srv/klinok/certificate}:/etc/nginx/certificate:ro
-
-  auth-blue:
-    image: ghcr.io/maxirmx/klinok.auth-node:${KLINOK_IMAGE_TAG:-latest}
-    restart: always
-    environment:
-      KLINOK_DATA_GENERATION: v2
+      KLINOK_DATABASE_URL: postgres://klinok:${KLINOK_POSTGRES_PASSWORD}@postgres-blue:5432/klinok
       KLINOK_PUBLIC_ORIGIN: https://${KLINOK_DOMAIN:-klinok.sw.consulting}
-      KLINOK_AUTH_COOKIE_SECURE: "true"
-      KLINOK_AUTH_DATA_DIR: /data
-      KLINOK_AUTH_CONTROL_OBSERVER_ENABLED: "true"
-      KLINOK_AUTH_TRUST_PROXY: "1"
-      KLINOK_BOOTSTRAP_ACCOUNT_ID: bootstrap-administrator
-      KLINOK_BOOTSTRAP_SIGNING_PUBLIC_KEY: ${KLINOK_BOOTSTRAP_SIGNING_PUBLIC_KEY}
-      KLINOK_P2P_TRUSTED_NODES: /dns4/${KLINOK_P2P_DOMAIN:-${KLINOK_DOMAIN:-klinok.sw.consulting}}/tcp/8089/tls/ws
-      KLINOK_REPLAY_QUARANTINE_EVENT_IDS: ${KLINOK_REPLAY_QUARANTINE_EVENT_IDS:-}
-      KLINOK_CONTROL_DB: klinok-control-v2
-      KLINOK_MEDICAL_DB: klinok-medical-v4
+      KLINOK_COOKIE_SECURE: "true"
+      KLINOK_ENFORCE_ORIGIN: "true"
+      KLINOK_TRUST_PROXY: "1"
+      KLINOK_BOOTSTRAP_ACCOUNT_ID: ${KLINOK_BOOTSTRAP_ACCOUNT_ID:-bootstrap-administrator}
       KLINOK_SMTP_HOST: ${KLINOK_SMTP_HOST:-mail.nic.ru}
       KLINOK_SMTP_PORT: ${KLINOK_SMTP_PORT:-465}
       KLINOK_SMTP_SECURE: ${KLINOK_SMTP_SECURE:-true}
-      KLINOK_SMTP_USER: ${KLINOK_SMTP_USER:-klinok@sw.consulting}
-      KLINOK_SMTP_PASSWORD: ${KLINOK_SMTP_PASSWORD:-Klinok$$123}
-      KLINOK_SMTP_FROM: ${KLINOK_SMTP_FROM:-Клинок <klinok@sw.consulting>}
-      KLINOK_INTERNAL_EVENT_TOKEN: ${KLINOK_INTERNAL_EVENT_TOKEN:?KLINOK_INTERNAL_EVENT_TOKEN must be set}
-    volumes:
-      - ${KLINOK_AUTH_HOST_DATA_DIR:-/srv/klinok/auth.v2/data}:/data:rw
+      KLINOK_SMTP_USER: ${KLINOK_SMTP_USER:-}
+      KLINOK_SMTP_PASSWORD: ${KLINOK_SMTP_PASSWORD:-}
+      KLINOK_SMTP_FROM: ${KLINOK_SMTP_FROM:-Клинок <noreply@klinok.sw.consulting>}
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8090/readyz').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
       interval: 15s
       timeout: 5s
       retries: 5
-
-  p2p-blue:
-    image: ghcr.io/maxirmx/klinok.p2p-node:${KLINOK_IMAGE_TAG:-latest}
-    restart: always
-    environment:
-      KLINOK_DATA_GENERATION: v2
-      KLINOK_CONTROL_DB: klinok-control-v2
-      KLINOK_MEDICAL_DB: klinok-medical-v4
-      KLINOK_BOOTSTRAP_ACCOUNT_ID: bootstrap-administrator
-      KLINOK_AUTH_ATTESTATION_PUBLIC_KEY: ${KLINOK_AUTH_ATTESTATION_PUBLIC_KEY}
-      KLINOK_BOOTSTRAP_SIGNING_PUBLIC_KEY: ${KLINOK_BOOTSTRAP_SIGNING_PUBLIC_KEY}
-      KLINOK_AUTH_EVENT_URL: http://auth-blue:8090/internal/events
-      KLINOK_P2P_ANNOUNCE: /dns4/${KLINOK_P2P_DOMAIN:-${KLINOK_DOMAIN:-klinok.sw.consulting}}/tcp/8089/tls/ws
-      KLINOK_REPLAY_QUARANTINE_EVENT_IDS: ${KLINOK_REPLAY_QUARANTINE_EVENT_IDS:-}
-      KLINOK_P2P_TLS_CERT: /etc/nginx/certificate/s.crt
-      KLINOK_P2P_TLS_KEY: /etc/nginx/certificate/s.key
-      KLINOK_INTERNAL_EVENT_TOKEN: ${KLINOK_INTERNAL_EVENT_TOKEN:?KLINOK_INTERNAL_EVENT_TOKEN must be set}
-    ports:
-      - "8089:8089"
-    volumes:
-      - ${KLINOK_CERTIFICATE_DIR:-/srv/klinok/certificate}:/etc/nginx/certificate:ro
-      - ${KLINOK_P2P_HOST_DATA_DIR:-/srv/klinok/p2p.v2/data}:/data:rw
     networks:
       default:
         aliases:
-          - p2p
-    healthcheck:
-      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8091/readyz').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
-      interval: 15s
-      timeout: 5s
-      retries: 5
+          - api
+
+  ui-blue:
+    image: ghcr.io/maxirmx/klinok.ui:${KLINOK_IMAGE_TAG:-latest}
+    restart: always
+    depends_on:
+      api-blue:
+        condition: service_healthy
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      KLINOK_BOOTSTRAP_ACCOUNT_ID: ${KLINOK_BOOTSTRAP_ACCOUNT_ID:-bootstrap-administrator}
+      KLINOK_OFFLINE_LEASE_DAYS: ${KLINOK_OFFLINE_LEASE_DAYS:-7}
+    volumes:
+      - ${KLINOK_CERTIFICATE_DIR:-/srv/klinok/certificate}:/etc/nginx/certificate:ro
+    networks:
+      default:
+        aliases:
+          - ui

@@ -6,7 +6,7 @@ import { flushPromises, mount } from "@vue/test-utils";
 import { createMemoryHistory, createRouter } from "vue-router";
 import { createPinia } from "pinia";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { DoctorPetAccessDto, PetAccessRequest } from "@klinok/protocol";
+import type { DoctorPetAccessDto, PetAccessRequest } from "@klinok/contracts";
 import AppIcon from "../src/components/AppIcon.vue";
 import DoctorScreen from "../src/screens/DoctorScreen.vue";
 import type { MedicalRecordDraft, MedicalSnapshot, PetProfile } from "../src/repositories/types";
@@ -18,7 +18,7 @@ const repositoryMocks = vi.hoisted(() => ({
   deleteRecord: vi.fn().mockResolvedValue(undefined),
   delegateGrant: vi.fn().mockResolvedValue("grant-delegated"),
   relinquishAccess: vi.fn().mockResolvedValue(undefined),
-  refreshProjection: vi.fn().mockResolvedValue(undefined),
+  refresh: vi.fn().mockResolvedValue(undefined),
 }));
 const directoryMocks = vi.hoisted(() => ({
   loadDoctorPetAccesses: vi.fn(),
@@ -35,9 +35,10 @@ vi.mock("../src/appStore", async () => {
     session: { authenticated: true, accountId: "doctor-1" },
     control: {
       profile: { firstName: "Вера", lastName: "Врач" },
-      profiles: [], roles: [], allRoles: [], devices: [], pendingQueue: [], notifications: [], events: [],
+      profiles: [], roles: [], allRoles: [], devices: [], pendingQueue: [], notifications: [], roleAudit: [],
+      ledger: { valid: true, height: 0, headHash: "0".repeat(64), verifiedAt: "2026-07-21T00:00:00.000Z" },
     },
-    medical: { pets: [], grants: [], accessRequests: [], records: [], confirmations: [], confirmedRecordIds: [], events: [] } as MedicalSnapshot,
+    medical: { pets: [], grants: [], accessRequests: [], records: [], confirmations: [], confirmedRecordIds: [] } as MedicalSnapshot,
   });
   return {
     appState: readonly(state),
@@ -66,7 +67,7 @@ const pet: PetProfile = {
   latestConfirmedVaccination: { date: "2026-04-15", name: "Рабикан", recordId: "record-vaccination-previous" },
   weightKg: 11.8,
   notes: "Боится громких звуков",
-  keyVersion: 1,
+  revision: 1,
   tombstoned: false,
   updatedAt: "2026-07-21T10:00:00.000Z",
 };
@@ -114,11 +115,11 @@ function snapshot(
       grantorAccountId: pet.ownerAccountId,
       granteeAccountId: "doctor-1",
       actions,
-      petKeyVersion: 1,
+      revision: 1,
       status: "active",
       createdAt: "2026-07-21T10:00:00.000Z",
     }],
-    accessRequests: [], records: [], confirmations: [], confirmedRecordIds: [], events: [],
+    accessRequests: [], records: [], confirmations: [], confirmedRecordIds: [],
     ...overrides,
   };
 }
@@ -391,7 +392,7 @@ describe("Doctor pages", () => {
     expect(wrapper.get(".doctor-access-table tbody tr").text()).toContain("pet-1");
   });
 
-  it("shows a syncing state while a server request is absent from the local projection", async () => {
+  it("shows an updating state while a request is absent from the current snapshot", async () => {
     const pending = doctorAccess({
       requestId: "server-ahead-request",
       grantId: undefined,
@@ -404,7 +405,7 @@ describe("Doctor pages", () => {
     await flushPromises();
 
     const row = wrapper.get(".doctor-access-table tbody tr");
-    expect(row.text()).toContain("Данные синхронизируются…");
+    expect(row.text()).toContain("Данные обновляются…");
     expect(row.find('button[title="Отозвать запрос на доступ"]').exists()).toBe(false);
   });
 
@@ -623,7 +624,7 @@ describe("Doctor pages", () => {
             grantorAccountId: "doctor-1",
             granteeAccountId: "doctor-1",
             actions: ["read", "write_unconfirmed"],
-            petKeyVersion: 1,
+            revision: 1,
             status: "active",
             createdAt: "2026-07-22T10:00:00.000Z",
           },
@@ -740,7 +741,7 @@ describe("Doctor pages", () => {
     expect(wrapper.find('[role="alertdialog"]').exists()).toBe(true);
   });
 
-  it("shows a syncing state while a server grant is absent from the local projection", async () => {
+  it("shows an updating state while a grant is absent from the current snapshot", async () => {
     directoryMocks.loadDoctorPetAccesses.mockResolvedValue(accessPage([
       doctorAccess({ grantId: "server-ahead-grant" }),
     ]));
@@ -748,7 +749,7 @@ describe("Doctor pages", () => {
     await flushPromises();
 
     const row = wrapper.get(".doctor-access-table tbody tr");
-    expect(row.text()).toContain("Данные синхронизируются…");
+    expect(row.text()).toContain("Данные обновляются…");
     expect(row.find('a[title="Открыть медицинскую карту"]').exists()).toBe(false);
     expect(row.find('button[title="Отказаться от доступа"]').exists()).toBe(false);
     expect(row.find('a[title="Делегировать доступ"]').exists()).toBe(false);
@@ -773,7 +774,7 @@ describe("Doctor pages", () => {
     await flushPromises();
 
     const row = wrapper.get(".doctor-access-table tbody tr");
-    expect(row.text()).toContain("Данные синхронизируются…");
+    expect(row.text()).toContain("Данные обновляются…");
     expect(row.find('button[title="Отказаться от доступа"]').exists()).toBe(false);
   });
 
@@ -787,7 +788,7 @@ describe("Doctor pages", () => {
       granteeAccountId: "doctor-3",
       granteeDisplayName: "Анна Врач",
       actions: ["read", "write_unconfirmed"],
-      petKeyVersion: 1,
+      revision: 1,
       status: "active",
       createdAt: "2026-07-21T11:00:00.000Z",
     });

@@ -6,7 +6,7 @@ import { enableAutoUnmount, flushPromises, mount, type VueWrapper } from "@vue/t
 import { createMemoryHistory, createRouter } from "vue-router";
 import { createPinia } from "pinia";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { AccountProfile, DirectoryUserDto, Role, RoleRequest, SignedEvent } from "@klinok/protocol";
+import type { AccountProfile, AuditRoleEntryDto, DirectoryUserDto, Role, RoleRequest } from "@klinok/contracts";
 import AppIcon from "../src/components/AppIcon.vue";
 import AdministratorScreen from "../src/screens/AdministratorScreen.vue";
 
@@ -48,7 +48,7 @@ const appMocks = vi.hoisted(() => ({
         + (user.roleStatuses.administrator === "pending" ? 1 : 0), 0),
     };
   }),
-  logout: vi.fn().mockResolvedValue(undefined),
+  logout: vi.fn().mockResolvedValue(true),
 }));
 
 vi.mock("../src/appStore", async () => {
@@ -71,7 +71,8 @@ vi.mock("../src/appStore", async () => {
       devices: [],
       pendingQueue: [],
       notifications: [],
-      events: [] as SignedEvent[],
+      roleAudit: [] as AuditRoleEntryDto[],
+      ledger: { valid: true, height: 0, headHash: "0".repeat(64), verifiedAt: "2026-07-10T10:00:00.000Z" },
     },
   });
   return {
@@ -81,11 +82,11 @@ vi.mock("../src/appStore", async () => {
     lookupAdministratorProfiles: appMocks.lookupAdministratorProfiles,
     updateAdministratorUserProfile: appMocks.updateAdministratorUserProfile,
     logout: appMocks.logout,
-    getConfig: () => ({ p2p: { bootstrapAccountId: "bootstrap-administrator" } }),
+    getConfig: () => ({ bootstrapAccountId: "bootstrap-administrator" }),
     setAdministratorState: (value: {
       profiles?: AccountProfile[];
       roles?: RoleRequest[];
-      events?: SignedEvent[];
+      roleAudit?: AuditRoleEntryDto[];
       sessionAccountId?: string;
       activeRole?: Role | null;
     }) => {
@@ -93,20 +94,24 @@ vi.mock("../src/appStore", async () => {
       state.activeRole = value.activeRole === undefined ? "administrator" : value.activeRole;
       state.control.profiles = value.profiles ?? [];
       state.control.allRoles = value.roles ?? [];
-      state.control.events = value.events ?? [];
-      const requests = new Map(state.control.allRoles.map((request) => [`${request.accountId}:${request.role}`, request.status]));
+      state.control.roleAudit = value.roleAudit ?? [];
+      const requests = new Map(state.control.allRoles.map((request) => [`${request.accountId}:${request.role}`, request]));
       appMocks.directoryUsers = state.control.profiles.map((profile) => ({
         accountId: profile.accountId,
+        revision: profile.revision,
         firstName: profile.firstName,
         lastName: profile.lastName,
         ...(profile.patronymic ? { patronymic: profile.patronymic } : {}),
         displayName: [profile.firstName, profile.patronymic, profile.lastName].filter(Boolean).join(" "),
         updatedAt: profile.updatedAt,
         roleStatuses: {
-          owner: requests.get(`${profile.accountId}:owner`) ?? "not_requested",
-          doctor: requests.get(`${profile.accountId}:doctor`) ?? "not_requested",
-          administrator: requests.get(`${profile.accountId}:administrator`) ?? "not_requested",
+          owner: requests.get(`${profile.accountId}:owner`)?.status ?? "not_requested",
+          doctor: requests.get(`${profile.accountId}:doctor`)?.status ?? "not_requested",
+          administrator: requests.get(`${profile.accountId}:administrator`)?.status ?? "not_requested",
         },
+        roleRequests: Object.fromEntries(state.control.allRoles
+          .filter((request) => request.accountId === profile.accountId)
+          .map((request) => [request.role, { requestId: request.requestId, revision: request.revision, role: request.role, status: request.status }])),
       }));
     },
   };
@@ -121,6 +126,7 @@ function role(
   return {
     requestId,
     accountId,
+    revision: 1,
     role: roleName,
     status,
     profileRevision: 1,
@@ -142,11 +148,13 @@ function directoryUser(accountId: string, displayName: string): DirectoryUserDto
   const [firstName, ...lastName] = displayName.split(" ");
   return {
     accountId,
+    revision: 1,
     firstName: firstName!,
     lastName: lastName.join(" "),
     displayName,
     updatedAt: "2026-07-10T10:00:00.000Z",
     roleStatuses: { owner: "approved", doctor: "not_requested", administrator: "not_requested" },
+    roleRequests: {},
   };
 }
 
@@ -154,25 +162,15 @@ function directoryPage(items: DirectoryUserDto[]) {
   return { items, page: 1, pageSize: 20, total: items.length, pageCount: 1 };
 }
 
-function event(overrides: Partial<SignedEvent> & Pick<SignedEvent, "eventId" | "eventType">): SignedEvent {
+function auditEntry(overrides: Partial<AuditRoleEntryDto> & Pick<AuditRoleEntryDto, "blockHash" | "category" | "action">): AuditRoleEntryDto {
   return {
-    schemaVersion: 1,
-    database: "control",
-    operationId: `operation-${overrides.eventId}`,
-    aggregateId: "doctor-1",
-    resourceId: "doctor-role",
+    ledgerHeight: 1,
+    operationId: `operation-${overrides.blockHash}`,
     createdAt: "2026-07-10T10:00:00.000Z",
+    role: "doctor",
+    targetAccountId: "doctor-1",
     actorAccountId: "bootstrap-administrator",
-    actorDeviceId: "bootstrap-device",
-    orbitIdentityId: "bootstrap-orbit",
-    activeRole: "administrator",
-    parents: [],
-    keyVersion: 1,
-    proofIds: ["administrator-role"],
-    metadata: {},
-    keyring: [],
-    payload: { algorithm: "AES-GCM-256", iv: "iv", ciphertext: "ciphertext" },
-    signature: { algorithm: "ECDSA-P256-SHA256", value: "signature" },
+    reason: "",
     ...overrides,
   };
 }
@@ -180,7 +178,7 @@ function event(overrides: Partial<SignedEvent> & Pick<SignedEvent, "eventId" | "
 async function setState(value: {
   profiles?: AccountProfile[];
   roles?: RoleRequest[];
-  events?: SignedEvent[];
+  roleAudit?: AuditRoleEntryDto[];
   sessionAccountId?: string;
   activeRole?: Role | null;
 }) {
@@ -219,13 +217,13 @@ beforeEach(async () => {
   appMocks.updateAdministratorUserProfile.mockImplementation(async (accountId, input) => ({
     profile: {
       accountId,
+      revision: 2,
       firstName: input.firstName,
       lastName: input.lastName,
       ...(input.patronymic ? { patronymic: input.patronymic } : {}),
       displayName: [input.firstName, input.patronymic, input.lastName].filter(Boolean).join(" "),
       updatedAt: "2026-07-12T10:00:00.000Z",
     },
-    projectionSynchronized: true,
   }));
   appMocks.lookupAdministratorProfiles.mockImplementation(async (accountIds: string[]) =>
     appMocks.directoryUsers.filter((profile) => accountIds.includes(profile.accountId)));
@@ -297,7 +295,7 @@ describe("Administrator pages", () => {
     expect(wrapper.find(".workspace-sidebar-nav .pending-count-badge").exists()).toBe(false);
   });
 
-  it("uses the local pending projection while the directory count is unknown", async () => {
+  it("uses the current snapshot pending count while the paginated count is loading", async () => {
     let resolveDirectory!: (value: ReturnType<typeof directoryPage> & { pendingCount: number }) => void;
     appMocks.loadAdministratorUsers.mockImplementationOnce(() => new Promise((resolve) => {
       resolveDirectory = resolve;
@@ -317,21 +315,22 @@ describe("Administrator pages", () => {
     expect(wrapper.find(".workspace-sidebar-nav .pending-count-badge").exists()).toBe(false);
   });
 
-  it("refreshes the directory until a newly replicated role request becomes actionable", async () => {
+  it("refreshes the user page until a newly committed role request becomes actionable", async () => {
     vi.useFakeTimers();
     let wrapper: VueWrapper | undefined;
     try {
       const pendingDoctor = role("doctor-1", "doctor", "pending");
-      const unsynchronizedUser = directoryUser("doctor-1", "Анна Врач");
-      const synchronizedUser = {
-        ...unsynchronizedUser,
-        roleStatuses: { ...unsynchronizedUser.roleStatuses, doctor: "pending" as const },
+      const staleUser = directoryUser("doctor-1", "Анна Врач");
+      const currentUser = {
+        ...staleUser,
+        roleStatuses: { ...staleUser.roleStatuses, doctor: "pending" as const },
+        roleRequests: { doctor: { requestId: pendingDoctor.requestId, revision: pendingDoctor.revision, role: "doctor" as const, status: "pending" as const } },
       };
-      let resolveFirstReconciliation!: (value: ReturnType<typeof directoryPage> & { pendingCount: number }) => void;
+      let resolveFirstRefresh!: (value: ReturnType<typeof directoryPage> & { pendingCount: number }) => void;
       appMocks.loadAdministratorUsers
-        .mockResolvedValueOnce({ ...directoryPage([unsynchronizedUser]), pendingCount: 0 })
-        .mockImplementationOnce(() => new Promise((resolve) => { resolveFirstReconciliation = resolve; }))
-        .mockResolvedValueOnce({ ...directoryPage([synchronizedUser]), pendingCount: 1 });
+        .mockResolvedValueOnce({ ...directoryPage([staleUser]), pendingCount: 0 })
+        .mockImplementationOnce(() => new Promise((resolve) => { resolveFirstRefresh = resolve; }))
+        .mockResolvedValueOnce({ ...directoryPage([currentUser]), pendingCount: 1 });
       await setState({
         profiles: [profile("doctor-1", "Анна", "Врач")],
         roles: [],
@@ -349,7 +348,7 @@ describe("Administrator pages", () => {
       expect(appMocks.loadAdministratorUsers).toHaveBeenCalledTimes(2);
       expect(wrapper.find('button[title="Одобрить роль «Ветеринар»"]').exists()).toBe(false);
 
-      resolveFirstReconciliation({ ...directoryPage([unsynchronizedUser]), pendingCount: 0 });
+      resolveFirstRefresh({ ...directoryPage([staleUser]), pendingCount: 0 });
       await flushPromises();
 
       await vi.advanceTimersByTimeAsync(500);
@@ -415,11 +414,12 @@ describe("Administrator pages", () => {
     ]);
   });
 
-  it("uses the directory identity when its status arrives before the local role projection", async () => {
+  it("uses the paginated identity when its status arrives before the current snapshot", async () => {
     await setState({ profiles: [] });
     appMocks.directoryUsers = [{
       ...directoryUser("doctor-1", "Анна Врач"),
       roleStatuses: { owner: "approved", doctor: "pending", administrator: "not_requested" },
+      roleRequests: { doctor: { requestId: "doctor-1-doctor", revision: 1, role: "doctor", status: "pending" } },
     }];
     const wrapper = await mountAt("/admin/home", "administrator-home");
 
@@ -438,12 +438,14 @@ describe("Administrator pages", () => {
     await flushPromises();
     expect(appMocks.decideRole).toHaveBeenCalledWith({
       accountId: "doctor-1",
+      requestId: "doctor-1-doctor",
+      revision: 1,
       role: "doctor",
       status: "pending",
     }, "approved", undefined);
   });
 
-  it("keeps the directory role status authoritative when the local projection is stale", async () => {
+  it("keeps the freshly loaded role status authoritative when the current snapshot is stale", async () => {
     await setState({
       profiles: [profile("doctor-1", "Анна", "Врач")],
       roles: [role("doctor-1", "doctor", "approved")],
@@ -451,6 +453,7 @@ describe("Administrator pages", () => {
     appMocks.directoryUsers = [{
       ...directoryUser("doctor-1", "Анна Врач"),
       roleStatuses: { owner: "approved", doctor: "pending", administrator: "not_requested" },
+      roleRequests: { doctor: { requestId: "doctor-1-doctor", revision: 1, role: "doctor", status: "pending" } },
     }];
 
     const wrapper = await mountAt("/admin/home", "administrator-home");
@@ -466,12 +469,14 @@ describe("Administrator pages", () => {
     appMocks.directoryUsers = [{
       ...directoryUser("doctor-1", "Анна Врач"),
       roleStatuses: { owner: "approved", doctor: "pending", administrator: "not_requested" },
+      roleRequests: { doctor: { requestId: "doctor-1-doctor", revision: 1, role: "doctor", status: "pending" } },
     }];
     const wrapper = await mountAt("/admin/home", "administrator-home");
     await wrapper.get('button[title="Одобрить роль «Ветеринар»"]').trigger("click");
     appMocks.directoryUsers = [{
       ...directoryUser("doctor-1", "Анна Врач"),
       roleStatuses: { owner: "approved", doctor: "approved", administrator: "not_requested" },
+      roleRequests: { doctor: { requestId: "doctor-1-doctor", revision: 2, role: "doctor", status: "approved" } },
     }];
 
     await wrapper.get('[role="dialog"] form').trigger("submit");
@@ -486,6 +491,7 @@ describe("Administrator pages", () => {
     appMocks.directoryUsers = [{
       ...directoryUser("doctor-1", "Анна Врач"),
       roleStatuses: { owner: "approved", doctor: "pending", administrator: "not_requested" },
+      roleRequests: { doctor: { requestId: "doctor-1-doctor", revision: 1, role: "doctor", status: "pending" } },
     }];
     const wrapper = await mountAt("/admin/home", "administrator-home");
     await wrapper.get('button[title="Одобрить роль «Ветеринар»"]').trigger("click");
@@ -496,6 +502,7 @@ describe("Administrator pages", () => {
     appMocks.directoryUsers = [{
       ...directoryUser("doctor-1", "Анна Врач"),
       roleStatuses: { owner: "approved", doctor: "rejected", administrator: "not_requested" },
+      roleRequests: { doctor: { requestId: "doctor-1-doctor", revision: 2, role: "doctor", status: "rejected" } },
     }];
     await wrapper.get<HTMLInputElement>('.administrator-search input').setValue("Анна");
     await flushPromises();
@@ -523,7 +530,7 @@ describe("Administrator pages", () => {
       }],
       roles: [role("owner-1", "owner", "approved")],
     });
-    let resolveUpdate!: (value: { profile: DirectoryUserDto; projectionSynchronized: boolean }) => void;
+    let resolveUpdate!: (value: { profile: DirectoryUserDto }) => void;
     appMocks.updateAdministratorUserProfile.mockImplementationOnce(() =>
       new Promise((resolve) => { resolveUpdate = resolve; }));
     const wrapper = await mountAt("/admin/home", "administrator-home");
@@ -549,11 +556,12 @@ describe("Administrator pages", () => {
     expect(appMocks.updateAdministratorUserProfile).toHaveBeenCalledWith("owner-1", {
       firstName: "Анна",
       lastName: "Иванова",
+      expectedRevision: 1,
     });
     expect(dialog.get('button[type="submit"]').attributes("disabled")).toBeDefined();
     expect(dialog.get('button[type="submit"]').text()).toBe("Сохранение…");
 
-    resolveUpdate({ profile: directoryUser("owner-1", "Анна Иванова"), projectionSynchronized: true });
+    resolveUpdate({ profile: directoryUser("owner-1", "Анна Иванова") });
     await flushPromises();
     expect(wrapper.find('[role="dialog"]').exists()).toBe(false);
     expect(wrapper.get(".workspace-alert").text()).toContain("ФИО пользователя изменено.");
@@ -597,6 +605,8 @@ describe("Administrator pages", () => {
     await flushPromises();
     expect(appMocks.decideRole).toHaveBeenCalledWith({
       accountId: pending.accountId,
+      requestId: pending.requestId,
+      revision: pending.revision,
       role: pending.role,
       status: pending.status,
     }, "rejected", "Документы не подтверждены");
@@ -609,6 +619,8 @@ describe("Administrator pages", () => {
     await flushPromises();
     expect(appMocks.decideRole).toHaveBeenCalledWith({
       accountId: rejected.accountId,
+      requestId: rejected.requestId,
+      revision: rejected.revision,
       role: rejected.role,
       status: rejected.status,
     }, "approved", undefined);
@@ -682,43 +694,29 @@ describe("Administrator pages", () => {
     expect(wrapper.get('.app-alert[role="alert"]').text()).toContain("Не удалось загрузить список пользователей.");
   });
 
-  it("renders, filters, and paginates signed role audit actions with their actors", async () => {
-    const requested = event({
-      eventId: "requested",
-      eventType: "role.requested",
-      aggregateId: "doctor-1",
+  it("renders, filters, and paginates hash-chained role audit actions with their actors", async () => {
+    const requested = auditEntry({
+      blockHash: "requested",
+      category: "request",
+      action: "Роль запрошена",
+      targetAccountId: "doctor-1",
       actorAccountId: "doctor-1",
-      metadata: { role: "doctor", status: "pending" },
       createdAt: "2026-07-10T10:00:00.000Z",
     });
-    const requestedAudit = event({
-      eventId: "requested-audit",
-      eventType: "audit.role-transition",
-      aggregateId: "doctor-1",
-      actorAccountId: "doctor-1",
-      parents: ["requested"],
-      createdAt: "2026-07-10T10:00:01.000Z",
-    });
-    const restored = event({
-      eventId: "restored",
-      eventType: "role.restored",
-      aggregateId: "doctor-1",
+    const restored = auditEntry({
+      blockHash: "restored",
+      category: "restore",
+      action: "Роль восстановлена",
+      targetAccountId: "doctor-1",
       actorAccountId: "bootstrap-administrator",
-      metadata: { role: "doctor", status: "approved" },
       createdAt: "2026-07-11T10:00:00.000Z",
     });
-    const restoredAudit = event({
-      eventId: "restored-audit",
-      eventType: "audit.role-transition",
-      aggregateId: "doctor-1",
-      actorAccountId: "bootstrap-administrator",
-      parents: ["restored"],
-      createdAt: "2026-07-11T10:00:01.000Z",
-    });
-    const bootstrap = event({
-      eventId: "bootstrap",
-      eventType: "account.bootstrap",
-      aggregateId: "bootstrap-administrator",
+    const bootstrap = auditEntry({
+      blockHash: "bootstrap",
+      category: "bootstrap",
+      action: "Роль назначена при инициализации",
+      role: "administrator",
+      targetAccountId: "bootstrap-administrator",
       actorAccountId: "bootstrap-administrator",
       createdAt: "2026-07-09T10:00:00.000Z",
     });
@@ -727,7 +725,7 @@ describe("Administrator pages", () => {
         profile("doctor-1", "Семён", "Врач"),
         profile("bootstrap-administrator", "Начальный", "Администратор"),
       ],
-      events: [requested, requestedAudit, restored, restoredAudit, bootstrap],
+      roleAudit: [restored, requested, bootstrap],
     });
     const wrapper = await mountAt("/admin/audit", "administrator-audit");
 
@@ -755,21 +753,14 @@ describe("Administrator pages", () => {
   });
 
   it("loads current audit identities from the directory when local profiles cannot be decrypted", async () => {
-    const transition = event({
-      eventId: "directory-audit-transition",
-      eventType: "role.approved",
-      aggregateId: "doctor-without-profile",
+    const audit = auditEntry({
+      blockHash: "directory-audit",
+      category: "approve",
+      action: "Роль одобрена",
+      targetAccountId: "doctor-without-profile",
       actorAccountId: "administrator-without-profile",
-      metadata: { role: "doctor", status: "approved" },
     });
-    const audit = event({
-      eventId: "directory-audit",
-      eventType: "audit.role-transition",
-      aggregateId: "doctor-without-profile",
-      actorAccountId: "administrator-without-profile",
-      parents: [transition.eventId],
-    });
-    await setState({ profiles: [], events: [transition, audit] });
+    await setState({ profiles: [], roleAudit: [audit] });
     appMocks.lookupAdministratorProfiles.mockResolvedValueOnce([
       directoryUser("doctor-without-profile", "Анна Врач"),
       directoryUser("administrator-without-profile", "Алексей Администратор"),

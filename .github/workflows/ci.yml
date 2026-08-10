@@ -45,7 +45,7 @@ jobs:
       - name: Run tests with coverage
         run: npm run coverage
 
-      - name: Run protocol and auth tests
+      - name: Run UI and API tests
         run: npm test
 
       - name: Upload coverage to Codecov
@@ -66,21 +66,13 @@ jobs:
           push: false
           tags: klinok.ui:ci
 
-      - name: Build trusted node Docker image
+      - name: Build API Docker image
         uses: docker/build-push-action@v7.2.0
         with:
           context: .
-          file: ./p2p-node/Dockerfile
+          file: ./api-node/Dockerfile
           push: false
-          tags: klinok.p2p-node:ci
-
-      - name: Build auth node Docker image
-        uses: docker/build-push-action@v7.2.0
-        with:
-          context: .
-          file: ./auth-node/Dockerfile
-          push: false
-          tags: klinok.auth-node:ci
+          tags: klinok.api-node:ci
 
       - run: npx playwright install --with-deps chromium
       - run: npm run test:e2e:compose
