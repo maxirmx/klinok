@@ -3,7 +3,7 @@
 // This file is a part of Klinok application
 
 import { describe, expect, it, vi } from "vitest";
-import { buildApi } from "./app.js";
+import { buildApi, enqueuePendingRoleRequestEmails } from "./app.js";
 import type { Database } from "./db.js";
 import { Ledger } from "./ledger.js";
 
@@ -50,5 +50,29 @@ describe("API rate limiting", () => {
     } finally {
       await app.close();
     }
+  });
+});
+
+describe("registration role notifications", () => {
+  it("queues the initial pending Doctor request for every active Administrator after verification", async () => {
+    const query = vi.fn(async (sql: string, _params: unknown[] = []) => {
+      void _params;
+      if (sql.startsWith("SELECT r.role")) return {
+        rows: [{ role: "doctor", first_name: "Алёна", last_name: "Врач", patronymic: null }], rowCount: 1,
+      };
+      if (sql.startsWith("SELECT a.email")) return {
+        rows: [{ email: "admin-1@example.ru" }, { email: "admin-2@example.ru" }], rowCount: 2,
+      };
+      if (sql.startsWith("INSERT INTO email_outbox")) return { rows: [], rowCount: 1 };
+      throw new Error(`Unexpected SQL: ${sql}`);
+    });
+
+    await enqueuePendingRoleRequestEmails({ query } as never, "doctor-1");
+
+    const emails = query.mock.calls.filter(([sql]) => sql.startsWith("INSERT INTO email_outbox"));
+    expect(emails.map(([, params]) => params?.slice(1))).toEqual([
+      ["admin-1@example.ru", "Запрос роли в системе \"Клинок\"", "Пользователь Алёна Врач (doctor-1) запросил роль «Ветеринар»."],
+      ["admin-2@example.ru", "Запрос роли в системе \"Клинок\"", "Пользователь Алёна Врач (doctor-1) запросил роль «Ветеринар»."],
+    ]);
   });
 });

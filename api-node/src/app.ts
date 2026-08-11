@@ -152,6 +152,33 @@ function emailBody(config: ApiConfig, route: string, token: string, purpose: str
   return `${purpose}\n\n${config.publicOrigin}${route}?token=${encodeURIComponent(token)}\n`;
 }
 
+export async function enqueuePendingRoleRequestEmails(client: PoolClient, accountId: string): Promise<void> {
+  const pendingRoles = await client.query<Record<string, unknown>>(
+    `SELECT r.role, p.first_name, p.last_name, p.patronymic
+       FROM roles r JOIN profiles p USING(account_id)
+       WHERE r.account_id=$1 AND r.status='pending' AND r.role IN ('administrator','doctor')
+       ORDER BY r.role FOR SHARE OF r, p`,
+    [accountId],
+  );
+  if (!pendingRoles.rowCount) return;
+  const administrators = await client.query<{ email: string }>(
+    `SELECT a.email
+       FROM roles r JOIN accounts a USING(account_id)
+       WHERE r.role='administrator' AND r.status='approved' AND a.credential_status='active'
+       ORDER BY a.email FOR SHARE OF r, a`,
+  );
+  for (const pendingRole of pendingRoles.rows) {
+    const roleLabel = pendingRole.role === "doctor" ? "Ветеринар" : "Администратор";
+    const requester = displayName(pendingRole) || accountId;
+    for (const administrator of administrators.rows) {
+      await client.query(
+        "INSERT INTO email_outbox(email_id,recipient,subject,text_body) VALUES ($1,$2,$3,$4)",
+        [randomUUID(), administrator.email, "Запрос роли в системе \"Клинок\"", `Пользователь ${requester} (${accountId}) запросил роль «${roleLabel}».`],
+      );
+    }
+  }
+}
+
 export async function buildApi(config: ApiConfig, provided?: { db?: Database; ledger?: Ledger }): Promise<FastifyInstance> {
   const db = provided?.db ?? new Database(config.databaseUrl);
   await db.migrate();
@@ -254,6 +281,7 @@ export async function buildApi(config: ApiConfig, provided?: { db?: Database; le
       const used = await client.query("UPDATE auth_tokens SET used_at=now() WHERE token_digest=$1 AND used_at IS NULL AND expires_at>now() RETURNING account_id", [sha256(token)]);
       if (!used.rowCount) throw new ApiError(400, "TOKEN_INVALID", "Verification token is invalid or expired.");
       await client.query("UPDATE accounts SET credential_status='active', updated_at=now() WHERE account_id=$1", [found.account_id]);
+      await enqueuePendingRoleRequestEmails(client, found.account_id);
     });
     return { verified: true };
   });

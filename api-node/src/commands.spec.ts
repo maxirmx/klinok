@@ -27,12 +27,15 @@ async function confirmVaccinationAgainst(current: { confirmed: unknown; profile:
     }], rowCount: 1 };
     if (sql.startsWith("SELECT 1 FROM roles")) return { rows: [{ "?column?": 1 }], rowCount: 1 };
     if (sql.startsWith("SELECT 1 FROM medical_record_confirmations")) return { rows: [], rowCount: 0 };
+    if (sql.startsWith("SELECT email FROM accounts")) return { rows: [{ email: "doctor@example.ru" }], rowCount: 1 };
     if (sql.startsWith("INSERT INTO medical_record_confirmations")) return { rows: [{
       confirmation_id: "confirmation-1", pet_id: "pet-1", record_id: recordId, record_revision: 2,
       owner_account_id: "owner-1", confirmed_at: timestamp, applied_profile_weight_kg: null,
       applied_profile_chip: null, applied_profile_latest_vaccination: null,
     }], rowCount: 1 };
-    if (sql.startsWith("UPDATE pets") || sql.startsWith("INSERT INTO operation_receipts")) return { rows: [], rowCount: 1 };
+    if (sql.startsWith("UPDATE pets") || sql.startsWith("INSERT INTO email_outbox") || sql.startsWith("INSERT INTO operation_receipts")) {
+      return { rows: [], rowCount: 1 };
+    }
     throw new Error(`Unexpected SQL: ${sql}`);
   });
   const client = { query };
@@ -123,5 +126,54 @@ describe("command boundary", () => {
     expect(JSON.parse(String(newer.updateParams[4]))).toEqual({ date: "2026-07-01", name: "Новая вакцина" });
     expect(JSON.parse(String(sameDay.updateParams[3]))).toMatchObject({ recordId: "record-b" });
     expect(sameDay.updateParams[4]).toBe("null");
+  });
+
+  it.each([
+    ["active", true],
+    ["deleted", true],
+    ["locked", false],
+    ["pending_verification", false],
+  ] as const)("applies an access denial and notification policy for a %s Doctor account", async (recipientStatus, expectsEmail) => {
+    const request = {
+      request_id: "request-1", pet_id: "pet-1", owner_account_id: "owner-1", requester_account_id: "doctor-1",
+      requester_display_name: "Иван Врач", status: "pending", revision: 1, requested_at: timestamp,
+    };
+    const query = vi.fn(async (sql: string, _params: unknown[] = []) => {
+      void _params;
+      if (sql.startsWith("SELECT pg_advisory_xact_lock")) return { rows: [], rowCount: 1 };
+      if (sql.startsWith("SELECT actor_account_id")) return { rows: [], rowCount: 0 };
+      if (sql.startsWith("SELECT credential_status")) return { rows: [{ credential_status: "active" }], rowCount: 1 };
+      if (sql.startsWith("SELECT * FROM access_requests")) return { rows: [request], rowCount: 1 };
+      if (sql.startsWith("SELECT 1 FROM roles")) return { rows: [{}], rowCount: 1 };
+      if (sql.startsWith("UPDATE access_requests")) return { rows: [{ ...request, status: "rejected", revision: 2 }], rowCount: 1 };
+      if (sql.startsWith("SELECT * FROM pets")) return { rows: [{ pet_id: "pet-1", owner_account_id: "owner-1", name: "Ёжик" }], rowCount: 1 };
+      if (sql.startsWith("SELECT email FROM accounts")) return ["active", "deleted"].includes(recipientStatus)
+        ? { rows: [{ email: "doctor@example.ru" }], rowCount: 1 }
+        : { rows: [], rowCount: 0 };
+      if (sql.startsWith("INSERT INTO email_outbox") || sql.startsWith("INSERT INTO operation_receipts")) return { rows: [], rowCount: 1 };
+      throw new Error(`Unexpected SQL: ${sql}`);
+    });
+    const client = { query };
+    const database = { transaction: vi.fn(async (work: (value: typeof client) => Promise<unknown>) => work(client)) };
+    const ledger = {
+      isValid: vi.fn(() => true), append: vi.fn(async () => ({ height: 1, blockHash: "a".repeat(64) })), noteCommitted: vi.fn(),
+    } as unknown as Ledger;
+    const service = new CommandService(database as never, ledger);
+
+    await expect(service.execute({ accountId: "owner-1" }, {
+      operationId: "reject-access-1", type: "access.reject", activeRole: "owner", entityId: "request-1",
+      expectedRevision: 1, createdAt: timestamp, payload: {},
+    })).resolves.toMatchObject({ status: "applied", revision: 2 });
+
+    const email = query.mock.calls.find(([sql]) => String(sql).startsWith("INSERT INTO email_outbox"));
+    const accountLookup = query.mock.calls.find(([sql]) => String(sql).startsWith("SELECT email FROM accounts"));
+    expect(accountLookup?.[0]).toContain("credential_status IN ('active','deleted')");
+    if (expectsEmail) {
+      expect(email?.[1]?.slice(1)).toEqual([
+        "doctor@example.ru", "Статус доступа к питомцу в системе \"Клинок\" изменён", "Доступ к питомцу «Ёжик» отклонён.",
+      ]);
+    } else {
+      expect(email).toBeUndefined();
+    }
   });
 });
