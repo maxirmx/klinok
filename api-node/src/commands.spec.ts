@@ -128,7 +128,12 @@ describe("command boundary", () => {
     expect(sameDay.updateParams[4]).toBe("null");
   });
 
-  it("queues an email to the Doctor when the Owner denies a pet access request", async () => {
+  it.each([
+    ["active", true],
+    ["deleted", true],
+    ["locked", false],
+    ["pending_verification", false],
+  ] as const)("applies an access denial and notification policy for a %s Doctor account", async (recipientStatus, expectsEmail) => {
     const request = {
       request_id: "request-1", pet_id: "pet-1", owner_account_id: "owner-1", requester_account_id: "doctor-1",
       requester_display_name: "Иван Врач", status: "pending", revision: 1, requested_at: timestamp,
@@ -142,7 +147,9 @@ describe("command boundary", () => {
       if (sql.startsWith("SELECT 1 FROM roles")) return { rows: [{}], rowCount: 1 };
       if (sql.startsWith("UPDATE access_requests")) return { rows: [{ ...request, status: "rejected", revision: 2 }], rowCount: 1 };
       if (sql.startsWith("SELECT * FROM pets")) return { rows: [{ pet_id: "pet-1", owner_account_id: "owner-1", name: "Ёжик" }], rowCount: 1 };
-      if (sql.startsWith("SELECT email FROM accounts")) return { rows: [{ email: "doctor@example.ru" }], rowCount: 1 };
+      if (sql.startsWith("SELECT email FROM accounts")) return ["active", "deleted"].includes(recipientStatus)
+        ? { rows: [{ email: "doctor@example.ru" }], rowCount: 1 }
+        : { rows: [], rowCount: 0 };
       if (sql.startsWith("INSERT INTO email_outbox") || sql.startsWith("INSERT INTO operation_receipts")) return { rows: [], rowCount: 1 };
       throw new Error(`Unexpected SQL: ${sql}`);
     });
@@ -159,8 +166,14 @@ describe("command boundary", () => {
     })).resolves.toMatchObject({ status: "applied", revision: 2 });
 
     const email = query.mock.calls.find(([sql]) => String(sql).startsWith("INSERT INTO email_outbox"));
-    expect(email?.[1]?.slice(1)).toEqual([
-      "doctor@example.ru", "Статус доступа к питомцу в системе \"Клинок\" изменён", "Доступ к питомцу «Ёжик» отклонён.",
-    ]);
+    const accountLookup = query.mock.calls.find(([sql]) => String(sql).startsWith("SELECT email FROM accounts"));
+    expect(accountLookup?.[0]).toContain("credential_status IN ('active','deleted')");
+    if (expectsEmail) {
+      expect(email?.[1]?.slice(1)).toEqual([
+        "doctor@example.ru", "Статус доступа к питомцу в системе \"Клинок\" изменён", "Доступ к питомцу «Ёжик» отклонён.",
+      ]);
+    } else {
+      expect(email).toBeUndefined();
+    }
   });
 });
