@@ -17,6 +17,7 @@ import type {
   SessionDeviceDto,
 } from "@klinok/contracts";
 import { loadRuntimeConfig, type AppRuntimeConfig } from "./runtimeConfig";
+import { suggestedDeviceName } from "./deviceName";
 import { AuthClient, AuthClientError, type RegisterInput } from "./repositories/authClient";
 import { KlinokRepository } from "./repositories";
 import { clearOfflineAccount, lastOfflineAccount, listCommands, type OfflineSyncStatus, type SyncNotification } from "./repositories/offlineStore";
@@ -60,11 +61,8 @@ function deviceId(): string {
   const value = crypto.randomUUID(); localStorage.setItem(DEVICE_ID_KEY, value); return value;
 }
 export function hasDeviceIdentity(): boolean { return Boolean(localStorage.getItem(DEVICE_ID_KEY)); }
-export function suggestedDeviceName(): string {
-  const platform = typeof navigator === "undefined" ? "" : navigator.platform;
-  return /iPhone|iPad/i.test(platform) ? "Мобильное устройство" : /Mac/i.test(platform) ? "Mac" : /Win/i.test(platform) ? "Компьютер Windows" : "Это устройство";
-}
-export function getDeviceName(): string { return localStorage.getItem(DEVICE_NAME_KEY) || "Это устройство"; }
+export { suggestedDeviceName };
+export function getDeviceName(): string { return localStorage.getItem(DEVICE_NAME_KEY) || suggestedDeviceName(); }
 function setDeviceName(value: string): void { if (value.trim()) localStorage.setItem(DEVICE_NAME_KEY, value.trim()); }
 function roleKey(accountId: string): string { return `klinok:v3:${accountId}:active-role`; }
 
@@ -187,8 +185,9 @@ export async function verifyEmail(token: string): Promise<void> {
 export async function login(email: string, password: string, deviceName?: string): Promise<void> {
   beginAuthAction();
   try {
-    if (deviceName?.trim()) setDeviceName(deviceName);
-    await auth.login(email, password, deviceId(), getDeviceName());
+    const normalizedDeviceName = deviceName?.trim() || getDeviceName();
+    await auth.login(email, password, deviceId(), normalizedDeviceName);
+    setDeviceName(normalizedDeviceName);
     state.initialized = false; await bootstrapApp(true);
   } catch (reason) { setAuthFeedback({ kind: "error", reason }); throw reason; } finally { state.busy = false; }
 }
@@ -224,6 +223,25 @@ export async function revokeDevice(id: string): Promise<void> {
   await auth.revokeDevice(id);
   if (id === state.session.device?.deviceId) { await clearLocalSession(state.session.accountId); return; }
   state.session = await auth.session();
+}
+export async function renameDevice(id: string, name: string): Promise<void> {
+  const normalizedName = name.trim();
+  let result: Awaited<ReturnType<AuthClient["renameDevice"]>>;
+  try {
+    result = await auth.renameDevice(id, normalizedName);
+  } catch (reason) {
+    if (reason instanceof AuthClientError && reason.status === 404) state.session = await auth.session();
+    throw reason;
+  }
+  const current = id === state.session.device?.deviceId;
+  if (current) setDeviceName(result.deviceName);
+  state.session = {
+    ...state.session,
+    ...(state.session.device && current ? { device: { ...state.session.device, deviceName: result.deviceName } } : {}),
+    ...(state.session.devices ? {
+      devices: state.session.devices.map((device) => device.deviceId === id ? { ...device, deviceName: result.deviceName } : device),
+    } : {}),
+  };
 }
 export async function deleteAccount(): Promise<void> {
   const accountId = state.session.accountId;

@@ -37,7 +37,7 @@ describe("operational routes", () => {
   it("renders and filters the QA scenario menu", async () => {
     const router = createRouter({
       history: createMemoryHistory(),
-      routes: [{ path: "/auth/login", name: "auth-login", component: { template: "<div />" } }],
+      routes,
     });
     await router.push("/auth/login");
     const wrapper = mount(QaScenarioMenu, { global: { plugins: [router] } });

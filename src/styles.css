@@ -617,18 +617,6 @@ dd {
 .operational-auth .form-stack { gap: 7px; }
 .operational-auth .form-stack > label,
 .operational-auth .password-field { gap: 3px; }
-.auth-device-name { display: grid; gap: 7px; color: #344054; font-size: .9rem; }
-.auth-device-name > span { line-height: 1.5; }
-.auth-device-name > strong {
-  min-height: 46px;
-  padding: 12px 14px;
-  border: 1px solid #eaecf0;
-  border-radius: 12px;
-  background: #f9fafb;
-  color: #475467;
-  font-weight: 500;
-}
-.auth-device-name > small { color: #667085; font-size: .78rem; line-height: 1.4; }
 .form-stack input:not([type="checkbox"]):not([type="radio"]), .form-stack select, .form-stack textarea {
   width: 100%; border: 1px solid #d0d5dd; border-radius: 12px; padding: 12px 14px; background: #fff; color: #101828; font: inherit;
 }
@@ -1854,6 +1842,23 @@ dd {
 .profile-page :is(.list-row) { gap: 7px; padding: 7px 0; font-size: 13px; }
 .profile-page .list-row small { font-size: 11px; }
 .profile-page .row-actions { align-items: center; flex-wrap: wrap; gap: 4px; }
+.profile-page .device-row { align-items: start; }
+.device-name-copy { display: grid; min-width: 0; gap: 3px; }
+.device-name-label { display: grid; gap: 3px; color: #344054; font-weight: 500; }
+.profile-page .device-name-label input {
+  width: min(100%, 420px);
+  height: 32px;
+  min-height: 32px;
+  border: 1px solid #d0d5dd;
+  border-radius: 7px;
+  padding: 6px 8px;
+  background: #fff;
+  color: #101828;
+  font: inherit;
+}
+.profile-page .device-name-label input:focus-visible { border-color: var(--accent); outline: 3px solid rgba(68, 76, 231, .14); }
+.profile-page .device-name-copy > .field-error { display: block; color: var(--danger); }
+.device-row-actions { align-self: start; }
 .profile-account-identity {
   display: grid;
   gap: 3px;

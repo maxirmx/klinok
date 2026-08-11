@@ -11,7 +11,7 @@ RUN npm ci --workspace @klinok/contracts --workspace @klinok/api-node
 COPY packages/contracts packages/contracts
 COPY api-node api-node
 RUN npm run build --workspace @klinok/contracts && npm run build --workspace @klinok/api-node
-RUN npm prune --omit=dev --workspace @klinok/contracts --workspace @klinok/api-node
+RUN npm prune --ignore-scripts --omit=dev --workspace @klinok/contracts --workspace @klinok/api-node
 
 FROM node:24.18.0-bookworm-slim AS final
 WORKDIR /app
