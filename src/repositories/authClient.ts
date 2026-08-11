@@ -94,6 +94,11 @@ export class AuthClient {
     return this.request<{ updated: true; email: string }>("/api/auth/credentials", { method: "PATCH", body: JSON.stringify(input) });
   }
   deleteAccount() { return this.request<{ operationId: string }>("/api/auth/account", { method: "DELETE" }); }
+  renameDevice(id: string, deviceName: string) {
+    return this.request<{ operationId: string; deviceId: string; deviceName: string }>(`/api/auth/devices/${encodeURIComponent(id)}`, {
+      method: "PATCH", body: JSON.stringify({ deviceName }),
+    });
+  }
   revokeDevice(id: string) { return this.request<{ revoked: true }>(`/api/auth/devices/${encodeURIComponent(id)}`, { method: "DELETE" }); }
 
   async state(role: Role): Promise<AppSnapshotDto> {

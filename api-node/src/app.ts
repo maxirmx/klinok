@@ -48,6 +48,13 @@ function body(request: FastifyRequest): Record<string, unknown> {
   return request.body as Record<string, unknown>;
 }
 
+function requireDeviceName(value: unknown): string {
+  if (typeof value !== "string" || !value.trim()) throw new ApiError(400, "DEVICE_INVALID", "Device name is required.");
+  const normalized = value.trim();
+  if (normalized.length > 80) throw new ApiError(400, "DEVICE_NAME_INVALID", "Device name is too long.");
+  return normalized;
+}
+
 function cookieOptions(config: ApiConfig, httpOnly: boolean) {
   return { path: "/", httpOnly, secure: config.cookieSecure, sameSite: "lax" as const };
 }
@@ -263,7 +270,7 @@ export async function buildApi(config: ApiConfig, provided?: { db?: Database; le
     const csrfToken = randomToken();
     const sessionId = randomUUID();
     const deviceId = optionalText(input.deviceId, 200) ?? randomUUID();
-    const deviceName = optionalText(input.deviceName, 200) ?? "Устройство без названия";
+    const deviceName = input.deviceName === undefined ? "Браузер" : requireDeviceName(input.deviceName);
     const expiresAt = new Date(Date.now() + config.sessionDays * 86_400_000);
     await auditMutation(db, ledger, {
       operationId: `login:${sessionId}`, action: "session.created", actorAccountId: account.account_id,
@@ -439,6 +446,24 @@ export async function buildApi(config: ApiConfig, provided?: { db?: Database; le
     });
     if (deviceId === context.deviceId) clearSessionCookies(reply, config);
     return { revoked: true };
+  });
+
+  app.patch<{ Params: { id: string } }>("/api/auth/devices/:id", async (request) => {
+    const context = await sessionContext(db, request, true);
+    const deviceId = request.params.id;
+    const deviceName = requireDeviceName(body(request).deviceName);
+    const operationId = `session-rename:${randomUUID()}`;
+    await auditMutation(db, ledger, {
+      operationId, action: "session.browser-renamed", actorAccountId: context.accountId,
+      aggregateType: "browserSession", aggregateId: deviceId, metadata: { deviceName },
+    }, async (client) => {
+      const updated = await client.query(
+        "UPDATE sessions SET device_name=$3 WHERE account_id=$1 AND device_id=$2 AND revoked_at IS NULL AND expires_at>now() RETURNING session_id",
+        [context.accountId, deviceId, deviceName],
+      );
+      if (!updated.rowCount) throw new ApiError(404, "DEVICE_NOT_FOUND", "Browser session not found.");
+    });
+    return { operationId, deviceId, deviceName };
   });
 
   app.post("/api/commands", async (request) => {

@@ -82,16 +82,20 @@ describe("v3 API client", () => {
     expect((fetchMock.mock.calls[1]![1].headers as Headers).get("X-CSRF-Token")).toBe("csrf");
   });
 
-  it("revokes named sessions without key material", async () => {
+  it("renames and revokes named sessions with CSRF protection", async () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(new Response(JSON.stringify({ authenticated: true, csrfToken: "csrf" }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ operationId: "rename", deviceId: "old/device", deviceName: "Windows · Edge" }), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify({ revoked: true }), { status: 200 }));
     vi.stubGlobal("fetch", fetchMock);
     const client = new AuthClient();
     await client.session();
+    await client.renameDevice("old/device", "Windows · Edge");
     await client.revokeDevice("old/device");
     expect(fetchMock.mock.calls[1]![0]).toBe("/api/auth/devices/old%2Fdevice");
-    expect(fetchMock.mock.calls[1]![1].body).toBeUndefined();
+    expect(fetchMock.mock.calls[1]![1]).toMatchObject({ method: "PATCH", body: JSON.stringify({ deviceName: "Windows · Edge" }) });
+    expect((fetchMock.mock.calls[1]![1].headers as Headers).get("X-CSRF-Token")).toBe("csrf");
+    expect(fetchMock.mock.calls[2]![1].body).toBeUndefined();
   });
 
   it("wraps network failures for regular and snapshot requests", async () => {

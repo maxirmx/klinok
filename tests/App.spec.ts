@@ -39,13 +39,15 @@ describe("operational Russian UI", () => {
     expect(wrapper.text()).not.toContain("код из СМС");
   });
 
-  it("shows the saved device name as non-editable text for an existing device", async () => {
+  it("keeps the saved device name editable for an existing device", async () => {
     localStorage.setItem("klinok:v3:device-id", "device-1");
     localStorage.setItem("klinok:v3:device-name", "Домашний ноутбук");
     const wrapper = await mountScreen(AuthScreen, "/auth/login", { scenarioId: "auth-login" });
-    expect(wrapper.find('input[autocomplete="off"]').exists()).toBe(false);
-    expect(wrapper.get(".auth-device-name").text()).toContain("Домашний ноутбук");
-    expect(wrapper.get(".auth-device-name").attributes("aria-label")).toBe("Название этого устройства");
+    const deviceName = wrapper.get<HTMLInputElement>('input[autocomplete="off"]');
+    expect(deviceName.element.value).toBe("Домашний ноутбук");
+    await deviceName.setValue("Рабочий браузер");
+    expect(deviceName.element.value).toBe("Рабочий браузер");
+    expect(wrapper.find(".auth-device-name").exists()).toBe(false);
   });
 
   it("uses one initial role and confirms the password during registration", async () => {

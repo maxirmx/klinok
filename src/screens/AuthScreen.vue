@@ -10,7 +10,7 @@ import AppAlert from "../components/AppAlert.vue";
 import BrandLogo from "../components/BrandLogo.vue";
 import PasswordInput from "../components/PasswordInput.vue";
 import RoleSelectionCards from "../components/RoleSelectionCards.vue";
-import { AUTH_SUCCESS_MESSAGES, appState, forgotPassword, getDeviceName, hasDeviceIdentity, login, register, resetPassword, suggestedDeviceName, verifyEmail } from "../appStore";
+import { AUTH_SUCCESS_MESSAGES, appState, forgotPassword, getDeviceName, login, register, resetPassword, verifyEmail } from "../appStore";
 import { roleHomePath } from "../roleNavigation";
 import { APP_VERSION } from "../version";
 
@@ -19,8 +19,7 @@ const route = useRoute();
 const router = useRouter();
 const email = ref("");
 const password = ref("");
-const isNewDevice = !hasDeviceIdentity();
-const deviceName = ref(isNewDevice ? suggestedDeviceName() : getDeviceName());
+const deviceName = ref(getDeviceName());
 const confirmPassword = ref("");
 const registrationConfirmPassword = ref("");
 const initialRole = ref<Role>("owner");
@@ -120,11 +119,7 @@ onMounted(async () => {
         <form v-if="mode === 'login'" class="form-stack" @submit.prevent="submitLogin">
           <label class="auth-field-label"><span>Электронная почта</span><input v-model="email" type="email" autocomplete="email" required /></label>
           <PasswordInput v-model="password" label="Пароль" autocomplete="current-password" required />
-          <label v-if="isNewDevice" class="auth-field-label"><span>Название этого устройства</span><input v-model="deviceName" maxlength="80" autocomplete="off" required /><small>Например, «Домашний ноутбук». Название будет видно в списке сеансов.</small></label>
-          <div v-else class="auth-device-name" aria-label="Название этого устройства">
-            <span>Название этого устройства</span>
-            <strong>{{ deviceName }}</strong>
-          </div>
+          <label class="auth-field-label"><span>Название этого устройства</span><input v-model="deviceName" maxlength="80" autocomplete="off" required /><small>Например, «macOS · Chrome». Название можно изменить сейчас или позже в настройках.</small></label>
           <button class="primary-action" :disabled="appState.busy">Войти</button>
           <nav class="auth-login-links" aria-label="Дополнительные действия">
             <RouterLink class="auth-text-link" to="/auth/forgot-password">Забыли пароль?</RouterLink>

@@ -8,7 +8,7 @@ import { createPinia } from "pinia";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import AppIcon from "../src/components/AppIcon.vue";
 import RoleStatusScreen from "../src/screens/RoleStatusScreen.vue";
-import { deleteAccount, logout, revokeDevice, switchRole, updateCredentials, updateProfile } from "../src/appStore";
+import { deleteAccount, logout, renameDevice, revokeDevice, switchRole, updateCredentials, updateProfile } from "../src/appStore";
 
 const clipboardWriteText = vi.fn().mockResolvedValue(undefined);
 
@@ -58,6 +58,7 @@ vi.mock("../src/appStore", async () => {
     getRepository: vi.fn(),
     logout: vi.fn().mockResolvedValue(true),
     requestRole: vi.fn(),
+    renameDevice: vi.fn(),
     revokeDevice: vi.fn(),
     switchRole: vi.fn(),
     updateProfile: vi.fn(),
@@ -116,6 +117,7 @@ beforeEach(async () => {
   mockedStore.setMockSync({ pendingCount: 0, failedCount: 0, syncing: false, lastError: "" });
   vi.mocked(deleteAccount).mockClear();
   vi.mocked(logout).mockClear();
+  vi.mocked(renameDevice).mockClear();
   vi.mocked(revokeDevice).mockClear();
   vi.mocked(updateCredentials).mockClear();
   vi.mocked(updateProfile).mockClear();
@@ -137,13 +139,14 @@ describe("logout navigation", () => {
       "Питомцы", "Добавить питомца",
     ]);
     expect(wrapper.find(".workspace-sidebar-footer .workspace-nav-item.active").text()).toContain("Настройки");
-    expect(wrapper.text()).toContain("Домашний ноутбук");
+    expect(wrapper.get<HTMLInputElement>('.device-row input').element.value).toBe("Домашний ноутбук");
     expect(wrapper.get(".account-security").text()).toContain("Управляйте идентификатором и сеансами аккаунта.");
     expect(wrapper.get(".device-security").text()).toContain("Управляйте действующими сеансами входа.");
     expect(wrapper.get(".profile-account-identity .person-identity-name").text()).toBe("Максим Сергеевич Иванов");
     expect(wrapper.get(".profile-account-identity .person-identity-id").text()).toBe("account-1");
     expect(wrapper.text()).toContain("Вход на новом устройстве выполняется сразу.");
-    expect(wrapper.text()).toContain("Это устройство");
+    expect(wrapper.text()).toContain("Текущий сеанс");
+    expect(wrapper.text()).not.toContain("Это устройство");
     expect(wrapper.text()).not.toContain("Старый телефон");
     expect(wrapper.text()).not.toContain("revoked-device");
     expect(wrapper.find(".workspace-account-actions").exists()).toBe(false);
@@ -161,6 +164,61 @@ describe("logout navigation", () => {
     expect(pageButtons.every((button) => button.text() === "")).toBe(true);
     expect(pageButtons.every((button) => Boolean(button.attributes("title") && button.attributes("aria-label")))).toBe(true);
     expect(pageButtons.every((button) => button.find(".app-icon").exists())).toBe(true);
+  });
+
+  it("edits, restores, and saves a device name", async () => {
+    const { wrapper } = await mountAt(RoleStatusScreen, "/profile", { scenarioId: "user-profile" });
+    const input = wrapper.get<HTMLInputElement>('.device-row input');
+    const save = wrapper.get<HTMLButtonElement>('button[title="Сохранить название устройства"]');
+    const restore = wrapper.get<HTMLButtonElement>('button[title="Восстановить название устройства"]');
+
+    expect(save.element.disabled).toBe(true);
+    expect(restore.element.disabled).toBe(true);
+    await input.setValue("macOS · Chrome");
+    expect(save.element.disabled).toBe(false);
+    expect(restore.element.disabled).toBe(false);
+    await restore.trigger("click");
+    expect(input.element.value).toBe("Домашний ноутбук");
+
+    await input.setValue("macOS · Chrome");
+    await wrapper.get(".device-row").trigger("submit");
+    await flushPromises();
+    expect(renameDevice).toHaveBeenCalledWith("current-device", "macOS · Chrome");
+    expect(wrapper.get(".workspace-alert").text()).toContain("Название устройства сохранено.");
+    expect(save.element.disabled).toBe(true);
+  });
+
+  it("locks every device control while a device name is being saved", async () => {
+    const mockedStore = await import("../src/appStore") as typeof import("../src/appStore") & {
+      setMockDevices: (devices: Array<{ deviceId: string; deviceName: string; status: string }>) => void;
+    };
+    mockedStore.setMockDevices([
+      { deviceId: "current-device", deviceName: "Домашний ноутбук", status: "active" },
+      { deviceId: "second-device", deviceName: "Рабочий ноутбук", status: "active" },
+    ]);
+    let finishRename!: () => void;
+    vi.mocked(renameDevice).mockImplementationOnce(() => new Promise<void>((resolve) => { finishRename = resolve; }));
+    const { wrapper } = await mountAt(RoleStatusScreen, "/profile", { scenarioId: "user-profile" });
+    const inputs = wrapper.findAll<HTMLInputElement>(".device-row input");
+
+    await inputs[0]!.setValue("Основной браузер");
+    await inputs[1]!.setValue("Резервный браузер");
+    await wrapper.findAll(".device-row")[0]!.trigger("submit");
+    await flushPromises();
+
+    expect(inputs.every((input) => input.element.disabled)).toBe(true);
+    expect(wrapper.findAll<HTMLButtonElement>('button[title="Сохранить название устройства"]')
+      .every((button) => button.element.disabled)).toBe(true);
+    expect(wrapper.findAll<HTMLButtonElement>('button[title="Восстановить название устройства"]')
+      .every((button) => button.element.disabled)).toBe(true);
+    expect(wrapper.findAll<HTMLButtonElement>('button[title="Отозвать устройство"]')
+      .every((button) => button.element.disabled)).toBe(true);
+
+    finishRename();
+    await flushPromises();
+    expect(inputs.every((input) => !input.element.disabled)).toBe(true);
+    expect(inputs[0]!.element.value).toBe("Основной браузер");
+    expect(inputs[1]!.element.value).toBe("Резервный браузер");
   });
 
   it("shows current-session sync status immediately above separate account and device sections", async () => {

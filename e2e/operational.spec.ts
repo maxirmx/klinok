@@ -234,6 +234,13 @@ test("fresh provisioning, Doctor approval, grant, draft, and confirmation", asyn
   await ownerPage.getByRole("button", { name: "Сохранить изменения" }).click();
   await expect(ownerPage.getByText("Наблюдать за аппетитом")).toBeVisible();
   await openProfileAndWaitForSync(ownerPage);
+  const currentDeviceRow = ownerPage.locator(".device-security .device-row").filter({ hasText: "Текущий сеанс" });
+  const currentDeviceName = currentDeviceRow.getByRole("textbox", { name: "Название устройства", exact: true });
+  await expect(currentDeviceName).toHaveValue(/^(macOS|Linux) · Chrome$/);
+  await currentDeviceName.fill("Основной браузер");
+  await currentDeviceRow.getByRole("button", { name: "Сохранить название устройства" }).click();
+  await expect(ownerPage.getByText("Название устройства сохранено.")).toBeVisible();
+  await expect(currentDeviceName).toHaveValue("Основной браузер");
   await ownerPage.locator(".workspace-sidebar").getByRole("link", { name: "Ёжик", exact: true }).click();
   await expect(ownerPage).toHaveURL(new RegExp(`/owner/pets/${petId}$`));
 
@@ -384,6 +391,7 @@ test("fresh provisioning, Doctor approval, grant, draft, and confirmation", asyn
   if (process.env.KLINOK_E2E_RESTART_API === "true") await restartApi();
   await ownerPage.getByRole("button", { name: "Выйти", exact: true }).click();
   await expect(ownerPage).toHaveURL(/\/auth\/login/);
+  await expect(ownerPage.getByLabel("Название этого устройства")).toHaveValue("Основной браузер");
   await clearBrowserStorage(ownerPage);
   await login(ownerPage, ownerEmail);
   await expect(ownerPage).toHaveURL(/\/(?:profile|owner\/home)/, { timeout: replicationTimeout });

@@ -21,6 +21,7 @@ import {
   getDeviceName,
   getConfig,
   logout,
+  renameDevice,
   requestRole,
   revokeDevice,
   switchRole,
@@ -47,6 +48,11 @@ const disabledRoleSelection = computed<Role[]>(() => (["owner", "doctor", "admin
   .filter((role) => requests.value.get(role)?.status !== "approved"));
 const accountDeletionConfirmation = ref(false);
 const devicePendingRevocation = ref<{ deviceId: string; deviceName: string } | null>(null);
+const deviceSavingId = ref("");
+const deviceSaving = computed(() => Boolean(deviceSavingId.value));
+const deviceDrafts = reactive<Record<string, string>>({});
+const savedDeviceNames = reactive<Record<string, string>>({});
+const deviceErrors = reactive<Record<string, string>>({});
 const formError = ref("");
 const profileDraft = reactive<ProfileValues>({ firstName: "", lastName: "", patronymic: "" });
 const savedProfile = reactive<ProfileValues>({ firstName: "", lastName: "", patronymic: "" });
@@ -101,6 +107,38 @@ const isBootstrapAccount = computed(() => Boolean(
 const deviceName = (device: { deviceId: string; deviceName?: string }) => device.deviceName?.trim()
   || (device.deviceId === appState.session.device?.deviceId ? getDeviceName() : null)
   || "Устройство без названия";
+
+watch(visibleDevices, (devices) => {
+  const visibleIds = new Set(devices.map((device) => device.deviceId));
+  for (const device of devices) {
+    const nextName = deviceName(device);
+    const previousName = savedDeviceNames[device.deviceId];
+    if (deviceDrafts[device.deviceId] === undefined || deviceDrafts[device.deviceId] === previousName) {
+      deviceDrafts[device.deviceId] = nextName;
+    }
+    savedDeviceNames[device.deviceId] = nextName;
+  }
+  for (const deviceId of Object.keys(savedDeviceNames)) {
+    if (visibleIds.has(deviceId)) continue;
+    delete savedDeviceNames[deviceId];
+    delete deviceDrafts[deviceId];
+    delete deviceErrors[deviceId];
+  }
+}, { immediate: true });
+
+function deviceCanSave(deviceId: string): boolean {
+  const value = deviceDrafts[deviceId]?.trim() ?? "";
+  return Boolean(value && value.length <= 80 && value !== savedDeviceNames[deviceId]);
+}
+
+function deviceCanRestore(deviceId: string): boolean {
+  return (deviceDrafts[deviceId] ?? "") !== (savedDeviceNames[deviceId] ?? "");
+}
+
+function restoreDeviceName(deviceId: string) {
+  deviceDrafts[deviceId] = savedDeviceNames[deviceId] ?? "";
+  deviceErrors[deviceId] = "";
+}
 
 function sameProfile(left: ProfileValues, right: ProfileValues): boolean {
   return left.firstName === right.firstName
@@ -235,6 +273,30 @@ async function confirmDeviceRevocation() {
   if (!device) return;
   devicePendingRevocation.value = null;
   await action("Устройство отозвано.", () => revokeDevice(device.deviceId));
+}
+
+async function saveDeviceName(deviceId: string) {
+  if (deviceSaving.value) return;
+  const name = deviceDrafts[deviceId]?.trim() ?? "";
+  if (!name) {
+    deviceErrors[deviceId] = "Введите название устройства.";
+    return;
+  }
+  if (name.length > 80) {
+    deviceErrors[deviceId] = "Название устройства не должно превышать 80 символов.";
+    return;
+  }
+  deviceErrors[deviceId] = "";
+  deviceSavingId.value = deviceId;
+  try {
+    const saved = await action("Название устройства сохранено.", () => renameDevice(deviceId, name));
+    if (saved) {
+      savedDeviceNames[deviceId] = name;
+      deviceDrafts[deviceId] = name;
+    }
+  } finally {
+    deviceSavingId.value = "";
+  }
 }
 </script>
 
@@ -401,18 +463,48 @@ async function confirmDeviceRevocation() {
         <div class="profile-section-heading"><div><h2>Устройства</h2><p>Управляйте действующими сеансами входа.</p></div></div>
         <p>Вход на новом устройстве выполняется сразу. Отзыв завершает все его активные сеансы.</p>
 
-        <div v-for="device in visibleDevices" :key="device.deviceId" class="list-row">
-          <div><strong>{{ deviceName(device) }}</strong><span>{{ device.deviceId === appState.session.device?.deviceId ? 'Это устройство' : 'Действующее устройство' }}</span><small>Идентификатор: {{ device.deviceId }}</small></div>
-          <button
-            class="outline-action inline danger-link profile-icon-action"
-            :disabled="!canRevokeDevice"
-            :title="canRevokeDevice ? 'Отозвать устройство' : 'Нельзя отозвать последнее действующее устройство.'"
-            :aria-label="canRevokeDevice ? 'Отозвать устройство' : 'Нельзя отозвать последнее действующее устройство.'"
-            @click="devicePendingRevocation = { deviceId: device.deviceId, deviceName: deviceName(device) }"
-          >
-            <AppIcon name="trash" />
-          </button>
-        </div>
+        <form v-for="device in visibleDevices" :key="device.deviceId" class="list-row device-row" @submit.prevent="saveDeviceName(device.deviceId)">
+          <div class="device-name-copy">
+            <label class="device-name-label">
+              <span>Название устройства</span>
+              <input v-model="deviceDrafts[device.deviceId]" maxlength="80" autocomplete="off" required :disabled="deviceSaving" />
+            </label>
+            <span>{{ device.deviceId === appState.session.device?.deviceId ? 'Текущий сеанс' : 'Действующий сеанс' }}</span>
+            <small>Идентификатор: {{ device.deviceId }}</small>
+            <small v-if="deviceErrors[device.deviceId]" class="field-error" role="alert">{{ deviceErrors[device.deviceId] }}</small>
+          </div>
+          <div class="row-actions device-row-actions">
+            <button
+              class="primary-action inline profile-icon-action"
+              type="submit"
+              :disabled="deviceSaving || !deviceCanSave(device.deviceId)"
+              title="Сохранить название устройства"
+              aria-label="Сохранить название устройства"
+            >
+              <AppIcon name="check" />
+            </button>
+            <button
+              class="outline-action inline profile-icon-action"
+              type="button"
+              :disabled="deviceSaving || !deviceCanRestore(device.deviceId)"
+              title="Восстановить название устройства"
+              aria-label="Восстановить название устройства"
+              @click="restoreDeviceName(device.deviceId)"
+            >
+              <AppIcon name="restore" />
+            </button>
+            <button
+              class="outline-action inline danger-link profile-icon-action"
+              type="button"
+              :disabled="deviceSaving || !canRevokeDevice"
+              :title="canRevokeDevice ? 'Отозвать устройство' : 'Нельзя отозвать последнее действующее устройство.'"
+              :aria-label="canRevokeDevice ? 'Отозвать устройство' : 'Нельзя отозвать последнее действующее устройство.'"
+              @click="devicePendingRevocation = { deviceId: device.deviceId, deviceName: deviceName(device) }"
+            >
+              <AppIcon name="trash" />
+            </button>
+          </div>
+        </form>
       </section>
       </div>
     </div>

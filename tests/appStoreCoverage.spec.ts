@@ -133,6 +133,7 @@ beforeEach(() => {
     login: vi.fn().mockResolvedValue({ authenticated: true, accountId: "account-1", csrfToken: "csrf" }),
     logout: vi.fn().mockResolvedValue({ loggedOut: true }),
     logoutAll: vi.fn().mockResolvedValue({ loggedOut: true }),
+    renameDevice: vi.fn().mockImplementation(async (deviceId: string, deviceName: string) => ({ operationId: "rename-device", deviceId, deviceName })),
     revokeDevice: vi.fn().mockResolvedValue({ revoked: true }),
     deleteAccount: vi.fn().mockResolvedValue({ operationId: "delete-account" }),
     forgotPassword: vi.fn().mockResolvedValue({ accepted: true }),
@@ -184,7 +185,7 @@ describe("application store orchestration", () => {
     await store.bootstrapApp();
     expect(store.appState.session).toMatchObject({ authenticated: true, accountId: "offline-account" });
     expect(store.hasDeviceIdentity()).toBe(true);
-    expect(store.getDeviceName()).toBe("Это устройство");
+    expect(store.getDeviceName()).toBe(store.suggestedDeviceName());
 
     harness.auth.session.mockResolvedValueOnce({ authenticated: false });
     harness.lastOfflineAccount.mockResolvedValueOnce("stale-account");
@@ -214,6 +215,7 @@ describe("application store orchestration", () => {
       "anna@example.ru", "password", expect.any(String), "Рабочий ноутбук",
     );
     expect(store.hasDeviceIdentity()).toBe(true);
+    expect(store.getDeviceName()).toBe("Рабочий ноутбук");
 
     harness.listCommands.mockResolvedValueOnce([{ operationId: "pending" }]);
     vi.spyOn(window, "confirm").mockReturnValueOnce(false);
@@ -231,6 +233,15 @@ describe("application store orchestration", () => {
     await store.bootstrapApp(true);
     await expect(store.logout(true)).resolves.toBe(true);
     expect(harness.auth.logoutAll).toHaveBeenCalledOnce();
+  });
+
+  it("does not persist an edited device name when authentication fails", async () => {
+    const store = await import("../src/appStore");
+    await store.bootstrapApp();
+    harness.auth.login.mockRejectedValueOnce(new harness.MockAuthClientError("INVALID_CREDENTIALS", "invalid", 401));
+
+    await expect(store.login("anna@example.ru", "wrong", "Чужой компьютер")).rejects.toMatchObject({ status: 401 });
+    expect(localStorage.getItem("klinok:v3:device-name")).toBeNull();
   });
 
   it("propagates unexpected logout failures without leaving the store busy", async () => {
@@ -258,6 +269,27 @@ describe("application store orchestration", () => {
     expect(harness.auth.deleteAccount).toHaveBeenCalled();
     expect(harness.clearOfflineAccount).toHaveBeenCalledWith("account-1");
     expect(store.appState.repositoryConnected).toBe(false);
+  });
+
+  it("renames active devices and refreshes a stale device target", async () => {
+    const store = await import("../src/appStore");
+    harness.auth.session.mockResolvedValueOnce({
+      ...authenticatedSession(),
+      devices: [authenticatedSession().device!],
+    });
+    await store.bootstrapApp();
+
+    await store.renameDevice("device-current", "  macOS · Chrome — рабочий  ");
+    expect(harness.auth.renameDevice).toHaveBeenCalledWith("device-current", "macOS · Chrome — рабочий");
+    expect(store.getDeviceName()).toBe("macOS · Chrome — рабочий");
+    expect(store.appState.session.device?.deviceName).toBe("macOS · Chrome — рабочий");
+    expect(store.appState.session.devices?.[0]?.deviceName).toBe("macOS · Chrome — рабочий");
+
+    harness.auth.renameDevice.mockRejectedValueOnce(new harness.MockAuthClientError("DEVICE_NOT_FOUND", "stale", 404));
+    harness.auth.session.mockResolvedValueOnce({ ...authenticatedSession(), devices: [] });
+    await expect(store.renameDevice("missing-device", "Новый браузер")).rejects.toMatchObject({ status: 404 });
+    expect(harness.auth.session).toHaveBeenCalledTimes(2);
+    expect(store.appState.session.devices).toEqual([]);
   });
 
   it("updates profiles, batches directory lookup, and delegates directory operations", async () => {
