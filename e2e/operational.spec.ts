@@ -188,9 +188,11 @@ test("fresh provisioning, Doctor approval, grant, draft, and confirmation", asyn
   await expect(doctorPage).toHaveURL(/\/profile/, { timeout: replicationTimeout });
   const doctorAccountId = await accountId(doctorPage);
   await expect(doctorPage.getByText("Ожидает решения")).toBeVisible();
+  const administratorEmail = process.env.KLINOK_E2E_BOOTSTRAP_EMAIL ?? "administrator@example.ru";
+  await expectEmailText(request, administratorEmail, "запросил роль «Ветеринар»");
 
   const administratorPage = await newPage(await browser.newContext(), "administrator");
-  await login(administratorPage, process.env.KLINOK_E2E_BOOTSTRAP_EMAIL ?? "administrator@example.ru", process.env.KLINOK_E2E_BOOTSTRAP_PASSWORD ?? "bootstrap-password-2026");
+  await login(administratorPage, administratorEmail, process.env.KLINOK_E2E_BOOTSTRAP_PASSWORD ?? "bootstrap-password-2026");
   await expect(administratorPage).toHaveURL(/\/admin\/home/);
   await administratorPage.getByLabel("ФИО или идентификатор").fill("Алена");
   const requestRow = administratorPage.locator(".administrator-table tbody tr").filter({ hasText: doctorAccountId });
@@ -254,6 +256,7 @@ test("fresh provisioning, Doctor approval, grant, draft, and confirmation", asyn
   await expect(requestResult).toBeVisible({ timeout: replicationTimeout });
   await requestResult.getByRole("button", { name: "Отправить запрос" }).click();
   await expect(doctorPage.getByText("Запрос отправлен владельцу.")).toBeVisible();
+  await expectEmailText(request, ownerEmail, "запросил доступ к питомцу «Ёжик»");
 
   await ownerPage.bringToFront();
   await ownerPage.getByRole("link", { name: "Доступ врачей" }).click();
@@ -261,6 +264,7 @@ test("fresh provisioning, Doctor approval, grant, draft, and confirmation", asyn
   const accessRequest = ownerPage.locator(".owner-access-table tbody tr").filter({ hasText: doctorAccountId });
   await expect(accessRequest).toBeVisible({ timeout: replicationTimeout });
   await accessRequest.getByRole("button", { name: "Предоставить доступ", exact: true }).click();
+  await expectEmailText(request, doctorEmail, "Доступ к питомцу «Ёжик» предоставлен.");
   await ownerPage.getByRole("link", { name: "Назад к информации о питомце" }).click();
   await expect(ownerPage).toHaveURL(new RegExp(`/owner/pets/${petId}$`));
 
@@ -327,6 +331,7 @@ test("fresh provisioning, Doctor approval, grant, draft, and confirmation", asyn
   await doctorPage.context().setOffline(false);
 
   await ownerPage.bringToFront();
+  await expectEmailText(request, ownerEmail, "Новая медицинская запись о питомце «Ёжик» ожидает Вашего подтверждения.");
   const ownerRecord = ownerPage.locator(".medical-record-entry-details").filter({ hasText: "Всё хорошо" });
   await expect(ownerRecord).toBeVisible({ timeout: replicationTimeout });
   await ownerRecord.locator("summary").click();
@@ -369,6 +374,7 @@ test("fresh provisioning, Doctor approval, grant, draft, and confirmation", asyn
   expect(recordId).toMatch(/^[0-9a-f-]{36}$/i);
   await ownerRecord.getByRole("button", { name: "Подтвердить запись" }).click();
   await expect(ownerRecord.getByText("Подтверждена", { exact: true })).toBeVisible();
+  await expectEmailText(request, doctorEmail, "Медицинская запись о питомце «Ёжик» подтверждена владельцем.");
   await expect(profileWeight).toContainText("14.3 кг");
   expect(await queryPostgres(`SELECT count(*) FROM audit_blocks
     WHERE aggregate_type='medicalRecord' AND aggregate_id='${recordId}' AND action='record.created'
@@ -387,6 +393,7 @@ test("fresh provisioning, Doctor approval, grant, draft, and confirmation", asyn
   const activeAccess = ownerPage.locator(".owner-access-table tbody tr").filter({ hasText: "Алёна Врач" });
   await activeAccess.getByRole("button", { name: "Отозвать доступ" }).click();
   await expect(ownerPage.getByText("Доступ отозван.")).toBeVisible();
+  await expectEmailText(request, doctorEmail, "Доступ к питомцу «Ёжик» отозван.");
   await openProfileAndWaitForSync(ownerPage);
 
   await administratorPage.bringToFront();

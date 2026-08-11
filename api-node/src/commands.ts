@@ -217,6 +217,93 @@ async function enqueueEmail(client: PoolClient, recipient: string, subject: stri
   );
 }
 
+async function accountEmail(client: PoolClient, accountId: string): Promise<string> {
+  const result = await client.query("SELECT email FROM accounts WHERE account_id=$1 FOR SHARE", [accountId]);
+  const email = result.rows[0]?.email;
+  if (typeof email !== "string" || !email) throw new ApiError(404, "ACCOUNT_NOT_FOUND", "Account not found.");
+  return email;
+}
+
+async function enqueueAdministratorRoleRequestEmails(
+  client: PoolClient,
+  requester: string,
+  requesterAccountId: string,
+  roleLabel: string,
+): Promise<void> {
+  const administrators = await client.query<{ email: string }>(
+    `SELECT DISTINCT a.email
+       FROM roles r JOIN accounts a USING(account_id)
+       WHERE r.role='administrator' AND r.status='approved' AND a.credential_status='active'
+       ORDER BY a.email`,
+  );
+  for (const administrator of administrators.rows) {
+    await enqueueEmail(
+      client,
+      administrator.email,
+      "Запрос роли в системе \"Клинок\"",
+      `Пользователь ${requester} (${requesterAccountId}) запросил роль «${roleLabel}».`,
+    );
+  }
+}
+
+async function activePetGrantRecipientEmails(client: PoolClient, petId: string): Promise<string[]> {
+  const result = await client.query<{ email: string }>(
+    `SELECT DISTINCT a.email
+       FROM access_grants g JOIN accounts a ON a.account_id=g.grantee_account_id
+       WHERE g.pet_id=$1 AND g.status='active'
+       ORDER BY a.email`,
+    [petId],
+  );
+  return result.rows.map(({ email }) => email);
+}
+
+async function pendingPetAccessRequesterEmails(client: PoolClient, petId: string): Promise<string[]> {
+  const result = await client.query<{ email: string }>(
+    `SELECT DISTINCT a.email
+       FROM access_requests r JOIN accounts a ON a.account_id=r.requester_account_id
+       WHERE r.pet_id=$1 AND r.status='pending'
+       ORDER BY a.email`,
+    [petId],
+  );
+  return result.rows.map(({ email }) => email);
+}
+
+async function activeGrantBranchRecipientEmails(client: PoolClient, grantId: string): Promise<string[]> {
+  const result = await client.query<{ email: string }>(
+    `WITH RECURSIVE branch AS (
+       SELECT grant_id FROM access_grants WHERE grant_id=$1
+       UNION ALL SELECT child.grant_id FROM access_grants child JOIN branch parent ON child.parent_grant_id=parent.grant_id
+     ) SELECT DISTINCT a.email
+       FROM branch JOIN access_grants g USING(grant_id) JOIN accounts a ON a.account_id=g.grantee_account_id
+       WHERE g.status='active' ORDER BY a.email`,
+    [grantId],
+  );
+  return result.rows.map(({ email }) => email);
+}
+
+async function invalidGrantBranchRecipientEmails(client: PoolClient, grantId: string, nextActions: PetGrantAction[]): Promise<string[]> {
+  const result = await client.query<{ email: string }>(
+    `WITH RECURSIVE invalid_branch AS (
+       SELECT child.grant_id FROM access_grants child
+       WHERE child.parent_grant_id=$1 AND child.status='active'
+         AND (NOT ('delegate'=ANY($2::text[])) OR NOT ($2::text[] @> child.actions))
+       UNION ALL
+       SELECT child.grant_id FROM access_grants child JOIN invalid_branch parent ON child.parent_grant_id=parent.grant_id
+       WHERE child.status='active'
+     ) SELECT DISTINCT a.email
+       FROM invalid_branch JOIN access_grants g USING(grant_id) JOIN accounts a ON a.account_id=g.grantee_account_id
+       ORDER BY a.email`,
+    [grantId, nextActions],
+  );
+  return result.rows.map(({ email }) => email);
+}
+
+async function enqueueAccessStatusEmails(client: PoolClient, recipients: string[], petName: string, status: string): Promise<void> {
+  for (const recipient of recipients) {
+    await enqueueEmail(client, recipient, "Статус доступа к питомцу в системе \"Клинок\" изменён", `Доступ к питомцу «${petName}» ${status}.`);
+  }
+}
+
 async function handleRole(client: PoolClient, actor: Actor, command: ClientCommand): Promise<Applied> {
   const payload = object(command.payload);
   const role = requireText(payload.role, "role", 30) as Role;
@@ -240,7 +327,7 @@ async function handleRole(client: PoolClient, actor: Actor, command: ClientComma
     );
     const roleLabel = role === "doctor" ? "Ветеринар" : role === "administrator" ? "Администратор" : "Владелец";
     const statusLabel = status === "approved" ? "одобрена" : status === "rejected" ? "отклонена" : "отозвана";
-    await enqueueEmail(client, String(before.email), "Статус роли в Клинке изменён", `Роль «${roleLabel}» ${statusLabel}.`);
+    await enqueueEmail(client, String(before.email), "Статус роли в системе \"Клинок\" изменён", `Роль «${roleLabel}» ${statusLabel}.`);
     const value = roleFromRow(updated.rows[0]);
     return { value, revision: value.revision, audit: {
       action: restoring ? "role.restored" : `role.${status}`,
@@ -283,6 +370,14 @@ async function handleRole(client: PoolClient, actor: Actor, command: ClientComma
       [actor.accountId, role, requestId, autoApproved ? "approved" : "pending", Number(profile.revision), autoApproved ? new Date() : null, autoApproved ? actor.accountId : null],
     );
   const value = roleFromRow(result.rows[0]);
+  if (role === "administrator" || role === "doctor") {
+    const roleLabel = role === "doctor" ? "Ветеринар" : "Администратор";
+    if (autoApproved) {
+      await enqueueEmail(client, await accountEmail(client, actor.accountId), "Статус роли в системе \"Клинок\" изменён", `Роль «${roleLabel}» одобрена.`);
+    } else {
+      await enqueueAdministratorRoleRequestEmails(client, displayName(profile) || actor.accountId, actor.accountId, roleLabel);
+    }
+  }
   return { value, revision: value.revision, audit: {
     action: before ? "role.resubmitted" : "role.requested", aggregateType: "role", aggregateId: value.requestId,
     relatedAccountId: actor.accountId, metadata: { role, status: value.status }, beforeState: before ? roleFromRow(before) : undefined, afterState: value,
@@ -314,9 +409,13 @@ async function handlePet(client: PoolClient, actor: Actor, command: ClientComman
   expected(command, Number(before.revision));
   if (command.type === "pet.delete") {
     const now = new Date();
+    const rejectedRecipients = await pendingPetAccessRequesterEmails(client, command.entityId);
+    const revokedRecipients = await activePetGrantRecipientEmails(client, command.entityId);
     await client.query("UPDATE pets SET revision = revision + 1, deleted_at = $2, updated_at = $2 WHERE pet_id = $1", [command.entityId, now]);
     await client.query("UPDATE access_requests SET status = 'rejected', revision = revision + 1, decided_at = $2, decided_by = $3 WHERE pet_id = $1 AND status = 'pending'", [command.entityId, now, actor.accountId]);
     await client.query("UPDATE access_grants SET status = 'revoked', revision = revision + 1, revoked_at = $2 WHERE pet_id = $1 AND status = 'active'", [command.entityId, now]);
+    await enqueueAccessStatusEmails(client, rejectedRecipients, String(before.name), "отклонён");
+    await enqueueAccessStatusEmails(client, revokedRecipients, String(before.name), "отозван");
     const value = { ...petFromRow(before), revision: Number(before.revision) + 1, tombstoned: true, updatedAt: now.toISOString() };
     return { value, revision: value.revision, audit: {
       action: "pet.deleted", aggregateType: "pet", aggregateId: command.entityId,
@@ -380,6 +479,14 @@ async function handleAccess(client: PoolClient, actor: Actor, command: ClientCom
          actions, request_id, revision, status, created_at) VALUES ($1,$2,$3,$4,$5,$6,$7,1,'active',now())`,
         [grantId, command.entityId, actor.accountId, actor.accountId, displayName(profile), ["read", "write_unconfirmed"], requestId],
       );
+      await enqueueAccessStatusEmails(client, [await accountEmail(client, actor.accountId)], String(pet.name), "предоставлен");
+    } else {
+      await enqueueEmail(
+        client,
+        await accountEmail(client, String(pet.owner_account_id)),
+        "Запрос доступа к питомцу в системе \"Клинок\"",
+        `Ветеринар ${displayName(profile) || actor.accountId} запросил доступ к питомцу «${String(pet.name)}».`,
+      );
     }
     return { value: { requestId, ...(grantId ? { grantId } : {}) }, revision: 1, audit: {
       action: selfApproval ? "access.request.auto-approved" : "access.requested", aggregateType: "accessRequest", aggregateId: requestId,
@@ -398,6 +505,10 @@ async function handleAccess(client: PoolClient, actor: Actor, command: ClientCom
     await requireActiveRole(client, actor, command, [cancelling ? "doctor" : "owner"]);
     const status = cancelling ? "cancelled" : "rejected";
     const updated = await client.query("UPDATE access_requests SET status=$2, revision=revision+1, decided_at=now(), decided_by=$3 WHERE request_id=$1 RETURNING *", [command.entityId, status, actor.accountId]);
+    if (!cancelling) {
+      const pet = await petRow(client, String(before.pet_id));
+      await enqueueAccessStatusEmails(client, [await accountEmail(client, String(before.requester_account_id))], String(pet.name), "отклонён");
+    }
     return { value: updated.rows[0], revision: Number(updated.rows[0].revision), audit: {
       action: `access.${status}`, aggregateType: "accessRequest", aggregateId: command.entityId,
       relatedAccountId: String(before.owner_account_id), metadata: { petId: before.pet_id }, beforeState: before, afterState: updated.rows[0],
@@ -456,6 +567,7 @@ async function handleAccess(client: PoolClient, actor: Actor, command: ClientCom
       const request = await client.query("UPDATE access_requests SET status='approved', revision=revision+1, decided_at=now(), decided_by=$2 WHERE request_id=$1 AND status='pending' AND revision=$3 RETURNING *", [approvedRequest.request_id, actor.accountId, approvedRequest.revision]);
       if (!request.rowCount) throw new ApiError(409, "ACCESS_REQUEST_STALE", "The selected access request changed.");
     }
+    await enqueueAccessStatusEmails(client, [await accountEmail(client, doctorAccountId)], String(pet.name), "предоставлен");
     const value = grantFromRow(result.rows[0]);
     return { value, revision: 1, audit: {
       action: command.type === "access.grant" ? "access.granted" : "access.delegated", aggregateType: "grant", aggregateId: grantId,
@@ -480,6 +592,7 @@ async function handleAccess(client: PoolClient, actor: Actor, command: ClientCom
         throw new ApiError(409, "GRANT_DELEGATION_FORBIDDEN", "The updated actions exceed the active parent grant.");
       }
     }
+    const revokedRecipients = await invalidGrantBranchRecipientEmails(client, command.entityId, nextActions);
     const updated = await client.query("UPDATE access_grants SET actions=$2, revision=revision+1 WHERE grant_id=$1 RETURNING *", [command.entityId, nextActions]);
     await client.query(
       `WITH RECURSIVE invalid_branch AS (
@@ -493,6 +606,7 @@ async function handleAccess(client: PoolClient, actor: Actor, command: ClientCom
          WHERE grant_id IN (SELECT grant_id FROM invalid_branch) AND status='active'`,
       [command.entityId, nextActions],
     );
+    await enqueueAccessStatusEmails(client, revokedRecipients, String(pet.name), "отозван");
     const value = grantFromRow(updated.rows[0]);
     return { value, revision: value.revision, audit: {
       action: "access.actions.updated", aggregateType: "grant", aggregateId: command.entityId,
@@ -506,7 +620,9 @@ async function handleAccess(client: PoolClient, actor: Actor, command: ClientCom
   } else {
     if (before.grantor_account_id !== actor.accountId && pet.owner_account_id !== actor.accountId) throw new ApiError(403, "GRANTOR_REQUIRED", "Only the grantor may revoke access.");
   }
+  const revokedRecipients = await activeGrantBranchRecipientEmails(client, command.entityId);
   await cascadeGrantRevocation(client, command.entityId, relinquishing ? "relinquished" : "revoked");
+  await enqueueAccessStatusEmails(client, revokedRecipients, String(pet.name), "отозван");
   return { value: { grantId: command.entityId }, revision: Number(before.revision) + 1, audit: {
     action: relinquishing ? "access.relinquished" : "access.revoked", aggregateType: "grant", aggregateId: command.entityId,
     relatedAccountId: String(before.grantee_account_id), metadata: { petId: before.pet_id }, beforeState: grantFromRow(before),
@@ -519,7 +635,7 @@ async function handleRecord(client: PoolClient, actor: Actor, command: ClientCom
     await requireActiveRole(client, actor, command, ["doctor"]);
     const input = encounter(object(command.payload).input ?? command.payload);
     if (input.petId !== object(command.payload).petId && object(command.payload).petId !== undefined) throw new ApiError(400, "VALIDATION_FAILED", "Pet identifiers differ.");
-    await petRow(client, input.petId, true);
+    const pet = await petRow(client, input.petId, true);
     await requirePetWrite(client, actor, input.petId);
     const profile = await actorProfile(client, actor.accountId);
     const authorName = displayName(profile) || actor.accountId;
@@ -535,6 +651,12 @@ async function handleRecord(client: PoolClient, actor: Actor, command: ClientCom
           optionalText(object(command.payload).title, 200) ?? "Что случилось", what.comment, JSON.stringify(sections), now],
       );
       const value = recordFromRow(result.rows[0]);
+      await enqueueEmail(
+        client,
+        await accountEmail(client, String(pet.owner_account_id)),
+        "Медицинская запись в системе \"Клинок\" ожидает подтверждения",
+        `Новая медицинская запись о питомце «${String(pet.name)}» ожидает Вашего подтверждения.`,
+      );
       return { value, revision: 1, audit: {
         action: "record.created", aggregateType: "medicalRecord", aggregateId: command.entityId,
         metadata: { petId: input.petId, encounterDate: input.encounterDate },
@@ -617,6 +739,12 @@ async function handleRecord(client: PoolClient, actor: Actor, command: ClientCom
      latest_vaccination=COALESCE($5::jsonb, latest_vaccination), updated_at=now() WHERE pet_id=$1`,
     [record.petId, weight ?? null, chip ?? null, JSON.stringify(confirmedVaccinationUpdate ?? null),
       JSON.stringify(profileVaccinationUpdate ?? null)],
+  );
+  await enqueueEmail(
+    client,
+    await accountEmail(client, record.authorAccountId),
+    "Медицинская запись в системе \"Клинок\" подтверждена",
+    `Медицинская запись о питомце «${String(pet.name)}» подтверждена владельцем.`,
   );
   return { value: { confirmationId }, revision: record.revision, audit: {
     action: "record.confirmed", aggregateType: "medicalRecord", aggregateId: command.entityId,
