@@ -525,11 +525,11 @@ export async function buildApi(config: ApiConfig, provided?: { db?: Database; le
     const total = Number((await db.one<{ count: string }>(
       `SELECT count(*) FROM profiles p JOIN roles r USING(account_id) JOIN accounts a USING(account_id)
        WHERE r.role='doctor' AND r.status='approved' AND a.credential_status='active'
-       AND ($1='' OR concat_ws(' ',p.first_name,p.patronymic,p.last_name) ILIKE $2 OR p.account_id ILIKE $2)`, [query, pattern]))!.count);
+       AND ($1='' OR translate(concat_ws(' ',p.first_name,p.patronymic,p.last_name),'Ёё','Ее') ILIKE translate($2,'Ёё','Ее') OR p.account_id ILIKE $2)`, [query, pattern]))!.count);
     const rows = await db.pool.query(
       `SELECT p.* FROM profiles p JOIN roles r USING(account_id) JOIN accounts a USING(account_id)
        WHERE r.role='doctor' AND r.status='approved' AND a.credential_status='active'
-       AND ($1='' OR concat_ws(' ',p.first_name,p.patronymic,p.last_name) ILIKE $2 OR p.account_id ILIKE $2)
+       AND ($1='' OR translate(concat_ws(' ',p.first_name,p.patronymic,p.last_name),'Ёё','Ее') ILIKE translate($2,'Ёё','Ее') OR p.account_id ILIKE $2)
        ORDER BY p.last_name,p.first_name,p.account_id LIMIT $3 OFFSET $4`, [query, pattern, pageSize, offset]);
     return paged(rows.rows.map(profileDto), total, page, pageSize);
   });
@@ -555,7 +555,7 @@ export async function buildApi(config: ApiConfig, provided?: { db?: Database; le
       ? `p.last_name ${direction},p.first_name ${direction},p.account_id ${direction}`
       : `COALESCE((SELECT sr.status FROM roles sr WHERE sr.account_id=p.account_id AND sr.role='${sort}'),'not_requested') ${direction},p.last_name,p.first_name,p.account_id`;
     const pattern = `%${query}%`;
-    const condition = `a.credential_status<>'deleted' AND ($1='' OR concat_ws(' ',p.first_name,p.patronymic,p.last_name) ILIKE $2 OR p.account_id ILIKE $2)
+    const condition = `a.credential_status<>'deleted' AND ($1='' OR translate(concat_ws(' ',p.first_name,p.patronymic,p.last_name),'Ёё','Ее') ILIKE translate($2,'Ёё','Ее') OR p.account_id ILIKE $2)
       AND ($3=false OR EXISTS(SELECT 1 FROM roles pr WHERE pr.account_id=p.account_id AND pr.status='pending' AND pr.role IN ('doctor','administrator')))`;
     const total = Number((await db.one<{ count: string }>(`SELECT count(*) FROM profiles p JOIN accounts a USING(account_id) WHERE ${condition}`, [query, pattern, pendingOnly]))!.count);
     const rows = await db.pool.query(`SELECT p.* FROM profiles p JOIN accounts a USING(account_id) WHERE ${condition} ORDER BY ${order} LIMIT $4 OFFSET $5`, [query, pattern, pendingOnly, pageSize, offset]);
@@ -611,8 +611,8 @@ export async function buildApi(config: ApiConfig, provided?: { db?: Database; le
       ? `p.name ${direction},pr.last_name,pr.first_name,p.pet_id`
       : `pr.last_name ${direction},pr.first_name ${direction},p.name,p.pet_id`;
     const where = `p.deleted_at IS NULL AND a.credential_status='active' ${myOnly ? "AND p.owner_account_id=$5" : ""}
-      AND ($1='' OR concat_ws(' ',pr.first_name,pr.patronymic,pr.last_name) ILIKE $2 OR p.owner_account_id ILIKE $2)
-      AND ($3='' OR p.name ILIKE $4 OR p.pet_id ILIKE $4)`;
+      AND ($1='' OR translate(concat_ws(' ',pr.first_name,pr.patronymic,pr.last_name),'Ёё','Ее') ILIKE translate($2,'Ёё','Ее') OR p.owner_account_id ILIKE $2)
+      AND ($3='' OR translate(p.name,'Ёё','Ее') ILIKE translate($4,'Ёё','Ее') OR p.pet_id ILIKE $4)`;
     const values = myOnly
       ? [owner, `%${owner}%`, pet, `%${pet}%`, context.accountId]
       : [owner, `%${owner}%`, pet, `%${pet}%`];
@@ -667,7 +667,7 @@ export async function buildApi(config: ApiConfig, provided?: { db?: Database; le
         ) ar ON true
         WHERE p.deleted_at IS NULL AND (g.grant_id IS NOT NULL OR ar.request_id IS NOT NULL)
       ) SELECT *,count(*) OVER() AS total FROM candidates
-      WHERE ($2='all' OR access_status=$2) AND ($3='' OR name ILIKE $4 OR concat_ws(' ',first_name,patronymic,last_name) ILIKE $4 OR pet_id ILIKE $4)
+      WHERE ($2='all' OR access_status=$2) AND ($3='' OR translate(name,'Ёё','Ее') ILIKE translate($4,'Ёё','Ее') OR translate(concat_ws(' ',first_name,patronymic,last_name),'Ёё','Ее') ILIKE translate($4,'Ёё','Ее') OR pet_id ILIKE $4)
       ORDER BY ${order} LIMIT $5 OFFSET $6`, [context.accountId, status, query, pattern, pageSize, offset]);
     const total = Number(rows.rows[0]?.total ?? 0);
     const items: DoctorPetAccessDto[] = rows.rows.map((row) => ({

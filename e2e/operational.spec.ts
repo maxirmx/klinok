@@ -183,7 +183,7 @@ test("fresh provisioning, Doctor approval, grant, draft, and confirmation", asyn
   const doctorEmail = `doctor-${suffix}@example.ru`;
   const ownerEmail = `owner-${suffix}@example.ru`;
   const doctorPage = await newPage(await browser.newContext(), "doctor");
-  await register(doctorPage, request, { firstName: "Анна", lastName: "Врач", email: doctorEmail, role: "doctor" });
+  await register(doctorPage, request, { firstName: "Алёна", lastName: "Врач", email: doctorEmail, role: "doctor" });
   await login(doctorPage, doctorEmail);
   await expect(doctorPage).toHaveURL(/\/profile/, { timeout: replicationTimeout });
   const doctorAccountId = await accountId(doctorPage);
@@ -192,6 +192,7 @@ test("fresh provisioning, Doctor approval, grant, draft, and confirmation", asyn
   const administratorPage = await newPage(await browser.newContext(), "administrator");
   await login(administratorPage, process.env.KLINOK_E2E_BOOTSTRAP_EMAIL ?? "administrator@example.ru", process.env.KLINOK_E2E_BOOTSTRAP_PASSWORD ?? "bootstrap-password-2026");
   await expect(administratorPage).toHaveURL(/\/admin\/home/);
+  await administratorPage.getByLabel("ФИО или идентификатор").fill("Алена");
   const requestRow = administratorPage.locator(".administrator-table tbody tr").filter({ hasText: doctorAccountId });
   await expect(requestRow).toBeVisible({ timeout: replicationTimeout });
   await requestRow.getByRole("button", { name: "Одобрить роль «Ветеринар»", exact: true }).click();
@@ -210,12 +211,12 @@ test("fresh provisioning, Doctor approval, grant, draft, and confirmation", asyn
   await expect(doctorPage).toHaveURL(/\/doctor\/home/);
 
   const ownerPage = await newPage(await browser.newContext(), "owner");
-  await register(ownerPage, request, { firstName: "Ольга", lastName: "Владелец", email: ownerEmail, role: "owner" });
+  await register(ownerPage, request, { firstName: "Семен", lastName: "Владелец", email: ownerEmail, role: "owner" });
   await login(ownerPage, ownerEmail);
   await expect(ownerPage).toHaveURL(/\/owner\/home/);
   await ownerPage.locator(".workspace-sidebar").getByRole("link", { name: "Добавить питомца" }).click();
   await expect(ownerPage).toHaveURL(/\/owner\/pets\/new/);
-  await ownerPage.getByLabel("Кличка").fill("Шарик");
+  await ownerPage.getByLabel("Кличка").fill("Ёжик");
   await ownerPage.getByLabel("Вид").selectOption("Собака");
   await ownerPage.getByLabel("Порода").fill("Бигль");
   await ownerPage.getByLabel("Пол").selectOption("Интактный самец");
@@ -233,14 +234,14 @@ test("fresh provisioning, Doctor approval, grant, draft, and confirmation", asyn
   await ownerPage.getByRole("button", { name: "Сохранить изменения" }).click();
   await expect(ownerPage.getByText("Наблюдать за аппетитом")).toBeVisible();
   await openProfileAndWaitForSync(ownerPage);
-  await ownerPage.locator(".workspace-sidebar").getByRole("link", { name: "Шарик", exact: true }).click();
+  await ownerPage.locator(".workspace-sidebar").getByRole("link", { name: "Ёжик", exact: true }).click();
   await expect(ownerPage).toHaveURL(new RegExp(`/owner/pets/${petId}$`));
 
   await doctorPage.bringToFront();
   await doctorPage.getByRole("button", { name: "Запросить доступ", exact: true }).click();
   const accessDialog = doctorPage.getByRole("dialog", { name: "Запросить доступ" });
-  await accessDialog.getByRole("searchbox", { name: /^ФИО владельца/ }).fill("Ольга Владелец");
-  await accessDialog.getByRole("searchbox", { name: /^Кличка/ }).fill("Шарик");
+  await accessDialog.getByRole("searchbox", { name: /^ФИО владельца/ }).fill("Семён Владелец");
+  await accessDialog.getByRole("searchbox", { name: /^Кличка/ }).fill("Ежик");
   await accessDialog.getByRole("button", { name: "Найти питомца" }).click();
   const requestResult = accessDialog.locator(".doctor-request-result").filter({ hasText: petId });
   await expect(requestResult).toBeVisible({ timeout: replicationTimeout });
@@ -260,6 +261,7 @@ test("fresh provisioning, Doctor approval, grant, draft, and confirmation", asyn
   await openProfileAndWaitForSync(doctorPage);
   await doctorPage.locator(".workspace-sidebar").getByRole("link", { name: "Мед. карты" }).click();
   await expect(doctorPage).toHaveURL(/\/doctor\/home/);
+  await doctorPage.getByLabel("ФИО владельца, кличка, вид или полный идентификатор").fill("Ежик");
   const medicalCard = doctorPage.locator(".doctor-access-table tbody tr").filter({ hasText: petId });
   await expect(medicalCard).toBeVisible({ timeout: replicationTimeout });
   await medicalCard.getByRole("link", { name: "Открыть медицинскую карту" }).click();
@@ -365,10 +367,10 @@ test("fresh provisioning, Doctor approval, grant, draft, and confirmation", asyn
       AND after_state->'record'->>'recordId'='${recordId}'
       AND after_state->'confirmation'->>'recordId'='${recordId}'`)).toBe("1");
   await openProfileAndWaitForSync(ownerPage);
-  await ownerPage.locator(".workspace-sidebar").getByRole("link", { name: "Шарик", exact: true }).click();
+  await ownerPage.locator(".workspace-sidebar").getByRole("link", { name: "Ёжик", exact: true }).click();
   await expect(ownerPage).toHaveURL(new RegExp(`/owner/pets/${petId}$`));
   await ownerPage.getByRole("link", { name: "Доступ врачей" }).click();
-  const activeAccess = ownerPage.locator(".owner-access-table tbody tr").filter({ hasText: "Анна Врач" });
+  const activeAccess = ownerPage.locator(".owner-access-table tbody tr").filter({ hasText: "Алёна Врач" });
   await activeAccess.getByRole("button", { name: "Отозвать доступ" }).click();
   await expect(ownerPage.getByText("Доступ отозван.")).toBeVisible();
   await openProfileAndWaitForSync(ownerPage);
@@ -392,5 +394,5 @@ test("fresh provisioning, Doctor approval, grant, draft, and confirmation", asyn
   await openProfileAndWaitForSync(ownerPage);
   await ownerPage.locator(".workspace-sidebar").getByRole("link", { name: "Питомцы" }).click();
   await expect(ownerPage).toHaveURL(/\/owner\/home/);
-  await expect(ownerPage.locator(".owner-pet-card strong").filter({ hasText: "Шарик" })).toBeVisible({ timeout: replicationTimeout });
+  await expect(ownerPage.locator(".owner-pet-card strong").filter({ hasText: "Ёжик" })).toBeVisible({ timeout: replicationTimeout });
 });

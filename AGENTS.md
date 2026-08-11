@@ -36,6 +36,10 @@
 - Keep validation messages beside their fields, modal-specific errors inside the open modal, and persistent application states such as permissions, device enrollment, key recovery, and synchronization in their contextual components.
 - Alerts are single-message, latest-wins state. They remain until dismissed or navigation changes the route path; query-only and hash-only navigation must preserve them.
 
+## Search
+
+- Treat the Russian letters `е` and `ё` as equivalent when searching by a person's full name or a pet's name. Apply the same equivalence to both the search query and the stored value.
+
 ## Cross-source consistency
 
 - For every flow that crosses the auth directory, control projection, medical projection, or an event-embedded snapshot, explicitly choose the authoritative source for current identity, status, and action identifiers. Use that authority consistently from list or search result through selection, modal display, mutation, and refresh.
