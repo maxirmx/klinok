@@ -28,7 +28,10 @@ readonly COMPOSE=(docker compose --project-name "$PROJECT_NAME" --env-file "$ENV
 "${COMPOSE[@]}" config --quiet
 "${COMPOSE[@]}" pull
 "${COMPOSE[@]}" up -d postgres-blue
-"${COMPOSE[@]}" run --rm -T api-blue node api-node/dist/provision.js
+"${COMPOSE[@]}" run --rm -T \
+  -e KLINOK_BOOTSTRAP_EMAIL \
+  -e KLINOK_BOOTSTRAP_PASSWORD \
+  api-blue node api-node/dist/provision.js
 "${COMPOSE[@]}" up -d api-blue ui-blue
 "${COMPOSE[@]}" ps
 
