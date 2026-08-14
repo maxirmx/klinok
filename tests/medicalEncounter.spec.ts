@@ -7,11 +7,19 @@ import {
   WHAT_HAPPENED_TREE,
   OUTCOME_OPTIONS,
   calculateNextRevaccinationDate,
+  diagnosisConfirmedSummary,
+  diagnosisDraft,
+  diagnosisLabel,
+  diagnosisValidationError,
+  emptyDiagnosisDraft,
   encounterSummary,
   generalDataMeasurements,
   isGeneralDataValue,
+  isDiagnosisValue,
   isVaccinationValue,
+  normalizeDiagnosisValue,
   parseGeneralDataDraft,
+  parseDiagnosisDraft,
   parseVaccinationDraft,
   outcomeValidationError,
   replaceConflictingOutcome,
@@ -19,6 +27,7 @@ import {
   vaccinationDetails,
   whatHappenedPath,
 } from "../src/medicalEncounter";
+import { DIAGNOSIS_CATALOG, DIAGNOSIS_CATALOG_OPTIONS } from "../src/repositories/types";
 
 describe("medical encounter templates", () => {
   it("contains stable, arbitrary-depth taxonomy identifiers including laboratory groups", () => {
@@ -87,6 +96,138 @@ describe("medical encounter templates", () => {
       .toEqual(["outcome.death"]);
     expect(replaceConflictingOutcome(["outcome.death"], "outcome.recovery"))
       .toEqual(["outcome.recovery"]);
+  });
+
+  it("preserves the issue diagnosis categorization and stable option membership", () => {
+    expect(DIAGNOSIS_CATALOG.map((group) => group.label)).toEqual([
+      "Патологии общего состояния",
+      "Желудочно-кишечный тракт",
+      "Сердечно-сосудистая система",
+      "Дыхательная система",
+      "Патологии головы (ротовая полость, глаза, уши)",
+      "Патологии кожи",
+      "Мочеполовая система",
+      "Опорно-двигательный аппарат",
+      "Нервная система",
+      "Инфекционные заболевания",
+      "Гормональные заболевания",
+    ]);
+    expect(DIAGNOSIS_CATALOG.find((group) => group.id === "head")?.groups?.map((group) => group.label))
+      .toEqual(["Ротовая полость", "Глаза", "Ушные проходы", "Нос"]);
+    expect(DIAGNOSIS_CATALOG.find((group) => group.id === "infectious")?.groups?.map((group) => group.label))
+      .toEqual(["Вирусные", "Бактериальные", "Паразитарные"]);
+    expect(DIAGNOSIS_CATALOG_OPTIONS).toHaveLength(392);
+    expect(new Set(DIAGNOSIS_CATALOG_OPTIONS.map((option) => option.id)).size).toBe(392);
+    expect(DIAGNOSIS_CATALOG_OPTIONS).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: "diagnosis.general.001", label: "Шок гиповолемический" }),
+      expect.objectContaining({ label: "Вестибулярный синдром периферический" }),
+      expect.objectContaining({ label: "Вестибулярный синдром центральный" }),
+      expect.objectContaining({ id: "diagnosis.infectious.viral.009", label: "Коронавирусный энтерит" }),
+    ]));
+  });
+
+  it("parses and validates catalog and free-form diagnosis values", () => {
+    const draft = emptyDiagnosisDraft();
+    draft.preliminaryMode = "custom";
+    draft.preliminaryCustomText = "  Подозрение на гастрит  ";
+    draft.differentialSelectedIds = ["diagnosis.digestive.001", "diagnosis.digestive.002"];
+    draft.differentialCustomTexts = ["  Реакция на корм  ", "Непереносимость препарата"];
+    draft.confirmedMode = "custom";
+    draft.confirmedCustomText = "  Подтверждено исследованием  ";
+    const parsed = parseDiagnosisDraft(draft);
+    expect(parsed.errors).toEqual({});
+    expect(parsed.value).toEqual({
+      preliminary: { customText: "Подозрение на гастрит" },
+      differential: {
+        selectedIds: ["diagnosis.digestive.001", "diagnosis.digestive.002"],
+        customTexts: ["Реакция на корм", "Непереносимость препарата"],
+      },
+      confirmed: { customText: "Подтверждено исследованием" },
+    });
+    expect(diagnosisValidationError(parsed.value)).toBe("");
+    expect(diagnosisConfirmedSummary(parsed.value)).toBe("Подтверждено исследованием");
+    expect(sectionSearchText(parsed.value)).toContain("Стоматит");
+    expect(sectionSearchText(parsed.value)).toContain("Реакция на корм");
+
+    expect(parseDiagnosisDraft(emptyDiagnosisDraft()).errors.confirmed).toContain("подтверждённый");
+    expect(diagnosisValidationError({
+      ...parsed.value,
+      confirmed: { selectedId: "diagnosis.digestive.001", customText: "Стоматит" },
+    })).toContain("справочника");
+    expect(diagnosisValidationError({
+      ...parsed.value,
+      differential: { selectedIds: ["diagnosis.unknown.001"], customTexts: [] },
+    })).toContain("неизвестный");
+  });
+
+  it("rejects malformed diagnosis variants and normalizes valid values", () => {
+    const valid = {
+      preliminary: { customText: "" },
+      differential: { selectedIds: [], customText: "" },
+      confirmed: { customText: "Подтверждено" },
+    };
+    const tooLong = "д".repeat(10_001);
+
+    expect(diagnosisValidationError(null)).toContain("Заполните раздел");
+    expect(diagnosisValidationError({ ...valid, preliminary: { selectedId: 42, customText: "" } }))
+      .toContain("некорректный");
+    expect(diagnosisValidationError({ ...valid, preliminary: {} })).toContain("Укажите диагноз");
+    expect(diagnosisValidationError({ ...valid, preliminary: { selectedId: "diagnosis.unknown", customText: "" } }))
+      .toContain("неизвестный");
+    expect(diagnosisValidationError({ ...valid, preliminary: { customText: tooLong } })).toContain("10 000");
+    expect(diagnosisValidationError({ ...valid, differential: null })).toContain("дифференциальные");
+    expect(diagnosisValidationError({ ...valid, differential: { selectedIds: [], customText: 42 } }))
+      .toContain("дифференциальные");
+    expect(diagnosisValidationError({ ...valid, differential: { selectedIds: [], customText: "", customTexts: [] } }))
+      .toContain("дифференциальные");
+    expect(diagnosisValidationError({
+      ...valid,
+      differential: { selectedIds: ["diagnosis.digestive.001", "diagnosis.digestive.001"], customText: "" },
+    })).toContain("повторяться");
+    expect(diagnosisValidationError({
+      ...valid,
+      differential: { selectedIds: ["diagnosis.digestive.001"], customText: "Свободный текст" },
+    })).toContain("справочника");
+    expect(diagnosisValidationError({ ...valid, differential: { selectedIds: [], customText: tooLong } }))
+      .toContain("10 000");
+    expect(diagnosisValidationError({
+      ...valid,
+      differential: { selectedIds: ["diagnosis.digestive.001"], customTexts: ["Свободный текст"] },
+    })).toBe("");
+    expect(diagnosisValidationError({ ...valid, differential: { selectedIds: [], customTexts: ["", "Диагноз"] } }))
+      .toContain("пустыми");
+    expect(diagnosisValidationError({ ...valid, differential: { selectedIds: [], customTexts: ["Диагноз", "Диагноз"] } }))
+      .toContain("повторяться");
+    expect(diagnosisValidationError({ ...valid, differential: { selectedIds: [], customTexts: [tooLong] } }))
+      .toContain("10 000");
+    expect(isDiagnosisValue(valid)).toBe(true);
+    expect(diagnosisLabel("diagnosis.unknown")).toBe("diagnosis.unknown");
+
+    const normalized = normalizeDiagnosisValue({
+      preliminary: { customText: "  Предварительный  " },
+      differential: { selectedIds: [], customText: "  Дифференциальный  " },
+      confirmed: { customText: "  Подтверждённый  " },
+    });
+    expect(normalized).toEqual({
+      preliminary: { customText: "Предварительный" },
+      differential: { selectedIds: [], customTexts: ["Дифференциальный"] },
+      confirmed: { customText: "Подтверждённый" },
+    });
+    expect(diagnosisDraft(normalized)).toMatchObject({
+      preliminaryMode: "custom",
+      differentialCustomTexts: ["Дифференциальный"],
+      confirmedMode: "custom",
+    });
+
+    const catalogDraft = emptyDiagnosisDraft();
+    catalogDraft.preliminarySelectedId = "diagnosis.digestive.001";
+    catalogDraft.differentialSelectedIds = ["diagnosis.digestive.002"];
+    catalogDraft.confirmedSelectedId = "diagnosis.digestive.003";
+    expect(diagnosisDraft(parseDiagnosisDraft(catalogDraft).value!)).toMatchObject({
+      preliminaryMode: "catalog",
+      differentialCustomTexts: [],
+      confirmedMode: "catalog",
+    });
   });
 
   it("parses, validates, formats, and indexes structured general data", () => {

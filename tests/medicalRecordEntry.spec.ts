@@ -28,8 +28,12 @@ const record: MedicalRecordDraft = {
     },
     diagnosis: {
       kind: "diagnosis",
-      templateVersion: "free-text-v0",
-      value: { text: "Предварительный диагноз" },
+      templateVersion: "diagnosis-v1",
+      value: {
+        preliminary: { customText: "Подозрение на гастрит" },
+        differential: { selectedIds: ["diagnosis.digestive.001"], customText: "" },
+        confirmed: { selectedId: "diagnosis.digestive.002", customText: "" },
+      },
       authorAccountId: "doctor-2",
       authorDisplayName: "Анна Врач",
       updatedAt: "2026-07-21T11:00:00.000Z",
@@ -103,6 +107,7 @@ describe("MedicalRecordEntry", () => {
     expect(wrapper.element.tagName).toBe("BUTTON");
     expect(wrapper.text()).toContain("21.07.2026");
     expect(wrapper.text()).toContain("Не ест");
+    expect(wrapper.text()).toContain("Гингивит острый");
     expect(wrapper.text()).toContain("Выздоровление; Улучшение");
     expect(wrapper.text()).toContain("Назначено лечение");
     expect(wrapper.text()).toContain("Ожидает подтверждения");
@@ -171,6 +176,16 @@ describe("MedicalRecordEntry", () => {
     expect(authorIdentity.text()).not.toContain("·");
     expect(wrapper.text()).toContain("13.75 кг");
     expect(wrapper.text()).toContain("120/80 сред. 93 мм рт. ст.");
+    const diagnosis = wrapper.findAll(".encounter-history-section")
+      .find((section) => section.get("h3").text() === "Диагноз")!;
+    expect(diagnosis.findAll("dt").map((label) => label.text())).toEqual([
+      "Предварительный диагноз",
+      "Дифференциальные диагнозы",
+      "Подтверждённый диагноз",
+    ]);
+    expect(diagnosis.text()).toContain("Подозрение на гастрит");
+    expect(diagnosis.text()).toContain("Стоматит");
+    expect(diagnosis.text()).toContain("Гингивит острый");
     expect(wrapper.text()).not.toContain("2026-07-21T11:00:00.000Z");
     expect(wrapper.text()).toContain("Подтверждена");
     expect(wrapper.find(".medical-record-edit").exists()).toBe(false);
@@ -179,6 +194,7 @@ describe("MedicalRecordEntry", () => {
     const edit = wrapper.get(".medical-record-edit");
     expect(wrapper.get(".owner-encounter-summary").find(".medical-record-actions").exists()).toBe(false);
     expect(wrapper.get(".medical-record-collapsed-outcome").text()).toBe("· Исход: Выздоровление; Улучшение; Назначено лечение");
+    expect(wrapper.get(".medical-record-collapsed-diagnosis").text()).toBe("· Диагноз: Гингивит острый");
     expect(wrapper.findAll(".encounter-history-section")[0]!.get(".encounter-history-heading").find(".medical-record-actions").exists()).toBe(true);
     expect(edit.text()).toBe("");
     expect(edit.attributes("title")).toBe("Редактировать запись");
@@ -192,6 +208,42 @@ describe("MedicalRecordEntry", () => {
     expect(remove.getComponent(AppIcon).props("name")).toBe("trash");
     await remove.trigger("click");
     expect(wrapper.emitted("delete")?.[0]).toEqual([record]);
+  });
+
+  it("renders catalog and multiple free-form differential diagnoses from diagnosis v2 together", () => {
+    const diagnosis = record.sections.diagnosis!;
+    const wrapper = mount(MedicalRecordEntry, {
+      props: {
+        record: {
+          ...record,
+          sections: {
+            ...record.sections,
+            diagnosis: {
+              ...diagnosis,
+              templateVersion: "diagnosis-v2",
+              value: {
+                preliminary: { customText: "" },
+                differential: {
+                  selectedIds: ["diagnosis.digestive.001"],
+                  customTexts: ["Реакция на корм", "Непереносимость препарата"],
+                },
+                confirmed: { selectedId: "diagnosis.digestive.002", customText: "" },
+              },
+            },
+          },
+        },
+        mode: "details",
+        confirmed: false,
+        open: true,
+      },
+    });
+
+    const diagnosisHistory = wrapper.get(".diagnosis-history-values");
+    expect(diagnosisHistory.findAll("li").map((item) => item.text())).toEqual([
+      "Стоматит",
+      "Реакция на корм",
+      "Непереносимость препарата",
+    ]);
   });
 
   it("offers confirmation only for a pending detailed record", async () => {

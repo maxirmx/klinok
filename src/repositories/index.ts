@@ -60,6 +60,7 @@ function optimisticRecord(command: ClientCommand, snapshot: AppSnapshotDto): Med
   const sections = Object.fromEntries(Object.entries(input.sections).map(([kind, value]) => [kind, {
     kind,
     templateVersion: kind === "what-happened" ? "what-happened-v1" : kind === "outcome" ? "outcome-v1"
+      : kind === "diagnosis" ? "diagnosis-v2"
       : kind === "general-data" && !(value && typeof value === "object" && "text" in value) ? "general-data-v1"
         : kind === "vaccination" && !(value && typeof value === "object" && "text" in value) ? "vaccination-v1"
           : kind === "therapeutic-appointment" && !(value && typeof value === "object" && "text" in value) ? "therapeutic-appointment-v1" : "free-text-v0",

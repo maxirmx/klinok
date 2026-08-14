@@ -300,6 +300,60 @@ test("fresh provisioning, Doctor approval, grant, draft, and confirmation", asyn
   await therapeuticCard.getByLabel("Текст рекомендаций").fill("Повторный осмотр через неделю");
   await therapeuticCard.getByRole("tab", { name: "Назначения" }).click();
   await therapeuticCard.getByLabel("Текст назначений").fill("Щадящий режим");
+  await doctorPage.locator(".encounter-add-section select").selectOption("diagnosis");
+  const diagnosisCard = doctorPage.locator(".encounter-section-card").filter({
+    has: doctorPage.getByRole("heading", { name: "Диагноз", exact: true }),
+  });
+  const diagnosisFields = diagnosisCard.locator("fieldset.diagnosis-field");
+  const preliminaryDiagnosis = diagnosisFields.filter({ has: doctorPage.getByText("Предварительный диагноз", { exact: true }) });
+  const differentialDiagnosis = diagnosisFields.filter({ has: doctorPage.getByText("Дифференциальные диагнозы", { exact: true }) });
+  const confirmedDiagnosis = diagnosisFields.filter({ has: doctorPage.getByText("Подтверждённый диагноз", { exact: true }) });
+  const diagnosisRightActions = [
+    diagnosisCard.getByRole("button", { name: "Удалить раздел" }),
+    preliminaryDiagnosis.getByRole("button", { name: "Назначить предварительный диагноз подтверждённым" }),
+    differentialDiagnosis.getByRole("button", { name: "Показать варианты диагнозов" }),
+    confirmedDiagnosis.getByRole("button", { name: "Показать варианты диагнозов" }),
+  ];
+  const diagnosisActionCenters = await Promise.all(diagnosisRightActions.map(async (action) => {
+    const box = await action.boundingBox();
+    expect(box).not.toBeNull();
+    return box!.x + box!.width / 2;
+  }));
+  expect(Math.max(...diagnosisActionCenters) - Math.min(...diagnosisActionCenters)).toBeLessThanOrEqual(1);
+  await preliminaryDiagnosis.getByRole("combobox", { name: "Предварительный диагноз" }).fill("Подозрение на анафилаксию");
+  await preliminaryDiagnosis.getByRole("button", { name: "Назначить предварительный диагноз подтверждённым" }).click();
+  await differentialDiagnosis.getByRole("button", { name: "Показать варианты диагнозов" }).click();
+  await expect(differentialDiagnosis.getByText("Выберите категорию", { exact: true })).toBeVisible();
+  await differentialDiagnosis.getByRole("option", { name: "Патологии общего состояния", exact: true }).click();
+  await differentialDiagnosis.getByRole("option", { name: "Отёк Квинке", exact: true }).click();
+  await differentialDiagnosis.getByRole("combobox", { name: "Добавить дифференциальный диагноз" }).fill("Реакция на корм");
+  await differentialDiagnosis.getByRole("button", { name: "Добавить диагноз в свободной форме" }).click();
+  await differentialDiagnosis.getByRole("combobox", { name: "Добавить дифференциальный диагноз" }).fill("Просто шок");
+  await differentialDiagnosis.getByRole("button", { name: "Добавить диагноз в свободной форме" }).click();
+  const differentialChipWidths = await differentialDiagnosis.locator(".diagnosis-selected-chip")
+    .evaluateAll((chips) => chips.map((chip) => chip.getBoundingClientRect().width));
+  expect(differentialChipWidths).toHaveLength(3);
+  expect(Math.max(...differentialChipWidths) - Math.min(...differentialChipWidths)).toBeLessThanOrEqual(1);
+  const differentialRemoveOffsets = await differentialDiagnosis.locator(".diagnosis-selected-chip")
+    .evaluateAll((chips) => chips.map((chip) => {
+      const remove = chip.querySelector<HTMLElement>("button:last-child")!;
+      return Math.abs(chip.getBoundingClientRect().right - remove.getBoundingClientRect().right);
+    }));
+  expect(differentialRemoveOffsets).toHaveLength(3);
+  expect(Math.max(...differentialRemoveOffsets)).toBeLessThanOrEqual(1);
+  await doctorPage.setViewportSize({ width: 752, height: 1200 });
+  const narrowDiagnosisRightActionCenters = await Promise.all([
+    ...diagnosisRightActions,
+    ...await differentialDiagnosis.locator(".diagnosis-selected-chip > button:last-child").all(),
+  ].map(async (action) => {
+    const box = await action.boundingBox();
+    expect(box).not.toBeNull();
+    return box!.x + box!.width / 2;
+  }));
+  expect(Math.max(...narrowDiagnosisRightActionCenters) - Math.min(...narrowDiagnosisRightActionCenters)).toBeLessThanOrEqual(1);
+  await differentialDiagnosis.getByRole("button", { name: "Назначить «Отёк Квинке» подтверждённым диагнозом" }).click();
+  await doctorPage.getByRole("alertdialog", { name: "Заменить подтверждённый диагноз?" })
+    .getByRole("button", { name: "Заменить", exact: true }).click();
 
   await doctorPage.setViewportSize({ width: 900, height: 800 });
   const mediumTabRows = await therapeuticTabs.evaluateAll((tabs) => tabs.reduce<number[]>((rows, tab) => {
@@ -338,6 +392,14 @@ test("fresh provisioning, Doctor approval, grant, draft, and confirmation", asyn
   await expect(ownerRecord.locator(".encounter-history-comment").getByText("Состояние стабильное", { exact: true })).toBeVisible();
   await expect(ownerRecord.getByText("В стадии наблюдения", { exact: true })).toBeVisible();
   await expect(ownerRecord.getByText("Контроль через неделю", { exact: true })).toBeVisible();
+  await expect(ownerRecord.locator("summary")).toContainText("Диагноз: Отёк Квинке");
+  const ownerDiagnosis = ownerRecord.locator(".encounter-history-section").filter({
+    has: ownerPage.getByRole("heading", { name: "Диагноз", exact: true }),
+  });
+  await expect(ownerDiagnosis.getByText("Подозрение на анафилаксию", { exact: true })).toBeVisible();
+  await expect(ownerDiagnosis.getByText("Отёк Квинке", { exact: true })).toHaveCount(2);
+  await expect(ownerDiagnosis.getByText("Реакция на корм", { exact: true })).toBeVisible();
+  await expect(ownerDiagnosis.getByText("Просто шок", { exact: true })).toBeVisible();
   const ownerTherapeutic = ownerRecord.locator(".encounter-history-section").filter({
     has: ownerPage.getByRole("heading", { name: "Терапевтический приём", exact: true }),
   });
@@ -376,11 +438,17 @@ test("fresh provisioning, Doctor approval, grant, draft, and confirmation", asyn
   await expect(ownerRecord.getByText("Подтверждена", { exact: true })).toBeVisible();
   await expectEmailText(request, doctorEmail, "Медицинская запись о питомце «Ёжик» подтверждена владельцем.");
   await expect(profileWeight).toContainText("14.3 кг");
+  await ownerPage.reload();
+  await expect(ownerPage.locator(".medical-record-entry-details").filter({ hasText: "Всё хорошо" }).locator("summary"))
+    .toContainText("Диагноз: Отёк Квинке");
   expect(await queryPostgres(`SELECT count(*) FROM audit_blocks
     WHERE aggregate_type='medicalRecord' AND aggregate_id='${recordId}' AND action='record.created'
       AND before_state='null'::jsonb AND after_state->>'status'='unconfirmed'
       AND after_state->'record'->>'recordId'='${recordId}'
-      AND after_state->'record'->'sections'->'what-happened' IS NOT NULL`)).toBe("1");
+      AND after_state->'record'->'sections'->'what-happened' IS NOT NULL
+      AND after_state->'record'->'sections'->'diagnosis'->>'templateVersion'='diagnosis-v2'
+      AND after_state->'record'->'sections'->'diagnosis'->'value'->'differential'->'customTexts' @> '["Реакция на корм", "Просто шок"]'::jsonb
+      AND after_state->'record'->'sections'->'diagnosis'->'value'->'confirmed'->>'selectedId'='diagnosis.general.012'`)).toBe("1");
   expect(await queryPostgres(`SELECT count(*) FROM audit_blocks
     WHERE aggregate_type='medicalRecord' AND aggregate_id='${recordId}' AND action='record.confirmed'
       AND before_state->>'status'='unconfirmed' AND after_state->>'status'='confirmed'

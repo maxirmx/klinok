@@ -6,10 +6,14 @@ import { randomUUID } from "node:crypto";
 import {
   PET_SEXES,
   MEDICAL_ENCOUNTER_SECTION_KINDS,
+  isDiagnosisTaxonomyId,
   isOutcomeTaxonomyId,
   isWhatHappenedTaxonomyId,
   type ClientCommand,
   type CommandResult,
+  type DiagnosisChoice,
+  type DiagnosisSectionValue,
+  type DiagnosisTaxonomyId,
   type MedicalEncounterInput,
   type MedicalRecordConfirmation,
   type MedicalRecordDraft,
@@ -27,10 +31,64 @@ interface Actor { accountId: string }
 interface Applied { value?: unknown; revision?: number; audit: Omit<AuditInput, "operationId" | "actorAccountId" | "activeRole"> }
 
 const GRANT_ACTIONS = new Set<PetGrantAction>(["read", "write_unconfirmed", "delegate"]);
+const MAX_DIAGNOSIS_TEXT_LENGTH = 10_000;
 
 function object(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new ApiError(400, "VALIDATION_FAILED", "Expected an object.");
   return value as Record<string, unknown>;
+}
+
+function diagnosisChoice(value: unknown, required: boolean): DiagnosisChoice {
+  const input = object(value);
+  const selectedId = input.selectedId === undefined ? undefined : requireText(input.selectedId, "selectedId", 200);
+  const customText = typeof input.customText === "string" ? input.customText.trim() : "";
+  if (typeof input.customText !== "string" || customText.length > MAX_DIAGNOSIS_TEXT_LENGTH) {
+    throw new ApiError(400, "VALIDATION_FAILED", "The diagnosis text is invalid.");
+  }
+  if (selectedId && !isDiagnosisTaxonomyId(selectedId)) {
+    throw new ApiError(400, "VALIDATION_FAILED", "The diagnosis identifier is unknown.");
+  }
+  if (selectedId && customText) {
+    throw new ApiError(400, "VALIDATION_FAILED", "A diagnosis must use either a catalog value or free text.");
+  }
+  if (required && !selectedId && !customText) {
+    throw new ApiError(400, "VALIDATION_FAILED", "The confirmed diagnosis is required.");
+  }
+  return { ...(selectedId ? { selectedId: selectedId as DiagnosisTaxonomyId } : {}), customText };
+}
+
+function diagnosisSection(value: unknown): DiagnosisSectionValue {
+  const input = object(value);
+  const preliminary = diagnosisChoice(input.preliminary, false);
+  const differentialInput = object(input.differential);
+  if (!Array.isArray(differentialInput.selectedIds)) {
+    throw new ApiError(400, "VALIDATION_FAILED", "The differential diagnoses are invalid.");
+  }
+  const selectedIds = differentialInput.selectedIds;
+  const hasCustomTexts = "customTexts" in differentialInput;
+  const hasLegacyCustomText = "customText" in differentialInput;
+  if (hasCustomTexts === hasLegacyCustomText
+    || (hasCustomTexts && !Array.isArray(differentialInput.customTexts))
+    || (hasLegacyCustomText && typeof differentialInput.customText !== "string")) {
+    throw new ApiError(400, "VALIDATION_FAILED", "The differential diagnoses are invalid.");
+  }
+  const customTexts = hasCustomTexts
+    ? (differentialInput.customTexts as unknown[]).map((text) => typeof text === "string" ? text.trim() : text)
+    : [(differentialInput.customText as string).trim()].filter(Boolean);
+  if (selectedIds.some((id) => typeof id !== "string" || !isDiagnosisTaxonomyId(id))
+    || new Set(selectedIds).size !== selectedIds.length
+    || customTexts.some((text) => typeof text !== "string" || !text || text.length > MAX_DIAGNOSIS_TEXT_LENGTH)
+    || new Set(customTexts).size !== customTexts.length) {
+    throw new ApiError(400, "VALIDATION_FAILED", "The differential diagnoses are invalid.");
+  }
+  if (hasLegacyCustomText && selectedIds.length && customTexts.length) {
+    throw new ApiError(400, "VALIDATION_FAILED", "Differential diagnoses must use either catalog values or free text.");
+  }
+  return {
+    preliminary,
+    differential: { selectedIds: selectedIds as DiagnosisTaxonomyId[], customTexts: customTexts as string[] },
+    confirmed: diagnosisChoice(input.confirmed, true),
+  };
 }
 
 function isNewerVaccination(candidate: { date: string; recordId?: string }, current: unknown): boolean {
@@ -88,7 +146,7 @@ function petInput(value: unknown): PetProfileInput {
   };
 }
 
-function encounter(value: unknown): MedicalEncounterInput {
+export function validateMedicalEncounter(value: unknown): MedicalEncounterInput {
   const input = object(value);
   const encounterDate = requireText(input.encounterDate, "encounterDate", 10);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(encounterDate) || encounterDate > new Date().toISOString().slice(0, 10)) {
@@ -120,10 +178,11 @@ function encounter(value: unknown): MedicalEncounterInput {
     || (outcomeIds.includes("outcome.deterioration") && (outcomeIds.includes("outcome.improvement") || outcomeIds.includes("outcome.recovery")))) {
     throw new ApiError(400, "VALIDATION_FAILED", "The outcome section contains incompatible options.");
   }
+  const diagnosis = sections.diagnosis === undefined ? undefined : diagnosisSection(sections.diagnosis);
   for (const [kind, sectionValue] of Object.entries(sections)) {
-    if (kind === "what-happened" || kind === "outcome") continue;
+    if (kind === "what-happened" || kind === "outcome" || kind === "diagnosis") continue;
     const structured = object(sectionValue);
-    if (["diagnosis", "recommendations", "laboratory-tests", "instrumental-tests", "procedures"].includes(kind)
+    if (["recommendations", "laboratory-tests", "instrumental-tests", "procedures"].includes(kind)
       && (typeof structured.text !== "string" || !structured.text.trim() || structured.text.length > 50_000)) {
       throw new ApiError(400, "VALIDATION_FAILED", `The ${kind} section is invalid.`);
     }
@@ -131,7 +190,10 @@ function encounter(value: unknown): MedicalEncounterInput {
   return {
     petId: requireText(input.petId, "petId", 100),
     encounterDate,
-    sections: sections as unknown as MedicalEncounterInput["sections"],
+    sections: {
+      ...sections,
+      ...(diagnosis ? { diagnosis } : {}),
+    } as unknown as MedicalEncounterInput["sections"],
     ...(input.recordId ? { recordId: requireText(input.recordId, "recordId", 100) } : {}),
   };
 }
@@ -141,6 +203,7 @@ function medicalSections(input: MedicalEncounterInput, accountId: string, author
     kind,
     templateVersion: kind === "what-happened" ? "what-happened-v1"
       : kind === "outcome" ? "outcome-v1"
+        : kind === "diagnosis" ? "diagnosis-v2"
         : kind === "general-data" && !(value && typeof value === "object" && "text" in value) ? "general-data-v1"
           : kind === "vaccination" && !(value && typeof value === "object" && "text" in value) ? "vaccination-v1"
             : kind === "therapeutic-appointment" && !(value && typeof value === "object" && "text" in value) ? "therapeutic-appointment-v1"
@@ -650,7 +713,7 @@ async function handleAccess(client: PoolClient, actor: Actor, command: ClientCom
 async function handleRecord(client: PoolClient, actor: Actor, command: ClientCommand): Promise<Applied> {
   if (["record.create", "record.update"].includes(command.type)) {
     await requireActiveRole(client, actor, command, ["doctor"]);
-    const input = encounter(object(command.payload).input ?? command.payload);
+    const input = validateMedicalEncounter(object(command.payload).input ?? command.payload);
     if (input.petId !== object(command.payload).petId && object(command.payload).petId !== undefined) throw new ApiError(400, "VALIDATION_FAILED", "Pet identifiers differ.");
     const pet = await petRow(client, input.petId, true);
     await requirePetWrite(client, actor, input.petId);

@@ -2,6 +2,21 @@
 // All rights reserved.
 // This file is a part of Klinok application
 
+import type { DiagnosisSectionValue } from "./diagnosis.js";
+
+export {
+  DIAGNOSIS_CATALOG,
+  DIAGNOSIS_CATALOG_OPTIONS,
+  isDiagnosisTaxonomyId,
+  type DiagnosisCatalogGroup,
+  type DiagnosisCatalogOption,
+  type DiagnosisChoice,
+  type DiagnosisDifferential,
+  type LegacyDiagnosisDifferential,
+  type DiagnosisSectionValue,
+  type DiagnosisTaxonomyId,
+} from "./diagnosis.js";
+
 export const ROLES = ["administrator", "doctor", "owner"] as const;
 export type Role = (typeof ROLES)[number];
 
@@ -292,8 +307,8 @@ export interface TherapeuticAppointmentSectionValue {
 
 export interface MedicalEncounterSection {
   kind: MedicalEncounterSectionKind;
-  templateVersion: "what-happened-v1" | "outcome-v1" | "general-data-v1" | "vaccination-v1" | "therapeutic-appointment-v1" | "free-text-v0";
-  value: WhatHappenedSectionValue | OutcomeSectionValue | GeneralDataSectionValue | VaccinationSectionValue | TherapeuticAppointmentSectionValue | FreeTextSectionValue;
+  templateVersion: "what-happened-v1" | "outcome-v1" | "diagnosis-v1" | "diagnosis-v2" | "general-data-v1" | "vaccination-v1" | "therapeutic-appointment-v1" | "free-text-v0";
+  value: WhatHappenedSectionValue | OutcomeSectionValue | DiagnosisSectionValue | GeneralDataSectionValue | VaccinationSectionValue | TherapeuticAppointmentSectionValue | FreeTextSectionValue;
   authorAccountId: string;
   authorDisplayName: string;
   updatedAt: string;

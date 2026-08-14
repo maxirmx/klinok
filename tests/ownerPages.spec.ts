@@ -301,8 +301,8 @@ describe("Owner pages", () => {
     await wrapper.get('input[aria-label="Точная дата рождения"]').setValue("2021-05-10");
     expect(labelled(wrapper, "Окрас").attributes("for")).toBe(wrapper.get(".owner-color-field input").attributes("id"));
     expect(wrapper.get(".owner-color-field input").attributes("required")).toBeUndefined();
-    await wrapper.get(".owner-color-toggle").trigger("click");
-    const calicoOption = wrapper.findAll(".owner-color-option").find((option) => option.text() === "Ситцевый");
+    await wrapper.get(".app-catalog-toggle").trigger("click");
+    const calicoOption = wrapper.findAll(".app-catalog-option").find((option) => option.text() === "Ситцевый");
     expect(calicoOption).toBeTruthy();
     await calicoOption!.trigger("click");
     await labelled(wrapper, "Вес, кг").get("input").setValue("4.8");

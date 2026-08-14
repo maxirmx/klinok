@@ -9,10 +9,15 @@ import PersonIdentity from "./PersonIdentity.vue";
 import TherapeuticAppointmentView from "./TherapeuticAppointmentView.vue";
 import {
   ENCOUNTER_SECTION_LABELS,
+  diagnosisChoiceSummary,
+  diagnosisConfirmedSummary,
+  diagnosisDifferentialCustomTexts,
+  diagnosisLabel,
   encounterSummary,
   freeText,
   generalDataMeasurements,
   isFreeTextValue,
+  isDiagnosisValue,
   isGeneralDataValue,
   isOutcomeValue,
   isVaccinationValue,
@@ -70,6 +75,7 @@ const conditionHeadlines = computed(() => {
 });
 
 const collapsedOutcome = computed(() => outcomeSummary(props.record.sections.outcome?.value) || "Не заполнено");
+const collapsedDiagnosis = computed(() => diagnosisConfirmedSummary(props.record.sections.diagnosis?.value));
 
 function formatDate(value: string) {
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
@@ -96,6 +102,7 @@ function formatLocalDateTime(value: string) {
   >
     <span>{{ formatDate(record.encounterDate) }}</span>
     <strong>{{ encounterSummary(record) }}</strong>
+    <span>{{ diagnosisConfirmedSummary(record.sections.diagnosis?.value) || 'Не заполнено' }}</span>
     <span>{{ outcomeSummary(record.sections.outcome?.value) || 'Не заполнено' }}</span>
     <span class="status-badge" :class="confirmed ? 'approved' : 'pending'">
       {{ confirmed ? 'Подтверждена' : 'Ожидает подтверждения' }}
@@ -122,6 +129,7 @@ function formatLocalDateTime(value: string) {
             </template>
           </template>
           <template v-else>{{ encounterSummary(record) }}</template>
+          <span v-if="collapsedDiagnosis" class="medical-record-collapsed-diagnosis"> · Диагноз: {{ collapsedDiagnosis }}</span>
           <span class="medical-record-collapsed-outcome"> · Исход: {{ collapsedOutcome }}</span>
         </strong>
         <small>Редакция {{ record.revision }} · {{ record.authorDisplayName }}</small>
@@ -182,6 +190,26 @@ function formatLocalDateTime(value: string) {
           </ul>
           <p v-if="outcomeComment(item.section.value)" class="encounter-history-comment">{{ outcomeComment(item.section.value) }}</p>
         </template>
+        <dl v-else-if="item.kind === 'diagnosis' && isDiagnosisValue(item.section.value)" class="diagnosis-history-values">
+          <div>
+            <dt>Предварительный диагноз</dt>
+            <dd>{{ diagnosisChoiceSummary(item.section.value.preliminary) || 'Не указано' }}</dd>
+          </div>
+          <div>
+            <dt>Дифференциальные диагнозы</dt>
+            <dd v-if="item.section.value.differential.selectedIds.length || diagnosisDifferentialCustomTexts(item.section.value.differential).length">
+              <ul>
+                <li v-for="id in item.section.value.differential.selectedIds" :key="id">{{ diagnosisLabel(id) }}</li>
+                <li v-for="(text, index) in diagnosisDifferentialCustomTexts(item.section.value.differential)" :key="`custom:${index}:${text}`">{{ text }}</li>
+              </ul>
+            </dd>
+            <dd v-else>Не указано</dd>
+          </div>
+          <div>
+            <dt>Подтверждённый диагноз</dt>
+            <dd>{{ diagnosisChoiceSummary(item.section.value.confirmed) }}</dd>
+          </div>
+        </dl>
         <TherapeuticAppointmentView
           v-else-if="item.kind === 'therapeutic-appointment' && isTherapeuticAppointmentValue(item.section.value)"
           :value="item.section.value"

@@ -5,6 +5,7 @@
 
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import AppIcon from "./AppIcon.vue";
+import DiagnosisEditor from "./DiagnosisEditor.vue";
 import TherapeuticAppointmentForm from "./TherapeuticAppointmentForm.vue";
 import WhatHappenedTree from "./WhatHappenedTree.vue";
 import {
@@ -15,6 +16,8 @@ import {
   WHAT_HAPPENED_TREE,
   calculateNextRevaccinationDate,
   emptyVaccinationDraft,
+  emptyDiagnosisDraft,
+  parseDiagnosisDraft,
   parseGeneralDataDraft,
   parseVaccinationDraft,
   replaceConflictingOutcome,
@@ -27,6 +30,8 @@ import {
 import type {
   GeneralDataDraft,
   GeneralDataDraftErrors,
+  DiagnosisDraft,
+  DiagnosisDraftErrors,
   VaccinationDraft,
   VaccinationDraftErrors,
   RevaccinationInterval,
@@ -59,10 +64,12 @@ const texts = defineModel<Partial<Record<MedicalEncounterSectionKind, string>>>(
 const generalData = defineModel<GeneralDataDraft>("generalData", { required: true });
 const vaccination = defineModel<VaccinationDraft>("vaccination", { required: true });
 const therapeuticAppointment = defineModel<TherapeuticAppointmentDraft>("therapeuticAppointment", { required: true });
+const diagnosis = defineModel<DiagnosisDraft>("diagnosis", { required: true });
 const form = ref<HTMLFormElement | null>(null);
 const generalDataErrors = ref<GeneralDataDraftErrors>({});
 const vaccinationErrors = ref<VaccinationDraftErrors>({});
 const therapeuticErrors = ref<TherapeuticAppointmentDraftErrors>({});
+const diagnosisErrors = ref<DiagnosisDraftErrors>({});
 const revaccinationInterval = ref<RevaccinationInterval | "">("");
 const revaccinationChooserOpen = ref(false);
 const revaccinationMenuRoot = ref<HTMLElement | null>(null);
@@ -82,6 +89,7 @@ onBeforeUnmount(() => document.removeEventListener("pointerdown", handleDocument
 watch(date, () => {
   if (revaccinationInterval.value) applyRevaccinationInterval(revaccinationInterval.value);
 });
+watch(diagnosis, () => { diagnosisErrors.value = {}; }, { deep: true });
 
 function toggleSelection(id: string) {
   const index = selectedIds.value.indexOf(id);
@@ -118,6 +126,13 @@ function selectOptional(event: Event) {
       therapeuticErrors.value = {};
       const nextTexts = { ...texts.value };
       delete nextTexts["therapeutic-appointment"];
+      texts.value = nextTexts;
+    }
+    if (kind === "diagnosis") {
+      diagnosis.value = emptyDiagnosisDraft();
+      diagnosisErrors.value = {};
+      const nextTexts = { ...texts.value };
+      delete nextTexts.diagnosis;
       texts.value = nextTexts;
     }
   }
@@ -197,6 +212,11 @@ function submit() {
     therapeuticErrors.value = parsed.errors;
     if (!parsed.value) return;
   }
+  if (optionalKinds.value.includes("diagnosis")) {
+    const parsed = parseDiagnosisDraft(diagnosis.value);
+    diagnosisErrors.value = parsed.errors;
+    if (!parsed.value) return;
+  }
   if (form.value?.reportValidity() === false) return;
   emit("save");
 }
@@ -223,12 +243,20 @@ function submit() {
         <textarea v-model="comment" class="medical-card-comment" rows="2" aria-label="Комментарий" />
       </section>
     </article>
-    <article v-for="kind in optionalKinds" :key="kind" class="encounter-section-card">
+    <article
+      v-for="kind in optionalKinds"
+      :key="kind"
+      class="encounter-section-card"
+      :class="{ 'encounter-diagnosis': kind === 'diagnosis' }"
+    >
       <div class="doctor-heading">
         <h3>{{ ENCOUNTER_SECTION_LABELS[kind] }}</h3>
         <button type="button" class="outline-action inline danger-outline owner-profile-action encounter-section-delete" title="Удалить раздел" aria-label="Удалить раздел" @click="emit('removeSection', kind)"><AppIcon name="trash" /></button>
       </div>
-      <template v-if="kind === 'general-data' && texts[kind] === undefined">
+      <template v-if="kind === 'diagnosis'">
+        <DiagnosisEditor v-model="diagnosis" :errors="diagnosisErrors" />
+      </template>
+      <template v-else-if="kind === 'general-data' && texts[kind] === undefined">
         <p v-if="generalDataErrors.section" class="field-error" role="alert">{{ generalDataErrors.section }}</p>
         <div class="general-data-fields" @input="updateGeneralData">
           <label>

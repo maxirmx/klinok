@@ -7,6 +7,11 @@ export type {
   AppSnapshotDto,
   AuditRoleEntryDto,
   ControlSnapshot,
+  DiagnosisCatalogGroup,
+  DiagnosisCatalogOption,
+  DiagnosisChoice,
+  DiagnosisSectionValue,
+  DiagnosisTaxonomyId,
   FreeTextSectionValue,
   GeneralDataSectionValue,
   MedicalEncounterInput,
@@ -26,4 +31,9 @@ export type {
   VaccinationSectionValue,
   WhatHappenedSectionValue,
 } from "@klinok/contracts";
-export { MEDICAL_ENCOUNTER_SECTION_KINDS } from "@klinok/contracts";
+export {
+  DIAGNOSIS_CATALOG,
+  DIAGNOSIS_CATALOG_OPTIONS,
+  MEDICAL_ENCOUNTER_SECTION_KINDS,
+  isDiagnosisTaxonomyId,
+} from "@klinok/contracts";
