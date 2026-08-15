@@ -49,7 +49,7 @@ export function normalizeLaboratoryTestsValue(value: unknown, today = new Date()
   const studies = (value as { studies: unknown[] }).studies.map((raw) => {
     if (!raw || typeof raw !== "object") throw new Error("Некорректное лабораторное исследование.");
     const input = raw as Record<string, unknown>; const id = String(input.id ?? ""); const date = String(input.date ?? ""); const type = types.get(String(input.typeId ?? ""));
-    if (!/^[0-9a-f]{8}-[0-9a-f-]{27}$/i.test(id) || seen.has(id)) throw new Error("Некорректный идентификатор исследования."); seen.add(id);
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id) || seen.has(id)) throw new Error("Некорректный идентификатор исследования."); seen.add(id);
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || date > today) throw new Error("Укажите корректную дату исследования.");
     if (!type) throw new Error("Выберите исследование из справочника.");
     const laboratory = String(input.laboratory ?? "").trim(); if (!laboratory) throw new Error("Укажите лабораторию.");
