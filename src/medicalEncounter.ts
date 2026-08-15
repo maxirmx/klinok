@@ -12,6 +12,7 @@ import type {
   OutcomeSectionValue,
   VaccinationSectionValue,
   WhatHappenedSectionValue,
+  LaboratoryTestsSectionValue,
 } from "./repositories/types";
 import {
   DIAGNOSIS_CATALOG_OPTIONS,
@@ -723,7 +724,12 @@ export function sectionSearchText(value: unknown): string {
   if (isTherapeuticAppointmentValue(value)) return therapeuticAppointmentSearchText(value);
   if (isGeneralDataValue(value)) return generalDataMeasurements(value).map((item) => `${item.label} ${item.value}`).join(" ");
   if (isVaccinationValue(value)) return vaccinationDetails(value).map((item) => `${item.label} ${item.value}`).join(" ");
+  if (isLaboratoryTestsValue(value)) return value.studies.flatMap((study) => [study.date, study.typeName, study.laboratory, study.technician, study.equipment, study.comment, study.mode === "panel" ? study.results.flatMap((result) => [result.indicatorName, result.result, result.unit, result.reference]) : study.mode === "narrative" ? study.result : [study.infection, study.method, study.result]]).flat(Infinity).filter(Boolean).join(" ");
   return "";
+}
+
+export function isLaboratoryTestsValue(value: unknown): value is LaboratoryTestsSectionValue {
+  return Boolean(value && typeof value === "object" && Array.isArray((value as LaboratoryTestsSectionValue).studies));
 }
 
 export function whatHappenedSelectedIds(value: unknown): readonly string[] {

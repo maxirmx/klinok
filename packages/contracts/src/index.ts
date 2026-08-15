@@ -3,6 +3,7 @@
 // This file is a part of Klinok application
 
 import type { DiagnosisSectionValue } from "./diagnosis.js";
+import type { LaboratoryTestsSectionValue } from "./laboratory.js";
 
 export {
   DIAGNOSIS_CATALOG,
@@ -16,6 +17,18 @@ export {
   type DiagnosisSectionValue,
   type DiagnosisTaxonomyId,
 } from "./diagnosis.js";
+export {
+  LABORATORY_STUDY_CATALOG,
+  LABORATORY_STUDY_OPTIONS,
+  laboratoryIndicatorById,
+  laboratoryStudyTypeById,
+  normalizeLaboratoryTestsValue,
+  type LaboratoryIndicatorCatalogItem,
+  type LaboratoryPanelStudyValue,
+  type LaboratoryStudyValue,
+  type LaboratoryTestsSectionValue,
+  type LaboratoryStudyTypeCatalogItem,
+} from "./laboratory.js";
 
 export const ROLES = ["administrator", "doctor", "owner"] as const;
 export type Role = (typeof ROLES)[number];
@@ -307,8 +320,8 @@ export interface TherapeuticAppointmentSectionValue {
 
 export interface MedicalEncounterSection {
   kind: MedicalEncounterSectionKind;
-  templateVersion: "what-happened-v1" | "outcome-v1" | "diagnosis-v1" | "diagnosis-v2" | "general-data-v1" | "vaccination-v1" | "therapeutic-appointment-v1" | "free-text-v0";
-  value: WhatHappenedSectionValue | OutcomeSectionValue | DiagnosisSectionValue | GeneralDataSectionValue | VaccinationSectionValue | TherapeuticAppointmentSectionValue | FreeTextSectionValue;
+  templateVersion: "what-happened-v1" | "outcome-v1" | "diagnosis-v1" | "diagnosis-v2" | "general-data-v1" | "vaccination-v1" | "therapeutic-appointment-v1" | "laboratory-tests-v1" | "free-text-v0";
+  value: WhatHappenedSectionValue | OutcomeSectionValue | DiagnosisSectionValue | GeneralDataSectionValue | VaccinationSectionValue | TherapeuticAppointmentSectionValue | LaboratoryTestsSectionValue | FreeTextSectionValue;
   authorAccountId: string;
   authorDisplayName: string;
   updatedAt: string;

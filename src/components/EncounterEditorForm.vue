@@ -7,6 +7,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue"
 import AppIcon from "./AppIcon.vue";
 import DiagnosisEditor from "./DiagnosisEditor.vue";
 import TherapeuticAppointmentForm from "./TherapeuticAppointmentForm.vue";
+import LaboratoryTestsEditor from "./LaboratoryTestsEditor.vue";
 import WhatHappenedTree from "./WhatHappenedTree.vue";
 import {
   ENCOUNTER_SECTION_LABELS,
@@ -41,6 +42,7 @@ import type {
   TherapeuticAppointmentDraftErrors,
 } from "../therapeuticAppointment";
 import type { MedicalEncounterSectionKind } from "../repositories/types";
+import { normalizeLaboratoryTestsValue, type LaboratoryTestsSectionValue } from "@klinok/contracts";
 
 const props = defineProps<{
   busy: boolean;
@@ -65,11 +67,13 @@ const generalData = defineModel<GeneralDataDraft>("generalData", { required: tru
 const vaccination = defineModel<VaccinationDraft>("vaccination", { required: true });
 const therapeuticAppointment = defineModel<TherapeuticAppointmentDraft>("therapeuticAppointment", { required: true });
 const diagnosis = defineModel<DiagnosisDraft>("diagnosis", { required: true });
+const laboratoryTests = defineModel<LaboratoryTestsSectionValue>("laboratoryTests", { required: true });
 const form = ref<HTMLFormElement | null>(null);
 const generalDataErrors = ref<GeneralDataDraftErrors>({});
 const vaccinationErrors = ref<VaccinationDraftErrors>({});
 const therapeuticErrors = ref<TherapeuticAppointmentDraftErrors>({});
 const diagnosisErrors = ref<DiagnosisDraftErrors>({});
+const laboratoryError = ref("");
 const revaccinationInterval = ref<RevaccinationInterval | "">("");
 const revaccinationChooserOpen = ref(false);
 const revaccinationMenuRoot = ref<HTMLElement | null>(null);
@@ -133,6 +137,13 @@ function selectOptional(event: Event) {
       diagnosisErrors.value = {};
       const nextTexts = { ...texts.value };
       delete nextTexts.diagnosis;
+      texts.value = nextTexts;
+    }
+    if (kind === "laboratory-tests") {
+      laboratoryTests.value = { studies: [] };
+      laboratoryError.value = "";
+      const nextTexts = { ...texts.value };
+      delete nextTexts["laboratory-tests"];
       texts.value = nextTexts;
     }
   }
@@ -216,6 +227,10 @@ function submit() {
     const parsed = parseDiagnosisDraft(diagnosis.value);
     diagnosisErrors.value = parsed.errors;
     if (!parsed.value) return;
+  }
+  if (optionalKinds.value.includes("laboratory-tests") && texts.value["laboratory-tests"] === undefined) {
+    try { normalizeLaboratoryTestsValue(laboratoryTests.value); laboratoryError.value = ""; }
+    catch (reason) { laboratoryError.value = reason instanceof Error ? reason.message : "Проверьте лабораторные исследования."; return; }
   }
   if (form.value?.reportValidity() === false) return;
   emit("save");
@@ -377,6 +392,9 @@ function submit() {
           :errors="therapeuticErrors"
           @update:model-value="updateTherapeuticAppointment"
         />
+      </template>
+      <template v-else-if="kind === 'laboratory-tests' && texts[kind] === undefined">
+        <LaboratoryTestsEditor v-model="laboratoryTests" :encounter-date="date" :errors="laboratoryError" />
       </template>
       <template v-else>
         <p class="temporary-note">{{ kind === 'general-data' ? 'Сохранён старый шаблон free-text-v0.' : 'Временный универсальный шаблон free-text-v0.' }}</p>

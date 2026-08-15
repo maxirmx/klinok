@@ -63,7 +63,8 @@ function optimisticRecord(command: ClientCommand, snapshot: AppSnapshotDto): Med
       : kind === "diagnosis" ? "diagnosis-v2"
       : kind === "general-data" && !(value && typeof value === "object" && "text" in value) ? "general-data-v1"
         : kind === "vaccination" && !(value && typeof value === "object" && "text" in value) ? "vaccination-v1"
-          : kind === "therapeutic-appointment" && !(value && typeof value === "object" && "text" in value) ? "therapeutic-appointment-v1" : "free-text-v0",
+          : kind === "therapeutic-appointment" && !(value && typeof value === "object" && "text" in value) ? "therapeutic-appointment-v1"
+            : kind === "laboratory-tests" && !(value && typeof value === "object" && "text" in value) ? "laboratory-tests-v1" : "free-text-v0",
     value, authorAccountId: profile?.accountId ?? "", authorDisplayName, updatedAt: now,
   }])) as MedicalRecordDraft["sections"];
   return {
