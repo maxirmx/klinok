@@ -34,6 +34,11 @@ describe("LaboratoryTestsEditor", () => {
     await flushPromises();
     expect(current.studies).toHaveLength(1);
     expect(current.studies[0]).toMatchObject({ date: "2026-08-15", mode: "panel", results: [] });
+    const studyHeading = wrapper.get(".laboratory-study-card > .laboratory-study-heading");
+    const removeStudy = studyHeading.get('button[title="Удалить исследование"]');
+    expect(removeStudy.classes()).toContain("laboratory-study-delete");
+    expect(removeStudy.text()).toBe("");
+    expect(removeStudy.attributes("aria-label")).toBe("Удалить исследование");
 
     let typePicker = wrapper.findAllComponents(AppCatalogCombobox)[0]!;
     typePicker.vm.$emit("update:selectedIds", ["unknown"]);
@@ -46,6 +51,7 @@ describe("LaboratoryTestsEditor", () => {
     const cbc = laboratoryStudyTypeById("lab.study.cbc")!;
     const [hematocrit, hemoglobin] = cbc.indicators;
     const indicatorPicker = wrapper.findAllComponents(AppCatalogCombobox)[1]!;
+    expect(indicatorPicker.get(".app-catalog-control").classes()).not.toContain("has-custom-add");
     indicatorPicker.vm.$emit("update:selectedIds", [hematocrit!.id]);
     await flushPromises();
     expect(current.studies[0]).toMatchObject({

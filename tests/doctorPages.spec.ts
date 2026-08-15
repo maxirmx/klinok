@@ -991,6 +991,7 @@ describe("Doctor pages", () => {
 
     const laboratoryEditor = wrapper.getComponent(LaboratoryTestsEditor);
     expect(laboratoryEditor.exists()).toBe(true);
+    expect(wrapper.get(".encounter-laboratory-tests").getComponent(LaboratoryTestsEditor).exists()).toBe(true);
     await wrapper.get('button[title="Сохранить запись"]').trigger("click");
     expect(repositoryMocks.saveEncounter).not.toHaveBeenCalled();
     expect(laboratoryEditor.get('[role="alert"]').text()).toContain("Добавьте хотя бы одно");

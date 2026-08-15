@@ -262,7 +262,10 @@ function submit() {
       v-for="kind in optionalKinds"
       :key="kind"
       class="encounter-section-card"
-      :class="{ 'encounter-diagnosis': kind === 'diagnosis' }"
+      :class="{
+        'encounter-diagnosis': kind === 'diagnosis',
+        'encounter-laboratory-tests': kind === 'laboratory-tests',
+      }"
     >
       <div class="doctor-heading">
         <h3>{{ ENCOUNTER_SECTION_LABELS[kind] }}</h3>

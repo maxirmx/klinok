@@ -321,7 +321,7 @@ onBeforeUnmount(() => {
 <template>
   <div ref="root" class="app-catalog-combobox">
     <label v-if="showLabel" :for="inputId"><span>{{ label }}</span></label>
-    <div class="app-catalog-control" :class="{ 'has-custom-add': multiple }">
+    <div class="app-catalog-control" :class="{ 'has-custom-add': allowCustom && multiple }">
       <input
         :id="inputId"
         ref="input"

@@ -32,7 +32,7 @@ function confirm() { const action = pending.value; pending.value = null; action?
   <p v-if="errors" class="field-error" role="alert">{{ errors }}</p>
   <div class="laboratory-study-list">
     <section v-for="(study, index) in model.studies" :key="study.id" class="laboratory-study-card">
-      <div class="doctor-heading"><h4>Исследование {{ index + 1 }}</h4><button type="button" class="outline-action inline danger-outline owner-profile-action" title="Удалить исследование" aria-label="Удалить исследование" @click="removeStudy(index)"><AppIcon name="trash" /></button></div>
+      <div class="doctor-heading laboratory-study-heading"><h4>Исследование {{ index + 1 }}</h4><button type="button" class="outline-action inline danger-outline owner-profile-action laboratory-study-delete" title="Удалить исследование" aria-label="Удалить исследование" @click="removeStudy(index)"><AppIcon name="trash" /></button></div>
       <div class="laboratory-metadata">
         <label><span>Дата исследования</span><input v-model="study.date" type="date" :max="new Date().toISOString().slice(0, 10)" required /></label>
         <div><span class="field-label">Название исследования</span><AppCatalogCombobox label="Название исследования" :options="LABORATORY_STUDY_OPTIONS" :selected-ids="study.typeId ? [study.typeId] : []" custom-text="" :allow-custom="false" @update:selected-ids="changeType(study, $event)" /></div>
