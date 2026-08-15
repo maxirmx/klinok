@@ -4,7 +4,7 @@
 // This file is a part of Klinok application
 
 import { computed, ref } from "vue";
-import { LABORATORY_STUDY_OPTIONS, laboratoryStudyTypeById, type LaboratoryPanelStudyValue, type LaboratoryStudyValue, type LaboratoryTestsSectionValue } from "@klinok/contracts";
+import { LABORATORY_STUDY_OPTIONS, laboratoryStudyTypeById, type LaboratoryStudyValue, type LaboratoryTestsSectionValue } from "@klinok/contracts";
 import AppCatalogCombobox from "./AppCatalogCombobox.vue";
 import AppIcon from "./AppIcon.vue";
 import ConfirmationDialog from "./ConfirmationDialog.vue";
@@ -21,19 +21,16 @@ function addStudy() {
   if (!type) return;
   const base = { id: uuid(), date: props.encounterDate, typeId: type.id, typeName: type.name, laboratory: "" };
   const study: LaboratoryStudyValue = type.mode === "panel"
-    ? { ...base, mode: "panel", results: [] }
+    ? { ...base, mode: "panel", results: type.indicators.map(({ id, name, unit }) => ({ indicatorId: id, indicatorName: name, unit, result: "" })) }
     : type.mode === "narrative"
       ? { ...base, mode: "narrative", result: "" }
       : { ...base, mode: "infection", infection: "", method: "ПЦР", result: "negative" };
   model.value = { studies: [...model.value.studies, study] };
   pendingTypeIds.value = [];
 }
-function populated(study: LaboratoryStudyValue) { return study.laboratory || study.technician || study.equipment || study.comment || (study.mode === "panel" ? study.results.length : study.mode === "narrative" ? study.result : study.infection); }
+function populated(study: LaboratoryStudyValue) { return study.laboratory || study.technician || study.equipment || study.comment || (study.mode === "panel" ? study.results.some((result) => result.result || result.reference) : study.mode === "narrative" ? study.result : study.infection); }
 function destructive(action: () => void, hasData = true) { if (!hasData) action(); else pending.value = action; }
 function removeStudy(index: number) { const study = model.value.studies[index]!; destructive(() => { model.value = { studies: model.value.studies.filter((_, candidate) => candidate !== index) }; }, Boolean(populated(study))); }
-function indicatorOptions(study: LaboratoryStudyValue) { return laboratoryStudyTypeById(study.typeId)?.indicators.map(({ id, name, unit }) => ({ id, label: unit ? `${name} — ${unit}` : name })) ?? []; }
-function selectedIndicatorIds(study: LaboratoryStudyValue) { return study.mode === "panel" ? study.results.map((result) => result.indicatorId) : []; }
-function changeIndicators(study: LaboratoryStudyValue, ids: string[]) { if (study.mode !== "panel") return; const type = laboratoryStudyTypeById(study.typeId); if (!type) return; const removed = study.results.filter((result) => !ids.includes(result.indicatorId)); const apply = () => { (study as { results: LaboratoryPanelStudyValue["results"] }).results = ids.map((id) => study.results.find((result) => result.indicatorId === id) ?? (() => { const item = type.indicators.find((candidate) => candidate.id === id)!; return { indicatorId: item.id, indicatorName: item.name, unit: item.unit, result: "" }; })()); }; destructive(apply, removed.some((item) => item.result || item.reference)); }
 function confirm() { const action = pending.value; pending.value = null; action?.(); }
 </script>
 
@@ -56,13 +53,12 @@ function confirm() { const action = pending.value; pending.value = null; action?
         <label><span>Оборудование</span><input v-model="study.equipment" /></label>
       </div>
       <template v-if="study.mode === 'panel' && study.typeId">
-        <div class="laboratory-study-indicators"><span class="field-label">Показатели</span><AppCatalogCombobox label="Показатели" multiple :options="indicatorOptions(study)" :selected-ids="selectedIndicatorIds(study)" custom-text="" :allow-custom="false" @update:selected-ids="changeIndicators(study, $event)" /></div>
         <div v-if="study.results.length" class="laboratory-results-scroll"><table class="laboratory-results"><thead><tr><th>Показатель</th><th>Результат</th><th>Ед. измерения</th><th>Референсные значения</th></tr></thead><tbody><tr v-for="result in study.results" :key="result.indicatorId"><td>{{ result.indicatorName }}</td><td><input v-model="result.result" required /></td><td>{{ result.unit || '—' }}</td><td><input v-model="result.reference" /></td></tr></tbody></table></div>
       </template>
       <label v-else-if="study.mode === 'narrative'"><span>Результат</span><textarea v-model="study.result" rows="4" required /></label>
       <div v-else-if="study.mode === 'infection'" class="laboratory-infection"><label><span>Инфекция</span><input v-model="study.infection" required /></label><label><span>Метод</span><select v-model="study.method"><option v-for="method in ['ПЦР','ИФА','РМА','ELISA','ИХА']" :key="method">{{ method }}</option></select></label><fieldset class="medical-card-option-panel"><legend>Результат</legend><div class="medical-card-options"><label><input v-model="study.result" type="radio" value="positive" /> Положительно</label><label><input v-model="study.result" type="radio" value="negative" /> Отрицательно</label></div></fieldset></div>
-      <label><span>Комментарий</span><textarea v-model="study.comment" class="medical-card-comment" rows="2" /></label>
+      <section class="medical-card-comment-section laboratory-study-comment"><h4>Комментарий</h4><textarea v-model="study.comment" class="medical-card-comment" rows="2" aria-label="Комментарий" /></section>
     </section>
   </div>
-  <ConfirmationDialog v-model="confirmOpen" title="Удалить заполненные данные?" description="После подтверждения будут удалены только данные выбранного исследования или показателя." confirm-label="Удалить" @confirm="confirm" />
+  <ConfirmationDialog v-model="confirmOpen" title="Удалить заполненные данные?" description="После подтверждения будут удалены данные выбранного исследования." confirm-label="Удалить" @confirm="confirm" />
 </template>

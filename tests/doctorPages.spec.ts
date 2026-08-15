@@ -997,17 +997,17 @@ describe("Doctor pages", () => {
     expect(laboratoryEditor.get('[role="alert"]').text()).toContain("Добавьте хотя бы одно");
 
     laboratoryEditor.findAllComponents(AppCatalogCombobox)[0]!.vm
-      .$emit("update:selectedIds", ["lab.study.cbc"]);
+      .$emit("update:selectedIds", ["lab.study.coagulation"]);
     await flushPromises();
     await laboratoryEditor.get('button[title="Добавить исследование"]').trigger("click");
     await flushPromises();
-    laboratoryEditor.findAllComponents(AppCatalogCombobox)[1]!.vm
-      .$emit("update:selectedIds", ["lab.indicator.cbc.001"]);
-    await flushPromises();
+    expect(laboratoryEditor.findAllComponents(AppCatalogCombobox)).toHaveLength(1);
     const laboratoryField = laboratoryEditor.findAll("label")
       .find((label) => label.find("span").exists() && label.get("span").text() === "Лаборатория")!;
     await laboratoryField.get("input").setValue("Ветлаб");
-    await laboratoryEditor.get(".laboratory-results tbody tr input").setValue("42");
+    const resultRows = laboratoryEditor.findAll(".laboratory-results tbody tr");
+    expect(resultRows).toHaveLength(4);
+    for (const [index, row] of resultRows.entries()) await row.findAll("input")[0]!.setValue(String(index + 1));
 
     await wrapper.get('button[title="Сохранить запись"]').trigger("click");
     await flushPromises();
@@ -1016,11 +1016,11 @@ describe("Doctor pages", () => {
       sections: expect.objectContaining({
         "laboratory-tests": {
           studies: [expect.objectContaining({
-            typeId: "lab.study.cbc",
-            typeName: "Общеклинический анализ крови",
+            typeId: "lab.study.coagulation",
+            typeName: "Коагулограмма крови",
             mode: "panel",
             laboratory: "Ветлаб",
-            results: [expect.objectContaining({ indicatorId: "lab.indicator.cbc.001", result: "42" })],
+            results: expect.arrayContaining([expect.objectContaining({ indicatorId: "lab.indicator.coagulation.001", result: "1" })]),
           })],
         },
       }),

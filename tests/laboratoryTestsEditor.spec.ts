@@ -45,7 +45,8 @@ describe("LaboratoryTestsEditor", () => {
     expect(addButton().attributes("disabled")).toBeDefined();
     expect(current.studies).toHaveLength(0);
 
-    await selectType("lab.study.cbc");
+    const cbc = laboratoryStudyTypeById("lab.study.cbc")!;
+    await selectType(cbc.id);
     expect(addButton().attributes("disabled")).toBeUndefined();
     await addButton().trigger("click");
     await flushPromises();
@@ -55,8 +56,10 @@ describe("LaboratoryTestsEditor", () => {
       typeId: "lab.study.cbc",
       typeName: "Общеклинический анализ крови",
       mode: "panel",
-      results: [],
     });
+    expect(current.studies[0]?.mode === "panel" ? current.studies[0].results : []).toEqual(
+      cbc.indicators.map(({ id, name, unit }) => ({ indicatorId: id, indicatorName: name, unit, result: "" })),
+    );
     expect(addButton().attributes("disabled")).toBeDefined();
     const studyHeading = wrapper.get(".laboratory-study-card > .laboratory-study-heading");
     expect(studyHeading.get("h4").text()).toBe("Общеклинический анализ крови");
@@ -67,16 +70,9 @@ describe("LaboratoryTestsEditor", () => {
     expect(removeStudy.attributes("aria-label")).toBe("Удалить исследование");
     expect(wrapper.find('input[aria-label="Название исследования"]').exists()).toBe(false);
 
-    const cbc = laboratoryStudyTypeById("lab.study.cbc")!;
-    const [hematocrit, hemoglobin] = cbc.indicators;
-    const indicatorPicker = wrapper.findAllComponents(AppCatalogCombobox)[1]!;
-    expect(indicatorPicker.element.parentElement?.classList.contains("laboratory-study-indicators")).toBe(true);
-    expect(indicatorPicker.get(".app-catalog-control").classes()).not.toContain("has-custom-add");
-    indicatorPicker.vm.$emit("update:selectedIds", [hematocrit!.id]);
-    await flushPromises();
-    expect(current.studies[0]).toMatchObject({
-      results: [{ indicatorId: hematocrit!.id, indicatorName: hematocrit!.name, unit: hematocrit!.unit, result: "" }],
-    });
+    expect(wrapper.findAllComponents(AppCatalogCombobox)).toHaveLength(1);
+    expect(wrapper.find(".laboratory-study-indicators").exists()).toBe(false);
+    expect(wrapper.findAll(".laboratory-results tbody tr")).toHaveLength(cbc.indicators.length);
 
     const laboratory = wrapper.findAll("label")
       .find((label) => label.find("span").exists() && label.get("span").text() === "Лаборатория")!;
@@ -86,27 +82,27 @@ describe("LaboratoryTestsEditor", () => {
     await laboratory.get("input").setValue("Ветлаб");
     await metadataField("ФИО лаборанта").get("input").setValue("Иванов");
     await metadataField("Оборудование").get("input").setValue("Анализатор");
-    await wrapper.get("textarea.medical-card-comment").setValue("Натощак");
+    const commentSection = wrapper.get(".laboratory-study-comment.medical-card-comment-section");
+    expect(commentSection.get("h4").text()).toBe("Комментарий");
+    expect(commentSection.get("textarea").attributes("rows")).toBe("2");
+    expect(commentSection.get("textarea").attributes("aria-label")).toBe("Комментарий");
+    await commentSection.get("textarea").setValue("Натощак");
     const resultInputs = wrapper.get(".laboratory-results tbody tr").findAll("input");
     await resultInputs[0]!.setValue("42");
     await resultInputs[1]!.setValue("35–55");
 
-    indicatorPicker.vm.$emit("update:selectedIds", [hemoglobin!.id]);
+    await wrapper.get('button[title="Удалить исследование"]').trigger("click");
     await flushPromises();
     let dialog = wrapper.get('[role="alertdialog"]');
-    expect(dialog.text()).toContain("Удалить заполненные данные?");
+    expect(dialog.text()).toContain("После подтверждения будут удалены данные выбранного исследования.");
     await dialog.get(".outline-action").trigger("click");
-    expect(current.studies[0]).toMatchObject({ results: [{ indicatorId: hematocrit!.id }] });
-
-    wrapper.findAllComponents(AppCatalogCombobox)[1]!.vm.$emit("update:selectedIds", [hemoglobin!.id]);
+    await flushPromises();
+    expect(current.studies).toHaveLength(1);
+    expect(wrapper.find('[role="alertdialog"]').exists()).toBe(false);
+    await wrapper.get('button[title="Удалить исследование"]').trigger("click");
     await flushPromises();
     dialog = wrapper.get('[role="alertdialog"]');
     await dialog.get(".danger").trigger("click");
-    expect(current.studies[0]).toMatchObject({ results: [{ indicatorId: hemoglobin!.id, result: "" }] });
-
-    await wrapper.get('button[title="Удалить исследование"]').trigger("click");
-    await flushPromises();
-    await wrapper.get('[role="alertdialog"] .danger').trigger("click");
     await flushPromises();
     expect(current.studies).toHaveLength(0);
 

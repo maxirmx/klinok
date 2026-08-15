@@ -3025,7 +3025,6 @@ dd {
 .laboratory-study-card > .laboratory-study-heading { width: calc(100% + 1rem + 1px); min-width: 0; flex-direction: row; align-items: flex-start; }
 .laboratory-study-heading > h4 { min-width: 0; margin: 0; overflow: hidden; flex: 1 1 auto; text-overflow: ellipsis; white-space: nowrap; }
 .workspace-content .laboratory-study-delete { width: 34px; min-width: 34px; max-width: 34px; height: 34px; min-height: 34px; padding: 0; flex: 0 0 34px; align-self: flex-start; }
-.laboratory-study-indicators { width: calc(100% + 1rem + 1px); min-width: 0; }
 .laboratory-metadata { display: grid; grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr)); gap: .75rem; align-items: start; }
 .laboratory-results-scroll { max-width: 100%; overflow-x: auto; }
 .laboratory-results { width: 100%; min-width: 42rem; border-collapse: collapse; }
