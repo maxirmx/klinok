@@ -9,6 +9,7 @@ import {
   isDiagnosisTaxonomyId,
   isOutcomeTaxonomyId,
   isWhatHappenedTaxonomyId,
+  normalizeLaboratoryTestsValue,
   type ClientCommand,
   type CommandResult,
   type DiagnosisChoice,
@@ -182,16 +183,20 @@ export function validateMedicalEncounter(value: unknown): MedicalEncounterInput 
   for (const [kind, sectionValue] of Object.entries(sections)) {
     if (kind === "what-happened" || kind === "outcome" || kind === "diagnosis") continue;
     const structured = object(sectionValue);
-    if (["recommendations", "laboratory-tests", "instrumental-tests", "procedures"].includes(kind)
+    if (["recommendations", "instrumental-tests", "procedures"].includes(kind)
       && (typeof structured.text !== "string" || !structured.text.trim() || structured.text.length > 50_000)) {
       throw new ApiError(400, "VALIDATION_FAILED", `The ${kind} section is invalid.`);
     }
   }
+  const currentSections = Object.fromEntries(Object.entries(sections).filter(([kind, value]) =>
+    kind !== "laboratory-tests" || !("text" in object(value))));
   return {
     petId: requireText(input.petId, "petId", 100),
     encounterDate,
     sections: {
-      ...sections,
+      ...currentSections,
+      ...(sections["laboratory-tests"] && !("text" in object(sections["laboratory-tests"]))
+        ? { "laboratory-tests": laboratorySection(sections["laboratory-tests"]) } : {}),
       ...(diagnosis ? { diagnosis } : {}),
     } as unknown as MedicalEncounterInput["sections"],
     ...(input.recordId ? { recordId: requireText(input.recordId, "recordId", 100) } : {}),
@@ -207,12 +212,18 @@ function medicalSections(input: MedicalEncounterInput, accountId: string, author
         : kind === "general-data" && !(value && typeof value === "object" && "text" in value) ? "general-data-v1"
           : kind === "vaccination" && !(value && typeof value === "object" && "text" in value) ? "vaccination-v1"
             : kind === "therapeutic-appointment" && !(value && typeof value === "object" && "text" in value) ? "therapeutic-appointment-v1"
+              : kind === "laboratory-tests" && !(value && typeof value === "object" && "text" in value) ? "laboratory-tests-v1"
               : "free-text-v0",
     value,
     authorAccountId: accountId,
     authorDisplayName: authorName,
     updatedAt: now,
   }])) as MedicalRecordDraft["sections"];
+}
+
+function laboratorySection(value: unknown) {
+  try { return normalizeLaboratoryTestsValue(value); }
+  catch (reason) { throw new ApiError(400, "VALIDATION_FAILED", reason instanceof Error ? reason.message : "The laboratory section is invalid."); }
 }
 
 function medicalRecordAuditState(

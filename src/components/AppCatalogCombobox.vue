@@ -40,6 +40,7 @@ const props = withDefaults(defineProps<{
   twoLevel?: boolean;
   categoryPrompt?: string;
   allCategoriesLabel?: string;
+  allowCustom?: boolean;
 }>(), {
   options: () => [],
   groups: () => [],
@@ -54,6 +55,7 @@ const props = withDefaults(defineProps<{
   twoLevel: false,
   categoryPrompt: "Выберите категорию",
   allCategoriesLabel: "Все категории",
+  allowCustom: true,
 });
 const selectedIds = defineModel<string[]>("selectedIds", { required: true });
 const customText = defineModel<string>("customText", { required: true });
@@ -145,7 +147,7 @@ const toggleTitle = computed(() => {
 });
 const canAddCustomValue = computed(() => {
   const value = normalizeSearch(inputValue.value);
-  return props.multiple && Boolean(value)
+  return props.allowCustom && props.multiple && Boolean(value)
     && !customTexts.value.some((text) => normalizeSearch(text) === value);
 });
 
@@ -340,7 +342,7 @@ onBeforeUnmount(() => {
         @keydown.esc.stop.prevent="handleEscape"
       />
       <button
-        v-if="multiple"
+        v-if="allowCustom && multiple"
         type="button"
         class="outline-action inline owner-profile-action app-catalog-add"
         :disabled="!canAddCustomValue"

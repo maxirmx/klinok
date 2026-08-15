@@ -280,7 +280,7 @@ describe("Klinok repository facade", () => {
     } as unknown as MedicalEncounterInput;
     await repository.executeOffline({ type: "record.create", entityId: "record-offline", payload: { input: encounter, title: "Приём" } });
     await repository.executeOffline({ type: "record.update", entityId: "record-offline", expectedRevision: 1, payload: {
-      input: { ...encounter, sections: { ...encounter.sections, "general-data": { text: "Свободный текст" }, vaccination: { text: "Нет" }, "therapeutic-appointment": { text: "Покой" } } },
+      input: { ...encounter, sections: { ...encounter.sections, "general-data": { text: "Свободный текст" }, vaccination: { text: "Нет" }, "therapeutic-appointment": { text: "Покой" }, "laboratory-tests": { text: "Старый лабораторный текст" } } },
     } });
 
     const queued = offlineState.commands.map((item) => item.command);
@@ -299,6 +299,8 @@ describe("Klinok repository facade", () => {
         diagnosis: { templateVersion: "diagnosis-v2" },
       },
     });
+    expect(repository.current.medical.records.find((record) => record.recordId === "record-offline")
+      ?.sections["laboratory-tests"]).toBeUndefined();
     await expect(repository.syncStatus()).resolves.toMatchObject({ pendingCount: 4, connectionState: "disconnected" });
     expect(medicalListener).toHaveBeenCalled();
     expect(syncListener).toHaveBeenCalled();

@@ -14,6 +14,7 @@ export type {
   DiagnosisTaxonomyId,
   FreeTextSectionValue,
   GeneralDataSectionValue,
+  LaboratoryTestsSectionValue,
   MedicalEncounterInput,
   MedicalEncounterSection,
   MedicalEncounterSectionInputValue,
@@ -36,4 +37,9 @@ export {
   DIAGNOSIS_CATALOG_OPTIONS,
   MEDICAL_ENCOUNTER_SECTION_KINDS,
   isDiagnosisTaxonomyId,
+  LABORATORY_STUDY_CATALOG,
+  LABORATORY_STUDY_OPTIONS,
+  laboratoryIndicatorById,
+  laboratoryStudyTypeById,
+  normalizeLaboratoryTestsValue,
 } from "@klinok/contracts";
