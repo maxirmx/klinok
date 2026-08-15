@@ -221,7 +221,19 @@ function formatLocalDateTime(value: string) {
             <p><span class="muted-label">Лаборатория</span> {{ study.laboratory }}</p>
             <p v-if="study.technician"><span class="muted-label">Лаборант</span> {{ study.technician }}</p>
             <p v-if="study.equipment"><span class="muted-label">Оборудование</span> {{ study.equipment }}</p>
-            <div v-if="study.mode === 'panel'" class="laboratory-results-scroll"><table class="laboratory-results"><thead><tr><th>Показатель</th><th>Результат</th><th>Ед. измерения</th><th>Референсные значения</th></tr></thead><tbody><tr v-for="result in study.results" :key="result.indicatorId"><td>{{ result.indicatorName }}</td><td>{{ result.result }}</td><td>{{ result.unit || '—' }}</td><td>{{ result.reference || '—' }}</td></tr></tbody></table></div>
+            <div v-if="study.mode === 'panel'" class="laboratory-panel-results laboratory-history-results" role="group" aria-label="Показатели исследования">
+              <div class="laboratory-result-headings" aria-hidden="true">
+                <span>Показатель</span><span>Результат</span><span>Референсные значения</span>
+              </div>
+              <div v-for="result in study.results" :key="result.indicatorId" class="laboratory-result-row">
+                <div class="laboratory-result-indicator">
+                  <span>{{ result.indicatorName }}</span>
+                  <span class="laboratory-result-unit">{{ result.unit || '—' }}</span>
+                </div>
+                <div><span class="laboratory-result-mobile-name" :title="`${result.indicatorName} · ${result.unit || '—'}`">{{ result.indicatorName }} · {{ result.unit || '—' }}</span><span>{{ result.result }}</span></div>
+                <div><span class="laboratory-result-label">Референсные значения</span><span>{{ result.reference || '—' }}</span></div>
+              </div>
+            </div>
             <p v-else-if="study.mode === 'narrative'">{{ study.result }}</p>
             <dl v-else><div><dt>Инфекция</dt><dd>{{ study.infection }}</dd></div><div><dt>Метод</dt><dd>{{ study.method }}</dd></div><div><dt>Результат</dt><dd>{{ study.result === 'positive' ? 'Положительно' : 'Отрицательно' }}</dd></div></dl>
             <p v-if="study.comment" class="encounter-history-comment">{{ study.comment }}</p>

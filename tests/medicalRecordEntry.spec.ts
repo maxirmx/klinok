@@ -129,6 +129,17 @@ describe("MedicalRecordEntry", () => {
 
     const history = wrapper.get(".laboratory-history");
     expect(history.findAll(".laboratory-history-study")).toHaveLength(3);
+    const panel = history.get(".laboratory-history-results");
+    expect(panel.find("table").exists()).toBe(false);
+    expect(panel.findAll(".laboratory-result-headings > span").map((header) => header.text())).toEqual([
+      "Показатель",
+      "Результат",
+      "Референсные значения",
+    ]);
+    const panelRow = panel.get(".laboratory-result-row");
+    expect(panelRow.findAll(".laboratory-result-label").map((label) => label.text())).toEqual(["Референсные значения"]);
+    expect(panelRow.get(".laboratory-result-mobile-name").text()).toBe("Гематокрит · %");
+    expect(panelRow.get(".laboratory-result-unit").text()).toBe("%");
     expect(history.text()).toContain("20.07.2026 · Общеклинический анализ крови");
     expect(history.text()).toContain("Иванов");
     expect(history.text()).toContain("Анализатор");

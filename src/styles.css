@@ -3038,8 +3038,42 @@ dd {
 .laboratory-results-scroll { max-width: 100%; overflow-x: auto; }
 .laboratory-results { width: 100%; min-width: 42rem; border-collapse: collapse; }
 .laboratory-results th, .laboratory-results td { padding: .5rem; border-bottom: 1px solid var(--border-color, #d7dde5); text-align: left; vertical-align: top; }
+.laboratory-panel-results {
+  container-type: inline-size;
+  width: min(100%, 52rem);
+  min-width: 0;
+}
+.laboratory-result-headings { display: none; }
+.laboratory-result-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: .6rem;
+  min-width: 0;
+  padding: .75rem 0;
+  border-bottom: 1px solid var(--border-color, #d7dde5);
+}
+.laboratory-result-headings + .laboratory-result-row { border-top: 1px solid var(--border-color, #d7dde5); }
+.laboratory-result-row > :is(div, label) { display: grid; min-width: 0; align-content: start; gap: 2px; }
+.laboratory-result-row > .laboratory-result-indicator { display: none; }
+.laboratory-result-row input { width: 100%; min-width: 0; box-sizing: border-box; }
+.laboratory-result-label { font-weight: 700; }
+.laboratory-result-mobile-name { overflow: hidden; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
 .laboratory-result-unit { display: block; margin-top: 2px; }
 .laboratory-results input { min-width: 8rem; }
+@container (min-width: 38rem) {
+  .laboratory-result-headings,
+  .laboratory-result-row {
+    display: grid;
+    grid-template-columns: minmax(8rem, .8fr) minmax(8rem, 1fr) minmax(10rem, 1fr);
+    gap: .75rem;
+  }
+  .laboratory-result-headings { padding: .5rem 0; font-weight: 700; }
+  .laboratory-result-row { padding: .5rem 0; }
+  .laboratory-result-headings + .laboratory-result-row { border-top: 0; }
+  .laboratory-result-row > .laboratory-result-indicator { display: grid; }
+  .laboratory-result-label { display: none; }
+  .laboratory-result-mobile-name { display: none; }
+}
 .laboratory-infection { display: grid; grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr)); gap: .75rem; align-items: start; }
 .laboratory-history, .laboratory-history-study { display: grid; gap: .55rem; }
 .laboratory-history-study + .laboratory-history-study { border-top: 1px solid var(--border-color, #d7dde5); padding-top: 1rem; }

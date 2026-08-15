@@ -73,15 +73,19 @@ describe("LaboratoryTestsEditor", () => {
 
     expect(wrapper.findAllComponents(AppCatalogCombobox)).toHaveLength(1);
     expect(wrapper.find(".laboratory-study-indicators").exists()).toBe(false);
-    expect(wrapper.findAll(".laboratory-results tbody tr")).toHaveLength(cbc.indicators.length);
-    expect(wrapper.findAll(".laboratory-results thead th").map((header) => header.text())).toEqual([
+    expect(wrapper.find(".laboratory-editor-results table").exists()).toBe(false);
+    expect(wrapper.findAll(".laboratory-result-row")).toHaveLength(cbc.indicators.length);
+    expect(wrapper.findAll(".laboratory-result-headings > span").map((header) => header.text())).toEqual([
       "Показатель",
       "Результат",
       "Референсные значения",
     ]);
-    const firstIndicatorCell = wrapper.get(".laboratory-results tbody tr td");
-    expect(firstIndicatorCell.get("span").text()).toBe(cbc.indicators[0]!.name);
-    expect(firstIndicatorCell.get(".laboratory-result-unit").text()).toBe(cbc.indicators[0]!.unit);
+    const firstResultRow = wrapper.get(".laboratory-result-row");
+    expect(firstResultRow.findAll(".laboratory-result-label").map((label) => label.text())).toEqual(["Референсные значения"]);
+    expect(firstResultRow.get(".laboratory-result-mobile-name").text()).toBe(`${cbc.indicators[0]!.name} · ${cbc.indicators[0]!.unit}`);
+    expect(firstResultRow.findAll("input")[0]!.attributes("aria-label")).toBe(`${cbc.indicators[0]!.name}, результат`);
+    expect(firstResultRow.get(".laboratory-result-indicator").text()).toContain(cbc.indicators[0]!.name);
+    expect(firstResultRow.get(".laboratory-result-unit").text()).toBe(cbc.indicators[0]!.unit);
     await wrapper.setProps({ errors: {
       studies: [{
         date: "Укажите корректную дату исследования.",
@@ -112,7 +116,7 @@ describe("LaboratoryTestsEditor", () => {
     expect(commentSection.get("textarea").attributes("rows")).toBe("2");
     expect(commentSection.get("textarea").attributes("aria-label")).toBe("Комментарий");
     await commentSection.get("textarea").setValue("Натощак");
-    const resultInputs = wrapper.get(".laboratory-results tbody tr").findAll("input");
+    const resultInputs = wrapper.get(".laboratory-result-row").findAll("input");
     await resultInputs[0]!.setValue("42");
     await resultInputs[1]!.setValue("35–55");
 
