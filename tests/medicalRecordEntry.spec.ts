@@ -69,6 +69,88 @@ const record: MedicalRecordDraft = {
 };
 
 describe("MedicalRecordEntry", () => {
+  it("renders panel, narrative, and infection laboratory studies", () => {
+    const wrapper = mount(MedicalRecordEntry, {
+      props: {
+        record: {
+          ...record,
+          sections: {
+            ...record.sections,
+            "laboratory-tests": {
+              kind: "laboratory-tests",
+              templateVersion: "laboratory-tests-v1",
+              value: {
+                studies: [
+                  {
+                    id: "123e4567-e89b-12d3-a456-426614174000",
+                    date: "2026-07-20",
+                    typeId: "lab.study.cbc",
+                    typeName: "Общеклинический анализ крови",
+                    mode: "panel",
+                    laboratory: "Ветлаб",
+                    technician: "Иванов",
+                    equipment: "Анализатор",
+                    comment: "Натощак",
+                    results: [{ indicatorId: "lab.indicator.cbc.001", indicatorName: "Гематокрит", unit: "%", result: "42", reference: "35–55" }],
+                  },
+                  {
+                    id: "223e4567-e89b-12d3-a456-426614174000",
+                    date: "2026-07-21",
+                    typeId: "lab.study.narrative.001",
+                    typeName: "Микроскопия",
+                    mode: "narrative",
+                    laboratory: "Ветлаб",
+                    result: "Патологий не обнаружено",
+                  },
+                  {
+                    id: "323e4567-e89b-12d3-a456-426614174000",
+                    date: "2026-07-21",
+                    typeId: "lab.study.infection",
+                    typeName: "Исследование на инфекцию",
+                    mode: "infection",
+                    laboratory: "Ветлаб",
+                    infection: "Чума плотоядных",
+                    method: "ПЦР",
+                    result: "positive",
+                  },
+                ],
+              },
+              authorAccountId: "doctor-1",
+              authorDisplayName: "Вера Врач",
+              updatedAt: "2026-07-21T12:00:00.000Z",
+            },
+          },
+        },
+        mode: "details",
+        confirmed: false,
+        open: true,
+      },
+    });
+
+    const history = wrapper.get(".laboratory-history");
+    expect(history.findAll(".laboratory-history-study")).toHaveLength(3);
+    const panel = history.get(".laboratory-history-results");
+    expect(panel.find("table").exists()).toBe(false);
+    expect(panel.findAll(".laboratory-result-headings")).toHaveLength(1);
+    expect(panel.findAll(".laboratory-result-headings-primary > span").map((header) => header.text())).toEqual([
+      "Показатель",
+      "Результат",
+      "Референсные значения",
+    ]);
+    const panelRow = panel.get(".laboratory-result-row");
+    expect(panelRow.findAll(".laboratory-result-label").map((label) => label.text())).toEqual(["Референсные значения"]);
+    expect(panelRow.get(".laboratory-result-mobile-name").text()).toBe("Гематокрит · %");
+    expect(panelRow.get(".laboratory-result-unit").text()).toBe("%");
+    expect(history.text()).toContain("20.07.2026 · Общеклинический анализ крови");
+    expect(history.text()).toContain("Иванов");
+    expect(history.text()).toContain("Анализатор");
+    expect(history.text()).toContain("35–55");
+    expect(history.text()).toContain("Патологий не обнаружено");
+    expect(history.text()).toContain("Чума плотоядных");
+    expect(history.text()).toContain("Положительно");
+    expect(history.text()).toContain("Натощак");
+  });
+
   it.each([
     ["well.1", "Всё хорошо", "well"],
     ["problem.digestive.1", "Не всё хорошо", "problem"],

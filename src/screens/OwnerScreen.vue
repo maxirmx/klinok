@@ -15,6 +15,7 @@ import AppIcon from "../components/AppIcon.vue";
 import AppPaginator from "../components/AppPaginator.vue";
 import ConfirmationDialog from "../components/ConfirmationDialog.vue";
 import MedicalRecordEntry from "../components/MedicalRecordEntry.vue";
+import LaboratoryComparison from "../components/LaboratoryComparison.vue";
 import ModalDialog from "../components/ModalDialog.vue";
 import PendingCountBadge from "../components/PendingCountBadge.vue";
 import PetAccessManager from "../components/PetAccessManager.vue";
@@ -643,7 +644,6 @@ function confirmMedicalRecord(record: MedicalRecordDraft) {
             </RouterLink>
           </div>
         </div>
-
         <p v-if="formError" class="field-error" role="alert">{{ formError }}</p>
 
         <div class="owner-form-grid">
@@ -808,6 +808,8 @@ function confirmMedicalRecord(record: MedicalRecordDraft) {
           </button>
         </template>
       </PetProfileView>
+
+      <LaboratoryComparison :records="petRecords" :confirmed-ids="confirmedIds" />
 
       <article id="medical-records" class="panel owner-medical-placeholder owner-medical-record">
         <div class="owner-medical-heading">

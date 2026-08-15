@@ -3,10 +3,12 @@
 // All rights reserved.
 // This file is a part of Klinok application
 
-import { computed, reactive, ref, watch } from "vue";
+import { computed, reactive, ref, toRaw, watch } from "vue";
 import { RouterLink, useRoute, useRouter } from "vue-router";
 import {
   normalizeRussianSearchText,
+  normalizeLaboratoryTestsValue,
+  type LaboratoryTestsSectionValue,
   type DirectoryPetDto,
   type DirectoryProfileDto,
   type DoctorPetAccessDto,
@@ -18,6 +20,7 @@ import AppPaginator from "../components/AppPaginator.vue";
 import ConfirmationDialog from "../components/ConfirmationDialog.vue";
 import EncounterEditorForm from "../components/EncounterEditorForm.vue";
 import MedicalRecordEntry from "../components/MedicalRecordEntry.vue";
+import LaboratoryComparison from "../components/LaboratoryComparison.vue";
 import ModalDialog from "../components/ModalDialog.vue";
 import PetAccessManager from "../components/PetAccessManager.vue";
 import PetProfileView from "../components/PetProfileView.vue";
@@ -142,6 +145,7 @@ const encounter = reactive({
   vaccination: emptyVaccinationDraft(),
   therapeuticAppointment: emptyTherapeuticAppointmentDraft(),
   diagnosis: emptyDiagnosisDraft(),
+  laboratoryTests: { studies: [] } as LaboratoryTestsSectionValue,
 });
 
 const profileName = computed(() => [appState.control.profile?.firstName, appState.control.profile?.patronymic, appState.control.profile?.lastName].filter(Boolean).join(" "));
@@ -364,6 +368,7 @@ function removeOptional(kind: MedicalEncounterSectionKind) {
   if (kind === "vaccination") encounter.vaccination = emptyVaccinationDraft(selectedPet.value?.latestConfirmedVaccination);
   if (kind === "therapeutic-appointment") encounter.therapeuticAppointment = emptyTherapeuticAppointmentDraft();
   if (kind === "diagnosis") encounter.diagnosis = emptyDiagnosisDraft();
+  if (kind === "laboratory-tests") encounter.laboratoryTests = { studies: [] };
 }
 
 function requestRemoveOptional(kind: MedicalEncounterSectionKind) {
@@ -392,6 +397,7 @@ function resetEncounter() {
   encounter.vaccination = emptyVaccinationDraft();
   encounter.therapeuticAppointment = emptyTherapeuticAppointmentDraft();
   encounter.diagnosis = emptyDiagnosisDraft();
+  encounter.laboratoryTests = { studies: [] };
 }
 
 async function saveEncounter() {
@@ -403,6 +409,8 @@ async function saveEncounter() {
         const parsed = parseDiagnosisDraft(encounter.diagnosis);
         if (!parsed.value) throw new Error("Проверьте данные в разделе «Диагноз».");
         optionalSections[kind] = parsed.value;
+      } else if (kind === "laboratory-tests" && encounter.texts[kind] === undefined) {
+        optionalSections[kind] = normalizeLaboratoryTestsValue(encounter.laboratoryTests);
       } else if (kind === "general-data" && encounter.texts[kind] === undefined) {
         const parsed = parseGeneralDataDraft(encounter.generalData);
         if (!parsed.value) throw new Error("Проверьте показатели в разделе «Общие данные/Габитус».");
@@ -457,6 +465,9 @@ function editRecord(record: (typeof appState.medical.records)[number]) {
     : emptyTherapeuticAppointmentDraft();
   const diagnosisValue = record.sections.diagnosis?.value;
   encounter.diagnosis = isDiagnosisValue(diagnosisValue) ? diagnosisDraft(diagnosisValue) : emptyDiagnosisDraft();
+  const laboratoryValue = record.sections["laboratory-tests"]?.value;
+  encounter.laboratoryTests = laboratoryValue && typeof laboratoryValue === "object" && "studies" in laboratoryValue
+    ? structuredClone(toRaw(laboratoryValue as LaboratoryTestsSectionValue)) : { studies: [] };
   encounter.texts = Object.fromEntries(encounter.optionalKinds.flatMap((kind) => {
     const value = record.sections[kind]?.value;
     return kind !== "diagnosis" && isFreeTextValue(value) ? [[kind, value.text]] : [];
@@ -491,6 +502,9 @@ function recoverRecordDraft(command: {
     : emptyTherapeuticAppointmentDraft();
   const diagnosisValue = input.sections.diagnosis;
   encounter.diagnosis = isDiagnosisValue(diagnosisValue) ? diagnosisDraft(diagnosisValue) : emptyDiagnosisDraft();
+  const laboratoryValue = input.sections["laboratory-tests"];
+  encounter.laboratoryTests = laboratoryValue && typeof laboratoryValue === "object" && "studies" in laboratoryValue
+    ? structuredClone(toRaw(laboratoryValue as LaboratoryTestsSectionValue)) : { studies: [] };
   encounter.texts = Object.fromEntries(encounter.optionalKinds.flatMap((kind) => {
     const value = input.sections[kind];
     return kind !== "diagnosis" && isFreeTextValue(value) ? [[kind, value.text]] : [];
@@ -853,6 +867,7 @@ watch(delegationPageCount, (pageCount) => {
           v-model:vaccination="encounter.vaccination"
           v-model:therapeutic-appointment="encounter.therapeuticAppointment"
           v-model:diagnosis="encounter.diagnosis"
+          v-model:laboratory-tests="encounter.laboratoryTests"
           :busy="busy"
           :editing="false"
           :latest-confirmed-vaccination="selectedPet.latestConfirmedVaccination"
@@ -862,6 +877,8 @@ watch(delegationPageCount, (pageCount) => {
         />
       </article>
       <article v-else-if="!canWrite" class="panel"><p>Доступ только для чтения: создание и изменение приёмов недоступно.</p></article>
+
+      <LaboratoryComparison :records="petRecords" :confirmed-ids="confirmedIds" />
 
       <article class="panel doctor-medical-record">
         <h2>Медицинская карта</h2>
@@ -898,6 +915,7 @@ watch(delegationPageCount, (pageCount) => {
                 v-model:vaccination="encounter.vaccination"
                 v-model:therapeutic-appointment="encounter.therapeuticAppointment"
                 v-model:diagnosis="encounter.diagnosis"
+                v-model:laboratory-tests="encounter.laboratoryTests"
                 :busy="busy"
                 editing
                 :latest-confirmed-vaccination="selectedPet.latestConfirmedVaccination"

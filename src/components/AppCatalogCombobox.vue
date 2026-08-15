@@ -40,6 +40,8 @@ const props = withDefaults(defineProps<{
   twoLevel?: boolean;
   categoryPrompt?: string;
   allCategoriesLabel?: string;
+  allowCustom?: boolean;
+  invalid?: boolean;
 }>(), {
   options: () => [],
   groups: () => [],
@@ -54,6 +56,8 @@ const props = withDefaults(defineProps<{
   twoLevel: false,
   categoryPrompt: "Выберите категорию",
   allCategoriesLabel: "Все категории",
+  allowCustom: true,
+  invalid: false,
 });
 const selectedIds = defineModel<string[]>("selectedIds", { required: true });
 const customText = defineModel<string>("customText", { required: true });
@@ -145,7 +149,7 @@ const toggleTitle = computed(() => {
 });
 const canAddCustomValue = computed(() => {
   const value = normalizeSearch(inputValue.value);
-  return props.multiple && Boolean(value)
+  return props.allowCustom && props.multiple && Boolean(value)
     && !customTexts.value.some((text) => normalizeSearch(text) === value);
 });
 
@@ -319,7 +323,7 @@ onBeforeUnmount(() => {
 <template>
   <div ref="root" class="app-catalog-combobox">
     <label v-if="showLabel" :for="inputId"><span>{{ label }}</span></label>
-    <div class="app-catalog-control" :class="{ 'has-custom-add': multiple }">
+    <div class="app-catalog-control" :class="{ 'has-custom-add': allowCustom && multiple }">
       <input
         :id="inputId"
         ref="input"
@@ -331,6 +335,7 @@ onBeforeUnmount(() => {
         :aria-label="label"
         :aria-controls="listboxId"
         :aria-expanded="open"
+        :aria-invalid="invalid || undefined"
         :aria-activedescendant="activeOptionId"
         :placeholder="placeholder"
         @input="handleInput"
@@ -340,7 +345,7 @@ onBeforeUnmount(() => {
         @keydown.esc.stop.prevent="handleEscape"
       />
       <button
-        v-if="multiple"
+        v-if="allowCustom && multiple"
         type="button"
         class="outline-action inline owner-profile-action app-catalog-add"
         :disabled="!canAddCustomValue"

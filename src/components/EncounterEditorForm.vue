@@ -7,6 +7,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue"
 import AppIcon from "./AppIcon.vue";
 import DiagnosisEditor from "./DiagnosisEditor.vue";
 import TherapeuticAppointmentForm from "./TherapeuticAppointmentForm.vue";
+import LaboratoryTestsEditor from "./LaboratoryTestsEditor.vue";
 import WhatHappenedTree from "./WhatHappenedTree.vue";
 import {
   ENCOUNTER_SECTION_LABELS,
@@ -27,6 +28,7 @@ import {
   emptyTherapeuticAppointmentDraft,
   parseTherapeuticAppointmentDraft,
 } from "../therapeuticAppointment";
+import { parseLaboratoryTestsDraft } from "../laboratoryTests";
 import type {
   GeneralDataDraft,
   GeneralDataDraftErrors,
@@ -40,7 +42,9 @@ import type {
   TherapeuticAppointmentDraft,
   TherapeuticAppointmentDraftErrors,
 } from "../therapeuticAppointment";
+import type { LaboratoryTestsDraftErrors } from "../laboratoryTests";
 import type { MedicalEncounterSectionKind } from "../repositories/types";
+import type { LaboratoryTestsSectionValue } from "@klinok/contracts";
 
 const props = defineProps<{
   busy: boolean;
@@ -65,11 +69,13 @@ const generalData = defineModel<GeneralDataDraft>("generalData", { required: tru
 const vaccination = defineModel<VaccinationDraft>("vaccination", { required: true });
 const therapeuticAppointment = defineModel<TherapeuticAppointmentDraft>("therapeuticAppointment", { required: true });
 const diagnosis = defineModel<DiagnosisDraft>("diagnosis", { required: true });
+const laboratoryTests = defineModel<LaboratoryTestsSectionValue>("laboratoryTests", { required: true });
 const form = ref<HTMLFormElement | null>(null);
 const generalDataErrors = ref<GeneralDataDraftErrors>({});
 const vaccinationErrors = ref<VaccinationDraftErrors>({});
 const therapeuticErrors = ref<TherapeuticAppointmentDraftErrors>({});
 const diagnosisErrors = ref<DiagnosisDraftErrors>({});
+const laboratoryErrors = ref<LaboratoryTestsDraftErrors>({ studies: [] });
 const revaccinationInterval = ref<RevaccinationInterval | "">("");
 const revaccinationChooserOpen = ref(false);
 const revaccinationMenuRoot = ref<HTMLElement | null>(null);
@@ -90,6 +96,7 @@ watch(date, () => {
   if (revaccinationInterval.value) applyRevaccinationInterval(revaccinationInterval.value);
 });
 watch(diagnosis, () => { diagnosisErrors.value = {}; }, { deep: true });
+watch(laboratoryTests, () => { laboratoryErrors.value = { studies: [] }; }, { deep: true });
 
 function toggleSelection(id: string) {
   const index = selectedIds.value.indexOf(id);
@@ -133,6 +140,13 @@ function selectOptional(event: Event) {
       diagnosisErrors.value = {};
       const nextTexts = { ...texts.value };
       delete nextTexts.diagnosis;
+      texts.value = nextTexts;
+    }
+    if (kind === "laboratory-tests") {
+      laboratoryTests.value = { studies: [] };
+      laboratoryErrors.value = { studies: [] };
+      const nextTexts = { ...texts.value };
+      delete nextTexts["laboratory-tests"];
       texts.value = nextTexts;
     }
   }
@@ -217,6 +231,11 @@ function submit() {
     diagnosisErrors.value = parsed.errors;
     if (!parsed.value) return;
   }
+  if (optionalKinds.value.includes("laboratory-tests") && texts.value["laboratory-tests"] === undefined) {
+    const parsed = parseLaboratoryTestsDraft(laboratoryTests.value);
+    laboratoryErrors.value = parsed.errors;
+    if (!parsed.value) return;
+  }
   if (form.value?.reportValidity() === false) return;
   emit("save");
 }
@@ -247,7 +266,10 @@ function submit() {
       v-for="kind in optionalKinds"
       :key="kind"
       class="encounter-section-card"
-      :class="{ 'encounter-diagnosis': kind === 'diagnosis' }"
+      :class="{
+        'encounter-diagnosis': kind === 'diagnosis',
+        'encounter-laboratory-tests': kind === 'laboratory-tests',
+      }"
     >
       <div class="doctor-heading">
         <h3>{{ ENCOUNTER_SECTION_LABELS[kind] }}</h3>
@@ -377,6 +399,9 @@ function submit() {
           :errors="therapeuticErrors"
           @update:model-value="updateTherapeuticAppointment"
         />
+      </template>
+      <template v-else-if="kind === 'laboratory-tests' && texts[kind] === undefined">
+        <LaboratoryTestsEditor v-model="laboratoryTests" :encounter-date="date" :errors="laboratoryErrors" />
       </template>
       <template v-else>
         <p class="temporary-note">{{ kind === 'general-data' ? 'Сохранён старый шаблон free-text-v0.' : 'Временный универсальный шаблон free-text-v0.' }}</p>

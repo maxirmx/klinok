@@ -7,8 +7,11 @@ import { createMemoryHistory, createRouter } from "vue-router";
 import { createPinia } from "pinia";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { DoctorPetAccessDto, PetAccessRequest } from "@klinok/contracts";
+import AppCatalogCombobox from "../src/components/AppCatalogCombobox.vue";
 import AppIcon from "../src/components/AppIcon.vue";
+import LaboratoryTestsEditor from "../src/components/LaboratoryTestsEditor.vue";
 import DoctorScreen from "../src/screens/DoctorScreen.vue";
+import type { SyncNotification } from "../src/repositories/offlineStore";
 import type { MedicalRecordDraft, MedicalSnapshot, PetProfile } from "../src/repositories/types";
 
 const repositoryMocks = vi.hoisted(() => ({
@@ -32,6 +35,7 @@ vi.mock("../src/appStore", async () => {
   const state = reactive({
     activeRole: "doctor" as const,
     feedback: null,
+    syncNotifications: [] as SyncNotification[],
     session: { authenticated: true, accountId: "doctor-1" },
     control: {
       profile: { firstName: "Вера", lastName: "Врач" },
@@ -49,6 +53,7 @@ vi.mock("../src/appStore", async () => {
     searchDoctorDirectory: directoryMocks.searchDoctorDirectory,
     searchPetDirectory: directoryMocks.searchPetDirectory,
     setDoctorMedicalState: (medical: MedicalSnapshot) => { state.medical = medical; },
+    setDoctorSyncNotifications: (notifications: SyncNotification[]) => { state.syncNotifications = notifications; },
   };
 });
 
@@ -102,6 +107,25 @@ const medicalRecord: MedicalRecordDraft = {
   createdAt: "2026-07-21T10:00:00.000Z",
   updatedAt: "2026-07-21T10:00:00.000Z",
 };
+
+function withLaboratoryPanel(record: MedicalRecordDraft): MedicalRecordDraft {
+  return { ...record, sections: { ...record.sections, "laboratory-tests": {
+    kind: "laboratory-tests",
+    templateVersion: "laboratory-tests-v1",
+    value: { studies: [{
+      id: "123e4567-e89b-12d3-a456-426614174000",
+      date: record.encounterDate,
+      typeId: "lab.study.cbc",
+      typeName: "Общеклинический анализ крови",
+      mode: "panel",
+      laboratory: "Ветлаб",
+      results: [{ indicatorId: "lab.indicator.cbc.001", indicatorName: "Гематокрит", unit: "%", result: "42" }],
+    }] },
+    authorAccountId: record.authorAccountId,
+    authorDisplayName: record.authorDisplayName,
+    updatedAt: record.updatedAt,
+  } } };
+}
 
 function snapshot(
   actions: Array<"read" | "write_unconfirmed" | "delegate"> = ["read", "write_unconfirmed", "delegate"],
@@ -161,6 +185,13 @@ async function setMedical(medical: MedicalSnapshot) {
   store.setDoctorMedicalState(medical);
 }
 
+async function setSyncNotifications(notifications: SyncNotification[]) {
+  const store = await import("../src/appStore") as typeof import("../src/appStore") & {
+    setDoctorSyncNotifications: (value: SyncNotification[]) => void;
+  };
+  store.setDoctorSyncNotifications(notifications);
+}
+
 async function mountAt(path: string, scenarioId: string) {
   const router = createRouter({
     history: createMemoryHistory(),
@@ -182,6 +213,7 @@ beforeEach(async () => {
   vi.clearAllMocks();
   localStorage.clear();
   await setMedical(snapshot());
+  await setSyncNotifications([]);
   directoryMocks.loadDoctorPetAccesses.mockResolvedValue(accessPage([doctorAccess()]));
   directoryMocks.lookupPetDirectory.mockImplementation(async (petId: string) => ({
     petId,
@@ -966,6 +998,156 @@ describe("Doctor pages", () => {
     }));
   });
 
+  it("validates and saves structured laboratory studies", async () => {
+    const wrapper = await mountAt("/doctor/pets/pet-1", "doctor-pet-detail");
+    await flushPromises();
+    await wrapper.findAll(".encounter-taxonomy label").find((label) => label.text() === "Не ест")!
+      .get("input").trigger("change");
+    await wrapper.findAll(".encounter-outcome .check-row")
+      .find((option) => option.text() === "В стадии наблюдения")!
+      .get("input").trigger("change");
+    await wrapper.get<HTMLSelectElement>(".encounter-add-section select").setValue("laboratory-tests");
+
+    const laboratoryEditor = wrapper.getComponent(LaboratoryTestsEditor);
+    expect(laboratoryEditor.exists()).toBe(true);
+    expect(wrapper.get(".encounter-laboratory-tests").getComponent(LaboratoryTestsEditor).exists()).toBe(true);
+    await wrapper.get('button[title="Сохранить запись"]').trigger("click");
+    expect(repositoryMocks.saveEncounter).not.toHaveBeenCalled();
+    expect(laboratoryEditor.get('[role="alert"]').text()).toContain("Добавьте хотя бы одно");
+
+    laboratoryEditor.findAllComponents(AppCatalogCombobox)[0]!.vm
+      .$emit("update:selectedIds", ["lab.study.coagulation"]);
+    await flushPromises();
+    await laboratoryEditor.get('button[title="Добавить исследование"]').trigger("click");
+    await flushPromises();
+    expect(laboratoryEditor.findAllComponents(AppCatalogCombobox)).toHaveLength(1);
+    const laboratoryField = laboratoryEditor.findAll("label")
+      .find((label) => label.find("span").exists() && label.get("span").text() === "Лаборатория")!;
+    const resultRows = laboratoryEditor.findAll(".laboratory-result-row");
+    expect(resultRows).toHaveLength(4);
+    await wrapper.get('button[title="Сохранить запись"]').trigger("click");
+    await flushPromises();
+    expect(laboratoryField.get("input").attributes("aria-invalid")).toBe("true");
+    expect(laboratoryField.get(".field-error").text()).toBe("Укажите лабораторию.");
+    expect(resultRows.every((row) => row.findAll("input")[0]!.attributes("aria-invalid") === "true")).toBe(true);
+    expect(resultRows[0]!.get(".field-error").text()).toBe("Укажите результат.");
+
+    await laboratoryField.get("input").setValue("Ветлаб");
+    for (const [index, row] of resultRows.entries()) await row.findAll("input")[0]!.setValue(String(index + 1));
+
+    await wrapper.get('button[title="Сохранить запись"]').trigger("click");
+    await flushPromises();
+    expect(repositoryMocks.saveEncounter).toHaveBeenCalledWith(expect.objectContaining({
+      petId: "pet-1",
+      sections: expect.objectContaining({
+        "laboratory-tests": {
+          studies: [expect.objectContaining({
+            typeId: "lab.study.coagulation",
+            typeName: "Коагулограмма крови",
+            mode: "panel",
+            laboratory: "Ветлаб",
+            results: expect.arrayContaining([expect.objectContaining({ indicatorId: "lab.indicator.coagulation.001", result: "1" })]),
+          })],
+        },
+      }),
+    }));
+  });
+
+  it("restores structured laboratory studies in the inline editor", async () => {
+    const laboratoryRecord: MedicalRecordDraft = {
+      ...medicalRecord,
+      sections: {
+        ...medicalRecord.sections,
+        "laboratory-tests": {
+          kind: "laboratory-tests",
+          templateVersion: "laboratory-tests-v1",
+          value: {
+            studies: [{
+              id: "123e4567-e89b-12d3-a456-426614174000",
+              date: "2026-07-21",
+              typeId: "lab.study.cbc",
+              typeName: "Общеклинический анализ крови",
+              mode: "panel",
+              laboratory: "Ветлаб",
+              results: [{ indicatorId: "lab.indicator.cbc.001", indicatorName: "Гематокрит", unit: "%", result: "42" }],
+            }],
+          },
+          authorAccountId: "doctor-1",
+          authorDisplayName: "Вера Врач",
+          updatedAt: "2026-07-21T10:00:00.000Z",
+        },
+      },
+    };
+    await setMedical(snapshot(undefined, { records: [laboratoryRecord] }));
+    const wrapper = await mountAt("/doctor/pets/pet-1", "doctor-pet-detail");
+    await flushPromises();
+    await wrapper.get(".medical-record-edit").trigger("click");
+    const editor = wrapper.get(".encounter-editor-inline").getComponent(LaboratoryTestsEditor);
+
+    expect(editor.findAll(".laboratory-study-card")).toHaveLength(1);
+    expect(editor.get<HTMLInputElement>(".laboratory-metadata label:nth-child(2) input").element.value).toBe("Ветлаб");
+    editor.findAllComponents(AppCatalogCombobox)[0]!.vm.$emit("update:selectedIds", ["lab.study.cbc"]);
+    await flushPromises();
+    await editor.get('button[title="Добавить исследование"]').trigger("click");
+    await flushPromises();
+    expect(editor.findAll(".laboratory-study-card")).toHaveLength(2);
+  });
+
+  it("recovers structured laboratory studies from an offline draft", async () => {
+    await setSyncNotifications([{
+      notificationId: "notification-laboratory",
+      accountId: "doctor-1",
+      operationId: "operation-laboratory",
+      entityId: "record-laboratory",
+      commandAction: "medical.record.created",
+      code: "VALIDATION_FAILED",
+      reasonKey: "invalid",
+      diagnosticId: "diagnostic-laboratory",
+      createdAt: "2026-08-15T10:00:00.000Z",
+      action: "return",
+      relatedRoute: "/doctor/pets/pet-1",
+      localDraft: {
+        operationId: "operation-laboratory",
+        type: "record.create",
+        activeRole: "doctor",
+        entityId: "record-laboratory",
+        createdAt: "2026-08-15T10:00:00.000Z",
+        payload: {
+          input: {
+            petId: "pet-1",
+            encounterDate: "2026-08-15",
+            sections: {
+              "what-happened": { selectedIds: ["problem.digestive.1"], comment: "Не ест" },
+              "laboratory-tests": {
+                studies: [{
+                  id: "123e4567-e89b-12d3-a456-426614174000",
+                  date: "2026-08-15",
+                  typeId: "lab.study.cbc",
+                  typeName: "Общеклинический анализ крови",
+                  mode: "panel",
+                  laboratory: "Ветлаб",
+                  results: [{ indicatorId: "lab.indicator.cbc.001", indicatorName: "Гематокрит", unit: "%", result: "42" }],
+                }],
+              },
+              outcome: { selectedIds: ["outcome.observation"], comment: "" },
+            },
+          },
+        },
+      },
+    }]);
+
+    const wrapper = await mountAt(
+      "/doctor/pets/pet-1?recover=notification-laboratory",
+      "doctor-pet-detail",
+    );
+    await flushPromises();
+
+    const editor = wrapper.get(".doctor-pet-detail > .encounter-editor").getComponent(LaboratoryTestsEditor);
+    expect(editor.findAll(".laboratory-study-card")).toHaveLength(1);
+    expect(editor.get(".laboratory-study-heading h4").text()).toBe("Общеклинический анализ крови");
+    expect(wrapper.text()).toContain("Черновик восстановлен");
+  });
+
   it("validates and saves the five-tab therapeutic appointment template", async () => {
     const wrapper = await mountAt("/doctor/pets/pet-1", "doctor-pet-detail");
     await flushPromises();
@@ -1528,6 +1710,17 @@ describe("Doctor pages", () => {
     expect(wrapper.find(".medical-record-entry-details").exists()).toBe(false);
     await wrapper.get('.doctor-history-filters select[aria-label="Статус"]').setValue("confirmed");
     expect(wrapper.findAll(".medical-record-entry-details")).toHaveLength(1);
+  });
+
+  it("renders laboratory history as a bordered panel outside the medical card", async () => {
+    await setMedical(snapshot(undefined, { records: [withLaboratoryPanel(medicalRecord)] }));
+    const wrapper = await mountAt("/doctor/pets/pet-1", "doctor-pet-detail");
+    await flushPromises();
+
+    const history = wrapper.get(".doctor-pet-detail > .laboratory-comparison");
+    expect(history.get("h2").text()).toBe("История лабораторных показателей");
+    expect(history.classes()).toContain("panel");
+    expect(wrapper.get(".doctor-medical-record").find(".laboratory-comparison").exists()).toBe(false);
   });
 
   it("deletes an unconfirmed encounter after confirmation", async () => {

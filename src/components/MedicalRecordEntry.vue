@@ -21,6 +21,7 @@ import {
   isGeneralDataValue,
   isOutcomeValue,
   isVaccinationValue,
+  isLaboratoryTestsValue,
   isWhatHappenedValue,
   outcomeComment,
   outcomeLabel,
@@ -214,6 +215,35 @@ function formatLocalDateTime(value: string) {
           v-else-if="item.kind === 'therapeutic-appointment' && isTherapeuticAppointmentValue(item.section.value)"
           :value="item.section.value"
         />
+        <div v-else-if="isLaboratoryTestsValue(item.section.value)" class="laboratory-history">
+          <section v-for="study in item.section.value.studies" :key="study.id" class="laboratory-history-study">
+            <h4>{{ formatDate(study.date) }} · {{ study.typeName }}</h4>
+            <p><span class="muted-label">Лаборатория</span> {{ study.laboratory }}</p>
+            <p v-if="study.technician"><span class="muted-label">Лаборант</span> {{ study.technician }}</p>
+            <p v-if="study.equipment"><span class="muted-label">Оборудование</span> {{ study.equipment }}</p>
+            <div v-if="study.mode === 'panel'" class="laboratory-panel-results laboratory-history-results" role="group" aria-label="Показатели исследования">
+              <div class="laboratory-panel-layout" :class="{ 'laboratory-panel-layout-multiple': study.results.length > 1 }">
+                <div class="laboratory-result-headings laboratory-result-headings-primary" aria-hidden="true">
+                  <span>Показатель</span><span>Результат</span><span>Референсные значения</span>
+                </div>
+                <div v-if="study.results.length > 1" class="laboratory-result-headings laboratory-result-headings-secondary" aria-hidden="true">
+                  <span>Показатель</span><span>Результат</span><span>Референсные значения</span>
+                </div>
+                <div v-for="result in study.results" :key="result.indicatorId" class="laboratory-result-row">
+                  <div class="laboratory-result-indicator">
+                    <span>{{ result.indicatorName }}</span>
+                    <span class="laboratory-result-unit">{{ result.unit || '—' }}</span>
+                  </div>
+                  <div><span class="laboratory-result-mobile-name" :title="`${result.indicatorName} · ${result.unit || '—'}`">{{ result.indicatorName }} · {{ result.unit || '—' }}</span><span>{{ result.result }}</span></div>
+                  <div><span class="laboratory-result-label">Референсные значения</span><span>{{ result.reference || '—' }}</span></div>
+                </div>
+              </div>
+            </div>
+            <p v-else-if="study.mode === 'narrative'">{{ study.result }}</p>
+            <dl v-else><div><dt>Инфекция</dt><dd>{{ study.infection }}</dd></div><div><dt>Метод</dt><dd>{{ study.method }}</dd></div><div><dt>Результат</dt><dd>{{ study.result === 'positive' ? 'Положительно' : 'Отрицательно' }}</dd></div></dl>
+            <p v-if="study.comment" class="encounter-history-comment">{{ study.comment }}</p>
+          </section>
+        </div>
         <dl v-else-if="isGeneralDataValue(item.section.value)" class="general-data-values">
           <div v-for="measurement in generalDataMeasurements(item.section.value)" :key="measurement.key">
             <dt>{{ measurement.label }}</dt>
