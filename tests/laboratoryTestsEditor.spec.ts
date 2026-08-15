@@ -20,7 +20,7 @@ describe("LaboratoryTestsEditor", () => {
       props: {
         modelValue: current,
         encounterDate: "2026-08-15",
-        errors: "Добавьте хотя бы одно лабораторное исследование.",
+        errors: { section: "Добавьте хотя бы одно лабораторное исследование.", studies: [] },
         "onUpdate:modelValue": (value: LaboratoryTestsSectionValue) => updateModel(value),
       },
     });
@@ -30,6 +30,7 @@ describe("LaboratoryTestsEditor", () => {
     };
 
     expect(wrapper.get('[role="alert"]').text()).toContain("Добавьте хотя бы одно");
+    expect(wrapper.get('input[aria-label="Тип исследования"]').attributes("aria-invalid")).toBe("true");
     expect(wrapper.get(".laboratory-study-create + .laboratory-study-list").exists()).toBe(true);
     expect(wrapper.get('input[aria-label="Тип исследования"]').exists()).toBe(true);
     const addButton = () => wrapper.get('button[title="Добавить исследование"]');
@@ -73,6 +74,30 @@ describe("LaboratoryTestsEditor", () => {
     expect(wrapper.findAllComponents(AppCatalogCombobox)).toHaveLength(1);
     expect(wrapper.find(".laboratory-study-indicators").exists()).toBe(false);
     expect(wrapper.findAll(".laboratory-results tbody tr")).toHaveLength(cbc.indicators.length);
+    expect(wrapper.findAll(".laboratory-results thead th").map((header) => header.text())).toEqual([
+      "Показатель",
+      "Результат",
+      "Референсные значения",
+    ]);
+    const firstIndicatorCell = wrapper.get(".laboratory-results tbody tr td");
+    expect(firstIndicatorCell.get("span").text()).toBe(cbc.indicators[0]!.name);
+    expect(firstIndicatorCell.get(".laboratory-result-unit").text()).toBe(cbc.indicators[0]!.unit);
+    await wrapper.setProps({ errors: {
+      studies: [{
+        date: "Укажите корректную дату исследования.",
+        laboratory: "Укажите лабораторию.",
+        indicators: { [cbc.indicators[0]!.id]: "Укажите результат." },
+      }],
+    } });
+    const invalidFields = wrapper.findAll('[aria-invalid="true"]');
+    expect(invalidFields).toHaveLength(3);
+    expect(invalidFields.map((field) => field.element.tagName)).toEqual(["INPUT", "INPUT", "INPUT"]);
+    expect(wrapper.findAll(".laboratory-study-card .field-error").map((error) => error.text())).toEqual([
+      "Укажите корректную дату исследования.",
+      "Укажите лабораторию.",
+      "Укажите результат.",
+    ]);
+    await wrapper.setProps({ errors: { studies: [] } });
 
     const laboratory = wrapper.findAll("label")
       .find((label) => label.find("span").exists() && label.get("span").text() === "Лаборатория")!;

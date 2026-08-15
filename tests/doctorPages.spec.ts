@@ -1004,9 +1004,16 @@ describe("Doctor pages", () => {
     expect(laboratoryEditor.findAllComponents(AppCatalogCombobox)).toHaveLength(1);
     const laboratoryField = laboratoryEditor.findAll("label")
       .find((label) => label.find("span").exists() && label.get("span").text() === "Лаборатория")!;
-    await laboratoryField.get("input").setValue("Ветлаб");
     const resultRows = laboratoryEditor.findAll(".laboratory-results tbody tr");
     expect(resultRows).toHaveLength(4);
+    await wrapper.get('button[title="Сохранить запись"]').trigger("click");
+    await flushPromises();
+    expect(laboratoryField.get("input").attributes("aria-invalid")).toBe("true");
+    expect(laboratoryField.get(".field-error").text()).toBe("Укажите лабораторию.");
+    expect(resultRows.every((row) => row.findAll("input")[0]!.attributes("aria-invalid") === "true")).toBe(true);
+    expect(resultRows[0]!.get(".field-error").text()).toBe("Укажите результат.");
+
+    await laboratoryField.get("input").setValue("Ветлаб");
     for (const [index, row] of resultRows.entries()) await row.findAll("input")[0]!.setValue(String(index + 1));
 
     await wrapper.get('button[title="Сохранить запись"]').trigger("click");

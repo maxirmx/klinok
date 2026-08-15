@@ -28,6 +28,7 @@ import {
   emptyTherapeuticAppointmentDraft,
   parseTherapeuticAppointmentDraft,
 } from "../therapeuticAppointment";
+import { parseLaboratoryTestsDraft } from "../laboratoryTests";
 import type {
   GeneralDataDraft,
   GeneralDataDraftErrors,
@@ -41,8 +42,9 @@ import type {
   TherapeuticAppointmentDraft,
   TherapeuticAppointmentDraftErrors,
 } from "../therapeuticAppointment";
+import type { LaboratoryTestsDraftErrors } from "../laboratoryTests";
 import type { MedicalEncounterSectionKind } from "../repositories/types";
-import { normalizeLaboratoryTestsValue, type LaboratoryTestsSectionValue } from "@klinok/contracts";
+import type { LaboratoryTestsSectionValue } from "@klinok/contracts";
 
 const props = defineProps<{
   busy: boolean;
@@ -73,7 +75,7 @@ const generalDataErrors = ref<GeneralDataDraftErrors>({});
 const vaccinationErrors = ref<VaccinationDraftErrors>({});
 const therapeuticErrors = ref<TherapeuticAppointmentDraftErrors>({});
 const diagnosisErrors = ref<DiagnosisDraftErrors>({});
-const laboratoryError = ref("");
+const laboratoryErrors = ref<LaboratoryTestsDraftErrors>({ studies: [] });
 const revaccinationInterval = ref<RevaccinationInterval | "">("");
 const revaccinationChooserOpen = ref(false);
 const revaccinationMenuRoot = ref<HTMLElement | null>(null);
@@ -94,6 +96,7 @@ watch(date, () => {
   if (revaccinationInterval.value) applyRevaccinationInterval(revaccinationInterval.value);
 });
 watch(diagnosis, () => { diagnosisErrors.value = {}; }, { deep: true });
+watch(laboratoryTests, () => { laboratoryErrors.value = { studies: [] }; }, { deep: true });
 
 function toggleSelection(id: string) {
   const index = selectedIds.value.indexOf(id);
@@ -141,7 +144,7 @@ function selectOptional(event: Event) {
     }
     if (kind === "laboratory-tests") {
       laboratoryTests.value = { studies: [] };
-      laboratoryError.value = "";
+      laboratoryErrors.value = { studies: [] };
       const nextTexts = { ...texts.value };
       delete nextTexts["laboratory-tests"];
       texts.value = nextTexts;
@@ -229,8 +232,9 @@ function submit() {
     if (!parsed.value) return;
   }
   if (optionalKinds.value.includes("laboratory-tests") && texts.value["laboratory-tests"] === undefined) {
-    try { normalizeLaboratoryTestsValue(laboratoryTests.value); laboratoryError.value = ""; }
-    catch (reason) { laboratoryError.value = reason instanceof Error ? reason.message : "Проверьте лабораторные исследования."; return; }
+    const parsed = parseLaboratoryTestsDraft(laboratoryTests.value);
+    laboratoryErrors.value = parsed.errors;
+    if (!parsed.value) return;
   }
   if (form.value?.reportValidity() === false) return;
   emit("save");
@@ -397,7 +401,7 @@ function submit() {
         />
       </template>
       <template v-else-if="kind === 'laboratory-tests' && texts[kind] === undefined">
-        <LaboratoryTestsEditor v-model="laboratoryTests" :encounter-date="date" :errors="laboratoryError" />
+        <LaboratoryTestsEditor v-model="laboratoryTests" :encounter-date="date" :errors="laboratoryErrors" />
       </template>
       <template v-else>
         <p class="temporary-note">{{ kind === 'general-data' ? 'Сохранён старый шаблон free-text-v0.' : 'Временный универсальный шаблон free-text-v0.' }}</p>

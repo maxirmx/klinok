@@ -41,6 +41,7 @@ const props = withDefaults(defineProps<{
   categoryPrompt?: string;
   allCategoriesLabel?: string;
   allowCustom?: boolean;
+  invalid?: boolean;
 }>(), {
   options: () => [],
   groups: () => [],
@@ -56,6 +57,7 @@ const props = withDefaults(defineProps<{
   categoryPrompt: "Выберите категорию",
   allCategoriesLabel: "Все категории",
   allowCustom: true,
+  invalid: false,
 });
 const selectedIds = defineModel<string[]>("selectedIds", { required: true });
 const customText = defineModel<string>("customText", { required: true });
@@ -333,6 +335,7 @@ onBeforeUnmount(() => {
         :aria-label="label"
         :aria-controls="listboxId"
         :aria-expanded="open"
+        :aria-invalid="invalid || undefined"
         :aria-activedescendant="activeOptionId"
         :placeholder="placeholder"
         @input="handleInput"
