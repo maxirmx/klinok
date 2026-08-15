@@ -35,16 +35,20 @@ import {
 import {
   ENCOUNTER_SECTION_LABELS,
   OPTIONAL_ENCOUNTER_SECTION_KINDS,
+  diagnosisDraft,
+  emptyDiagnosisDraft,
   emptyGeneralDataDraft,
   emptyVaccinationDraft,
   encounterSummary,
   generalDataDraft,
   isFreeTextValue,
+  isDiagnosisValue,
   isGeneralDataValue,
   isOutcomeValue,
   isVaccinationValue,
   isWhatHappenedValue,
   parseGeneralDataDraft,
+  parseDiagnosisDraft,
   parseVaccinationDraft,
   sectionSearchText,
   vaccinationDraft,
@@ -137,6 +141,7 @@ const encounter = reactive({
   generalData: emptyGeneralDataDraft(),
   vaccination: emptyVaccinationDraft(),
   therapeuticAppointment: emptyTherapeuticAppointmentDraft(),
+  diagnosis: emptyDiagnosisDraft(),
 });
 
 const profileName = computed(() => [appState.control.profile?.firstName, appState.control.profile?.patronymic, appState.control.profile?.lastName].filter(Boolean).join(" "));
@@ -358,6 +363,7 @@ function removeOptional(kind: MedicalEncounterSectionKind) {
   if (kind === "general-data") encounter.generalData = emptyGeneralDataDraft();
   if (kind === "vaccination") encounter.vaccination = emptyVaccinationDraft(selectedPet.value?.latestConfirmedVaccination);
   if (kind === "therapeutic-appointment") encounter.therapeuticAppointment = emptyTherapeuticAppointmentDraft();
+  if (kind === "diagnosis") encounter.diagnosis = emptyDiagnosisDraft();
 }
 
 function requestRemoveOptional(kind: MedicalEncounterSectionKind) {
@@ -385,6 +391,7 @@ function resetEncounter() {
   encounter.generalData = emptyGeneralDataDraft();
   encounter.vaccination = emptyVaccinationDraft();
   encounter.therapeuticAppointment = emptyTherapeuticAppointmentDraft();
+  encounter.diagnosis = emptyDiagnosisDraft();
 }
 
 async function saveEncounter() {
@@ -392,7 +399,11 @@ async function saveEncounter() {
   await perform(async () => {
     const optionalSections: Partial<Record<MedicalEncounterSectionKind, MedicalEncounterSectionInputValue>> = {};
     for (const kind of encounter.optionalKinds) {
-      if (kind === "general-data" && encounter.texts[kind] === undefined) {
+      if (kind === "diagnosis") {
+        const parsed = parseDiagnosisDraft(encounter.diagnosis);
+        if (!parsed.value) throw new Error("Проверьте данные в разделе «Диагноз».");
+        optionalSections[kind] = parsed.value;
+      } else if (kind === "general-data" && encounter.texts[kind] === undefined) {
         const parsed = parseGeneralDataDraft(encounter.generalData);
         if (!parsed.value) throw new Error("Проверьте показатели в разделе «Общие данные/Габитус».");
         optionalSections[kind] = parsed.value;
@@ -444,9 +455,11 @@ function editRecord(record: (typeof appState.medical.records)[number]) {
   encounter.therapeuticAppointment = isTherapeuticAppointmentValue(therapeuticValue)
     ? therapeuticAppointmentDraft(therapeuticValue)
     : emptyTherapeuticAppointmentDraft();
+  const diagnosisValue = record.sections.diagnosis?.value;
+  encounter.diagnosis = isDiagnosisValue(diagnosisValue) ? diagnosisDraft(diagnosisValue) : emptyDiagnosisDraft();
   encounter.texts = Object.fromEntries(encounter.optionalKinds.flatMap((kind) => {
     const value = record.sections[kind]?.value;
-    return isFreeTextValue(value) ? [[kind, value.text]] : [];
+    return kind !== "diagnosis" && isFreeTextValue(value) ? [[kind, value.text]] : [];
   }));
 }
 
@@ -476,9 +489,11 @@ function recoverRecordDraft(command: {
   encounter.therapeuticAppointment = isTherapeuticAppointmentValue(therapeuticValue)
     ? therapeuticAppointmentDraft(therapeuticValue)
     : emptyTherapeuticAppointmentDraft();
+  const diagnosisValue = input.sections.diagnosis;
+  encounter.diagnosis = isDiagnosisValue(diagnosisValue) ? diagnosisDraft(diagnosisValue) : emptyDiagnosisDraft();
   encounter.texts = Object.fromEntries(encounter.optionalKinds.flatMap((kind) => {
     const value = input.sections[kind];
-    return isFreeTextValue(value) ? [[kind, value.text]] : [];
+    return kind !== "diagnosis" && isFreeTextValue(value) ? [[kind, value.text]] : [];
   }));
   alertStore.success("Черновик восстановлен. Проверьте актуальные данные и сохраните его повторно.");
 }
@@ -837,6 +852,7 @@ watch(delegationPageCount, (pageCount) => {
           v-model:general-data="encounter.generalData"
           v-model:vaccination="encounter.vaccination"
           v-model:therapeutic-appointment="encounter.therapeuticAppointment"
+          v-model:diagnosis="encounter.diagnosis"
           :busy="busy"
           :editing="false"
           :latest-confirmed-vaccination="selectedPet.latestConfirmedVaccination"
@@ -881,6 +897,7 @@ watch(delegationPageCount, (pageCount) => {
                 v-model:general-data="encounter.generalData"
                 v-model:vaccination="encounter.vaccination"
                 v-model:therapeutic-appointment="encounter.therapeuticAppointment"
+                v-model:diagnosis="encounter.diagnosis"
                 :busy="busy"
                 editing
                 :latest-confirmed-vaccination="selectedPet.latestConfirmedVaccination"

@@ -1239,6 +1239,44 @@ describe("Doctor pages", () => {
     expect(wrapper.find(".encounter-section-card:not(.encounter-what-happened):not(.encounter-outcome)").exists()).toBe(false);
   });
 
+  it("saves and promotes structured diagnoses while retaining their source values", async () => {
+    const wrapper = await mountAt("/doctor/pets/pet-1", "doctor-pet-detail");
+    await flushPromises();
+    await wrapper.findAll(".encounter-taxonomy label").find((label) => label.text() === "Не ест")!
+      .get("input").trigger("change");
+    await wrapper.findAll(".encounter-outcome .check-row")
+      .find((option) => option.text() === "В стадии наблюдения")!
+      .get("input").trigger("change");
+    await wrapper.get<HTMLSelectElement>(".encounter-add-section select").setValue("diagnosis");
+
+    const card = wrapper.findAll(".encounter-section-card")
+      .find((candidate) => candidate.get("h3").text() === "Диагноз")!;
+    const fields = card.findAll("fieldset.diagnosis-field");
+    await fields[0]!.get<HTMLInputElement>('input[role="combobox"]').setValue("Подозрение на гастрит");
+    await fields[0]!.get('button[aria-label="Назначить предварительный диагноз подтверждённым"]').trigger("click");
+    expect(fields[2]!.get<HTMLInputElement>('input[role="combobox"]').element.value).toBe("Подозрение на гастрит");
+
+    const differentialInput = fields[1]!.get<HTMLInputElement>('input[role="combobox"]');
+    await differentialInput.setValue("Стоматит");
+    await fields[1]!.get('[role="option"]').trigger("click");
+    await differentialInput.setValue("Реакция на корм");
+    await fields[1]!.get('[aria-label="Добавить диагноз в свободной форме"]').trigger("click");
+    await fields[1]!.get('button[aria-label="Назначить «Стоматит» подтверждённым диагнозом"]').trigger("click");
+    await wrapper.get('[role="alertdialog"] .danger').trigger("click");
+    await wrapper.get('button[title="Сохранить запись"]').trigger("click");
+    await flushPromises();
+
+    expect(repositoryMocks.saveEncounter).toHaveBeenCalledWith(expect.objectContaining({
+      sections: expect.objectContaining({
+        diagnosis: {
+          preliminary: { customText: "Подозрение на гастрит" },
+          differential: { selectedIds: ["diagnosis.digestive.001"], customTexts: ["Реакция на корм"] },
+          confirmed: { selectedId: "diagnosis.digestive.001", customText: "" },
+        },
+      }),
+    }));
+  });
+
   it("edits an unconfirmed medical record in place", async () => {
     await setMedical(snapshot(undefined, { records: [medicalRecord] }));
     const wrapper = await mountAt("/doctor/pets/pet-1", "doctor-pet-detail");

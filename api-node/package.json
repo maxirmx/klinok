@@ -1,6 +1,6 @@
 {
   "name": "@klinok/api-node",
-  "version": "0.10.4",
+  "version": "0.11.0",
   "private": true,
   "type": "module",
   "main": "./dist/server.js",

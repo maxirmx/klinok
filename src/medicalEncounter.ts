@@ -3,6 +3,8 @@
 // This file is a part of Klinok application
 
 import type {
+  DiagnosisSectionValue,
+  DiagnosisTaxonomyId,
   FreeTextSectionValue,
   GeneralDataSectionValue,
   MedicalEncounterSectionKind,
@@ -10,6 +12,10 @@ import type {
   OutcomeSectionValue,
   VaccinationSectionValue,
   WhatHappenedSectionValue,
+} from "./repositories/types";
+import {
+  DIAGNOSIS_CATALOG_OPTIONS,
+  isDiagnosisTaxonomyId,
 } from "./repositories/types";
 import {
   isTherapeuticAppointmentValue,
@@ -40,6 +46,22 @@ export interface VaccinationDraft {
   administrationSite: string;
   nextRevaccinationDate: string;
 }
+
+export type DiagnosisInputMode = "catalog" | "custom";
+
+export interface DiagnosisDraft {
+  preliminaryMode: DiagnosisInputMode;
+  preliminarySelectedId: string;
+  preliminaryCustomText: string;
+  differentialSelectedIds: string[];
+  differentialCustomTexts: string[];
+  confirmedMode: DiagnosisInputMode;
+  confirmedSelectedId: string;
+  confirmedCustomText: string;
+}
+
+export type DiagnosisDraftField = "preliminary" | "differential" | "confirmed";
+export type DiagnosisDraftErrors = Partial<Record<DiagnosisDraftField, string>>;
 
 export type RevaccinationInterval = "days-14" | "month-1" | "months-4" | "months-6" | "months-12" | "next-birthday";
 
@@ -197,6 +219,177 @@ export function outcomeSelectedIds(value: unknown): readonly string[] {
 
 export function outcomeComment(value: unknown): string {
   return isOutcomeValue(value) ? value.comment : "";
+}
+
+const MAX_DIAGNOSIS_CUSTOM_TEXT_LENGTH = 10_000;
+const diagnosisLabels = new Map(DIAGNOSIS_CATALOG_OPTIONS.map((option) => [option.id, option.label]));
+
+function diagnosisChoiceValidationError(value: unknown, required: boolean): string {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return "Укажите диагноз.";
+  const choice = value as Record<string, unknown>;
+  if (choice.selectedId !== undefined && typeof choice.selectedId !== "string") return "Выбран некорректный диагноз.";
+  if (typeof choice.customText !== "string") return "Укажите диагноз.";
+  const selectedId = typeof choice.selectedId === "string" ? choice.selectedId : "";
+  const customText = choice.customText.trim();
+  if (selectedId && customText) return "Выберите диагноз из справочника или заполните свободную форму.";
+  if (selectedId && !isDiagnosisTaxonomyId(selectedId)) return "Выбран неизвестный диагноз.";
+  if (customText.length > MAX_DIAGNOSIS_CUSTOM_TEXT_LENGTH) return "Текст диагноза не должен превышать 10 000 символов.";
+  if (required && !selectedId && !customText) return "Укажите подтверждённый диагноз.";
+  return "";
+}
+
+export function diagnosisValidationError(value: unknown): string {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return "Заполните раздел «Диагноз».";
+  const diagnosis = value as Record<string, unknown>;
+  const preliminaryError = diagnosisChoiceValidationError(diagnosis.preliminary, false);
+  if (preliminaryError) return preliminaryError;
+  if (!diagnosis.differential || typeof diagnosis.differential !== "object" || Array.isArray(diagnosis.differential)) {
+    return "Укажите дифференциальные диагнозы.";
+  }
+  const differential = diagnosis.differential as Record<string, unknown>;
+  if (!Array.isArray(differential.selectedIds)) return "Укажите дифференциальные диагнозы.";
+  const hasCustomTexts = "customTexts" in differential;
+  const hasLegacyCustomText = "customText" in differential;
+  if (hasCustomTexts === hasLegacyCustomText
+    || (hasCustomTexts && !Array.isArray(differential.customTexts))
+    || (hasLegacyCustomText && typeof differential.customText !== "string")) {
+    return "Укажите дифференциальные диагнозы.";
+  }
+  const selectedIds = differential.selectedIds as unknown[];
+  if (selectedIds.some((id) => typeof id !== "string" || !isDiagnosisTaxonomyId(id))) {
+    return "Выбран неизвестный дифференциальный диагноз.";
+  }
+  if (new Set(selectedIds).size !== selectedIds.length) {
+    return "Дифференциальные диагнозы не должны повторяться.";
+  }
+  const customTexts = hasCustomTexts
+    ? differential.customTexts as unknown[]
+    : [(differential.customText as string).trim()].filter(Boolean);
+  if (customTexts.some((text) => typeof text !== "string" || !text.trim())) {
+    return "Дифференциальные диагнозы в свободной форме не должны быть пустыми.";
+  }
+  const normalizedCustomTexts = customTexts.map((text) => (text as string).trim());
+  if (new Set(normalizedCustomTexts).size !== normalizedCustomTexts.length) {
+    return "Дифференциальные диагнозы в свободной форме не должны повторяться.";
+  }
+  if (!hasCustomTexts && selectedIds.length && normalizedCustomTexts.length) {
+    return "Выберите дифференциальные диагнозы из справочника или заполните свободную форму.";
+  }
+  if (normalizedCustomTexts.some((text) => text.length > MAX_DIAGNOSIS_CUSTOM_TEXT_LENGTH)) {
+    return "Текст дифференциальных диагнозов не должен превышать 10 000 символов.";
+  }
+  return diagnosisChoiceValidationError(diagnosis.confirmed, true);
+}
+
+export function isDiagnosisValue(value: unknown): value is DiagnosisSectionValue {
+  return !diagnosisValidationError(value);
+}
+
+export function normalizeDiagnosisValue(value: DiagnosisSectionValue): DiagnosisSectionValue {
+  return {
+    preliminary: {
+      ...(value.preliminary.selectedId ? { selectedId: value.preliminary.selectedId } : {}),
+      customText: value.preliminary.customText.trim(),
+    },
+    differential: {
+      selectedIds: [...value.differential.selectedIds],
+      customTexts: diagnosisDifferentialCustomTexts(value.differential).map((text) => text.trim()),
+    },
+    confirmed: {
+      ...(value.confirmed.selectedId ? { selectedId: value.confirmed.selectedId } : {}),
+      customText: value.confirmed.customText.trim(),
+    },
+  };
+}
+
+export function diagnosisLabel(id: string): string {
+  return diagnosisLabels.get(id as DiagnosisTaxonomyId) ?? id;
+}
+
+export function diagnosisChoiceSummary(value: DiagnosisSectionValue["preliminary"]): string {
+  return value.selectedId ? diagnosisLabel(value.selectedId) : value.customText.trim();
+}
+
+export function diagnosisDifferentialCustomTexts(value: DiagnosisSectionValue["differential"]): readonly string[] {
+  return "customTexts" in value
+    ? value.customTexts
+    : value.customText.trim() ? [value.customText.trim()] : [];
+}
+
+export function diagnosisConfirmedSummary(value: unknown): string {
+  return isDiagnosisValue(value) ? diagnosisChoiceSummary(value.confirmed) : "";
+}
+
+export function diagnosisSearchText(value: DiagnosisSectionValue): string {
+  return [
+    diagnosisChoiceSummary(value.preliminary),
+    ...value.differential.selectedIds.map(diagnosisLabel),
+    ...diagnosisDifferentialCustomTexts(value.differential),
+    diagnosisChoiceSummary(value.confirmed),
+  ].filter(Boolean).join(" ");
+}
+
+export function emptyDiagnosisDraft(): DiagnosisDraft {
+  return {
+    preliminaryMode: "catalog",
+    preliminarySelectedId: "",
+    preliminaryCustomText: "",
+    differentialSelectedIds: [],
+    differentialCustomTexts: [],
+    confirmedMode: "catalog",
+    confirmedSelectedId: "",
+    confirmedCustomText: "",
+  };
+}
+
+export function diagnosisDraft(value: DiagnosisSectionValue): DiagnosisDraft {
+  return {
+    preliminaryMode: value.preliminary.selectedId ? "catalog" : value.preliminary.customText ? "custom" : "catalog",
+    preliminarySelectedId: value.preliminary.selectedId ?? "",
+    preliminaryCustomText: value.preliminary.customText,
+    differentialSelectedIds: [...value.differential.selectedIds],
+    differentialCustomTexts: [...diagnosisDifferentialCustomTexts(value.differential)],
+    confirmedMode: value.confirmed.selectedId ? "catalog" : "custom",
+    confirmedSelectedId: value.confirmed.selectedId ?? "",
+    confirmedCustomText: value.confirmed.customText,
+  };
+}
+
+export function parseDiagnosisDraft(draft: DiagnosisDraft): { value?: DiagnosisSectionValue; errors: DiagnosisDraftErrors } {
+  const errors: DiagnosisDraftErrors = {};
+  const preliminarySelectedId = draft.preliminaryMode === "catalog" ? draft.preliminarySelectedId : "";
+  const preliminaryCustomText = draft.preliminaryMode === "custom" ? draft.preliminaryCustomText.trim() : "";
+  const differentialSelectedIds = [...new Set(draft.differentialSelectedIds)];
+  const differentialCustomTexts = [...new Set(draft.differentialCustomTexts.map((text) => text.trim()).filter(Boolean))];
+  const confirmedSelectedId = draft.confirmedMode === "catalog" ? draft.confirmedSelectedId : "";
+  const confirmedCustomText = draft.confirmedMode === "custom" ? draft.confirmedCustomText.trim() : "";
+
+  if (preliminarySelectedId && !isDiagnosisTaxonomyId(preliminarySelectedId)) errors.preliminary = "Выбран неизвестный диагноз.";
+  if (preliminaryCustomText.length > MAX_DIAGNOSIS_CUSTOM_TEXT_LENGTH) errors.preliminary = "Не больше 10 000 символов.";
+  if (differentialSelectedIds.some((id) => !isDiagnosisTaxonomyId(id))) errors.differential = "Выбран неизвестный диагноз.";
+  if (differentialCustomTexts.some((text) => text.length > MAX_DIAGNOSIS_CUSTOM_TEXT_LENGTH)) errors.differential = "Не больше 10 000 символов.";
+  if (confirmedSelectedId && !isDiagnosisTaxonomyId(confirmedSelectedId)) errors.confirmed = "Выбран неизвестный диагноз.";
+  if (confirmedCustomText.length > MAX_DIAGNOSIS_CUSTOM_TEXT_LENGTH) errors.confirmed = "Не больше 10 000 символов.";
+  if (!confirmedSelectedId && !confirmedCustomText) errors.confirmed = "Укажите подтверждённый диагноз.";
+  if (Object.keys(errors).length) return { errors };
+
+  return {
+    value: {
+      preliminary: {
+        ...(preliminarySelectedId ? { selectedId: preliminarySelectedId as DiagnosisTaxonomyId } : {}),
+        customText: preliminaryCustomText,
+      },
+      differential: {
+        selectedIds: differentialSelectedIds as DiagnosisTaxonomyId[],
+        customTexts: differentialCustomTexts,
+      },
+      confirmed: {
+        ...(confirmedSelectedId ? { selectedId: confirmedSelectedId as DiagnosisTaxonomyId } : {}),
+        customText: confirmedCustomText,
+      },
+    },
+    errors,
+  };
 }
 
 const paths = new Map<string, string>();
@@ -525,6 +718,7 @@ export function vaccinationDetails(value: VaccinationSectionValue): Array<{ key:
 
 export function sectionSearchText(value: unknown): string {
   if (isOutcomeValue(value)) return outcomeSummary(value);
+  if (isDiagnosisValue(value)) return diagnosisSearchText(value);
   if (isFreeTextValue(value)) return value.text;
   if (isTherapeuticAppointmentValue(value)) return therapeuticAppointmentSearchText(value);
   if (isGeneralDataValue(value)) return generalDataMeasurements(value).map((item) => `${item.label} ${item.value}`).join(" ");

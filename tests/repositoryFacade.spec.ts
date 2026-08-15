@@ -271,7 +271,11 @@ describe("Klinok repository facade", () => {
         "general-data": { temperatureC: 38.5, weightKg: 5 },
         vaccination: { vaccineName: "Комплекс", batchNumber: "B1" },
         "therapeutic-appointment": { medications: [], procedures: [] },
-        diagnosis: { text: "Предварительный диагноз" },
+        diagnosis: {
+          preliminary: { customText: "Предварительный диагноз" },
+          differential: { selectedIds: [], customTexts: [] },
+          confirmed: { selectedId: "diagnosis.digestive.001", customText: "" },
+        },
       },
     } as unknown as MedicalEncounterInput;
     await repository.executeOffline({ type: "record.create", entityId: "record-offline", payload: { input: encounter, title: "Приём" } });
@@ -292,6 +296,7 @@ describe("Klinok repository facade", () => {
         "general-data": { templateVersion: "free-text-v0" },
         vaccination: { templateVersion: "free-text-v0" },
         "therapeutic-appointment": { templateVersion: "free-text-v0" },
+        diagnosis: { templateVersion: "diagnosis-v2" },
       },
     });
     await expect(repository.syncStatus()).resolves.toMatchObject({ pendingCount: 4, connectionState: "disconnected" });

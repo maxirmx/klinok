@@ -3,7 +3,7 @@
 // This file is a part of Klinok application
 
 import { describe, expect, it, vi } from "vitest";
-import { CommandService } from "./commands.js";
+import { CommandService, validateMedicalEncounter } from "./commands.js";
 import { Ledger } from "./ledger.js";
 
 const timestamp = "2026-08-10T00:00:00.000Z";
@@ -55,6 +55,77 @@ async function confirmVaccinationAgainst(current: { confirmed: unknown; profile:
 }
 
 describe("command boundary", () => {
+  it("validates structured diagnosis catalog and free-form representations", () => {
+    const input = {
+      petId: "pet-1",
+      encounterDate: "2026-08-10",
+      sections: {
+        "what-happened": { selectedIds: ["problem.digestive.1"], comment: "Не ест" },
+        diagnosis: {
+          preliminary: { selectedId: "diagnosis.digestive.001", customText: "" },
+          differential: { selectedIds: ["diagnosis.digestive.002"], customTexts: ["  Реакция на корм  "] },
+          confirmed: { customText: "  Подтверждено исследованием  " },
+        },
+        outcome: { selectedIds: ["outcome.observation"], comment: "" },
+      },
+    };
+    expect(validateMedicalEncounter(input).sections.diagnosis).toEqual({
+      preliminary: { selectedId: "diagnosis.digestive.001", customText: "" },
+      differential: { selectedIds: ["diagnosis.digestive.002"], customTexts: ["Реакция на корм"] },
+      confirmed: { customText: "Подтверждено исследованием" },
+    });
+
+    const diagnosis = input.sections.diagnosis;
+    expect(() => validateMedicalEncounter({
+      ...input,
+      sections: { ...input.sections, diagnosis: { ...diagnosis, confirmed: { customText: "" } } },
+    })).toThrow("confirmed diagnosis is required");
+    expect(() => validateMedicalEncounter({
+      ...input,
+      sections: {
+        ...input.sections,
+        diagnosis: { ...diagnosis, confirmed: { selectedId: "diagnosis.digestive.001", customText: "Стоматит" } },
+      },
+    })).toThrow("either a catalog value or free text");
+    expect(() => validateMedicalEncounter({
+      ...input,
+      sections: {
+        ...input.sections,
+        diagnosis: {
+          ...diagnosis,
+          differential: { selectedIds: ["diagnosis.digestive.002", "diagnosis.digestive.002"], customTexts: [] },
+        },
+      },
+    })).toThrow("differential diagnoses are invalid");
+    expect(() => validateMedicalEncounter({
+      ...input,
+      sections: {
+        ...input.sections,
+        diagnosis: { ...diagnosis, differential: { selectedIds: [], customTexts: [" ", "Повтор", "Повтор"] } },
+      },
+    })).toThrow("differential diagnoses are invalid");
+    expect(() => validateMedicalEncounter({
+      ...input,
+      sections: {
+        ...input.sections,
+        diagnosis: { ...diagnosis, differential: { selectedIds: [], customTexts: [], customText: "" } },
+      },
+    })).toThrow("differential diagnoses are invalid");
+    expect(validateMedicalEncounter({
+      ...input,
+      sections: {
+        ...input.sections,
+        diagnosis: { ...diagnosis, differential: { selectedIds: [], customText: "Старый свободный текст" } },
+      },
+    }).sections.diagnosis).toMatchObject({
+      differential: { selectedIds: [], customTexts: ["Старый свободный текст"] },
+    });
+    expect(() => validateMedicalEncounter({
+      ...input,
+      sections: { ...input.sections, diagnosis: { text: "Старый свободный текст" } },
+    })).toThrow();
+  });
+
   it("rejects every mutation while startup ledger verification is invalid", async () => {
     const ledger = new Ledger();
     await ledger.verify({ query: vi.fn()
