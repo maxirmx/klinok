@@ -59,20 +59,25 @@ function invalid(message?: string) { return message ? true : undefined; }
       </div>
       <template v-if="study.mode === 'panel' && study.typeId">
         <div v-if="study.results.length" class="laboratory-panel-results laboratory-editor-results" role="group" aria-label="Показатели исследования">
-          <div class="laboratory-result-headings" aria-hidden="true">
-            <span>Показатель</span><span>Результат</span><span>Референсные значения</span>
-          </div>
-          <div v-for="result in study.results" :key="result.indicatorId" class="laboratory-result-row">
-            <div class="laboratory-result-indicator">
-              <span>{{ result.indicatorName }}</span>
-              <span class="laboratory-result-unit">{{ result.unit || '—' }}</span>
+          <div class="laboratory-panel-layout" :class="{ 'laboratory-panel-layout-multiple': study.results.length > 1 }">
+            <div class="laboratory-result-headings laboratory-result-headings-primary" aria-hidden="true">
+              <span>Показатель</span><span>Результат</span><span>Референсные значения</span>
             </div>
-            <label>
-              <span class="laboratory-result-mobile-name" :title="`${result.indicatorName} · ${result.unit || '—'}`">{{ result.indicatorName }} · {{ result.unit || '—' }}</span>
-              <input v-model="result.result" required :aria-label="`${result.indicatorName}, результат`" :aria-invalid="invalid(errors.studies[index]?.indicators?.[result.indicatorId])" />
-              <small v-if="errors.studies[index]?.indicators?.[result.indicatorId]" class="field-error" role="alert">{{ errors.studies[index]?.indicators?.[result.indicatorId] }}</small>
-            </label>
-            <label><span class="laboratory-result-label">Референсные значения</span><input v-model="result.reference" /></label>
+            <div v-if="study.results.length > 1" class="laboratory-result-headings laboratory-result-headings-secondary" aria-hidden="true">
+              <span>Показатель</span><span>Результат</span><span>Референсные значения</span>
+            </div>
+            <div v-for="result in study.results" :key="result.indicatorId" class="laboratory-result-row">
+              <div class="laboratory-result-indicator">
+                <span>{{ result.indicatorName }}</span>
+                <span class="laboratory-result-unit">{{ result.unit || '—' }}</span>
+              </div>
+              <label>
+                <span class="laboratory-result-mobile-name" :title="`${result.indicatorName} · ${result.unit || '—'}`">{{ result.indicatorName }} · {{ result.unit || '—' }}</span>
+                <input v-model="result.result" required :aria-label="`${result.indicatorName}, результат`" :aria-invalid="invalid(errors.studies[index]?.indicators?.[result.indicatorId])" />
+                <small v-if="errors.studies[index]?.indicators?.[result.indicatorId]" class="field-error" role="alert">{{ errors.studies[index]?.indicators?.[result.indicatorId] }}</small>
+              </label>
+              <label><span class="laboratory-result-label">Референсные значения</span><input v-model="result.reference" /></label>
+            </div>
           </div>
         </div>
       </template>

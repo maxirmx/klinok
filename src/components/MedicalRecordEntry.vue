@@ -222,16 +222,21 @@ function formatLocalDateTime(value: string) {
             <p v-if="study.technician"><span class="muted-label">Лаборант</span> {{ study.technician }}</p>
             <p v-if="study.equipment"><span class="muted-label">Оборудование</span> {{ study.equipment }}</p>
             <div v-if="study.mode === 'panel'" class="laboratory-panel-results laboratory-history-results" role="group" aria-label="Показатели исследования">
-              <div class="laboratory-result-headings" aria-hidden="true">
-                <span>Показатель</span><span>Результат</span><span>Референсные значения</span>
-              </div>
-              <div v-for="result in study.results" :key="result.indicatorId" class="laboratory-result-row">
-                <div class="laboratory-result-indicator">
-                  <span>{{ result.indicatorName }}</span>
-                  <span class="laboratory-result-unit">{{ result.unit || '—' }}</span>
+              <div class="laboratory-panel-layout" :class="{ 'laboratory-panel-layout-multiple': study.results.length > 1 }">
+                <div class="laboratory-result-headings laboratory-result-headings-primary" aria-hidden="true">
+                  <span>Показатель</span><span>Результат</span><span>Референсные значения</span>
                 </div>
-                <div><span class="laboratory-result-mobile-name" :title="`${result.indicatorName} · ${result.unit || '—'}`">{{ result.indicatorName }} · {{ result.unit || '—' }}</span><span>{{ result.result }}</span></div>
-                <div><span class="laboratory-result-label">Референсные значения</span><span>{{ result.reference || '—' }}</span></div>
+                <div v-if="study.results.length > 1" class="laboratory-result-headings laboratory-result-headings-secondary" aria-hidden="true">
+                  <span>Показатель</span><span>Результат</span><span>Референсные значения</span>
+                </div>
+                <div v-for="result in study.results" :key="result.indicatorId" class="laboratory-result-row">
+                  <div class="laboratory-result-indicator">
+                    <span>{{ result.indicatorName }}</span>
+                    <span class="laboratory-result-unit">{{ result.unit || '—' }}</span>
+                  </div>
+                  <div><span class="laboratory-result-mobile-name" :title="`${result.indicatorName} · ${result.unit || '—'}`">{{ result.indicatorName }} · {{ result.unit || '—' }}</span><span>{{ result.result }}</span></div>
+                  <div><span class="laboratory-result-label">Референсные значения</span><span>{{ result.reference || '—' }}</span></div>
+                </div>
               </div>
             </div>
             <p v-else-if="study.mode === 'narrative'">{{ study.result }}</p>

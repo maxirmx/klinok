@@ -3040,9 +3040,10 @@ dd {
 .laboratory-results th, .laboratory-results td { padding: .5rem; border-bottom: 1px solid var(--border-color, #d7dde5); text-align: left; vertical-align: top; }
 .laboratory-panel-results {
   container-type: inline-size;
-  width: min(100%, 52rem);
+  width: 100%;
   min-width: 0;
 }
+.laboratory-panel-layout { display: grid; grid-template-columns: minmax(0, 1fr); width: min(100%, 52rem); min-width: 0; }
 .laboratory-result-headings { display: none; }
 .laboratory-result-row {
   display: grid;
@@ -3069,16 +3070,25 @@ dd {
 @container (min-width: 38rem) {
   .laboratory-result-headings,
   .laboratory-result-row {
-    display: grid;
     grid-template-columns: minmax(12rem, 1.5fr) minmax(8rem, 1fr) minmax(10rem, 1fr);
     gap: .75rem;
   }
+  .laboratory-result-headings-primary,
+  .laboratory-result-row { display: grid; }
   .laboratory-result-headings { padding: .5rem 0; font-weight: 700; }
   .laboratory-result-row { padding: .5rem 0; }
   .laboratory-result-headings + .laboratory-result-row { border-top: 0; }
   .laboratory-result-row > .laboratory-result-indicator { display: grid; }
   .laboratory-result-label { display: none; }
   .laboratory-result-mobile-name { display: none; }
+}
+@container (min-width: 76rem) {
+  .laboratory-panel-layout-multiple {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    width: 100%;
+    column-gap: 1rem;
+  }
+  .laboratory-result-headings-secondary { display: grid; }
 }
 .laboratory-infection { display: grid; grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr)); gap: .75rem; align-items: start; }
 .laboratory-history, .laboratory-history-study { display: grid; gap: .55rem; }

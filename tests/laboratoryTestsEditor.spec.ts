@@ -75,7 +75,13 @@ describe("LaboratoryTestsEditor", () => {
     expect(wrapper.find(".laboratory-study-indicators").exists()).toBe(false);
     expect(wrapper.find(".laboratory-editor-results table").exists()).toBe(false);
     expect(wrapper.findAll(".laboratory-result-row")).toHaveLength(cbc.indicators.length);
-    expect(wrapper.findAll(".laboratory-result-headings > span").map((header) => header.text())).toEqual([
+    expect(wrapper.findAll(".laboratory-result-headings")).toHaveLength(2);
+    expect(wrapper.findAll(".laboratory-result-headings-primary > span").map((header) => header.text())).toEqual([
+      "Показатель",
+      "Результат",
+      "Референсные значения",
+    ]);
+    expect(wrapper.findAll(".laboratory-result-headings-secondary > span").map((header) => header.text())).toEqual([
       "Показатель",
       "Результат",
       "Референсные значения",

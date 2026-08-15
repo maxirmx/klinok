@@ -131,7 +131,8 @@ describe("MedicalRecordEntry", () => {
     expect(history.findAll(".laboratory-history-study")).toHaveLength(3);
     const panel = history.get(".laboratory-history-results");
     expect(panel.find("table").exists()).toBe(false);
-    expect(panel.findAll(".laboratory-result-headings > span").map((header) => header.text())).toEqual([
+    expect(panel.findAll(".laboratory-result-headings")).toHaveLength(1);
+    expect(panel.findAll(".laboratory-result-headings-primary > span").map((header) => header.text())).toEqual([
       "Показатель",
       "Результат",
       "Референсные значения",
