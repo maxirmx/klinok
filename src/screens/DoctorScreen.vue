@@ -878,9 +878,10 @@ watch(delegationPageCount, (pageCount) => {
       </article>
       <article v-else-if="!canWrite" class="panel"><p>Доступ только для чтения: создание и изменение приёмов недоступно.</p></article>
 
+      <LaboratoryComparison :records="petRecords" :confirmed-ids="confirmedIds" />
+
       <article class="panel doctor-medical-record">
         <h2>Медицинская карта</h2>
-        <LaboratoryComparison :records="petRecords" :confirmed-ids="confirmedIds" />
         <div class="doctor-history-filters">
           <input v-model="historyQuery" type="search" placeholder="Содержание или автор" aria-label="Поиск по истории" />
           <label class="doctor-history-date-filter"><span>Дата с</span><input v-model="historyFrom" type="date" /></label>

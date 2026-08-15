@@ -3038,6 +3038,14 @@ dd {
 .laboratory-results-scroll { max-width: 100%; overflow-x: auto; }
 .laboratory-results { width: 100%; min-width: 42rem; border-collapse: collapse; }
 .laboratory-results th, .laboratory-results td { padding: .5rem; border-bottom: 1px solid var(--border-color, #d7dde5); text-align: left; vertical-align: top; }
+.laboratory-comparison.panel {
+  display: grid;
+  gap: 12px;
+  margin: 0;
+  border: 2px solid var(--line);
+  border-radius: 12px;
+}
+.laboratory-comparison > h2 { margin: 0; }
 .laboratory-panel-results {
   container-type: inline-size;
   width: 100%;

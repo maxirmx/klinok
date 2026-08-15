@@ -76,7 +76,9 @@ describe("LaboratoryComparison", () => {
       },
     });
 
-    expect(wrapper.get(".laboratory-comparison").text()).toContain("Сравнение лабораторных показателей");
+    const history = wrapper.get(".laboratory-comparison");
+    expect(history.classes()).toContain("panel");
+    expect(history.get("h2").text()).toBe("История лабораторных показателей");
     wrapper.getComponent(AppCatalogCombobox).vm.$emit("update:selectedIds", [
       "lab.indicator.cbc.001",
       "lab.indicator.cbc.002",
@@ -91,6 +93,7 @@ describe("LaboratoryComparison", () => {
     expect(comparison.text()).toContain("Реф.: 120–180");
     expect(comparison.findAll("tbody td span").map((cell) => cell.text())).toEqual(["—", "—"]);
     expect(comparison.find(".app-paginator").exists()).toBe(true);
+    expect(wrapper.getComponent(AppPaginator).attributes("aria-label")).toBe("Навигация по истории лабораторных показателей");
     wrapper.getComponent(AppPaginator).vm.$emit("update:page", 1);
     wrapper.getComponent(AppPaginator).vm.$emit("update:pageSize", 20);
     await wrapper.vm.$nextTick();

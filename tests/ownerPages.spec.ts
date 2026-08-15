@@ -100,6 +100,25 @@ const medicalRecord: MedicalRecordDraft = {
   updatedAt: "2026-07-17T10:00:00.000Z",
 };
 
+function withLaboratoryPanel(record: MedicalRecordDraft): MedicalRecordDraft {
+  return { ...record, sections: { ...record.sections, "laboratory-tests": {
+    kind: "laboratory-tests",
+    templateVersion: "laboratory-tests-v1",
+    value: { studies: [{
+      id: "123e4567-e89b-12d3-a456-426614174000",
+      date: record.encounterDate,
+      typeId: "lab.study.cbc",
+      typeName: "Общеклинический анализ крови",
+      mode: "panel",
+      laboratory: "Ветлаб",
+      results: [{ indicatorId: "lab.indicator.cbc.001", indicatorName: "Гематокрит", unit: "%", result: "42" }],
+    }] },
+    authorAccountId: record.authorAccountId,
+    authorDisplayName: record.authorDisplayName,
+    updatedAt: record.updatedAt,
+  } } };
+}
+
 function snapshot(overrides: Partial<MedicalSnapshot> = {}): MedicalSnapshot {
   return {
     pets: [],
@@ -273,6 +292,16 @@ describe("Owner pages", () => {
     await flushPromises();
     expect(wrapper.get(".medical-record-entry-details").text()).toContain("Подтверждена");
     expect(wrapper.find(".owner-encounter-confirm").exists()).toBe(false);
+  });
+
+  it("renders laboratory history as a bordered panel outside the medical card", async () => {
+    await setMedical(snapshot({ pets: [pet], records: [withLaboratoryPanel(medicalRecord)] }));
+    const wrapper = await mountAt("/owner/pets/pet-1", "owner-pet-detail");
+
+    const history = wrapper.get(".owner-pet-detail > .laboratory-comparison");
+    expect(history.get("h2").text()).toBe("История лабораторных показателей");
+    expect(history.classes()).toContain("panel");
+    expect(wrapper.get(".owner-medical-record").find(".laboratory-comparison").exists()).toBe(false);
   });
 
   it("offers fixed species and sex values and creates a complete profile with notes", async () => {

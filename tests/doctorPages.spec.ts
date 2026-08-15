@@ -108,6 +108,25 @@ const medicalRecord: MedicalRecordDraft = {
   updatedAt: "2026-07-21T10:00:00.000Z",
 };
 
+function withLaboratoryPanel(record: MedicalRecordDraft): MedicalRecordDraft {
+  return { ...record, sections: { ...record.sections, "laboratory-tests": {
+    kind: "laboratory-tests",
+    templateVersion: "laboratory-tests-v1",
+    value: { studies: [{
+      id: "123e4567-e89b-12d3-a456-426614174000",
+      date: record.encounterDate,
+      typeId: "lab.study.cbc",
+      typeName: "Общеклинический анализ крови",
+      mode: "panel",
+      laboratory: "Ветлаб",
+      results: [{ indicatorId: "lab.indicator.cbc.001", indicatorName: "Гематокрит", unit: "%", result: "42" }],
+    }] },
+    authorAccountId: record.authorAccountId,
+    authorDisplayName: record.authorDisplayName,
+    updatedAt: record.updatedAt,
+  } } };
+}
+
 function snapshot(
   actions: Array<"read" | "write_unconfirmed" | "delegate"> = ["read", "write_unconfirmed", "delegate"],
   overrides: Partial<MedicalSnapshot> = {},
@@ -1691,6 +1710,17 @@ describe("Doctor pages", () => {
     expect(wrapper.find(".medical-record-entry-details").exists()).toBe(false);
     await wrapper.get('.doctor-history-filters select[aria-label="Статус"]').setValue("confirmed");
     expect(wrapper.findAll(".medical-record-entry-details")).toHaveLength(1);
+  });
+
+  it("renders laboratory history as a bordered panel outside the medical card", async () => {
+    await setMedical(snapshot(undefined, { records: [withLaboratoryPanel(medicalRecord)] }));
+    const wrapper = await mountAt("/doctor/pets/pet-1", "doctor-pet-detail");
+    await flushPromises();
+
+    const history = wrapper.get(".doctor-pet-detail > .laboratory-comparison");
+    expect(history.get("h2").text()).toBe("История лабораторных показателей");
+    expect(history.classes()).toContain("panel");
+    expect(wrapper.get(".doctor-medical-record").find(".laboratory-comparison").exists()).toBe(false);
   });
 
   it("deletes an unconfirmed encounter after confirmation", async () => {

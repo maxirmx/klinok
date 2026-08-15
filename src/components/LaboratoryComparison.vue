@@ -25,10 +25,10 @@ function result(study: (typeof occurrences.value)[number]["study"], id: string) 
 function date(value: string) { const [year, month, day] = value.split("-"); return `${day}.${month}.${year}`; }
 </script>
 <template>
-  <section v-if="options.length" class="laboratory-comparison">
-    <h3>Сравнение лабораторных показателей</h3>
+  <section v-if="options.length" class="panel laboratory-comparison">
+    <h2>История лабораторных показателей</h2>
     <AppCatalogCombobox v-model:selected-ids="selectedIds" v-model:custom-text="customText" multiple :allow-custom="false" label="Показатели для сравнения" :options="options" placeholder="Выберите показатели" />
     <div v-if="selectedIds.length" class="laboratory-results-scroll"><table class="laboratory-results"><thead><tr><th>Дата</th><th>Исследование</th><th>Лаборатория</th><th>Статус</th><th v-for="id in selectedIds" :key="id">{{ indicatorMap.get(id)?.label }}</th></tr></thead><tbody><tr v-for="row in paged" :key="`${row.record.recordId}:${row.study.id}`"><td>{{ date(row.study.date) }}</td><td>{{ row.study.typeName }}</td><td>{{ row.study.laboratory }}</td><td>{{ confirmedIds.has(row.record.recordId) ? 'Подтверждено' : 'Ожидает подтверждения' }}</td><td v-for="id in selectedIds" :key="id"><template v-if="result(row.study, id)">{{ result(row.study, id)?.result }}<small v-if="result(row.study, id)?.reference" class="muted-label">Реф.: {{ result(row.study, id)?.reference }}</small></template><span v-else>—</span></td></tr></tbody></table></div>
-    <AppPaginator v-if="selectedIds.length && rows.length" v-model:page="page" v-model:page-size="pageSize" :total-items="rows.length" :page-sizes="[10, 20, 50]" page-size-label="Исследований на странице" aria-label="Навигация по сравнению лабораторных показателей" />
+    <AppPaginator v-if="selectedIds.length && rows.length" v-model:page="page" v-model:page-size="pageSize" :total-items="rows.length" :page-sizes="[10, 20, 50]" page-size-label="Исследований на странице" aria-label="Навигация по истории лабораторных показателей" />
   </section>
 </template>

@@ -809,6 +809,8 @@ function confirmMedicalRecord(record: MedicalRecordDraft) {
         </template>
       </PetProfileView>
 
+      <LaboratoryComparison :records="petRecords" :confirmed-ids="confirmedIds" />
+
       <article id="medical-records" class="panel owner-medical-placeholder owner-medical-record">
         <div class="owner-medical-heading">
           <h2 :aria-label="selectedPetPending?.medicalRecords ? `Медицинская карта. Ожидают подтверждения: ${selectedPetPending.medicalRecords}` : 'Медицинская карта'">
@@ -816,7 +818,6 @@ function confirmMedicalRecord(record: MedicalRecordDraft) {
           </h2>
           <PendingCountBadge :count="selectedPetPending?.medicalRecords ?? 0" />
         </div>
-        <LaboratoryComparison :records="petRecords" :confirmed-ids="confirmedIds" />
         <div class="medical-record-filters">
           <input v-model="medicalQuery" type="search" placeholder="Содержание или автор" aria-label="Поиск по истории" />
           <label class="medical-record-date-filter"><span>Дата с</span><input v-model="medicalFrom" type="date" /></label>
