@@ -3070,7 +3070,7 @@ dd {
   .laboratory-result-headings,
   .laboratory-result-row {
     display: grid;
-    grid-template-columns: minmax(8rem, .8fr) minmax(8rem, 1fr) minmax(10rem, 1fr);
+    grid-template-columns: minmax(12rem, 1.5fr) minmax(8rem, 1fr) minmax(10rem, 1fr);
     gap: .75rem;
   }
   .laboratory-result-headings { padding: .5rem 0; font-weight: 700; }
