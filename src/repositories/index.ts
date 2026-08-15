@@ -57,7 +57,8 @@ function optimisticRecord(command: ClientCommand, snapshot: AppSnapshotDto): Med
   const profile = snapshot.control.profile;
   const authorDisplayName = [profile?.firstName, profile?.patronymic, profile?.lastName].filter(Boolean).join(" ") || profile?.accountId || "";
   const previous = snapshot.medical.records.find((record) => record.recordId === command.entityId);
-  const sections = Object.fromEntries(Object.entries(input.sections).map(([kind, value]) => [kind, {
+  const sections = Object.fromEntries(Object.entries(input.sections).flatMap(([kind, value]) =>
+    kind === "laboratory-tests" && value && typeof value === "object" && "text" in value ? [] : [[kind, {
     kind,
     templateVersion: kind === "what-happened" ? "what-happened-v1" : kind === "outcome" ? "outcome-v1"
       : kind === "diagnosis" ? "diagnosis-v2"
@@ -66,7 +67,7 @@ function optimisticRecord(command: ClientCommand, snapshot: AppSnapshotDto): Med
           : kind === "therapeutic-appointment" && !(value && typeof value === "object" && "text" in value) ? "therapeutic-appointment-v1"
             : kind === "laboratory-tests" && !(value && typeof value === "object" && "text" in value) ? "laboratory-tests-v1" : "free-text-v0",
     value, authorAccountId: profile?.accountId ?? "", authorDisplayName, updatedAt: now,
-  }])) as MedicalRecordDraft["sections"];
+  }]])) as MedicalRecordDraft["sections"];
   return {
     recordId: command.entityId, petId: input.petId, revision: previous ? previous.revision + 1 : 1,
     authorAccountId: previous?.authorAccountId ?? profile?.accountId ?? "", authorDisplayName: previous?.authorDisplayName ?? authorDisplayName,

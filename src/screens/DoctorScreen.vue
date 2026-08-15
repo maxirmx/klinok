@@ -3,7 +3,7 @@
 // All rights reserved.
 // This file is a part of Klinok application
 
-import { computed, reactive, ref, watch } from "vue";
+import { computed, reactive, ref, toRaw, watch } from "vue";
 import { RouterLink, useRoute, useRouter } from "vue-router";
 import {
   normalizeRussianSearchText,
@@ -467,7 +467,7 @@ function editRecord(record: (typeof appState.medical.records)[number]) {
   encounter.diagnosis = isDiagnosisValue(diagnosisValue) ? diagnosisDraft(diagnosisValue) : emptyDiagnosisDraft();
   const laboratoryValue = record.sections["laboratory-tests"]?.value;
   encounter.laboratoryTests = laboratoryValue && typeof laboratoryValue === "object" && "studies" in laboratoryValue
-    ? structuredClone(laboratoryValue as LaboratoryTestsSectionValue) : { studies: [] };
+    ? structuredClone(toRaw(laboratoryValue as LaboratoryTestsSectionValue)) : { studies: [] };
   encounter.texts = Object.fromEntries(encounter.optionalKinds.flatMap((kind) => {
     const value = record.sections[kind]?.value;
     return kind !== "diagnosis" && isFreeTextValue(value) ? [[kind, value.text]] : [];
@@ -504,7 +504,7 @@ function recoverRecordDraft(command: {
   encounter.diagnosis = isDiagnosisValue(diagnosisValue) ? diagnosisDraft(diagnosisValue) : emptyDiagnosisDraft();
   const laboratoryValue = input.sections["laboratory-tests"];
   encounter.laboratoryTests = laboratoryValue && typeof laboratoryValue === "object" && "studies" in laboratoryValue
-    ? structuredClone(laboratoryValue as LaboratoryTestsSectionValue) : { studies: [] };
+    ? structuredClone(toRaw(laboratoryValue as LaboratoryTestsSectionValue)) : { studies: [] };
   encounter.texts = Object.fromEntries(encounter.optionalKinds.flatMap((kind) => {
     const value = input.sections[kind];
     return kind !== "diagnosis" && isFreeTextValue(value) ? [[kind, value.text]] : [];

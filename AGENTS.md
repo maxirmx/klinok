@@ -13,7 +13,7 @@
 ## Validation
 
 - The Compose end-to-end suite (`npm run test:e2e:compose`) must pass for every change.
-- Codecov patch coverage must be at least 90% for every change. Add or extend tests until the `codecov/patch` check meets this target; do not lower the target or make the check informational.
+- Codecov patch coverage—the coverage of executable lines added or modified by the current change—must be at least 90% for every change. This is distinct from overall project coverage: a passing `codecov/project` check or a high repository-wide percentage does not satisfy this requirement. Add or extend tests until the `codecov/patch` check meets the target; do not lower the target or make the check informational.
 
 ## Shared UI components
 

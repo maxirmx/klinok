@@ -187,16 +187,14 @@ export function validateMedicalEncounter(value: unknown): MedicalEncounterInput 
       && (typeof structured.text !== "string" || !structured.text.trim() || structured.text.length > 50_000)) {
       throw new ApiError(400, "VALIDATION_FAILED", `The ${kind} section is invalid.`);
     }
-    if (kind === "laboratory-tests" && "text" in structured
-      && (typeof structured.text !== "string" || !structured.text.trim() || structured.text.length > 50_000)) {
-      throw new ApiError(400, "VALIDATION_FAILED", "The laboratory-tests section is invalid.");
-    }
   }
+  const currentSections = Object.fromEntries(Object.entries(sections).filter(([kind, value]) =>
+    kind !== "laboratory-tests" || !("text" in object(value))));
   return {
     petId: requireText(input.petId, "petId", 100),
     encounterDate,
     sections: {
-      ...sections,
+      ...currentSections,
       ...(sections["laboratory-tests"] && !("text" in object(sections["laboratory-tests"]))
         ? { "laboratory-tests": laboratorySection(sections["laboratory-tests"]) } : {}),
       ...(diagnosis ? { diagnosis } : {}),

@@ -4,13 +4,18 @@
 // This file is a part of Klinok application
 
 import { computed, ref, watch } from "vue";
-import type { LaboratoryTestsSectionValue, MedicalRecordDraft } from "@klinok/contracts";
+import type { MedicalRecordDraft } from "@klinok/contracts";
+import { isLaboratoryTestsValue } from "../medicalEncounter";
 import AppCatalogCombobox from "./AppCatalogCombobox.vue";
 import AppPaginator from "./AppPaginator.vue";
 
 const props = defineProps<{ records: readonly MedicalRecordDraft[]; confirmedIds: ReadonlySet<string> }>();
 const selectedIds = ref<string[]>([]); const customText = ref(""); const page = ref(1); const pageSize = ref<10 | 20 | 50>(10);
-const occurrences = computed(() => props.records.flatMap((record) => { const value = record.sections["laboratory-tests"]?.value as LaboratoryTestsSectionValue | undefined; return value?.studies.flatMap((study) => study.mode === "panel" ? [{ record, study }] : []) ?? []; }).sort((a, b) => a.study.date.localeCompare(b.study.date) || a.study.id.localeCompare(b.study.id)));
+const occurrences = computed(() => props.records.flatMap((record) => {
+  const section = record.sections["laboratory-tests"];
+  if (section?.templateVersion !== "laboratory-tests-v1" || !isLaboratoryTestsValue(section.value)) return [];
+  return section.value.studies.flatMap((study) => study.mode === "panel" ? [{ record, study }] : []);
+}).sort((a, b) => a.study.date.localeCompare(b.study.date) || a.study.id.localeCompare(b.study.id)));
 const indicatorMap = computed(() => new Map(occurrences.value.flatMap(({ study }) => study.mode === "panel" ? study.results.map((result) => [result.indicatorId, { id: result.indicatorId, label: result.unit ? `${result.indicatorName}, ${result.unit}` : result.indicatorName }] as const) : [])));
 const options = computed(() => [...indicatorMap.value.values()]);
 const rows = computed(() => occurrences.value.filter(({ study }) => study.mode === "panel" && study.results.some((result) => selectedIds.value.includes(result.indicatorId))));

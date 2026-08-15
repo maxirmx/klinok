@@ -114,6 +114,8 @@ export function grantFromRow(row: Record<string, unknown>): PetAccessGrant {
 }
 
 export function recordFromRow(row: Record<string, unknown>): MedicalRecordDraft {
+  const sections = { ...(row.sections as MedicalRecordDraft["sections"]) };
+  if (sections["laboratory-tests"]?.templateVersion === "free-text-v0") delete sections["laboratory-tests"];
   return {
     recordId: String(row.record_id),
     petId: String(row.pet_id),
@@ -123,7 +125,7 @@ export function recordFromRow(row: Record<string, unknown>): MedicalRecordDraft 
     encounterDate: dateOnly(row.encounter_date as Date | string),
     title: String(row.title),
     text: String(row.text),
-    sections: row.sections as MedicalRecordDraft["sections"],
+    sections,
     createdAt: iso(row.created_at as Date | string),
     updatedAt: iso(row.updated_at as Date | string),
   };

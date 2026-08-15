@@ -55,6 +55,20 @@ async function confirmVaccinationAgainst(current: { confirmed: unknown; profile:
 }
 
 describe("command boundary", () => {
+  it("silently omits legacy free-text laboratory sections", () => {
+    const result = validateMedicalEncounter({
+      petId: "pet-1",
+      encounterDate: "2026-08-10",
+      sections: {
+        "what-happened": { selectedIds: ["problem.digestive.1"], comment: "Не ест" },
+        "laboratory-tests": { text: "Старый лабораторный текст" },
+        outcome: { selectedIds: ["outcome.observation"], comment: "" },
+      },
+    });
+
+    expect(result.sections["laboratory-tests"]).toBeUndefined();
+  });
+
   it("validates structured diagnosis catalog and free-form representations", () => {
     const input = {
       petId: "pet-1",
