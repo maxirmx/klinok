@@ -56,7 +56,7 @@ function confirm() { const action = pending.value; pending.value = null; action?
         <label><span>Оборудование</span><input v-model="study.equipment" /></label>
       </div>
       <template v-if="study.mode === 'panel' && study.typeId">
-        <div><span class="field-label">Показатели</span><AppCatalogCombobox label="Показатели" multiple :options="indicatorOptions(study)" :selected-ids="selectedIndicatorIds(study)" custom-text="" :allow-custom="false" @update:selected-ids="changeIndicators(study, $event)" /></div>
+        <div class="laboratory-study-indicators"><span class="field-label">Показатели</span><AppCatalogCombobox label="Показатели" multiple :options="indicatorOptions(study)" :selected-ids="selectedIndicatorIds(study)" custom-text="" :allow-custom="false" @update:selected-ids="changeIndicators(study, $event)" /></div>
         <div v-if="study.results.length" class="laboratory-results-scroll"><table class="laboratory-results"><thead><tr><th>Показатель</th><th>Результат</th><th>Ед. измерения</th><th>Референсные значения</th></tr></thead><tbody><tr v-for="result in study.results" :key="result.indicatorId"><td>{{ result.indicatorName }}</td><td><input v-model="result.result" required /></td><td>{{ result.unit || '—' }}</td><td><input v-model="result.reference" /></td></tr></tbody></table></div>
       </template>
       <label v-else-if="study.mode === 'narrative'"><span>Результат</span><textarea v-model="study.result" rows="4" required /></label>

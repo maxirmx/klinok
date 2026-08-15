@@ -70,6 +70,7 @@ describe("LaboratoryTestsEditor", () => {
     const cbc = laboratoryStudyTypeById("lab.study.cbc")!;
     const [hematocrit, hemoglobin] = cbc.indicators;
     const indicatorPicker = wrapper.findAllComponents(AppCatalogCombobox)[1]!;
+    expect(indicatorPicker.element.parentElement?.classList.contains("laboratory-study-indicators")).toBe(true);
     expect(indicatorPicker.get(".app-catalog-control").classes()).not.toContain("has-custom-add");
     indicatorPicker.vm.$emit("update:selectedIds", [hematocrit!.id]);
     await flushPromises();
