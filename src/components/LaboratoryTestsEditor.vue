@@ -12,16 +12,25 @@ import ConfirmationDialog from "./ConfirmationDialog.vue";
 const props = defineProps<{ encounterDate: string; errors?: string }>();
 const model = defineModel<LaboratoryTestsSectionValue>({ required: true });
 const pending = ref<(() => void) | null>(null);
+const pendingTypeIds = ref<string[]>([]);
+const pendingType = computed(() => laboratoryStudyTypeById(pendingTypeIds.value[0] ?? ""));
 const confirmOpen = computed({ get: () => Boolean(pending.value), set: (value) => { if (!value) pending.value = null; } });
 const uuid = () => globalThis.crypto.randomUUID();
-function addStudy() { model.value = { studies: [...model.value.studies, { id: uuid(), date: props.encounterDate, typeId: "", typeName: "", mode: "panel", laboratory: "", results: [] } as LaboratoryStudyValue] }; }
+function addStudy() {
+  const type = pendingType.value;
+  if (!type) return;
+  const base = { id: uuid(), date: props.encounterDate, typeId: type.id, typeName: type.name, laboratory: "" };
+  const study: LaboratoryStudyValue = type.mode === "panel"
+    ? { ...base, mode: "panel", results: [] }
+    : type.mode === "narrative"
+      ? { ...base, mode: "narrative", result: "" }
+      : { ...base, mode: "infection", infection: "", method: "ПЦР", result: "negative" };
+  model.value = { studies: [...model.value.studies, study] };
+  pendingTypeIds.value = [];
+}
 function populated(study: LaboratoryStudyValue) { return study.laboratory || study.technician || study.equipment || study.comment || (study.mode === "panel" ? study.results.length : study.mode === "narrative" ? study.result : study.infection); }
 function destructive(action: () => void, hasData = true) { if (!hasData) action(); else pending.value = action; }
 function removeStudy(index: number) { const study = model.value.studies[index]!; destructive(() => { model.value = { studies: model.value.studies.filter((_, candidate) => candidate !== index) }; }, Boolean(populated(study))); }
-function changeType(study: LaboratoryStudyValue, ids: string[]) {
-  const next = laboratoryStudyTypeById(ids[0] ?? ""); if (!next || next.id === study.typeId) return;
-  destructive(() => { const base = { id: study.id, date: study.date, typeId: next.id, typeName: next.name, laboratory: study.laboratory, ...(study.technician ? { technician: study.technician } : {}), ...(study.equipment ? { equipment: study.equipment } : {}), ...(study.comment ? { comment: study.comment } : {}) }; const replacement = next.mode === "panel" ? { ...base, mode: "panel" as const, results: [] } : next.mode === "narrative" ? { ...base, mode: "narrative" as const, result: "" } : { ...base, mode: "infection" as const, infection: "", method: "ПЦР" as const, result: "negative" as const }; Object.assign(study, replacement); for (const key of ["results", "result", "infection", "method"] as const) if (!(key in replacement)) delete (study as unknown as Record<string, unknown>)[key]; }, Boolean(study.typeId && populated(study)));
-}
 function indicatorOptions(study: LaboratoryStudyValue) { return laboratoryStudyTypeById(study.typeId)?.indicators.map(({ id, name, unit }) => ({ id, label: unit ? `${name} — ${unit}` : name })) ?? []; }
 function selectedIndicatorIds(study: LaboratoryStudyValue) { return study.mode === "panel" ? study.results.map((result) => result.indicatorId) : []; }
 function changeIndicators(study: LaboratoryStudyValue, ids: string[]) { if (study.mode !== "panel") return; const type = laboratoryStudyTypeById(study.typeId); if (!type) return; const removed = study.results.filter((result) => !ids.includes(result.indicatorId)); const apply = () => { (study as { results: LaboratoryPanelStudyValue["results"] }).results = ids.map((id) => study.results.find((result) => result.indicatorId === id) ?? (() => { const item = type.indicators.find((candidate) => candidate.id === id)!; return { indicatorId: item.id, indicatorName: item.name, unit: item.unit, result: "" }; })()); }; destructive(apply, removed.some((item) => item.result || item.reference)); }
@@ -30,12 +39,18 @@ function confirm() { const action = pending.value; pending.value = null; action?
 
 <template>
   <p v-if="errors" class="field-error" role="alert">{{ errors }}</p>
+  <div class="laboratory-study-create">
+    <span class="field-label">Тип исследования</span>
+    <div class="laboratory-study-create-control">
+      <AppCatalogCombobox v-model:selected-ids="pendingTypeIds" label="Тип исследования" :options="LABORATORY_STUDY_OPTIONS" custom-text="" :allow-custom="false" />
+      <button type="button" class="outline-action inline owner-profile-action laboratory-study-add" :disabled="!pendingType" title="Добавить исследование" aria-label="Добавить исследование" @click="addStudy"><AppIcon name="plus" /></button>
+    </div>
+  </div>
   <div class="laboratory-study-list">
     <section v-for="(study, index) in model.studies" :key="study.id" class="laboratory-study-card">
-      <div class="doctor-heading laboratory-study-heading"><h4>Исследование {{ index + 1 }}</h4><button type="button" class="outline-action inline danger-outline owner-profile-action laboratory-study-delete" title="Удалить исследование" aria-label="Удалить исследование" @click="removeStudy(index)"><AppIcon name="trash" /></button></div>
+      <div class="doctor-heading laboratory-study-heading"><h4 :title="study.typeName">{{ study.typeName }}</h4><button type="button" class="outline-action inline danger-outline owner-profile-action laboratory-study-delete" title="Удалить исследование" aria-label="Удалить исследование" @click="removeStudy(index)"><AppIcon name="trash" /></button></div>
       <div class="laboratory-metadata">
         <label><span>Дата исследования</span><input v-model="study.date" type="date" :max="new Date().toISOString().slice(0, 10)" required /></label>
-        <div><span class="field-label">Название исследования</span><AppCatalogCombobox label="Название исследования" :options="LABORATORY_STUDY_OPTIONS" :selected-ids="study.typeId ? [study.typeId] : []" custom-text="" :allow-custom="false" @update:selected-ids="changeType(study, $event)" /></div>
         <label><span>Лаборатория</span><input v-model="study.laboratory" required /></label>
         <label><span>ФИО лаборанта</span><input v-model="study.technician" /></label>
         <label><span>Оборудование</span><input v-model="study.equipment" /></label>
@@ -49,6 +64,5 @@ function confirm() { const action = pending.value; pending.value = null; action?
       <label><span>Комментарий</span><textarea v-model="study.comment" class="medical-card-comment" rows="2" /></label>
     </section>
   </div>
-  <button type="button" class="outline-action inline" @click="addStudy"><AppIcon name="plus" /> Добавить исследование</button>
   <ConfirmationDialog v-model="confirmOpen" title="Удалить заполненные данные?" description="После подтверждения будут удалены только данные выбранного исследования или показателя." confirm-label="Удалить" @confirm="confirm" />
 </template>

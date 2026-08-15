@@ -13,7 +13,7 @@ import AppCatalogCombobox from "../src/components/AppCatalogCombobox.vue";
 import LaboratoryTestsEditor from "../src/components/LaboratoryTestsEditor.vue";
 
 describe("LaboratoryTestsEditor", () => {
-  it("adds, changes, confirms destructive edits, and removes every study mode", async () => {
+  it("requires a fixed type before adding and removes every study mode", async () => {
     let current: LaboratoryTestsSectionValue = { studies: [] };
     let updateModel: (value: LaboratoryTestsSectionValue) => void = () => undefined;
     const wrapper = mount(LaboratoryTestsEditor, {
@@ -30,24 +30,43 @@ describe("LaboratoryTestsEditor", () => {
     };
 
     expect(wrapper.get('[role="alert"]').text()).toContain("Добавьте хотя бы одно");
-    await wrapper.findAll("button").find((button) => button.text().includes("Добавить исследование"))!.trigger("click");
+    expect(wrapper.get(".laboratory-study-create + .laboratory-study-list").exists()).toBe(true);
+    expect(wrapper.get('input[aria-label="Тип исследования"]').exists()).toBe(true);
+    const addButton = () => wrapper.get('button[title="Добавить исследование"]');
+    const selectType = async (id: string) => {
+      wrapper.findAllComponents(AppCatalogCombobox)[0]!.vm.$emit("update:selectedIds", [id]);
+      await flushPromises();
+    };
+    expect(addButton().attributes("disabled")).toBeDefined();
+    expect(addButton().classes()).toContain("laboratory-study-add");
+    expect(addButton().text()).toBe("");
+    expect(addButton().attributes("aria-label")).toBe("Добавить исследование");
+    await selectType("unknown");
+    expect(addButton().attributes("disabled")).toBeDefined();
+    expect(current.studies).toHaveLength(0);
+
+    await selectType("lab.study.cbc");
+    expect(addButton().attributes("disabled")).toBeUndefined();
+    await addButton().trigger("click");
     await flushPromises();
     expect(current.studies).toHaveLength(1);
-    expect(current.studies[0]).toMatchObject({ date: "2026-08-15", mode: "panel", results: [] });
+    expect(current.studies[0]).toMatchObject({
+      date: "2026-08-15",
+      typeId: "lab.study.cbc",
+      typeName: "Общеклинический анализ крови",
+      mode: "panel",
+      results: [],
+    });
+    expect(addButton().attributes("disabled")).toBeDefined();
     const studyHeading = wrapper.get(".laboratory-study-card > .laboratory-study-heading");
+    expect(studyHeading.get("h4").text()).toBe("Общеклинический анализ крови");
+    expect(studyHeading.get("h4").attributes("title")).toBe("Общеклинический анализ крови");
     const removeStudy = studyHeading.get('button[title="Удалить исследование"]');
     expect(removeStudy.classes()).toContain("laboratory-study-delete");
     expect(removeStudy.text()).toBe("");
     expect(removeStudy.attributes("aria-label")).toBe("Удалить исследование");
+    expect(wrapper.find('input[aria-label="Название исследования"]').exists()).toBe(false);
 
-    let typePicker = wrapper.findAllComponents(AppCatalogCombobox)[0]!;
-    typePicker.vm.$emit("update:selectedIds", ["unknown"]);
-    typePicker.vm.$emit("update:selectedIds", ["lab.study.cbc"]);
-    await flushPromises();
-    expect(current.studies[0]).toMatchObject({ typeId: "lab.study.cbc", mode: "panel" });
-
-    typePicker = wrapper.findAllComponents(AppCatalogCombobox)[0]!;
-    typePicker.vm.$emit("update:selectedIds", ["lab.study.cbc"]);
     const cbc = laboratoryStudyTypeById("lab.study.cbc")!;
     const [hematocrit, hemoglobin] = cbc.indicators;
     const indicatorPicker = wrapper.findAllComponents(AppCatalogCombobox)[1]!;
@@ -84,18 +103,26 @@ describe("LaboratoryTestsEditor", () => {
     await dialog.get(".danger").trigger("click");
     expect(current.studies[0]).toMatchObject({ results: [{ indicatorId: hemoglobin!.id, result: "" }] });
 
-    const narrative = LABORATORY_STUDY_CATALOG.find((study) => study.mode === "narrative")!;
-    wrapper.findAllComponents(AppCatalogCombobox)[0]!.vm.$emit("update:selectedIds", [narrative.id]);
+    await wrapper.get('button[title="Удалить исследование"]').trigger("click");
     await flushPromises();
     await wrapper.get('[role="alertdialog"] .danger').trigger("click");
+    await flushPromises();
+    expect(current.studies).toHaveLength(0);
+
+    const narrative = LABORATORY_STUDY_CATALOG.find((study) => study.mode === "narrative")!;
+    await selectType(narrative.id);
+    await addButton().trigger("click");
     await flushPromises();
     expect(current.studies[0]).toMatchObject({ typeId: narrative.id, mode: "narrative", result: "" });
-    expect("results" in current.studies[0]!).toBe(false);
+    expect(wrapper.get(".laboratory-study-heading h4").text()).toBe(narrative.name);
     await wrapper.get(".laboratory-study-card > label textarea").setValue("Описание результата");
-
-    wrapper.findAllComponents(AppCatalogCombobox)[0]!.vm.$emit("update:selectedIds", ["lab.study.infection"]);
+    await wrapper.get('button[title="Удалить исследование"]').trigger("click");
     await flushPromises();
     await wrapper.get('[role="alertdialog"] .danger').trigger("click");
+    await flushPromises();
+
+    await selectType("lab.study.infection");
+    await addButton().trigger("click");
     await flushPromises();
     expect(current.studies[0]).toMatchObject({
       typeId: "lab.study.infection",
@@ -113,7 +140,8 @@ describe("LaboratoryTestsEditor", () => {
     await flushPromises();
     expect(current.studies).toHaveLength(0);
 
-    await wrapper.findAll("button").find((button) => button.text().includes("Добавить исследование"))!.trigger("click");
+    await selectType("lab.study.cbc");
+    await addButton().trigger("click");
     await flushPromises();
     await wrapper.get('button[title="Удалить исследование"]').trigger("click");
     await flushPromises();

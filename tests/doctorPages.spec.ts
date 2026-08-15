@@ -996,12 +996,10 @@ describe("Doctor pages", () => {
     expect(repositoryMocks.saveEncounter).not.toHaveBeenCalled();
     expect(laboratoryEditor.get('[role="alert"]').text()).toContain("Добавьте хотя бы одно");
 
-    await laboratoryEditor.findAll("button")
-      .find((button) => button.text().includes("Добавить исследование"))!
-      .trigger("click");
-    await flushPromises();
     laboratoryEditor.findAllComponents(AppCatalogCombobox)[0]!.vm
       .$emit("update:selectedIds", ["lab.study.cbc"]);
+    await flushPromises();
+    await laboratoryEditor.get('button[title="Добавить исследование"]').trigger("click");
     await flushPromises();
     laboratoryEditor.findAllComponents(AppCatalogCombobox)[1]!.vm
       .$emit("update:selectedIds", ["lab.indicator.cbc.001"]);
@@ -1061,8 +1059,10 @@ describe("Doctor pages", () => {
     const editor = wrapper.get(".encounter-editor-inline").getComponent(LaboratoryTestsEditor);
 
     expect(editor.findAll(".laboratory-study-card")).toHaveLength(1);
-    expect(editor.get<HTMLInputElement>(".laboratory-metadata label:nth-child(3) input").element.value).toBe("Ветлаб");
-    await editor.findAll("button").find((button) => button.text().includes("Добавить исследование"))!.trigger("click");
+    expect(editor.get<HTMLInputElement>(".laboratory-metadata label:nth-child(2) input").element.value).toBe("Ветлаб");
+    editor.findAllComponents(AppCatalogCombobox)[0]!.vm.$emit("update:selectedIds", ["lab.study.cbc"]);
+    await flushPromises();
+    await editor.get('button[title="Добавить исследование"]').trigger("click");
     await flushPromises();
     expect(editor.findAll(".laboratory-study-card")).toHaveLength(2);
   });
@@ -1118,8 +1118,7 @@ describe("Doctor pages", () => {
 
     const editor = wrapper.get(".doctor-pet-detail > .encounter-editor").getComponent(LaboratoryTestsEditor);
     expect(editor.findAll(".laboratory-study-card")).toHaveLength(1);
-    expect(editor.get<HTMLInputElement>('input[aria-label="Название исследования"]').element.value)
-      .toBe("Общеклинический анализ крови");
+    expect(editor.get(".laboratory-study-heading h4").text()).toBe("Общеклинический анализ крови");
     expect(wrapper.text()).toContain("Черновик восстановлен");
   });
 
