@@ -308,6 +308,7 @@ export interface TherapeuticProblemValue {
   priorTherapyId?: string;
   medicationUseId?: string;
   medicationIds: readonly string[];
+  medicationName?: string;
   medicationDynamicsId?: string;
 }
 export interface TherapeuticAppointmentSectionValue {

@@ -72,6 +72,7 @@ function problemDetails(problem: TherapeuticProblemValue): Array<{ label: string
     ...(problem.priorTherapyId ? [{ label: "Терапия до осмотра", value: therapeuticOptionLabel(problem.priorTherapyId) }] : []),
     ...(problem.medicationUseId ? [{ label: "Препараты", value: therapeuticOptionLabel(problem.medicationUseId) }] : []),
     ...(problem.medicationIds.length ? [{ label: "Виды препаратов", value: problem.medicationIds.map(therapeuticOptionLabel).join(", ") }] : []),
+    ...(problem.medicationName ? [{ label: "Название препарата", value: problem.medicationName }] : []),
     ...(problem.medicationDynamicsId ? [{ label: "Динамика", value: therapeuticOptionLabel(problem.medicationDynamicsId) }] : []),
   ];
 }

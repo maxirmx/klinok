@@ -146,6 +146,11 @@ function updateProblemTitle(id: string, event: Event) {
   updateProblem(id, (problem) => ({ ...problem, title }));
 }
 
+function updateProblemMedicationName(id: string, event: Event) {
+  const medicationName = (event.target as HTMLInputElement).value;
+  updateProblem(id, (problem) => ({ ...problem, medicationName }));
+}
+
 type ProblemSelectField = "onsetId" | "frequencyId" | "priorTherapyId" | "medicationUseId" | "medicationDynamicsId";
 
 function updateProblemSelect(id: string, field: ProblemSelectField, event: Event) {
@@ -155,10 +160,12 @@ function updateProblemSelect(id: string, field: ProblemSelectField, event: Event
     if (field === "priorTherapyId" && value !== "problem.therapy.performed") {
       next.medicationUseId = undefined;
       next.medicationIds = [];
+      next.medicationName = undefined;
       next.medicationDynamicsId = undefined;
     }
     if (field === "medicationUseId" && value !== "problem.medication.used") {
       next.medicationIds = [];
+      next.medicationName = undefined;
       next.medicationDynamicsId = undefined;
     }
     return next;
@@ -293,6 +300,15 @@ function panelId(tab: TherapeuticTab) {
                 <label v-for="option in PROBLEM_MEDICATION_OPTIONS" :key="option.id" class="check-row"><input type="checkbox" :checked="problem.medicationIds.includes(option.id)" @change="toggleProblemMedication(problem, option.id)" /><span>{{ option.label }}</span></label>
               </div>
             </fieldset>
+            <label v-if="problem.medicationUseId === 'problem.medication.used'" class="therapeutic-problem-medication-name">
+              <span>Название препарата</span>
+              <input
+                :value="problem.medicationName ?? ''"
+                type="text"
+                autocomplete="off"
+                @input="updateProblemMedicationName(problem.id, $event)"
+              />
+            </label>
             <label v-if="problem.medicationUseId === 'problem.medication.used'"><span>Динамика</span><select :value="problem.medicationDynamicsId ?? ''" @change="updateProblemSelect(problem.id, 'medicationDynamicsId', $event)"><option value="">Не указано</option><option v-for="option in PROBLEM_DYNAMICS_OPTIONS" :key="option.id" :value="option.id">{{ option.label }}</option></select></label>
           </div>
         </article>
