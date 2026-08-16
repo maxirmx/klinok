@@ -365,7 +365,7 @@ export async function buildApi(config: ApiConfig, provided?: { db?: Database; le
         aggregateType: "account", aggregateId: account.account_id, metadata: {},
       }, async (client) => {
         await client.query("INSERT INTO auth_tokens(token_digest,kind,account_id,created_at,expires_at) VALUES ($1,'recovery',$2,now(),now()+interval '1 hour')", [sha256(token), account.account_id]);
-        await client.query("INSERT INTO email_outbox(email_id,recipient,subject,text_body) VALUES ($1,$2,$3,$4)", [randomUUID(), account.email, "Восстановление доступа к Клинку", emailBody(config, "/auth/reset-password", token, "Установите новый пароль:")]);
+        await client.query("INSERT INTO email_outbox(email_id,recipient,subject,text_body) VALUES ($1,$2,$3,$4)", [randomUUID(), account.email, "Восстановление доступа к системе \"Клинок\"", emailBody(config, "/auth/reset-password", token, "Установите новый пароль:")]);
       });
     }
     return reply.status(202).send({ accepted: true });
