@@ -292,7 +292,7 @@ describe("MedicalRecordEntry", () => {
     expect(wrapper.emitted("delete")?.[0]).toEqual([record]);
   });
 
-  it("renders catalog and multiple free-form differential diagnoses from diagnosis v2 together", () => {
+  it("renders diagnosis v2 without an absent confirmed diagnosis", () => {
     const diagnosis = record.sections.diagnosis!;
     const wrapper = mount(MedicalRecordEntry, {
       props: {
@@ -309,7 +309,7 @@ describe("MedicalRecordEntry", () => {
                   selectedIds: ["diagnosis.digestive.001"],
                   customTexts: ["Реакция на корм", "Непереносимость препарата"],
                 },
-                confirmed: { selectedId: "diagnosis.digestive.002", customText: "" },
+                confirmed: { customText: "" },
               },
             },
           },
@@ -326,6 +326,11 @@ describe("MedicalRecordEntry", () => {
       "Реакция на корм",
       "Непереносимость препарата",
     ]);
+    expect(diagnosisHistory.findAll("dt").map((item) => item.text())).toEqual([
+      "Предварительный диагноз",
+      "Дифференциальные диагнозы",
+    ]);
+    expect(wrapper.get("summary").text()).not.toContain("Диагноз:");
   });
 
   it("offers confirmation only for a pending detailed record", async () => {

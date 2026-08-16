@@ -106,6 +106,7 @@ function removeCustomDifferential(index: number) {
 
 <template>
   <div class="diagnosis-editor">
+    <small v-if="props.errors.section" class="field-error" role="alert">{{ props.errors.section }}</small>
     <fieldset class="medical-card-option-panel diagnosis-field">
       <legend>Предварительный диагноз</legend>
       <div class="diagnosis-value-control">

@@ -354,6 +354,7 @@ test("fresh provisioning, Doctor approval, grant, draft, and confirmation", asyn
   await differentialDiagnosis.getByRole("button", { name: "Назначить «Отёк Квинке» подтверждённым диагнозом" }).click();
   await doctorPage.getByRole("alertdialog", { name: "Заменить подтверждённый диагноз?" })
     .getByRole("button", { name: "Заменить", exact: true }).click();
+  await confirmedDiagnosis.getByRole("combobox", { name: "Подтверждённый диагноз" }).fill("");
 
   await doctorPage.setViewportSize({ width: 900, height: 800 });
   const mediumTabRows = await therapeuticTabs.evaluateAll((tabs) => tabs.reduce<number[]>((rows, tab) => {
@@ -392,14 +393,15 @@ test("fresh provisioning, Doctor approval, grant, draft, and confirmation", asyn
   await expect(ownerRecord.locator(".encounter-history-comment").getByText("Состояние стабильное", { exact: true })).toBeVisible();
   await expect(ownerRecord.getByText("В стадии наблюдения", { exact: true })).toBeVisible();
   await expect(ownerRecord.getByText("Контроль через неделю", { exact: true })).toBeVisible();
-  await expect(ownerRecord.locator("summary")).toContainText("Диагноз: Отёк Квинке");
+  await expect(ownerRecord.locator("summary")).not.toContainText("Диагноз:");
   const ownerDiagnosis = ownerRecord.locator(".encounter-history-section").filter({
     has: ownerPage.getByRole("heading", { name: "Диагноз", exact: true }),
   });
   await expect(ownerDiagnosis.getByText("Подозрение на анафилаксию", { exact: true })).toBeVisible();
-  await expect(ownerDiagnosis.getByText("Отёк Квинке", { exact: true })).toHaveCount(2);
+  await expect(ownerDiagnosis.getByText("Отёк Квинке", { exact: true })).toHaveCount(1);
   await expect(ownerDiagnosis.getByText("Реакция на корм", { exact: true })).toBeVisible();
   await expect(ownerDiagnosis.getByText("Просто шок", { exact: true })).toBeVisible();
+  await expect(ownerDiagnosis.getByText("Подтверждённый диагноз", { exact: true })).toHaveCount(0);
   const ownerTherapeutic = ownerRecord.locator(".encounter-history-section").filter({
     has: ownerPage.getByRole("heading", { name: "Терапевтический приём", exact: true }),
   });
@@ -440,7 +442,7 @@ test("fresh provisioning, Doctor approval, grant, draft, and confirmation", asyn
   await expect(profileWeight).toContainText("14.3 кг");
   await ownerPage.reload();
   await expect(ownerPage.locator(".medical-record-entry-details").filter({ hasText: "Всё хорошо" }).locator("summary"))
-    .toContainText("Диагноз: Отёк Квинке");
+    .not.toContainText("Диагноз:");
   expect(await queryPostgres(`SELECT count(*) FROM audit_blocks
     WHERE aggregate_type='medicalRecord' AND aggregate_id='${recordId}' AND action='record.created'
       AND before_state='null'::jsonb AND after_state->>'status'='unconfirmed'
@@ -448,7 +450,7 @@ test("fresh provisioning, Doctor approval, grant, draft, and confirmation", asyn
       AND after_state->'record'->'sections'->'what-happened' IS NOT NULL
       AND after_state->'record'->'sections'->'diagnosis'->>'templateVersion'='diagnosis-v2'
       AND after_state->'record'->'sections'->'diagnosis'->'value'->'differential'->'customTexts' @> '["Реакция на корм", "Просто шок"]'::jsonb
-      AND after_state->'record'->'sections'->'diagnosis'->'value'->'confirmed'->>'selectedId'='diagnosis.general.012'`)).toBe("1");
+      AND after_state->'record'->'sections'->'diagnosis'->'value'->'confirmed'='{"customText": ""}'::jsonb`)).toBe("1");
   expect(await queryPostgres(`SELECT count(*) FROM audit_blocks
     WHERE aggregate_type='medicalRecord' AND aggregate_id='${recordId}' AND action='record.confirmed'
       AND before_state->>'status'='unconfirmed' AND after_state->>'status'='confirmed'

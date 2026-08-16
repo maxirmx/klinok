@@ -83,7 +83,7 @@ describe("DiagnosisEditor", () => {
 
   it("renders each diagnosis as one editable catalog combobox in a bordered semantic fieldset", () => {
     const wrapper = mount(DiagnosisEditor, {
-      props: { modelValue: emptyDiagnosisDraft(), errors: { confirmed: "Укажите диагноз" } },
+      props: { modelValue: emptyDiagnosisDraft(), errors: { section: "Укажите хотя бы один диагноз" } },
     });
     expect(wrapper.findAll("fieldset.medical-card-option-panel")).toHaveLength(3);
     expect(wrapper.findAll("legend").map((legend) => legend.text())).toEqual([
@@ -95,7 +95,7 @@ describe("DiagnosisEditor", () => {
     expect(wrapper.findAll('input[type="radio"]')).toHaveLength(0);
     expect(wrapper.text()).not.toContain("Из справочника");
     expect(wrapper.text()).not.toContain("Свободная форма");
-    expect(wrapper.text()).toContain("Укажите диагноз");
+    expect(wrapper.get('[role="alert"]').text()).toBe("Укажите хотя бы один диагноз");
   });
 
   it("infers single-value modes and retains mixed differential diagnoses", async () => {
