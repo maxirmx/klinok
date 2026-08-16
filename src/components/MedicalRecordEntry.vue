@@ -206,7 +206,7 @@ function formatLocalDateTime(value: string) {
             </dd>
             <dd v-else>Не указано</dd>
           </div>
-          <div>
+          <div v-if="diagnosisChoiceSummary(item.section.value.confirmed)">
             <dt>Подтверждённый диагноз</dt>
             <dd>{{ diagnosisChoiceSummary(item.section.value.confirmed) }}</dd>
           </div>

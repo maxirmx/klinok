@@ -90,10 +90,25 @@ describe("command boundary", () => {
     });
 
     const diagnosis = input.sections.diagnosis;
-    expect(() => validateMedicalEncounter({
+    expect(validateMedicalEncounter({
       ...input,
       sections: { ...input.sections, diagnosis: { ...diagnosis, confirmed: { customText: "" } } },
-    })).toThrow("confirmed diagnosis is required");
+    }).sections.diagnosis).toEqual({
+      preliminary: { selectedId: "diagnosis.digestive.001", customText: "" },
+      differential: { selectedIds: ["diagnosis.digestive.002"], customTexts: ["Реакция на корм"] },
+      confirmed: { customText: "" },
+    });
+    expect(() => validateMedicalEncounter({
+      ...input,
+      sections: {
+        ...input.sections,
+        diagnosis: {
+          preliminary: { customText: "" },
+          differential: { selectedIds: [], customTexts: [] },
+          confirmed: { customText: "" },
+        },
+      },
+    })).toThrow("At least one diagnosis is required");
     expect(() => validateMedicalEncounter({
       ...input,
       sections: {

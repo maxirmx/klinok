@@ -39,7 +39,7 @@ function object(value: unknown): Record<string, unknown> {
   return value as Record<string, unknown>;
 }
 
-function diagnosisChoice(value: unknown, required: boolean): DiagnosisChoice {
+function diagnosisChoice(value: unknown): DiagnosisChoice {
   const input = object(value);
   const selectedId = input.selectedId === undefined ? undefined : requireText(input.selectedId, "selectedId", 200);
   const customText = typeof input.customText === "string" ? input.customText.trim() : "";
@@ -52,15 +52,12 @@ function diagnosisChoice(value: unknown, required: boolean): DiagnosisChoice {
   if (selectedId && customText) {
     throw new ApiError(400, "VALIDATION_FAILED", "A diagnosis must use either a catalog value or free text.");
   }
-  if (required && !selectedId && !customText) {
-    throw new ApiError(400, "VALIDATION_FAILED", "The confirmed diagnosis is required.");
-  }
   return { ...(selectedId ? { selectedId: selectedId as DiagnosisTaxonomyId } : {}), customText };
 }
 
 function diagnosisSection(value: unknown): DiagnosisSectionValue {
   const input = object(value);
-  const preliminary = diagnosisChoice(input.preliminary, false);
+  const preliminary = diagnosisChoice(input.preliminary);
   const differentialInput = object(input.differential);
   if (!Array.isArray(differentialInput.selectedIds)) {
     throw new ApiError(400, "VALIDATION_FAILED", "The differential diagnoses are invalid.");
@@ -85,10 +82,16 @@ function diagnosisSection(value: unknown): DiagnosisSectionValue {
   if (hasLegacyCustomText && selectedIds.length && customTexts.length) {
     throw new ApiError(400, "VALIDATION_FAILED", "Differential diagnoses must use either catalog values or free text.");
   }
+  const confirmed = diagnosisChoice(input.confirmed);
+  if (!preliminary.selectedId && !preliminary.customText
+    && !selectedIds.length && !customTexts.length
+    && !confirmed.selectedId && !confirmed.customText) {
+    throw new ApiError(400, "VALIDATION_FAILED", "At least one diagnosis is required.");
+  }
   return {
     preliminary,
     differential: { selectedIds: selectedIds as DiagnosisTaxonomyId[], customTexts: customTexts as string[] },
-    confirmed: diagnosisChoice(input.confirmed, true),
+    confirmed,
   };
 }
 

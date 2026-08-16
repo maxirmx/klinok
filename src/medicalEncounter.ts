@@ -61,7 +61,7 @@ export interface DiagnosisDraft {
   confirmedCustomText: string;
 }
 
-export type DiagnosisDraftField = "preliminary" | "differential" | "confirmed";
+export type DiagnosisDraftField = "section" | "preliminary" | "differential" | "confirmed";
 export type DiagnosisDraftErrors = Partial<Record<DiagnosisDraftField, string>>;
 
 export type RevaccinationInterval = "days-14" | "month-1" | "months-4" | "months-6" | "months-12" | "next-birthday";
@@ -225,7 +225,7 @@ export function outcomeComment(value: unknown): string {
 const MAX_DIAGNOSIS_CUSTOM_TEXT_LENGTH = 10_000;
 const diagnosisLabels = new Map(DIAGNOSIS_CATALOG_OPTIONS.map((option) => [option.id, option.label]));
 
-function diagnosisChoiceValidationError(value: unknown, required: boolean): string {
+function diagnosisChoiceValidationError(value: unknown): string {
   if (!value || typeof value !== "object" || Array.isArray(value)) return "Укажите диагноз.";
   const choice = value as Record<string, unknown>;
   if (choice.selectedId !== undefined && typeof choice.selectedId !== "string") return "Выбран некорректный диагноз.";
@@ -235,14 +235,19 @@ function diagnosisChoiceValidationError(value: unknown, required: boolean): stri
   if (selectedId && customText) return "Выберите диагноз из справочника или заполните свободную форму.";
   if (selectedId && !isDiagnosisTaxonomyId(selectedId)) return "Выбран неизвестный диагноз.";
   if (customText.length > MAX_DIAGNOSIS_CUSTOM_TEXT_LENGTH) return "Текст диагноза не должен превышать 10 000 символов.";
-  if (required && !selectedId && !customText) return "Укажите подтверждённый диагноз.";
   return "";
+}
+
+function diagnosisChoiceHasValue(value: unknown): boolean {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const choice = value as Record<string, unknown>;
+  return Boolean(choice.selectedId || (typeof choice.customText === "string" && choice.customText.trim()));
 }
 
 export function diagnosisValidationError(value: unknown): string {
   if (!value || typeof value !== "object" || Array.isArray(value)) return "Заполните раздел «Диагноз».";
   const diagnosis = value as Record<string, unknown>;
-  const preliminaryError = diagnosisChoiceValidationError(diagnosis.preliminary, false);
+  const preliminaryError = diagnosisChoiceValidationError(diagnosis.preliminary);
   if (preliminaryError) return preliminaryError;
   if (!diagnosis.differential || typeof diagnosis.differential !== "object" || Array.isArray(diagnosis.differential)) {
     return "Укажите дифференциальные диагнозы.";
@@ -279,7 +284,15 @@ export function diagnosisValidationError(value: unknown): string {
   if (normalizedCustomTexts.some((text) => text.length > MAX_DIAGNOSIS_CUSTOM_TEXT_LENGTH)) {
     return "Текст дифференциальных диагнозов не должен превышать 10 000 символов.";
   }
-  return diagnosisChoiceValidationError(diagnosis.confirmed, true);
+  const confirmedError = diagnosisChoiceValidationError(diagnosis.confirmed);
+  if (confirmedError) return confirmedError;
+  if (!diagnosisChoiceHasValue(diagnosis.preliminary)
+    && !selectedIds.length
+    && !normalizedCustomTexts.length
+    && !diagnosisChoiceHasValue(diagnosis.confirmed)) {
+    return "Укажите хотя бы один диагноз.";
+  }
+  return "";
 }
 
 export function isDiagnosisValue(value: unknown): value is DiagnosisSectionValue {
@@ -371,7 +384,11 @@ export function parseDiagnosisDraft(draft: DiagnosisDraft): { value?: DiagnosisS
   if (differentialCustomTexts.some((text) => text.length > MAX_DIAGNOSIS_CUSTOM_TEXT_LENGTH)) errors.differential = "Не больше 10 000 символов.";
   if (confirmedSelectedId && !isDiagnosisTaxonomyId(confirmedSelectedId)) errors.confirmed = "Выбран неизвестный диагноз.";
   if (confirmedCustomText.length > MAX_DIAGNOSIS_CUSTOM_TEXT_LENGTH) errors.confirmed = "Не больше 10 000 символов.";
-  if (!confirmedSelectedId && !confirmedCustomText) errors.confirmed = "Укажите подтверждённый диагноз.";
+  if (!preliminarySelectedId && !preliminaryCustomText
+    && !differentialSelectedIds.length && !differentialCustomTexts.length
+    && !confirmedSelectedId && !confirmedCustomText) {
+    errors.section = "Укажите хотя бы один диагноз.";
+  }
   if (Object.keys(errors).length) return { errors };
 
   return {

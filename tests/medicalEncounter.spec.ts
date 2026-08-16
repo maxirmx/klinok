@@ -149,7 +149,33 @@ describe("medical encounter templates", () => {
     expect(sectionSearchText(parsed.value)).toContain("Стоматит");
     expect(sectionSearchText(parsed.value)).toContain("Реакция на корм");
 
-    expect(parseDiagnosisDraft(emptyDiagnosisDraft()).errors.confirmed).toContain("подтверждённый");
+    expect(parseDiagnosisDraft(emptyDiagnosisDraft()).errors.section).toContain("хотя бы один");
+    const preliminaryOnly = emptyDiagnosisDraft();
+    preliminaryOnly.preliminaryMode = "custom";
+    preliminaryOnly.preliminaryCustomText = "Предварительный";
+    expect(parseDiagnosisDraft(preliminaryOnly)).toMatchObject({
+      errors: {},
+      value: { preliminary: { customText: "Предварительный" }, confirmed: { customText: "" } },
+    });
+    const differentialOnly = emptyDiagnosisDraft();
+    differentialOnly.differentialSelectedIds = ["diagnosis.digestive.001"];
+    expect(parseDiagnosisDraft(differentialOnly)).toMatchObject({
+      errors: {},
+      value: { differential: { selectedIds: ["diagnosis.digestive.001"] }, confirmed: { customText: "" } },
+    });
+    const confirmedOnly = emptyDiagnosisDraft();
+    confirmedOnly.confirmedMode = "custom";
+    confirmedOnly.confirmedCustomText = "Подтверждённый";
+    expect(parseDiagnosisDraft(confirmedOnly)).toMatchObject({
+      errors: {},
+      value: { preliminary: { customText: "" }, confirmed: { customText: "Подтверждённый" } },
+    });
+    expect(diagnosisValidationError(parseDiagnosisDraft(preliminaryOnly).value)).toBe("");
+    expect(diagnosisValidationError({
+      preliminary: { customText: "" },
+      differential: { selectedIds: [], customTexts: [] },
+      confirmed: { customText: "" },
+    })).toContain("хотя бы один");
     expect(diagnosisValidationError({
       ...parsed.value,
       confirmed: { selectedId: "diagnosis.digestive.001", customText: "Стоматит" },
