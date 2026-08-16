@@ -3020,8 +3020,10 @@ dd {
 }
 .laboratory-study-create, .laboratory-study-list { display: grid; gap: 1rem; }
 .laboratory-study-create { gap: 0; }
-.laboratory-study-create-control { display: grid; grid-template-columns: minmax(0, 1fr) 34px; gap: 8px; min-width: 0; align-items: start; }
-.workspace-content .laboratory-study-add { width: 34px; min-width: 34px; max-width: 34px; height: 34px; min-height: 34px; padding: 0; }
+.laboratory-study-create-control,
+.laboratory-indicator-create-control { display: grid; grid-template-columns: minmax(0, 1fr) 34px; gap: 8px; min-width: 0; align-items: start; }
+.laboratory-indicator-create { display: grid; gap: 0; width: min(100%, 52rem); }
+.workspace-content :is(.laboratory-study-add, .laboratory-indicator-add, .laboratory-result-delete) { width: 34px; min-width: 34px; max-width: 34px; height: 34px; min-height: 34px; padding: 0; }
 .laboratory-study-card { border: 1px solid var(--border-color, #d7dde5); border-radius: .75rem; padding: 1rem; display: grid; gap: .85rem; }
 .laboratory-study-card > .laboratory-study-heading { width: calc(100% + 1rem + 1px); min-width: 0; flex-direction: row; align-items: flex-start; }
 .laboratory-study-heading > h4 { min-width: 0; margin: 0; overflow: hidden; flex: 1 1 auto; text-overflow: ellipsis; white-space: nowrap; }
@@ -3065,6 +3067,9 @@ dd {
 .laboratory-result-headings + .laboratory-result-row { border-top: 1px solid var(--border-color, #d7dde5); }
 .laboratory-result-row > :is(div, label) { display: grid; min-width: 0; align-content: start; gap: 2px; }
 .laboratory-result-row > .laboratory-result-indicator { display: none; }
+.laboratory-editor-results .laboratory-result-row { grid-template-columns: minmax(0, 1fr) 34px; }
+.laboratory-editor-results .laboratory-result-row > label { grid-column: 1; }
+.laboratory-result-delete { grid-column: 2; grid-row: 1; align-self: start; }
 .laboratory-result-row input { width: 100%; min-width: 0; box-sizing: border-box; }
 .laboratory-result-label,
 .laboratory-result-mobile-name {
@@ -3082,12 +3087,17 @@ dd {
     grid-template-columns: minmax(12rem, 1.5fr) minmax(8rem, 1fr) minmax(10rem, 1fr);
     gap: .75rem;
   }
+  .laboratory-editor-results :is(.laboratory-result-headings, .laboratory-result-row) {
+    grid-template-columns: minmax(12rem, 1.5fr) minmax(8rem, 1fr) minmax(10rem, 1fr) 34px;
+  }
   .laboratory-result-headings-primary,
   .laboratory-result-row { display: grid; }
   .laboratory-result-headings { padding: .5rem 0; font-weight: 700; }
   .laboratory-result-row { padding: .5rem 0; }
   .laboratory-result-headings + .laboratory-result-row { border-top: 0; }
   .laboratory-result-row > .laboratory-result-indicator { display: grid; }
+  .laboratory-editor-results .laboratory-result-row > label,
+  .laboratory-result-delete { grid-column: auto; grid-row: auto; }
   .laboratory-result-label { display: none; }
   .laboratory-result-mobile-name { display: none; }
 }

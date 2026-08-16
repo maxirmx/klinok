@@ -14,27 +14,93 @@ const props = withDefaults(defineProps<{ encounterDate: string; errors?: Laborat
   errors: () => ({ studies: [] }),
 });
 const model = defineModel<LaboratoryTestsSectionValue>({ required: true });
-const pending = ref<(() => void) | null>(null);
+const pending = ref<{ action: () => void; title: string; description: string } | null>(null);
 const pendingTypeIds = ref<string[]>([]);
+const pendingIndicatorIds = ref<Record<string, string[]>>({});
 const pendingType = computed(() => laboratoryStudyTypeById(pendingTypeIds.value[0] ?? ""));
 const confirmOpen = computed({ get: () => Boolean(pending.value), set: (value) => { if (!value) pending.value = null; } });
+const confirmTitle = computed(() => pending.value?.title ?? "Удалить заполненные данные?");
+const confirmDescription = computed(() => pending.value?.description ?? "После подтверждения заполненные данные будут удалены.");
 const uuid = () => globalThis.crypto.randomUUID();
 function addStudy() {
   const type = pendingType.value;
   if (!type) return;
   const base = { id: uuid(), date: props.encounterDate, typeId: type.id, typeName: type.name, laboratory: "" };
   const study: LaboratoryStudyValue = type.mode === "panel"
-    ? { ...base, mode: "panel", results: type.indicators.map(({ id, name, unit }) => ({ indicatorId: id, indicatorName: name, unit, result: "" })) }
+    ? { ...base, mode: "panel", results: [] }
     : type.mode === "narrative"
       ? { ...base, mode: "narrative", result: "" }
       : { ...base, mode: "infection", infection: "", method: "ПЦР", result: "negative" };
   model.value = { studies: [...model.value.studies, study] };
+  if (study.mode === "panel") pendingIndicatorIds.value = { ...pendingIndicatorIds.value, [study.id]: [] };
   pendingTypeIds.value = [];
 }
-function populated(study: LaboratoryStudyValue) { return study.laboratory || study.technician || study.equipment || study.comment || (study.mode === "panel" ? study.results.some((result) => result.result || result.reference) : study.mode === "narrative" ? study.result : study.infection); }
-function destructive(action: () => void, hasData = true) { if (!hasData) action(); else pending.value = action; }
-function removeStudy(index: number) { const study = model.value.studies[index]!; destructive(() => { model.value = { studies: model.value.studies.filter((_, candidate) => candidate !== index) }; }, Boolean(populated(study))); }
-function confirm() { const action = pending.value; pending.value = null; action?.(); }
+function hasText(value?: string) { return Boolean(value?.trim()); }
+function populated(study: LaboratoryStudyValue) {
+  return [study.laboratory, study.technician, study.equipment, study.comment].some(hasText)
+    || (study.mode === "panel"
+      ? study.results.some((result) => hasText(result.result) || hasText(result.reference))
+      : study.mode === "narrative" ? hasText(study.result) : hasText(study.infection));
+}
+function destructive(action: () => void, hasData: boolean, title: string, description: string) {
+  if (!hasData) action();
+  else pending.value = { action, title, description };
+}
+function removeStudy(index: number) {
+  const study = model.value.studies[index]!;
+  destructive(() => {
+    model.value = { studies: model.value.studies.filter((_, candidate) => candidate !== index) };
+    const remaining = { ...pendingIndicatorIds.value };
+    delete remaining[study.id];
+    pendingIndicatorIds.value = remaining;
+  }, populated(study), "Удалить заполненные данные?", "После подтверждения будут удалены данные выбранного исследования.");
+}
+function indicatorOptions(study: LaboratoryStudyValue) {
+  if (study.mode !== "panel") return [];
+  const type = laboratoryStudyTypeById(study.typeId);
+  const added = new Set(study.results.map((result) => result.indicatorId));
+  return (type?.indicators ?? [])
+    .filter((indicator) => !added.has(indicator.id))
+    .map((indicator) => ({ id: indicator.id, label: `${indicator.name} · ${indicator.unit || "—"}` }));
+}
+function selectedIndicatorIds(studyId: string) { return pendingIndicatorIds.value[studyId] ?? []; }
+function selectIndicator(studyId: string, ids: string[]) {
+  pendingIndicatorIds.value = { ...pendingIndicatorIds.value, [studyId]: ids.slice(0, 1) };
+}
+function pendingIndicator(study: LaboratoryStudyValue) {
+  if (study.mode !== "panel") return undefined;
+  const indicatorId = selectedIndicatorIds(study.id)[0];
+  return laboratoryStudyTypeById(study.typeId)?.indicators.find((candidate) =>
+    candidate.id === indicatorId && !study.results.some((result) => result.indicatorId === candidate.id));
+}
+function updateStudy(updated: LaboratoryStudyValue) {
+  model.value = { studies: model.value.studies.map((study) => study.id === updated.id ? updated : study) };
+}
+function addIndicator(study: LaboratoryStudyValue) {
+  if (study.mode !== "panel") return;
+  const indicator = pendingIndicator(study);
+  if (!indicator) return;
+  updateStudy({
+    ...study,
+    results: [...study.results, {
+      indicatorId: indicator.id,
+      indicatorName: indicator.name,
+      unit: indicator.unit,
+      result: "",
+    }],
+  });
+  selectIndicator(study.id, []);
+}
+function removeIndicator(study: LaboratoryStudyValue, indicatorId: string) {
+  if (study.mode !== "panel") return;
+  const result = study.results.find((candidate) => candidate.indicatorId === indicatorId);
+  if (!result) return;
+  destructive(() => updateStudy({
+    ...study,
+    results: study.results.filter((candidate) => candidate.indicatorId !== indicatorId),
+  }), Boolean(result.result.trim() || result.reference?.trim()), "Удалить заполненный показатель?", `Результат и референсные значения показателя «${result.indicatorName}» будут удалены.`);
+}
+function confirm() { const action = pending.value?.action; pending.value = null; action?.(); }
 function invalid(message?: string) { return message ? true : undefined; }
 </script>
 
@@ -58,6 +124,30 @@ function invalid(message?: string) { return message ? true : undefined; }
         <label><span>Оборудование</span><input v-model="study.equipment" /></label>
       </div>
       <template v-if="study.mode === 'panel' && study.typeId">
+        <div class="laboratory-indicator-create">
+          <span class="field-label">Показатель</span>
+          <div class="laboratory-indicator-create-control">
+            <AppCatalogCombobox
+              :selected-ids="selectedIndicatorIds(study.id)"
+              label="Добавить показатель"
+              :options="indicatorOptions(study)"
+              custom-text=""
+              :allow-custom="false"
+              :invalid="Boolean(errors.studies[index]?.section)"
+              placeholder="Выберите показатель"
+              disabled-title="Все показатели добавлены"
+              @update:selected-ids="selectIndicator(study.id, $event)"
+            />
+            <button
+              type="button"
+              class="outline-action inline owner-profile-action laboratory-indicator-add"
+              :disabled="!pendingIndicator(study)"
+              title="Добавить показатель"
+              aria-label="Добавить показатель"
+              @click="addIndicator(study)"
+            ><AppIcon name="plus" /></button>
+          </div>
+        </div>
         <div v-if="study.results.length" class="laboratory-panel-results laboratory-editor-results" role="group" aria-label="Показатели исследования">
           <div class="laboratory-panel-layout" :class="{ 'laboratory-panel-layout-multiple': study.results.length > 1 }">
             <div class="laboratory-result-headings laboratory-result-headings-primary" aria-hidden="true">
@@ -77,6 +167,7 @@ function invalid(message?: string) { return message ? true : undefined; }
                 <small v-if="errors.studies[index]?.indicators?.[result.indicatorId]" class="field-error" role="alert">{{ errors.studies[index]?.indicators?.[result.indicatorId] }}</small>
               </label>
               <label><span class="laboratory-result-label">Референсные значения</span><input v-model="result.reference" /></label>
+              <button type="button" class="outline-action inline danger-outline owner-profile-action laboratory-result-delete" title="Удалить показатель" :aria-label="`Удалить показатель «${result.indicatorName}»`" @click="removeIndicator(study, result.indicatorId)"><AppIcon name="trash" /></button>
             </div>
           </div>
         </div>
@@ -86,5 +177,5 @@ function invalid(message?: string) { return message ? true : undefined; }
       <section class="medical-card-comment-section laboratory-study-comment"><h4>Комментарий</h4><textarea v-model="study.comment" class="medical-card-comment" rows="2" aria-label="Комментарий" /></section>
     </section>
   </div>
-  <ConfirmationDialog v-model="confirmOpen" title="Удалить заполненные данные?" description="После подтверждения будут удалены данные выбранного исследования." confirm-label="Удалить" @confirm="confirm" />
+  <ConfirmationDialog v-model="confirmOpen" :title="confirmTitle" :description="confirmDescription" confirm-label="Удалить" @confirm="confirm" />
 </template>

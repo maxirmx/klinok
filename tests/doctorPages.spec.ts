@@ -1020,20 +1020,30 @@ describe("Doctor pages", () => {
     await flushPromises();
     await laboratoryEditor.get('button[title="Добавить исследование"]').trigger("click");
     await flushPromises();
-    expect(laboratoryEditor.findAllComponents(AppCatalogCombobox)).toHaveLength(1);
+    expect(laboratoryEditor.findAllComponents(AppCatalogCombobox)).toHaveLength(2);
     const laboratoryField = laboratoryEditor.findAll("label")
       .find((label) => label.find("span").exists() && label.get("span").text() === "Лаборатория")!;
-    const resultRows = laboratoryEditor.findAll(".laboratory-result-row");
-    expect(resultRows).toHaveLength(4);
+    expect(laboratoryEditor.findAll(".laboratory-result-row")).toHaveLength(0);
     await wrapper.get('button[title="Сохранить запись"]').trigger("click");
     await flushPromises();
     expect(laboratoryField.get("input").attributes("aria-invalid")).toBe("true");
     expect(laboratoryField.get(".field-error").text()).toBe("Укажите лабораторию.");
-    expect(resultRows.every((row) => row.findAll("input")[0]!.attributes("aria-invalid") === "true")).toBe(true);
-    expect(resultRows[0]!.get(".field-error").text()).toBe("Укажите результат.");
+    expect(laboratoryEditor.get('input[aria-label="Добавить показатель"]').attributes("aria-invalid")).toBe("true");
 
     await laboratoryField.get("input").setValue("Ветлаб");
-    for (const [index, row] of resultRows.entries()) await row.findAll("input")[0]!.setValue(String(index + 1));
+    laboratoryEditor.findAllComponents(AppCatalogCombobox)[1]!.vm
+      .$emit("update:selectedIds", ["lab.indicator.coagulation.001"]);
+    await flushPromises();
+    await laboratoryEditor.get('button[title="Добавить показатель"]').trigger("click");
+    await flushPromises();
+    const resultRows = laboratoryEditor.findAll(".laboratory-result-row");
+    expect(resultRows).toHaveLength(1);
+    await wrapper.get('button[title="Сохранить запись"]').trigger("click");
+    await flushPromises();
+    expect(resultRows[0]!.findAll("input")[0]!.attributes("aria-invalid")).toBe("true");
+    expect(resultRows[0]!.get(".field-error").text()).toBe("Укажите результат.");
+
+    await resultRows[0]!.findAll("input")[0]!.setValue("1");
 
     await wrapper.get('button[title="Сохранить запись"]').trigger("click");
     await flushPromises();
@@ -1046,7 +1056,7 @@ describe("Doctor pages", () => {
             typeName: "Коагулограмма крови",
             mode: "panel",
             laboratory: "Ветлаб",
-            results: expect.arrayContaining([expect.objectContaining({ indicatorId: "lab.indicator.coagulation.001", result: "1" })]),
+            results: [expect.objectContaining({ indicatorId: "lab.indicator.coagulation.001", result: "1" })],
           })],
         },
       }),
