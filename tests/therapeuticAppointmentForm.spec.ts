@@ -208,6 +208,10 @@ describe("TherapeuticAppointmentForm", () => {
     await problem.findAll("select")[3]!.setValue("problem.medication.used");
     expect(problem.get(".therapeutic-problem-medications .medical-card-options").exists()).toBe(true);
     expect(problem.get(".therapeutic-problem-medications").classes()).toContain("medical-card-option-panel");
+    const medicationName = problem.get<HTMLInputElement>('.therapeutic-problem-medication-name input');
+    expect(medicationName.element.previousElementSibling?.textContent).toBe("Название препарата");
+    await medicationName.setValue("Мелоксикам");
+    expect(draft.diseaseAnamnesis.problems[0]?.medicationName).toBe("Мелоксикам");
     expect(problem.findAll("select")).toHaveLength(5);
   });
 
@@ -243,11 +247,13 @@ describe("TherapeuticAppointmentForm", () => {
     await problem.findAll("select")[3]!.setValue("problem.medication.used");
     const medication = problem.get<HTMLInputElement>('.therapeutic-problem-medications input[type="checkbox"]');
     await medication.setValue(true);
+    await problem.get<HTMLInputElement>('.therapeutic-problem-medication-name input').setValue("Мелоксикам");
     await problem.findAll("select")[4]!.setValue("problem.dynamics.positive");
 
     expect(draft.diseaseAnamnesis.problems[0]).toMatchObject({
       medicationUseId: "problem.medication.used",
       medicationIds: ["problem.medication.type.analgesic"],
+      medicationName: "Мелоксикам",
       medicationDynamicsId: "problem.dynamics.positive",
     });
 
@@ -260,6 +266,7 @@ describe("TherapeuticAppointmentForm", () => {
       priorTherapyId: "problem.therapy.performed",
       medicationUseId: "problem.medication.none",
       medicationIds: [],
+      medicationName: undefined,
       medicationDynamicsId: undefined,
     });
     expect(problem.findAll("select")).toHaveLength(4);
@@ -269,6 +276,7 @@ describe("TherapeuticAppointmentForm", () => {
     expect(draft.diseaseAnamnesis.problems[0]).toMatchObject({
       medicationUseId: undefined,
       medicationIds: [],
+      medicationName: undefined,
       medicationDynamicsId: undefined,
     });
     expect(problem.findAll("select")).toHaveLength(3);

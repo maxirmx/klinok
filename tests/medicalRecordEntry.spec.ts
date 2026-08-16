@@ -420,7 +420,11 @@ describe("MedicalRecordEntry", () => {
                     id: "problem-1",
                     title: "Не ест",
                     onsetId: "problem.onset.yesterday",
-                    medicationIds: [],
+                    priorTherapyId: "problem.therapy.performed",
+                    medicationUseId: "problem.medication.used",
+                    medicationIds: ["problem.medication.type.nsaid"],
+                    medicationName: "Мелоксикам",
+                    medicationDynamicsId: "problem.dynamics.positive",
                   }],
                   selectedIds: ["disease.appetite.state.changed", "disease.appetite.change.absent"],
                 },
@@ -467,6 +471,8 @@ describe("MedicalRecordEntry", () => {
     expect(panels.slice(1).every((panel) => panel.attributes("hidden") !== undefined)).toBe(true);
     expect(panels[0]!.text()).toContain("Проблема 1: Не ест");
     expect(panels[0]!.text()).toContain("Вчера");
+    expect(panels[0]!.text()).toContain("Название препарата");
+    expect(panels[0]!.text()).toContain("Мелоксикам");
 
     await tabs[0]!.trigger("keydown", { key: "ArrowRight" });
     expect(tabs[1]!.attributes("aria-selected")).toBe("true");

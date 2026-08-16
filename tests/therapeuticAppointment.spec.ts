@@ -80,12 +80,15 @@ describe("therapeutic appointment template", () => {
       priorTherapyId: "problem.therapy.performed",
       medicationUseId: "problem.medication.used",
       medicationIds: ["problem.medication.type.analgesic"],
+      medicationName: "  Мелоксикам  ",
       medicationDynamicsId: "problem.dynamics.positive",
     });
     const parsed = parseTherapeuticAppointmentDraft(valid);
     expect(parsed.errors).toEqual({});
     expect(parsed.value?.diseaseAnamnesis.problems[0]?.title).toBe("Рвота");
+    expect(parsed.value?.diseaseAnamnesis.problems[0]?.medicationName).toBe("Мелоксикам");
     expect(therapeuticAppointmentSearchText(parsed.value!)).toContain("Положительная");
+    expect(therapeuticAppointmentSearchText(parsed.value!)).toContain("Мелоксикам");
 
     const missingParent = emptyTherapeuticAppointmentDraft();
     missingParent.diseaseAnamnesis.problems.push({
@@ -96,6 +99,18 @@ describe("therapeutic appointment template", () => {
     });
     expect(parseTherapeuticAppointmentDraft(missingParent).errors.problems?.["problem-2"])
       .toContain("терапия до осмотра проводилась");
+
+    const medicationNameWithoutMedication = emptyTherapeuticAppointmentDraft();
+    medicationNameWithoutMedication.diseaseAnamnesis.problems.push({
+      id: "problem-3",
+      title: "Хромота",
+      priorTherapyId: "problem.therapy.performed",
+      medicationUseId: "problem.medication.none",
+      medicationIds: [],
+      medicationName: "Мелоксикам",
+    });
+    expect(parseTherapeuticAppointmentDraft(medicationNameWithoutMedication).errors.problems?.["problem-3"])
+      .toContain("название препарата");
   });
 
   it("accepts structured-only and mixed content and canonicalizes all selection arrays", () => {

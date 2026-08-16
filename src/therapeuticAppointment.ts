@@ -549,7 +549,8 @@ function validateSelections(selectedIds: unknown, categories: readonly Therapeut
 
 function problemHasContent(problem: TherapeuticProblemDraft): boolean {
   return Boolean(problem.title.trim() || problem.sourceWhatHappenedId || problem.onsetId || problem.frequencyId
-    || problem.priorTherapyId || problem.medicationUseId || problem.medicationIds.length || problem.medicationDynamicsId);
+    || problem.priorTherapyId || problem.medicationUseId || problem.medicationIds.length
+    || problem.medicationName?.trim() || problem.medicationDynamicsId);
 }
 
 function normalizeProblem(problem: TherapeuticProblemDraft): TherapeuticProblemValue {
@@ -562,6 +563,7 @@ function normalizeProblem(problem: TherapeuticProblemDraft): TherapeuticProblemV
     ...(problem.priorTherapyId ? { priorTherapyId: problem.priorTherapyId } : {}),
     ...(problem.medicationUseId ? { medicationUseId: problem.medicationUseId } : {}),
     medicationIds: PROBLEM_MEDICATION_OPTIONS.map((option) => option.id).filter((id) => problem.medicationIds.includes(id)),
+    ...(problem.medicationName?.trim() ? { medicationName: problem.medicationName.trim() } : {}),
     ...(problem.medicationDynamicsId ? { medicationDynamicsId: problem.medicationDynamicsId } : {}),
   };
 }
@@ -587,19 +589,22 @@ export function parseTherapeuticAppointmentDraft(draft: TherapeuticAppointmentDr
       problemErrors[problem.id] = "Проверьте выбранные препараты.";
     }
     if (problem.medicationDynamicsId && !dynamicsIds.has(problem.medicationDynamicsId)) problemErrors[problem.id] = "Выбрана неизвестная динамика.";
-    if (problem.priorTherapyId === "problem.therapy.none" && (problem.medicationUseId || problem.medicationIds.length || problem.medicationDynamicsId)) {
+    if (problem.priorTherapyId === "problem.therapy.none"
+      && (problem.medicationUseId || problem.medicationIds.length || problem.medicationName?.trim() || problem.medicationDynamicsId)) {
       problemErrors[problem.id] = "При отсутствии терапии данные о препаратах должны быть очищены.";
     }
-    if (!problem.priorTherapyId && (problem.medicationUseId || problem.medicationIds.length || problem.medicationDynamicsId)) {
+    if (!problem.priorTherapyId
+      && (problem.medicationUseId || problem.medicationIds.length || problem.medicationName?.trim() || problem.medicationDynamicsId)) {
       problemErrors[problem.id] = "Сначала укажите, что терапия до осмотра проводилась.";
     }
-    if (problem.medicationUseId === "problem.medication.none" && (problem.medicationIds.length || problem.medicationDynamicsId)) {
-      problemErrors[problem.id] = "При отсутствии препаратов их виды и динамика не указываются.";
+    if (problem.medicationUseId === "problem.medication.none"
+      && (problem.medicationIds.length || problem.medicationName?.trim() || problem.medicationDynamicsId)) {
+      problemErrors[problem.id] = "При отсутствии препаратов очистите виды, название препарата и динамику.";
     }
     if (problem.medicationUseId === "problem.medication.used" && (!problem.medicationIds.length || !problem.medicationDynamicsId)) {
       problemErrors[problem.id] = "Выберите применявшиеся препараты и динамику.";
     }
-    if (!problem.medicationUseId && (problem.medicationIds.length || problem.medicationDynamicsId)) {
+    if (!problem.medicationUseId && (problem.medicationIds.length || problem.medicationName?.trim() || problem.medicationDynamicsId)) {
       problemErrors[problem.id] = "Сначала укажите, применялись ли препараты.";
     }
   }
@@ -673,7 +678,7 @@ function hasSectionShape(value: unknown): value is TherapeuticAppointmentSection
       && typeof problem.id === "string" && typeof problem.title === "string" && Array.isArray(problem.medicationIds)
       && problem.medicationIds.every((id: unknown) => typeof id === "string")
       && [problem.sourceWhatHappenedId, problem.onsetId, problem.frequencyId, problem.priorTherapyId,
-        problem.medicationUseId, problem.medicationDynamicsId]
+        problem.medicationUseId, problem.medicationName, problem.medicationDynamicsId]
         .every((item) => item === undefined || typeof item === "string"))));
 }
 
@@ -707,6 +712,7 @@ export function therapeuticAppointmentSearchText(value: TherapeuticAppointmentSe
     problem.priorTherapyId ? therapeuticOptionLabel(problem.priorTherapyId) : "",
     problem.medicationUseId ? therapeuticOptionLabel(problem.medicationUseId) : "",
     ...problem.medicationIds.map(therapeuticOptionLabel),
+    problem.medicationName ?? "",
     problem.medicationDynamicsId ? therapeuticOptionLabel(problem.medicationDynamicsId) : "",
   ]);
   const selected = [
