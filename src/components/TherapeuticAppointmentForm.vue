@@ -249,10 +249,10 @@ function panelId(tab: TherapeuticTab) {
     >
       <div class="therapeutic-panel-heading">
         <h4>Анамнез болезни</h4>
-        <div class="row-actions">
+        <div class="row-actions medical-card-actions medical-card-section-rail">
           <button
             type="button"
-            class="outline-action inline owner-profile-action therapeutic-panel-action"
+            class="outline-action inline medical-card-action therapeutic-panel-action"
             :disabled="!canImport"
             title="Импортировать из «Что случилось»"
             aria-label="Импортировать из «Что случилось»"
@@ -260,7 +260,7 @@ function panelId(tab: TherapeuticTab) {
           ><AppIcon name="copy" /></button>
           <button
             type="button"
-            class="outline-action inline owner-profile-action therapeutic-panel-action"
+            class="outline-action inline medical-card-action therapeutic-panel-action"
             title="Добавить проблему"
             aria-label="Добавить проблему"
             @click="addProblem"
@@ -273,7 +273,7 @@ function panelId(tab: TherapeuticTab) {
             <h5>Проблема {{ index + 1 }}</h5>
             <button
               type="button"
-              class="outline-action inline danger-outline owner-profile-action therapeutic-problem-delete"
+              class="outline-action inline danger-outline medical-card-action therapeutic-problem-delete"
               :title="`Удалить проблему ${index + 1}`"
               :aria-label="`Удалить проблему ${index + 1}`"
               @click="removeProblem(problem.id)"

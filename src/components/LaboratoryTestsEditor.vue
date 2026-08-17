@@ -107,15 +107,15 @@ function invalid(message?: string) { return message ? true : undefined; }
 <template>
   <div class="laboratory-study-create">
     <span class="field-label">Тип исследования</span>
-    <div class="laboratory-study-create-control">
+    <div class="laboratory-study-create-control medical-card-action-grid">
       <AppCatalogCombobox v-model:selected-ids="pendingTypeIds" label="Тип исследования" :options="LABORATORY_STUDY_OPTIONS" custom-text="" :allow-custom="false" :invalid="Boolean(errors.section)" />
-      <button type="button" class="outline-action inline owner-profile-action laboratory-study-add" :disabled="!pendingType" title="Добавить исследование" aria-label="Добавить исследование" @click="addStudy"><AppIcon name="plus" /></button>
+      <button type="button" class="outline-action inline medical-card-action laboratory-study-add" :disabled="!pendingType" title="Добавить исследование" aria-label="Добавить исследование" @click="addStudy"><AppIcon name="plus" /></button>
     </div>
     <small v-if="errors.section" class="field-error" role="alert">{{ errors.section }}</small>
   </div>
   <div class="laboratory-study-list">
     <section v-for="(study, index) in model.studies" :key="study.id" class="laboratory-study-card">
-      <div class="doctor-heading laboratory-study-heading"><h4 :title="study.typeName">{{ study.typeName }}</h4><button type="button" class="outline-action inline danger-outline owner-profile-action laboratory-study-delete" title="Удалить исследование" aria-label="Удалить исследование" @click="removeStudy(index)"><AppIcon name="trash" /></button></div>
+      <div class="doctor-heading laboratory-study-heading"><h4 :title="study.typeName">{{ study.typeName }}</h4><button type="button" class="outline-action inline danger-outline medical-card-action laboratory-study-delete" title="Удалить исследование" aria-label="Удалить исследование" @click="removeStudy(index)"><AppIcon name="trash" /></button></div>
       <small v-if="errors.studies[index]?.section" class="field-error" role="alert">{{ errors.studies[index]?.section }}</small>
       <div class="laboratory-metadata">
         <label><span>Дата исследования</span><input v-model="study.date" type="date" :max="new Date().toISOString().slice(0, 10)" required :aria-invalid="invalid(errors.studies[index]?.date)" /><small v-if="errors.studies[index]?.date" class="field-error" role="alert">{{ errors.studies[index]?.date }}</small></label>
@@ -126,7 +126,7 @@ function invalid(message?: string) { return message ? true : undefined; }
       <template v-if="study.mode === 'panel' && study.typeId">
         <div class="laboratory-indicator-create">
           <span class="field-label">Показатель</span>
-          <div class="laboratory-indicator-create-control">
+          <div class="laboratory-indicator-create-control medical-card-action-grid">
             <AppCatalogCombobox
               :selected-ids="selectedIndicatorIds(study.id)"
               label="Добавить показатель"
@@ -140,7 +140,7 @@ function invalid(message?: string) { return message ? true : undefined; }
             />
             <button
               type="button"
-              class="outline-action inline owner-profile-action laboratory-indicator-add"
+              class="outline-action inline medical-card-action laboratory-indicator-add"
               :disabled="!pendingIndicator(study)"
               title="Добавить показатель"
               aria-label="Добавить показатель"
@@ -156,7 +156,7 @@ function invalid(message?: string) { return message ? true : undefined; }
             <div v-if="study.results.length > 1" class="laboratory-result-headings laboratory-result-headings-secondary" aria-hidden="true">
               <span>Показатель</span><span>Результат</span><span>Референсные значения</span>
             </div>
-            <div v-for="result in study.results" :key="result.indicatorId" class="laboratory-result-row">
+            <div v-for="result in study.results" :key="result.indicatorId" class="laboratory-result-row medical-card-action-grid">
               <div class="laboratory-result-indicator">
                 <span>{{ result.indicatorName }}</span>
                 <span class="laboratory-result-unit">{{ result.unit || '—' }}</span>
@@ -167,7 +167,7 @@ function invalid(message?: string) { return message ? true : undefined; }
                 <small v-if="errors.studies[index]?.indicators?.[result.indicatorId]" class="field-error" role="alert">{{ errors.studies[index]?.indicators?.[result.indicatorId] }}</small>
               </label>
               <label><span class="laboratory-result-label">Референсные значения</span><input v-model="result.reference" /></label>
-              <button type="button" class="outline-action inline danger-outline owner-profile-action laboratory-result-delete" title="Удалить показатель" :aria-label="`Удалить показатель «${result.indicatorName}»`" @click="removeIndicator(study, result.indicatorId)"><AppIcon name="trash" /></button>
+              <button type="button" class="outline-action inline danger-outline medical-card-action laboratory-result-delete" title="Удалить показатель" :aria-label="`Удалить показатель «${result.indicatorName}»`" @click="removeIndicator(study, result.indicatorId)"><AppIcon name="trash" /></button>
             </div>
           </div>
         </div>

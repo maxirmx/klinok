@@ -1250,7 +1250,9 @@ describe("Doctor pages", () => {
     const complications = card.get<HTMLSelectElement>(".vaccination-complications select");
     expect(complications.element.value).toBe("");
     expect(complications.findAll("option").map((option) => option.text())).toEqual(["Не указано", "Были", "Не было"]);
-    const revaccinationDate = field("Дата следующей ревакцинации").get<HTMLInputElement>("input");
+    const revaccinationDate = card.get<HTMLInputElement>(".vaccination-revaccination-field > input");
+    expect(card.get(".vaccination-revaccination-field > label").attributes("for"))
+      .toBe(revaccinationDate.attributes("id"));
     const revaccinationToggle = card.get(".vaccination-revaccination-toggle");
     expect(revaccinationToggle.attributes("title")).toBe("Рассчитать дату следующей ревакцинации");
     expect(revaccinationToggle.attributes("aria-label")).toBe("Рассчитать дату следующей ревакцинации");
@@ -1414,6 +1416,8 @@ describe("Doctor pages", () => {
 
     const remove = wrapper.get(".encounter-section-delete");
     expect(remove.text()).toBe("");
+    expect(remove.classes()).toContain("medical-card-action");
+    expect(remove.classes()).toContain("medical-card-section-rail");
     expect(remove.attributes("title")).toBe("Удалить раздел");
     expect(remove.attributes("aria-label")).toBe("Удалить раздел");
     expect(remove.getComponent(AppIcon).props("name")).toBe("trash");
@@ -1479,6 +1483,14 @@ describe("Doctor pages", () => {
     const inlineEditor = record.get(".encounter-editor-inline");
     expect(record.attributes()).toHaveProperty("open");
     expect(inlineEditor.get("h2").text()).toBe("Редактирование записи");
+    const editorActions = inlineEditor.findAll(".encounter-editor-heading button");
+    expect(editorActions.map((button) => button.attributes("title"))).toEqual([
+      "Отменить редактирование",
+      "Сохранить запись",
+    ]);
+    expect(editorActions.every((button) => button.classes().includes("medical-card-action"))).toBe(true);
+    expect(inlineEditor.get(".encounter-editor-heading .medical-card-actions").classes())
+      .toContain("medical-card-section-rail");
     expect(inlineEditor.get<HTMLInputElement>('.encounter-date-field input').element.value).toBe("2026-07-21");
     expect(wrapper.find(".doctor-pet-detail > .encounter-editor").exists()).toBe(false);
 

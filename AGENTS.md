@@ -26,6 +26,12 @@
 
 ## Medical cards
 
+- Keep one trailing action rail across the entire medical editor: the sticky editor actions, section actions, nested-card actions, and repeated-row actions must share the same inline-end edge. Multiple actions grow inward from that edge; nested surfaces must not introduce a competing local rail.
+- Render medical-editor icon actions at `34px` square with `18px` icons and `8px` gaps. Align them to the top of their heading, control, or table-like row; do not vertically center them against wrapping or mixed-height content.
+- Keep field affordances such as catalog dropdown toggles and the revaccination menu toggle attached to their inputs. Place semantic actions such as save, add, import, promote, and delete on the action rail.
+- Order medical-editor action groups consistently: cancel before save, import before add, and promote before delete, with the primary or destructive action at the inline end.
+- Keep action-bearing collections in one full-width column so every row uses the shared action rail. Do not create parallel local rails by rendering actionable laboratory results or differential diagnoses in multiple columns.
+- Preserve the action rail on narrow screens: content may stack or wrap, but action size, order, top alignment, spacing, and inline-end position must remain stable.
 - Render every checkbox or radio group as a bordered panel with rounded corners. Use a semantic `fieldset` and `legend`; when the visual group label is separate, keep the `legend` available to assistive technology.
 - Render terminal checkbox and radio options with the shared `medical-card-options` responsive grid. Use the same option-column sizing and gaps for every group so checkboxes align across panels. Options must flow into as many columns as fit and collapse naturally on narrow screens; do not force these groups into a single column.
 - On wide screens, place a checkbox or radio group's visible label in the shared label column and its options in the shared content column, aligned with neighboring fields. On narrow screens, stack the label above the options. Do not render selected-option counters.
