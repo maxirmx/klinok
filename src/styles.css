@@ -3068,12 +3068,114 @@ dd {
 .laboratory-results th, .laboratory-results td { padding: .5rem; border-bottom: 1px solid var(--border-color, #d7dde5); text-align: left; vertical-align: top; }
 .laboratory-comparison.panel {
   display: grid;
+  container-type: inline-size;
   gap: 12px;
   margin: 0;
   border: 2px solid var(--line);
   border-radius: 12px;
 }
 .laboratory-comparison > h2 { margin: 0; }
+.laboratory-comparison-desktop { display: grid; gap: 12px; min-width: 0; }
+.laboratory-comparison-mobile { display: none; }
+@container (max-width: 48rem) {
+  .laboratory-comparison-desktop { display: none; }
+  .laboratory-comparison-mobile {
+    display: grid;
+    min-width: 0;
+    gap: 12px;
+  }
+  .laboratory-mobile-indicator {
+    display: grid;
+    min-width: 0;
+    gap: 10px;
+    padding: 10px;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    background: #fbfcfd;
+  }
+  .laboratory-mobile-indicator > h3 {
+    min-width: 0;
+    margin: 0;
+    overflow-wrap: anywhere;
+    font-size: 1rem;
+  }
+  .laboratory-mobile-entries {
+    display: grid;
+    min-width: 0;
+    gap: 8px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .laboratory-mobile-entry {
+    display: grid;
+    min-width: 0;
+    gap: 5px;
+    padding: 10px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: var(--surface);
+  }
+  .laboratory-mobile-entry > header {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    min-width: 0;
+    align-items: flex-start;
+    gap: 8px;
+  }
+  .laboratory-mobile-entry time { font-weight: 700; font-variant-numeric: tabular-nums; }
+  .laboratory-mobile-study {
+    min-width: 0;
+    margin: 0;
+    overflow-wrap: anywhere;
+    text-align: right;
+  }
+  .laboratory-mobile-measurement {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    min-width: 0;
+    align-items: start;
+    gap: 8px;
+  }
+  .laboratory-mobile-result {
+    display: grid;
+    min-width: 0;
+    justify-items: start;
+    gap: 5px;
+  }
+  .laboratory-mobile-value,
+  .laboratory-mobile-reference,
+  .laboratory-mobile-metadata,
+  .laboratory-mobile-metadata dd { min-width: 0; overflow-wrap: anywhere; }
+  .laboratory-mobile-value { font-size: 1.1rem; }
+  .laboratory-mobile-reference { color: var(--text-muted); }
+  .laboratory-mobile-metadata { justify-self: stretch; text-align: right; }
+  .laboratory-mobile-metadata > summary {
+    width: fit-content;
+    margin-inline-start: auto;
+    color: var(--accent-strong);
+    cursor: pointer;
+    font-weight: 600;
+  }
+  .laboratory-mobile-metadata > dl {
+    display: grid;
+    min-width: 0;
+    gap: 6px;
+    margin: 8px 0 0;
+  }
+  .laboratory-mobile-metadata dl > div { display: grid; min-width: 0; gap: 2px; }
+  .laboratory-mobile-metadata dt { color: var(--text-muted); font-size: 10px; font-weight: 600; }
+  .laboratory-mobile-metadata dd { margin: 0; }
+  .laboratory-comparison-mobile .app-paginator {
+    grid-template-columns: minmax(0, 1fr);
+    justify-items: center;
+  }
+  .laboratory-comparison-mobile .app-paginator > label { justify-self: center; }
+  .laboratory-comparison-mobile .app-paginator-buttons {
+    max-width: 100%;
+    flex-wrap: wrap;
+  }
+}
 .laboratory-panel-results {
   container-type: inline-size;
   width: 100%;
