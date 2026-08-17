@@ -46,12 +46,13 @@ function destructive(action: () => void, hasData: boolean, title: string, descri
   if (!hasData) action();
   else pending.value = { action, title, description };
 }
-function removeStudy(index: number) {
-  const study = model.value.studies[index]!;
+function removeStudy(studyId: string) {
+  const study = model.value.studies.find((candidate) => candidate.id === studyId);
+  if (!study) return;
   destructive(() => {
-    model.value = { studies: model.value.studies.filter((_, candidate) => candidate !== index) };
+    model.value = { studies: model.value.studies.filter((candidate) => candidate.id !== studyId) };
     const remaining = { ...pendingIndicatorIds.value };
-    delete remaining[study.id];
+    delete remaining[studyId];
     pendingIndicatorIds.value = remaining;
   }, populated(study), "Удалить заполненные данные?", "После подтверждения будут удалены данные выбранного исследования.");
 }
@@ -91,14 +92,19 @@ function addIndicator(study: LaboratoryStudyValue) {
   });
   selectIndicator(study.id, []);
 }
-function removeIndicator(study: LaboratoryStudyValue, indicatorId: string) {
-  if (study.mode !== "panel") return;
+function removeIndicator(studyId: string, indicatorId: string) {
+  const study = model.value.studies.find((candidate) => candidate.id === studyId);
+  if (study?.mode !== "panel") return;
   const result = study.results.find((candidate) => candidate.indicatorId === indicatorId);
   if (!result) return;
-  destructive(() => updateStudy({
-    ...study,
-    results: study.results.filter((candidate) => candidate.indicatorId !== indicatorId),
-  }), Boolean(result.result.trim() || result.reference?.trim()), "Удалить заполненный показатель?", `Результат и референсные значения показателя «${result.indicatorName}» будут удалены.`);
+  destructive(() => {
+    const current = model.value.studies.find((candidate) => candidate.id === studyId);
+    if (current?.mode !== "panel") return;
+    updateStudy({
+      ...current,
+      results: current.results.filter((candidate) => candidate.indicatorId !== indicatorId),
+    });
+  }, Boolean(result.result.trim() || result.reference?.trim()), "Удалить заполненный показатель?", `Результат и референсные значения показателя «${result.indicatorName}» будут удалены.`);
 }
 function confirm() { const action = pending.value?.action; pending.value = null; action?.(); }
 function invalid(message?: string) { return message ? true : undefined; }
@@ -115,7 +121,7 @@ function invalid(message?: string) { return message ? true : undefined; }
   </div>
   <div class="laboratory-study-list">
     <section v-for="(study, index) in model.studies" :key="study.id" class="laboratory-study-card">
-      <div class="doctor-heading laboratory-study-heading"><h4 :title="study.typeName">{{ study.typeName }}</h4><button type="button" class="outline-action inline danger-outline medical-card-action laboratory-study-delete" title="Удалить исследование" aria-label="Удалить исследование" @click="removeStudy(index)"><AppIcon name="trash" /></button></div>
+      <div class="doctor-heading laboratory-study-heading"><h4 :title="study.typeName">{{ study.typeName }}</h4><button type="button" class="outline-action inline danger-outline medical-card-action laboratory-study-delete" title="Удалить исследование" aria-label="Удалить исследование" @click="removeStudy(study.id)"><AppIcon name="trash" /></button></div>
       <small v-if="errors.studies[index]?.section" class="field-error" role="alert">{{ errors.studies[index]?.section }}</small>
       <div class="laboratory-metadata">
         <label><span>Дата исследования</span><input v-model="study.date" type="date" :max="new Date().toISOString().slice(0, 10)" required :aria-invalid="invalid(errors.studies[index]?.date)" /><small v-if="errors.studies[index]?.date" class="field-error" role="alert">{{ errors.studies[index]?.date }}</small></label>
@@ -167,7 +173,7 @@ function invalid(message?: string) { return message ? true : undefined; }
                 <small v-if="errors.studies[index]?.indicators?.[result.indicatorId]" class="field-error" role="alert">{{ errors.studies[index]?.indicators?.[result.indicatorId] }}</small>
               </label>
               <label><span class="laboratory-result-label">Референсные значения</span><input v-model="result.reference" /></label>
-              <button type="button" class="outline-action inline danger-outline medical-card-action laboratory-result-delete" title="Удалить показатель" :aria-label="`Удалить показатель «${result.indicatorName}»`" @click="removeIndicator(study, result.indicatorId)"><AppIcon name="trash" /></button>
+              <button type="button" class="outline-action inline danger-outline medical-card-action laboratory-result-delete" title="Удалить показатель" :aria-label="`Удалить показатель «${result.indicatorName}»`" @click="removeIndicator(study.id, result.indicatorId)"><AppIcon name="trash" /></button>
             </div>
           </div>
         </div>

@@ -7,6 +7,7 @@ import { describe, expect, it } from "vitest";
 import {
   LABORATORY_STUDY_CATALOG,
   laboratoryStudyTypeById,
+  type LaboratoryStudyValue,
   type LaboratoryTestsSectionValue,
 } from "@klinok/contracts";
 import AppCatalogCombobox from "../src/components/AppCatalogCombobox.vue";
@@ -49,6 +50,108 @@ describe("LaboratoryTestsEditor", () => {
 
     expect(current.studies).toHaveLength(0);
     expect(wrapper.find('[role="alertdialog"]').exists()).toBe(false);
+  });
+
+  it("removes the queued study by id when the list changes before confirmation", async () => {
+    const type = laboratoryStudyTypeById("lab.study.cbc")!;
+    const study = (id: string, laboratory: string): LaboratoryStudyValue => ({
+      id,
+      date: "2026-08-15",
+      typeId: type.id,
+      typeName: type.name,
+      mode: "panel",
+      laboratory,
+      results: [],
+    });
+    const target = study("target-study", "Заполненная лаборатория");
+    const sibling = study("sibling-study", "");
+    let current: LaboratoryTestsSectionValue = { studies: [target, sibling] };
+    const wrapper = mount(LaboratoryTestsEditor, {
+      props: {
+        modelValue: current,
+        encounterDate: "2026-08-15",
+        "onUpdate:modelValue": (value: LaboratoryTestsSectionValue) => {
+          current = value;
+          void wrapper.setProps({ modelValue: value });
+        },
+      },
+    });
+
+    await wrapper.findAll('button[title="Удалить исследование"]')[0]!.trigger("click");
+    await flushPromises();
+    expect(wrapper.find('[role="alertdialog"]').exists()).toBe(true);
+
+    const inserted = study("inserted-study", "");
+    current = { studies: [inserted, ...current.studies] };
+    await wrapper.setProps({ modelValue: current });
+    await wrapper.get('[role="alertdialog"] .danger').trigger("click");
+    await flushPromises();
+
+    expect(current.studies.map((candidate) => candidate.id)).toEqual([inserted.id, sibling.id]);
+  });
+
+  it("removes an indicator from the latest study state after confirmation", async () => {
+    const type = laboratoryStudyTypeById("lab.study.cbc")!;
+    const [targetIndicator, retainedIndicator, addedIndicator] = type.indicators;
+    if (!targetIndicator || !retainedIndicator || !addedIndicator) throw new Error("CBC indicators are incomplete.");
+    const targetResult = {
+      indicatorId: targetIndicator.id,
+      indicatorName: targetIndicator.name,
+      unit: targetIndicator.unit,
+      result: "7.2",
+    };
+    const retainedResult = {
+      indicatorId: retainedIndicator.id,
+      indicatorName: retainedIndicator.name,
+      unit: retainedIndicator.unit,
+      result: "",
+    };
+    const initialStudy: LaboratoryStudyValue = {
+      id: "panel-study",
+      date: "2026-08-15",
+      typeId: type.id,
+      typeName: type.name,
+      mode: "panel",
+      laboratory: "Исходная лаборатория",
+      results: [targetResult, retainedResult],
+    };
+    let current: LaboratoryTestsSectionValue = { studies: [initialStudy] };
+    const wrapper = mount(LaboratoryTestsEditor, {
+      props: {
+        modelValue: current,
+        encounterDate: "2026-08-15",
+        "onUpdate:modelValue": (value: LaboratoryTestsSectionValue) => {
+          current = value;
+          void wrapper.setProps({ modelValue: value });
+        },
+      },
+    });
+
+    await wrapper.get(`button[aria-label="Удалить показатель «${targetIndicator.name}»"]`).trigger("click");
+    await flushPromises();
+    expect(wrapper.find('[role="alertdialog"]').exists()).toBe(true);
+
+    const addedResult = {
+      indicatorId: addedIndicator.id,
+      indicatorName: addedIndicator.name,
+      unit: addedIndicator.unit,
+      result: "новое значение",
+    };
+    current = { studies: [{
+      ...initialStudy,
+      laboratory: "Обновлённая лаборатория",
+      results: [{ ...retainedResult, result: "актуальное значение" }, addedResult],
+    }] };
+    await wrapper.setProps({ modelValue: current });
+    await wrapper.get('[role="alertdialog"] .danger').trigger("click");
+    await flushPromises();
+
+    const updated = current.studies[0];
+    expect(updated?.laboratory).toBe("Обновлённая лаборатория");
+    expect(updated?.mode === "panel" ? updated.results : []).toEqual([
+      { ...retainedResult, result: "актуальное значение" },
+      addedResult,
+    ]);
   });
 
   it("requires a fixed type before adding and removes every study mode", async () => {
