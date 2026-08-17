@@ -2,7 +2,7 @@
 // All rights reserved.
 // This file is a part of Klinok application
 
-import { expect, test, type APIRequestContext, type BrowserContext, type Page } from "@playwright/test";
+import { expect, test, type APIRequestContext, type BrowserContext, type Locator, type Page } from "@playwright/test";
 import { Buffer } from "node:buffer";
 import { execFile as execFileCallback } from "node:child_process";
 import { promisify } from "node:util";
@@ -11,6 +11,35 @@ const password = "correct horse battery";
 const replicationTimeout = 30_000;
 const execFile = promisify(execFileCallback);
 const mailpitUrl = process.env.KLINOK_E2E_MAILPIT_URL ?? "http://localhost:8025";
+
+async function expectMedicalActionRail(actions: Locator[]): Promise<void> {
+  const measurements = await Promise.all(actions.map(async (action) => {
+    const box = await action.boundingBox();
+    expect(box).not.toBeNull();
+    return { box: box!, name: await action.getAttribute("aria-label") };
+  }));
+  const boxes = measurements.map(({ box }) => box);
+  expect(boxes.every((box) => Math.abs(box.width - 34) <= 0.5 && Math.abs(box.height - 34) <= 0.5)).toBe(true);
+  const rightEdges = boxes.map((box) => box.x + box.width);
+  expect(
+    Math.max(...rightEdges) - Math.min(...rightEdges),
+    JSON.stringify(measurements.map(({ box, name }) => ({ name, right: box.x + box.width }))),
+  ).toBeLessThanOrEqual(1);
+}
+
+async function expectHorizontalGap(left: Locator, right: Locator, gap = 8): Promise<void> {
+  const [leftBox, rightBox] = await Promise.all([left.boundingBox(), right.boundingBox()]);
+  expect(leftBox).not.toBeNull();
+  expect(rightBox).not.toBeNull();
+  expect(Math.abs(rightBox!.x - leftBox!.x - leftBox!.width - gap)).toBeLessThanOrEqual(1);
+}
+
+async function expectTopAligned(action: Locator, peer: Locator): Promise<void> {
+  const [actionBox, peerBox] = await Promise.all([action.boundingBox(), peer.boundingBox()]);
+  expect(actionBox).not.toBeNull();
+  expect(peerBox).not.toBeNull();
+  expect(Math.abs(actionBox!.y - peerBox!.y)).toBeLessThanOrEqual(1);
+}
 
 async function verificationLink(request: APIRequestContext, email: string): Promise<string> {
   for (let attempt = 0; attempt < 60; attempt += 1) {
@@ -308,18 +337,16 @@ test("fresh provisioning, Doctor approval, grant, draft, and confirmation", asyn
   const preliminaryDiagnosis = diagnosisFields.filter({ has: doctorPage.getByText("Предварительный диагноз", { exact: true }) });
   const differentialDiagnosis = diagnosisFields.filter({ has: doctorPage.getByText("Дифференциальные диагнозы", { exact: true }) });
   const confirmedDiagnosis = diagnosisFields.filter({ has: doctorPage.getByText("Подтверждённый диагноз", { exact: true }) });
+  const differentialInput = differentialDiagnosis.getByRole("combobox", { name: "Добавить дифференциальный диагноз" });
+  const differentialAdd = differentialDiagnosis.locator(".app-catalog-add");
+  const differentialToggle = differentialDiagnosis.locator(".app-catalog-toggle");
+  const confirmedInput = confirmedDiagnosis.getByRole("combobox", { name: "Подтверждённый диагноз" });
+  const confirmedToggle = confirmedDiagnosis.locator(".app-catalog-toggle");
   const diagnosisRightActions = [
     diagnosisCard.getByRole("button", { name: "Удалить раздел" }),
     preliminaryDiagnosis.getByRole("button", { name: "Назначить предварительный диагноз подтверждённым" }),
-    differentialDiagnosis.getByRole("button", { name: "Показать варианты диагнозов" }),
-    confirmedDiagnosis.getByRole("button", { name: "Показать варианты диагнозов" }),
   ];
-  const diagnosisActionCenters = await Promise.all(diagnosisRightActions.map(async (action) => {
-    const box = await action.boundingBox();
-    expect(box).not.toBeNull();
-    return box!.x + box!.width / 2;
-  }));
-  expect(Math.max(...diagnosisActionCenters) - Math.min(...diagnosisActionCenters)).toBeLessThanOrEqual(1);
+  await expectMedicalActionRail(diagnosisRightActions);
   await preliminaryDiagnosis.getByRole("combobox", { name: "Предварительный диагноз" }).fill("Подозрение на анафилаксию");
   await preliminaryDiagnosis.getByRole("button", { name: "Назначить предварительный диагноз подтверждённым" }).click();
   await differentialDiagnosis.getByRole("button", { name: "Показать варианты диагнозов" }).click();
@@ -341,16 +368,83 @@ test("fresh provisioning, Doctor approval, grant, draft, and confirmation", asyn
     }));
   expect(differentialRemoveOffsets).toHaveLength(3);
   expect(Math.max(...differentialRemoveOffsets)).toBeLessThanOrEqual(1);
-  await doctorPage.setViewportSize({ width: 752, height: 1200 });
-  const narrowDiagnosisRightActionCenters = await Promise.all([
+
+  await doctorPage.locator(".encounter-add-section select").selectOption("vaccination");
+  const vaccinationCard = doctorPage.locator(".encounter-section-card").filter({
+    has: doctorPage.getByRole("heading", { name: "Вакцинация/чипирование", exact: true }),
+  });
+  await vaccinationCard.getByLabel("Номер чипа", { exact: true }).fill("643094100000003");
+  const revaccinationField = vaccinationCard.locator(".vaccination-revaccination-field");
+  const revaccinationInput = revaccinationField.getByLabel("Дата следующей ревакцинации", { exact: true });
+  const revaccinationToggle = revaccinationField.getByRole("button", { name: "Рассчитать дату следующей ревакцинации" });
+  await expectHorizontalGap(revaccinationInput, revaccinationToggle);
+  await expectTopAligned(revaccinationToggle, revaccinationInput);
+
+  await doctorPage.locator(".encounter-add-section select").selectOption("laboratory-tests");
+  const laboratoryCard = doctorPage.locator(".encounter-section-card").filter({
+    has: doctorPage.getByRole("heading", { name: "Лабораторные исследования", exact: true }),
+  });
+  const studyType = laboratoryCard.getByRole("combobox", { name: "Тип исследования" });
+  await studyType.fill("Общеклинический анализ крови");
+  await laboratoryCard.getByRole("option", { name: "Общеклинический анализ крови", exact: true }).click();
+  const addStudy = laboratoryCard.getByRole("button", { name: "Добавить исследование" });
+  await addStudy.click();
+  await laboratoryCard.getByLabel("Лаборатория", { exact: true }).fill("Ветлаб");
+  const indicator = laboratoryCard.getByRole("combobox", { name: "Добавить показатель" });
+  const indicatorToggle = laboratoryCard.locator(".laboratory-indicator-create .app-catalog-toggle");
+  await indicatorToggle.click();
+  await laboratoryCard.getByRole("option", { name: /Лейкоциты \(WBC\)/ }).click();
+  const addIndicator = laboratoryCard.getByRole("button", { name: "Добавить показатель" });
+  await addIndicator.click();
+  const resultInput = laboratoryCard.getByLabel("Лейкоциты (WBC), результат", { exact: true });
+  await resultInput.fill("7.2");
+  const deleteStudy = laboratoryCard.getByRole("button", { name: "Удалить исследование" });
+  const deleteResult = laboratoryCard.getByRole("button", { name: /Удалить показатель «Лейкоциты/ });
+  const typeToggle = laboratoryCard.locator(".laboratory-study-create .app-catalog-toggle");
+  await expectHorizontalGap(studyType, typeToggle);
+  await expectHorizontalGap(indicator, indicatorToggle);
+  await expectTopAligned(addStudy, studyType);
+  await expectTopAligned(addIndicator, indicator);
+  await expectTopAligned(deleteResult, resultInput);
+
+  await therapeuticCard.getByRole("tab", { name: "Анамнез болезни" }).click();
+  const therapeuticImport = therapeuticCard.getByRole("button", { name: "Импортировать из «Что случилось»" });
+  const therapeuticAdd = therapeuticCard.getByRole("button", { name: "Добавить проблему" });
+  const therapeuticDelete = therapeuticCard.getByRole("button", { name: "Удалить проблему 1" });
+  await expectHorizontalGap(therapeuticImport, therapeuticAdd);
+  await expectTopAligned(therapeuticAdd, therapeuticCard.locator(".therapeutic-panel-heading h4"));
+  await expectTopAligned(therapeuticDelete, therapeuticCard.locator(".therapeutic-problem-heading h5"));
+
+  const differentialPromote = differentialDiagnosis.getByRole("button", { name: "Назначить «Отёк Квинке» подтверждённым диагнозом" });
+  const differentialRemove = differentialDiagnosis.getByRole("button", { name: "Удалить «Отёк Квинке» из дифференциальных диагнозов" });
+  await expectHorizontalGap(differentialPromote, differentialRemove);
+  const differentialRemoves = await differentialDiagnosis.locator(".diagnosis-selected-chip > button:last-child").all();
+  const editorSave = doctorPage.getByRole("button", { name: "Сохранить запись" });
+  const medicalRailActions = [
+    editorSave,
     ...diagnosisRightActions,
-    ...await differentialDiagnosis.locator(".diagnosis-selected-chip > button:last-child").all(),
-  ].map(async (action) => {
-    const box = await action.boundingBox();
-    expect(box).not.toBeNull();
-    return box!.x + box!.width / 2;
-  }));
-  expect(Math.max(...narrowDiagnosisRightActionCenters) - Math.min(...narrowDiagnosisRightActionCenters)).toBeLessThanOrEqual(1);
+    ...differentialRemoves,
+    vaccinationCard.getByRole("button", { name: "Удалить раздел" }),
+    laboratoryCard.getByRole("button", { name: "Удалить раздел" }),
+    addStudy,
+    deleteStudy,
+    addIndicator,
+    deleteResult,
+    therapeuticCard.getByRole("button", { name: "Удалить раздел" }),
+    therapeuticAdd,
+    therapeuticDelete,
+  ];
+  await expectMedicalActionRail(medicalRailActions);
+  const allMedicalActionSizes = await doctorPage.locator(".encounter-editor .medical-card-action")
+    .evaluateAll((actions) => actions.map((action) => {
+      const box = action.getBoundingClientRect();
+      return [box.width, box.height];
+    }));
+  expect(allMedicalActionSizes.every(([width, height]) => Math.abs(width! - 34) <= 0.5 && Math.abs(height! - 34) <= 0.5))
+    .toBe(true);
+
+  await doctorPage.setViewportSize({ width: 752, height: 1200 });
+  await expectMedicalActionRail(medicalRailActions);
   await differentialDiagnosis.getByRole("button", { name: "Назначить «Отёк Квинке» подтверждённым диагнозом" }).click();
   await doctorPage.getByRole("alertdialog", { name: "Заменить подтверждённый диагноз?" })
     .getByRole("button", { name: "Заменить", exact: true }).click();
@@ -367,6 +461,17 @@ test("fresh provisioning, Doctor approval, grant, draft, and confirmation", asyn
   await doctorPage.setViewportSize({ width: 390, height: 844 });
   await expect(therapeuticTabs).toHaveCount(5);
   expect(await therapeuticCard.evaluate((card) => card.scrollWidth <= card.clientWidth + 1)).toBe(true);
+  expect(await diagnosisCard.evaluate((card) => card.scrollWidth <= card.clientWidth + 1)).toBe(true);
+  expect(await vaccinationCard.evaluate((card) => card.scrollWidth <= card.clientWidth + 1)).toBe(true);
+  expect(await laboratoryCard.evaluate((card) => card.scrollWidth <= card.clientWidth + 1)).toBe(true);
+  await expectMedicalActionRail(medicalRailActions);
+  await expectHorizontalGap(differentialInput, differentialAdd);
+  await expectHorizontalGap(differentialAdd, differentialToggle);
+  await expectHorizontalGap(confirmedInput, confirmedToggle);
+  await expectHorizontalGap(studyType, typeToggle);
+  await expectHorizontalGap(indicator, indicatorToggle);
+  await expectHorizontalGap(revaccinationInput, revaccinationToggle);
+  await expectTopAligned(deleteResult, laboratoryCard.locator(".laboratory-result-mobile-name"));
   const narrowTabRows = await therapeuticTabs.evaluateAll((tabs) => tabs.reduce<number[]>((rows, tab) => {
     const top = Math.round(tab.getBoundingClientRect().top);
     if (!rows.some((candidate) => Math.abs(candidate - top) <= 2)) rows.push(top);
@@ -374,6 +479,7 @@ test("fresh provisioning, Doctor approval, grant, draft, and confirmation", asyn
   }, []));
   expect(narrowTabRows).toHaveLength(3);
   await doctorPage.setViewportSize({ width: 1280, height: 720 });
+  await expectMedicalActionRail(medicalRailActions);
   const wideTabRows = await therapeuticTabs.evaluateAll((tabs) => tabs.reduce<number[]>((rows, tab) => {
     const top = Math.round(tab.getBoundingClientRect().top);
     if (!rows.some((candidate) => Math.abs(candidate - top) <= 2)) rows.push(top);
@@ -382,7 +488,27 @@ test("fresh provisioning, Doctor approval, grant, draft, and confirmation", asyn
   expect(wideTabRows).toHaveLength(1);
   await doctorPage.context().setOffline(true);
   await doctorPage.getByRole("button", { name: "Сохранить запись" }).click();
-  await expect(doctorPage.locator(".medical-record-entry-details").filter({ hasText: "Всё хорошо" })).toBeVisible();
+  const doctorRecord = doctorPage.locator(".medical-record-entry-details").filter({ hasText: "Всё хорошо" });
+  await expect(doctorRecord).toBeVisible();
+  await doctorRecord.locator("summary").click();
+  await doctorRecord.getByRole("button", { name: "Редактировать запись" }).click();
+  const inlineEditor = doctorRecord.locator(".encounter-editor-inline");
+  const inlineEditorHeading = inlineEditor.locator(".encounter-editor-heading");
+  const editCancel = inlineEditorHeading.getByRole("button", { name: "Отменить редактирование" });
+  const editSave = inlineEditorHeading.getByRole("button", { name: "Сохранить запись" });
+  for (const viewport of [
+    { width: 1280, height: 720 },
+    { width: 752, height: 1200 },
+    { width: 390, height: 844 },
+  ]) {
+    await doctorPage.setViewportSize(viewport);
+    await expectMedicalActionRail([editSave]);
+    await expectHorizontalGap(editCancel, editSave);
+    await expectTopAligned(editSave, inlineEditorHeading.getByRole("heading"));
+  }
+  await doctorPage.setViewportSize({ width: 1280, height: 720 });
+  await editCancel.click();
+  await expect(inlineEditor).toHaveCount(0);
   await doctorPage.context().setOffline(false);
 
   await ownerPage.bringToFront();

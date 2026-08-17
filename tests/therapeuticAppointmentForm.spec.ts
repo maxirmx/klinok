@@ -64,6 +64,13 @@ describe("TherapeuticAppointmentForm", () => {
       ids: ["problem.digestive.1", "problem.digestive.7"],
       comment: "Со слов владельца",
     });
+    const actions = wrapper.get(".therapeutic-panel-heading .medical-card-actions");
+    expect(actions.classes()).toContain("medical-card-section-rail");
+    expect(actions.findAll("button").map((button) => button.attributes("aria-label"))).toEqual([
+      "Импортировать из «Что случилось»",
+      "Добавить проблему",
+    ]);
+    expect(actions.findAll("button").every((button) => button.classes().includes("medical-card-action"))).toBe(true);
     const importButton = wrapper.get('button[aria-label="Импортировать из «Что случилось»"]');
     await importButton.trigger("click");
     expect(draft.diseaseAnamnesis.problems.map((problem) => problem.title)).toEqual(["Не ест", "Рвота"]);
@@ -201,6 +208,7 @@ describe("TherapeuticAppointmentForm", () => {
     const { wrapper, draft } = mountForm();
     await wrapper.get('button[aria-label="Добавить проблему"]').trigger("click");
     const problem = wrapper.get(".therapeutic-problem-card");
+    expect(problem.get('button[aria-label="Удалить проблему 1"]').classes()).toContain("medical-card-action");
     expect(draft.diseaseAnamnesis.problems).toHaveLength(1);
     const selects = problem.findAll("select");
     await selects[2]!.setValue("problem.therapy.performed");

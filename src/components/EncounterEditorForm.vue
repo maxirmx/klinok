@@ -3,7 +3,7 @@
 // All rights reserved.
 // This file is a part of Klinok application
 
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, useId, watch } from "vue";
 import AppIcon from "./AppIcon.vue";
 import DiagnosisEditor from "./DiagnosisEditor.vue";
 import TherapeuticAppointmentForm from "./TherapeuticAppointmentForm.vue";
@@ -78,6 +78,7 @@ const diagnosisErrors = ref<DiagnosisDraftErrors>({});
 const laboratoryErrors = ref<LaboratoryTestsDraftErrors>({ studies: [] });
 const revaccinationInterval = ref<RevaccinationInterval | "">("");
 const revaccinationChooserOpen = ref(false);
+const revaccinationDateId = useId();
 const revaccinationMenuRoot = ref<HTMLElement | null>(null);
 const optionalAvailable = computed(() => OPTIONAL_ENCOUNTER_SECTION_KINDS.filter((kind) => !optionalKinds.value.includes(kind)));
 const revaccinationIntervalOptions = computed(() => REVACCINATION_INTERVAL_OPTIONS
@@ -245,9 +246,9 @@ function submit() {
   <form ref="form" class="form-stack" @submit.prevent="submit">
     <div class="doctor-heading encounter-editor-heading">
       <h2>{{ editing ? 'Редактирование записи' : 'Сегодняшний приём' }}</h2>
-      <div class="row-actions">
-        <button class="primary-action inline owner-profile-action" type="button" :disabled="busy || !selectedIds.length || !outcomeSelectedIds.length" title="Сохранить запись" aria-label="Сохранить запись" @click="submit"><AppIcon name="check" /></button>
-        <button v-if="editing" type="button" class="outline-action inline owner-profile-action" title="Отменить редактирование" aria-label="Отменить редактирование" @click="emit('cancel')"><AppIcon name="close" /></button>
+      <div class="row-actions medical-card-actions medical-card-section-rail">
+        <button v-if="editing" type="button" class="outline-action inline medical-card-action" title="Отменить редактирование" aria-label="Отменить редактирование" @click="emit('cancel')"><AppIcon name="close" /></button>
+        <button class="primary-action inline medical-card-action" type="button" :disabled="busy || !selectedIds.length || !outcomeSelectedIds.length" title="Сохранить запись" aria-label="Сохранить запись" @click="submit"><AppIcon name="check" /></button>
       </div>
     </div>
     <label class="encounter-date-field"><span>Дата</span><input v-model="date" type="date" required /></label>
@@ -273,7 +274,7 @@ function submit() {
     >
       <div class="doctor-heading">
         <h3>{{ ENCOUNTER_SECTION_LABELS[kind] }}</h3>
-        <button type="button" class="outline-action inline danger-outline owner-profile-action encounter-section-delete" title="Удалить раздел" aria-label="Удалить раздел" @click="emit('removeSection', kind)"><AppIcon name="trash" /></button>
+        <button type="button" class="outline-action inline danger-outline medical-card-action medical-card-section-rail encounter-section-delete" title="Удалить раздел" aria-label="Удалить раздел" @click="emit('removeSection', kind)"><AppIcon name="trash" /></button>
       </div>
       <template v-if="kind === 'diagnosis'">
         <DiagnosisEditor v-model="diagnosis" :errors="diagnosisErrors" />
@@ -359,18 +360,17 @@ function submit() {
             <input v-model="vaccination.administrationSite" type="text" />
           </label>
           <div class="vaccination-revaccination-field">
-            <label>
+            <label :for="revaccinationDateId">
               <span title="Дата следующей ревакцинации">Дата следующей ревакцинации</span>
-              <input v-model="vaccination.nextRevaccinationDate" type="date" @input="useManualRevaccinationDate" />
-              <small v-if="vaccinationErrors.nextRevaccinationDate" class="field-error">{{ vaccinationErrors.nextRevaccinationDate }}</small>
             </label>
+            <input :id="revaccinationDateId" v-model="vaccination.nextRevaccinationDate" type="date" @input="useManualRevaccinationDate" />
             <div
               class="vaccination-revaccination-menu"
               @keydown.esc.stop.prevent="closeRevaccinationChooser(true)"
             >
               <button
                 type="button"
-                class="outline-action inline owner-profile-action vaccination-revaccination-toggle"
+                class="outline-action inline medical-card-action vaccination-revaccination-toggle"
                 title="Рассчитать дату следующей ревакцинации"
                 aria-label="Рассчитать дату следующей ревакцинации"
                 aria-haspopup="menu"
@@ -388,6 +388,7 @@ function submit() {
                 >{{ option.label }}</button>
               </div>
             </div>
+            <small v-if="vaccinationErrors.nextRevaccinationDate" class="field-error">{{ vaccinationErrors.nextRevaccinationDate }}</small>
           </div>
         </div>
       </template>

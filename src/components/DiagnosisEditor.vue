@@ -109,7 +109,7 @@ function removeCustomDifferential(index: number) {
     <small v-if="props.errors.section" class="field-error" role="alert">{{ props.errors.section }}</small>
     <fieldset class="medical-card-option-panel diagnosis-field">
       <legend>Предварительный диагноз</legend>
-      <div class="diagnosis-value-control">
+      <div class="diagnosis-value-control medical-card-action-grid">
         <DiagnosisCombobox
           v-model:selected-ids="preliminaryIds"
           v-model:custom-text="preliminaryCustomText"
@@ -117,7 +117,7 @@ function removeCustomDifferential(index: number) {
         />
         <button
           type="button"
-          class="outline-action inline owner-profile-action diagnosis-promote"
+          class="outline-action inline medical-card-action diagnosis-promote"
           title="Назначить подтверждённым диагнозом"
           aria-label="Назначить предварительный диагноз подтверждённым"
           :disabled="!preliminaryPromotion.selectedId && !preliminaryPromotion.customText.trim() || sameAsConfirmed(preliminaryPromotion)"
@@ -135,12 +135,12 @@ function removeCustomDifferential(index: number) {
         label="Добавить дифференциальный диагноз"
         multiple
       />
-      <div v-if="diagnosis.differentialSelectedIds.length || diagnosis.differentialCustomTexts.length" class="diagnosis-selected-chips">
-        <span v-for="id in diagnosis.differentialSelectedIds" :key="id" class="diagnosis-selected-chip">
+      <div v-if="diagnosis.differentialSelectedIds.length || diagnosis.differentialCustomTexts.length" class="diagnosis-selected-chips medical-card-action-grid medical-card-action-grid-pair">
+        <span v-for="id in diagnosis.differentialSelectedIds" :key="id" class="diagnosis-selected-chip medical-card-action-subgrid">
           <span>{{ diagnosisLabel(id) }}</span>
           <button
             type="button"
-            class="outline-action inline owner-profile-action"
+            class="outline-action inline medical-card-action"
             title="Назначить подтверждённым диагнозом"
             :aria-label="`Назначить «${diagnosisLabel(id)}» подтверждённым диагнозом`"
             :disabled="sameAsConfirmed({ selectedId: id, customText: '' })"
@@ -148,17 +148,17 @@ function removeCustomDifferential(index: number) {
           ><AppIcon name="input" /></button>
           <button
             type="button"
-            class="outline-action inline danger-outline owner-profile-action"
+            class="outline-action inline danger-outline medical-card-action"
             title="Удалить дифференциальный диагноз"
             :aria-label="`Удалить «${diagnosisLabel(id)}» из дифференциальных диагнозов`"
             @click="removeDifferential(id)"
           ><AppIcon name="close" /></button>
         </span>
-        <span v-for="(text, index) in diagnosis.differentialCustomTexts" :key="`custom:${index}:${text}`" class="diagnosis-selected-chip">
+        <span v-for="(text, index) in diagnosis.differentialCustomTexts" :key="`custom:${index}:${text}`" class="diagnosis-selected-chip medical-card-action-subgrid">
           <span>{{ text }}</span>
           <button
             type="button"
-            class="outline-action inline owner-profile-action"
+            class="outline-action inline medical-card-action"
             title="Назначить подтверждённым диагнозом"
             :aria-label="`Назначить «${text}» подтверждённым диагнозом`"
             :disabled="sameAsConfirmed({ customText: text })"
@@ -166,7 +166,7 @@ function removeCustomDifferential(index: number) {
           ><AppIcon name="input" /></button>
           <button
             type="button"
-            class="outline-action inline danger-outline owner-profile-action"
+            class="outline-action inline danger-outline medical-card-action"
             title="Удалить дифференциальный диагноз"
             :aria-label="`Удалить «${text}» из дифференциальных диагнозов`"
             @click="removeCustomDifferential(index)"

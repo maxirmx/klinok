@@ -78,6 +78,7 @@ describe("LaboratoryTestsEditor", () => {
     };
     expect(addButton().attributes("disabled")).toBeDefined();
     expect(addButton().classes()).toContain("laboratory-study-add");
+    expect(addButton().classes()).toContain("medical-card-action");
     expect(addButton().text()).toBe("");
     expect(addButton().attributes("aria-label")).toBe("Добавить исследование");
     await selectType("unknown");
@@ -103,6 +104,7 @@ describe("LaboratoryTestsEditor", () => {
     expect(studyHeading.get("h4").attributes("title")).toBe("Общеклинический анализ крови");
     const removeStudy = studyHeading.get('button[title="Удалить исследование"]');
     expect(removeStudy.classes()).toContain("laboratory-study-delete");
+    expect(removeStudy.classes()).toContain("medical-card-action");
     expect(removeStudy.text()).toBe("");
     expect(removeStudy.attributes("aria-label")).toBe("Удалить исследование");
     expect(wrapper.find('input[aria-label="Название исследования"]').exists()).toBe(false);
@@ -113,6 +115,7 @@ describe("LaboratoryTestsEditor", () => {
     expect(wrapper.findAll(".laboratory-result-row")).toHaveLength(0);
     const indicatorCombobox = () => wrapper.findAllComponents(AppCatalogCombobox)[1]!;
     const addIndicator = () => wrapper.get('button[title="Добавить показатель"]');
+    expect(addIndicator().classes()).toContain("medical-card-action");
     expect(indicatorCombobox().props("label")).toBe("Добавить показатель");
     expect(indicatorCombobox().props("allowCustom")).toBe(false);
     expect(indicatorCombobox().props("options")).toHaveLength(cbc.indicators.length);
@@ -167,6 +170,7 @@ describe("LaboratoryTestsEditor", () => {
     expect(firstResultRow.get(".laboratory-result-unit").text()).toBe(cbc.indicators[0]!.unit);
     const indicatorDeleteButtons = wrapper.findAll('button[title="Удалить показатель"]');
     expect(indicatorDeleteButtons).toHaveLength(2);
+    expect(indicatorDeleteButtons.every((button) => button.classes().includes("medical-card-action"))).toBe(true);
     expect(indicatorDeleteButtons[0]!.attributes("aria-label")).toBe(`Удалить показатель «${cbc.indicators[0]!.name}»`);
     await indicatorDeleteButtons[1]!.trigger("click");
     await flushPromises();
