@@ -127,7 +127,7 @@ describe("LaboratoryComparison", () => {
     const hematocrit = { indicatorId: "lab.indicator.cbc.001", indicatorName: "Гематокрит", unit: "%" };
     const hemoglobin = { indicatorId: "lab.indicator.cbc.002", indicatorName: "Гемоглобин", unit: "г/л" };
     const records = [
-      record(panelSection("study-new", "2026-08-16", "", [{ ...hematocrit, result: "43" }]), "record-new"),
+      record(panelSection("study-new", "2026-08-16", "   ", [{ ...hematocrit, result: "43" }]), "record-new"),
       record(panelSection("study-old", "2026-08-14", "Ветлаб", [{ ...hematocrit, result: "42", reference: "35–55" }]), "record-old"),
       record(panelSection("study-other", "2026-08-15", "Другая лаборатория", [{ ...hemoglobin, result: "145" }]), "record-other"),
     ];
@@ -137,6 +137,10 @@ describe("LaboratoryComparison", () => {
 
     wrapper.getComponent(AppCatalogCombobox).vm.$emit("update:selectedIds", [hematocrit.indicatorId, hemoglobin.indicatorId]);
     await wrapper.vm.$nextTick();
+
+    const desktopMissingLaboratoryRow = wrapper.findAll(".laboratory-results tbody tr")
+      .find((row) => row.findAll("td")[0]?.text() === "16.08.2026");
+    expect(desktopMissingLaboratoryRow?.findAll("td")[2]?.text()).toBe("Не указана");
 
     const histories = wrapper.findAll(".laboratory-mobile-indicator");
     expect(histories).toHaveLength(2);
