@@ -515,6 +515,36 @@ test("fresh provisioning, Doctor approval, grant, draft, and confirmation", asyn
   await expectEmailText(request, ownerEmail, "Новая медицинская запись о питомце «Ёжик» ожидает Вашего подтверждения.");
   const ownerRecord = ownerPage.locator(".medical-record-entry-details").filter({ hasText: "Всё хорошо" });
   await expect(ownerRecord).toBeVisible({ timeout: replicationTimeout });
+  const laboratoryComparison = ownerPage.locator(".laboratory-comparison");
+  await expect(laboratoryComparison).toBeVisible({ timeout: replicationTimeout });
+  await ownerPage.setViewportSize({ width: 1280, height: 720 });
+  await laboratoryComparison.locator(".app-catalog-toggle").click();
+  await laboratoryComparison.getByRole("option", { name: /Лейкоциты \(WBC\)/ }).click();
+  await expect(laboratoryComparison.locator(".laboratory-comparison-desktop")).toBeVisible();
+  await expect(laboratoryComparison.locator(".laboratory-comparison-mobile")).toBeHidden();
+  await expect(laboratoryComparison.locator(".laboratory-results")).toBeVisible();
+
+  await ownerPage.setViewportSize({ width: 752, height: 1200 });
+  const mobileLaboratoryHistory = laboratoryComparison.locator(".laboratory-comparison-mobile");
+  await expect(mobileLaboratoryHistory).toBeVisible();
+  await expect(laboratoryComparison.locator(".laboratory-comparison-desktop")).toBeHidden();
+  expect(await laboratoryComparison.evaluate((panel) => panel.scrollWidth <= panel.clientWidth + 1)).toBe(true);
+  const mobileLaboratoryEntry = mobileLaboratoryHistory.locator(".laboratory-mobile-entry").first();
+  await expect(mobileLaboratoryEntry.locator(".laboratory-mobile-status")).toHaveAttribute("title", "Ожидает подтверждения");
+  const laboratoryMetadata = mobileLaboratoryEntry.locator(".laboratory-mobile-metadata");
+  const laboratoryMetadataSummary = laboratoryMetadata.locator("summary");
+  await laboratoryMetadataSummary.focus();
+  await laboratoryMetadataSummary.press("Enter");
+  await expect(laboratoryMetadata).toHaveAttribute("open", "");
+  await expect(laboratoryMetadata).toContainText("Ветлаб");
+  await expect(laboratoryMetadata).toContainText("Ожидает подтверждения");
+
+  await ownerPage.setViewportSize({ width: 390, height: 844 });
+  await expect(mobileLaboratoryHistory).toBeVisible();
+  expect(await laboratoryComparison.evaluate((panel) => panel.scrollWidth <= panel.clientWidth + 1)).toBe(true);
+  await ownerPage.setViewportSize({ width: 1280, height: 720 });
+  await expect(laboratoryComparison.locator(".laboratory-comparison-desktop")).toBeVisible();
+  await expect(mobileLaboratoryHistory).toBeHidden();
   await ownerRecord.locator("summary").click();
   await expect(ownerRecord.locator(".encounter-history-comment").getByText("Состояние стабильное", { exact: true })).toBeVisible();
   await expect(ownerRecord.getByText("В стадии наблюдения", { exact: true })).toBeVisible();
