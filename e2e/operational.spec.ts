@@ -530,9 +530,18 @@ test("fresh provisioning, Doctor approval, grant, draft, and confirmation", asyn
   await expect(laboratoryComparison.locator(".laboratory-comparison-desktop")).toBeHidden();
   expect(await laboratoryComparison.evaluate((panel) => panel.scrollWidth <= panel.clientWidth + 1)).toBe(true);
   const mobileLaboratoryEntry = mobileLaboratoryHistory.locator(".laboratory-mobile-entry").first();
-  await expect(mobileLaboratoryEntry.locator(".laboratory-mobile-status")).toHaveAttribute("title", "Ожидает подтверждения");
+  await expect(mobileLaboratoryEntry.locator("header .laboratory-mobile-study")).toContainText("Общеклинический анализ крови");
+  await expect(mobileLaboratoryEntry.locator(".laboratory-mobile-status")).toHaveCount(0);
   const laboratoryMetadata = mobileLaboratoryEntry.locator(".laboratory-mobile-metadata");
   const laboratoryMetadataSummary = laboratoryMetadata.locator("summary");
+  const laboratoryValue = mobileLaboratoryEntry.locator(".laboratory-mobile-value");
+  const [laboratoryValueBox, laboratorySummaryBox] = await Promise.all([
+    laboratoryValue.boundingBox(),
+    laboratoryMetadataSummary.boundingBox(),
+  ]);
+  expect(laboratoryValueBox).not.toBeNull();
+  expect(laboratorySummaryBox).not.toBeNull();
+  expect(Math.abs(laboratoryValueBox!.y - laboratorySummaryBox!.y)).toBeLessThanOrEqual(1);
   await laboratoryMetadataSummary.focus();
   await laboratoryMetadataSummary.press("Enter");
   await expect(laboratoryMetadata).toHaveAttribute("open", "");

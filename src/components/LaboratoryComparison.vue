@@ -7,7 +7,6 @@ import { computed, ref, watch } from "vue";
 import type { MedicalRecordDraft } from "@klinok/contracts";
 import { isLaboratoryTestsValue } from "../medicalEncounter";
 import AppCatalogCombobox from "./AppCatalogCombobox.vue";
-import AppIcon from "./AppIcon.vue";
 import AppPaginator from "./AppPaginator.vue";
 
 type PageSize = 10 | 20 | 50;
@@ -86,26 +85,21 @@ function setMobilePageSize(id: string, value: number) {
           <li v-for="entry in mobileEntries(history)" :key="`${entry.record.recordId}:${entry.study.id}`" class="laboratory-mobile-entry">
             <header>
               <time :datetime="entry.study.date">{{ date(entry.study.date) }}</time>
-              <span
-                class="laboratory-mobile-status"
-                :class="confirmedIds.has(entry.record.recordId) ? 'confirmed' : 'pending'"
-                :title="status(entry.record.recordId)"
-              >
-                <AppIcon v-if="confirmedIds.has(entry.record.recordId)" name="check" />
-                <span v-else aria-hidden="true">…</span>
-                <span class="visually-hidden">{{ status(entry.record.recordId) }}</span>
-              </span>
+              <p class="laboratory-mobile-study">{{ entry.study.typeName }}</p>
             </header>
-            <strong class="laboratory-mobile-value">{{ entry.result.result.trim() || '—' }}</strong>
-            <small v-if="entry.result.reference" class="laboratory-mobile-reference">Реф.: {{ entry.result.reference }}</small>
-            <p class="laboratory-mobile-study">{{ entry.study.typeName }}</p>
-            <details class="laboratory-mobile-metadata">
-              <summary :aria-label="`Подробнее о результате за ${date(entry.study.date)}`">Подробнее</summary>
-              <dl>
-                <div><dt>Лаборатория</dt><dd>{{ laboratory(entry.study.laboratory) }}</dd></div>
-                <div><dt>Статус</dt><dd>{{ status(entry.record.recordId) }}</dd></div>
-              </dl>
-            </details>
+            <div class="laboratory-mobile-measurement">
+              <div class="laboratory-mobile-result">
+                <strong class="laboratory-mobile-value">{{ entry.result.result.trim() || '—' }}</strong>
+                <small v-if="entry.result.reference" class="laboratory-mobile-reference">Реф.: {{ entry.result.reference }}</small>
+              </div>
+              <details class="laboratory-mobile-metadata">
+                <summary :aria-label="`Подробнее о результате за ${date(entry.study.date)}`">Подробнее</summary>
+                <dl>
+                  <div><dt>Лаборатория</dt><dd>{{ laboratory(entry.study.laboratory) }}</dd></div>
+                  <div><dt>Статус</dt><dd>{{ status(entry.record.recordId) }}</dd></div>
+                </dl>
+              </details>
+            </div>
           </li>
         </ol>
         <AppPaginator

@@ -148,15 +148,14 @@ describe("LaboratoryComparison", () => {
     expect(hematocritEntries[1]!.get(".laboratory-mobile-reference").text()).toBe("Реф.: 35–55");
     expect(histories[0]!.text()).not.toContain("15.08.2026");
 
-    const pendingStatus = hematocritEntries[0]!.get(".laboratory-mobile-status");
-    expect(pendingStatus.attributes("title")).toBe("Ожидает подтверждения");
-    expect(pendingStatus.get(".visually-hidden").text()).toBe("Ожидает подтверждения");
-    expect(hematocritEntries[1]!.get(".laboratory-mobile-status").attributes("title")).toBe("Подтверждено");
+    expect(hematocritEntries[0]!.find(".laboratory-mobile-status").exists()).toBe(false);
+    expect(hematocritEntries[0]!.get("header .laboratory-mobile-study").text()).toBe("Общеклинический анализ крови");
+    expect(hematocritEntries[0]!.get(".laboratory-mobile-measurement").find(".laboratory-mobile-value").exists()).toBe(true);
     const metadata = hematocritEntries[0]!.get(".laboratory-mobile-metadata");
+    expect(hematocritEntries[0]!.get(".laboratory-mobile-measurement").find(".laboratory-mobile-metadata").exists()).toBe(true);
     expect(metadata.get("summary").attributes("aria-label")).toBe("Подробнее о результате за 16.08.2026");
     expect(metadata.findAll("dt").map((label) => label.text())).toEqual(["Лаборатория", "Статус"]);
     expect(metadata.findAll("dd").map((value) => value.text())).toEqual(["Не указана", "Ожидает подтверждения"]);
-    expect(hematocritEntries[0]!.get(".laboratory-mobile-study").text()).toBe("Общеклинический анализ крови");
   });
 
   it("keeps mobile indicator pagination independent and clamps it after updates", async () => {
