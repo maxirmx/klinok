@@ -187,6 +187,9 @@ export function validateMedicalEncounter(value: unknown): MedicalEncounterInput 
   for (const [kind, sectionValue] of Object.entries(sections)) {
     if (kind === "what-happened" || kind === "outcome" || kind === "diagnosis") continue;
     const structured = object(sectionValue);
+    if (kind === "instrumental-tests" && "text" in structured && "studies" in structured) {
+      throw new ApiError(400, "VALIDATION_FAILED", "The instrumental-tests section cannot combine legacy text with structured studies.");
+    }
     if ((["recommendations", "procedures"].includes(kind) || (kind === "instrumental-tests" && "text" in structured))
       && (typeof structured.text !== "string" || !structured.text.trim() || structured.text.length > 50_000)) {
       throw new ApiError(400, "VALIDATION_FAILED", `The ${kind} section is invalid.`);

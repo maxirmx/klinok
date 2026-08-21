@@ -82,6 +82,13 @@ describe("command boundary", () => {
       ...base,
       sections: { ...base.sections, "instrumental-tests": { text: "Старое описание УЗИ" } },
     }).sections["instrumental-tests"]).toEqual({ text: "Старое описание УЗИ" });
+    expect(() => validateMedicalEncounter({
+      ...base,
+      sections: {
+        ...base.sections,
+        "instrumental-tests": { text: "Старое описание УЗИ", studies: [] },
+      },
+    })).toThrow("cannot combine legacy text with structured studies");
 
     const structured = validateMedicalEncounter({
       ...base,
