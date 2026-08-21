@@ -142,6 +142,29 @@ describe("InstrumentalTestsEditor", () => {
     expect(current().studies[0]?.mode === "tree" ? current().studies[0].findings : []).toHaveLength(1);
   });
 
+  it("formats root free-text findings like narrative laboratory results", async () => {
+    const { wrapper } = mountEditor();
+    await chooseType(wrapper, "instrumental.study.ultrasound-abdomen");
+    await addFinding(wrapper, "instrumental.finding.ultrasound-abdomen.15");
+    await addFinding(wrapper, "instrumental.finding.ultrasound-abdomen.3");
+    await addFinding(wrapper, "instrumental.finding.ultrasound-abdomen.3.4");
+
+    const rootContent = wrapper.findAll(".instrumental-finding-content")
+      .find((content) => content.find("strong").exists() && content.find("strong").text() === "Левый надпочечник")!;
+    const nestedContent = wrapper.findAll(".instrumental-finding-content")
+      .find((content) => content.find(".instrumental-result-mobile-name").exists()
+        && content.find(".instrumental-result-mobile-name").text() === "Комментарии")!;
+
+    expect(rootContent.classes()).toContain("instrumental-root-free-text");
+    expect(rootContent.element.parentElement?.classList).not.toContain("instrumental-result-row");
+    expect(rootContent.get("label > span").text()).toBe("Результат");
+    expect(rootContent.get("textarea").attributes("rows")).toBe("4");
+    expect(rootContent.get("textarea").classes()).not.toContain("medical-card-comment");
+    expect(nestedContent.classes()).not.toContain("instrumental-root-free-text");
+    expect(nestedContent.get("textarea").attributes("rows")).toBe("2");
+    expect(nestedContent.get("textarea").classes()).toContain("medical-card-comment");
+  });
+
   it("supports narrative X-ray, inline errors, comments, and safe study deletion", async () => {
     const { wrapper, current } = mountEditor({ studies: [] }, {
       section: "Добавьте хотя бы одно инструментальное исследование.", studies: [],

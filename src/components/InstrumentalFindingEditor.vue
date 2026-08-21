@@ -157,6 +157,9 @@ function isResultFinding(finding: InstrumentalFindingValue) {
   return item?.kind === "short-text" || item?.kind === "long-text"
     || (props.depth > 0 && directChoiceCatalog(item).length > 0);
 }
+function isRootFreeText(finding: InstrumentalFindingValue) {
+  return props.depth === 0 && catalogItem(finding)?.kind === "long-text";
+}
 function nestedCatalog(finding: InstrumentalFindingValue) {
   const item = catalogItem(finding);
   return isResultFinding(finding) ? directIndicatorCatalog(item) : item?.children ?? [];
@@ -268,11 +271,14 @@ function updateChildren(value: InstrumentalFindingValue, children: readonly Inst
       v-for="finding in indicatorValues"
       :key="finding.findingId"
       class="instrumental-finding-row medical-card-action-subgrid"
-      :class="{ 'instrumental-result-row': isResultFinding(finding) }"
+      :class="{ 'instrumental-result-row': isResultFinding(finding) && !isRootFreeText(finding) }"
     >
       <div
         class="instrumental-finding-content"
-        :class="{ 'instrumental-result-content': isResultFinding(finding) }"
+        :class="{
+          'instrumental-result-content': isResultFinding(finding),
+          'instrumental-root-free-text': isRootFreeText(finding),
+        }"
         :style="{ '--instrumental-depth': depth }"
       >
         <template v-if="catalogItem(finding)?.kind === 'short-text'">
@@ -284,10 +290,12 @@ function updateChildren(value: InstrumentalFindingValue, children: readonly Inst
           </label>
         </template>
         <template v-else-if="catalogItem(finding)?.kind === 'long-text'">
-          <span class="instrumental-result-desktop-name">{{ finding.findingName }}</span>
+          <strong v-if="isRootFreeText(finding)" class="instrumental-finding-name">{{ finding.findingName }}</strong>
+          <span v-else class="instrumental-result-desktop-name">{{ finding.findingName }}</span>
           <label class="instrumental-result-control">
-            <span class="instrumental-result-mobile-name">{{ finding.findingName }}</span>
-            <textarea v-model="finding.value" rows="2" class="medical-card-comment" :aria-label="finding.findingName" :aria-invalid="errors[finding.findingId] ? true : undefined" />
+            <span v-if="isRootFreeText(finding)">Результат</span>
+            <span v-else class="instrumental-result-mobile-name">{{ finding.findingName }}</span>
+            <textarea v-model="finding.value" :rows="isRootFreeText(finding) ? 4 : 2" :class="{ 'medical-card-comment': !isRootFreeText(finding) }" :aria-label="finding.findingName" :aria-invalid="errors[finding.findingId] ? true : undefined" />
             <small v-if="errors[finding.findingId]" class="field-error" role="alert">{{ errors[finding.findingId] }}</small>
           </label>
         </template>
