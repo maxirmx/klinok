@@ -11,7 +11,7 @@ defineProps<{ findings: readonly InstrumentalFindingValue[] }>();
 <template>
   <ul class="instrumental-history-findings">
     <li v-for="finding in findings" :key="finding.findingId">
-      <span>{{ finding.findingName }}<template v-if="finding.value">: {{ finding.value }}</template></span>
+      <span>{{ finding.findingName }}<template v-if="finding.value">: {{ finding.value }}{{ finding.unit ? ` ${finding.unit}` : "" }}</template></span>
       <InstrumentalFindingsView v-if="finding.children.length" :findings="finding.children" />
     </li>
   </ul>

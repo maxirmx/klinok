@@ -30,12 +30,22 @@ describe("instrumental study contracts", () => {
     expect(roots.map((item) => item.id.split(".").at(-1))).toEqual([
       "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15", "16", "17", "18", "19",
     ]);
-    expect(instrumentalFindingById("instrumental.finding.ultrasound-abdomen.9.3.5.2.3")).toMatchObject({ name: "Размер, мм", kind: "short-text" });
+    expect(instrumentalFindingById("instrumental.finding.ultrasound-abdomen.9.3.5.2.3")).toMatchObject({ name: "Размер", kind: "integer", unit: "мм" });
     expect(instrumentalFindingById("instrumental.finding.ultrasound-abdomen.19")).toMatchObject({ name: "Заключение", kind: "long-text" });
     const ids: string[] = [];
-    const visit = (items: readonly InstrumentalFindingCatalogItem[]) => items.forEach((item) => { ids.push(item.id); visit(item.children); });
+    const integers: InstrumentalFindingCatalogItem[] = [];
+    const visit = (items: readonly InstrumentalFindingCatalogItem[]) => items.forEach((item) => {
+      ids.push(item.id);
+      if (item.kind === "integer") integers.push(item);
+      visit(item.children);
+    });
     visit(roots);
     expect(new Set(ids).size).toBe(ids.length);
+    expect(integers.map((item) => item.id.replace("instrumental.finding.ultrasound-abdomen.", ""))).toEqual([
+      "1.12", "2.8", "3.1", "4.5", "5.2", "5.3", "5.4", "5.8.4", "6.2", "6.3", "6.4", "6.8.4",
+      "9.2.1", "9.3.5.2.3", "10.0", "10.5", "11.3.7", "11.4", "16.1.3", "16.2.3", "16.3.3",
+    ]);
+    expect(integers.every((item) => item.unit === "мм" && !item.name.includes("мм"))).toBe(true);
   });
 
   it("normalizes names, text, and recursive sibling order", () => {
@@ -84,6 +94,21 @@ describe("instrumental study contracts", () => {
     });
   });
 
+  it("normalizes whole-number measurements and preserves their unit snapshot", () => {
+    const section = normalizeInstrumentalTestsValue({ studies: [{
+      ...base,
+      typeId: "instrumental.study.ultrasound-abdomen",
+      findings: [value("instrumental.finding.ultrasound-abdomen.1", [
+        { ...value("instrumental.finding.ultrasound-abdomen.1.12", [], " 12 "), unit: "forged" },
+      ])],
+    }] });
+    expect(section.studies[0]).toMatchObject({ mode: "tree", findings: [{ children: [{
+      findingName: "Размер",
+      value: "12",
+      unit: "мм",
+    }] }] });
+  });
+
   it.each([
     ["empty section", { studies: [] }, "Добавьте хотя бы одно"],
     ["bad UUID", { studies: [{ ...base, id: "bad", typeId: "instrumental.study.xray-thorax-abdomen", result: "ok" }] }, "идентификатор"],
@@ -94,6 +119,8 @@ describe("instrumental study contracts", () => {
     ["empty tree", { studies: [{ ...base, typeId: "instrumental.study.ultrasound-abdomen", findings: [] }] }, "Добавьте результаты"],
     ["empty group", { studies: [{ ...base, typeId: "instrumental.study.ultrasound-abdomen", findings: [value("instrumental.finding.ultrasound-abdomen.1")] }] }, "Печень"],
     ["empty text", { studies: [{ ...base, typeId: "instrumental.study.ultrasound-abdomen", findings: [value("instrumental.finding.ultrasound-abdomen.19", [], " ")] }] }, "Заключение"],
+    ["fractional measurement", { studies: [{ ...base, typeId: "instrumental.study.ultrasound-abdomen", findings: [value("instrumental.finding.ultrasound-abdomen.1", [value("instrumental.finding.ultrasound-abdomen.1.12", [], "4.2")])] }] }, "целое число"],
+    ["negative measurement", { studies: [{ ...base, typeId: "instrumental.study.ultrasound-abdomen", findings: [value("instrumental.finding.ultrasound-abdomen.1", [value("instrumental.finding.ultrasound-abdomen.1.12", [], "-4")])] }] }, "целое число"],
     ["misplaced child", { studies: [{ ...base, typeId: "instrumental.study.ultrasound-abdomen", findings: [value("instrumental.finding.ultrasound-abdomen.1", [value("instrumental.finding.ultrasound-abdomen.2.1", [])])] }] }, "структура"],
     ["multiple values", { studies: [{ ...base, typeId: "instrumental.study.ultrasound-abdomen", findings: [value("instrumental.finding.ultrasound-abdomen.1", [value("instrumental.finding.ultrasound-abdomen.1.3", [value("instrumental.finding.ultrasound-abdomen.1.3.1"), value("instrumental.finding.ultrasound-abdomen.1.3.2")])])] }] }, "не более одного"],
     ["text children", { studies: [{ ...base, typeId: "instrumental.study.ultrasound-abdomen", findings: [value("instrumental.finding.ultrasound-abdomen.19", [value("instrumental.finding.ultrasound-abdomen.1")], "text")] }] }, "вложенные"],

@@ -23,9 +23,12 @@ const props = withDefaults(defineProps<{ encounterDate: string; errors?: Instrum
 });
 const model = defineModel<InstrumentalTestsSectionValue>({ required: true });
 const pendingTypeIds = ref<string[]>([]);
-const pending = ref<{ id: string } | null>(null);
+const pending = ref<{ id: string; typeName: string } | null>(null);
 const pendingType = computed(() => instrumentalStudyTypeById(pendingTypeIds.value[0] ?? ""));
 const confirmOpen = computed({ get: () => Boolean(pending.value), set: (value) => { if (!value) pending.value = null; } });
+const confirmDescription = computed(() => pending.value
+  ? `Исследование «${pending.value.typeName}» и все заполненные данные будут удалены.`
+  : "После подтверждения заполненные данные будут удалены.");
 const uuid = () => globalThis.crypto.randomUUID();
 
 function addStudy() {
@@ -47,7 +50,7 @@ function populated(study: InstrumentalStudyValue) {
 }
 function removeNow(id: string) { model.value = { studies: model.value.studies.filter((study) => study.id !== id) }; }
 function removeStudy(study: InstrumentalStudyValue) {
-  if (populated(study)) pending.value = { id: study.id };
+  if (populated(study)) pending.value = { id: study.id, typeName: study.typeName };
   else removeNow(study.id);
 }
 function confirmRemove() { const id = pending.value?.id; pending.value = null; if (id) removeNow(id); }
@@ -72,8 +75,8 @@ function invalid(message?: string) { return message ? true : undefined; }
         <InstrumentalFindingEditor v-model="study.findings" :catalog="instrumentalStudyTypeById(study.typeId)?.findings ?? []" :errors="errors.studies[index]?.findings" />
       </div>
       <label v-else><span>Результат</span><textarea v-model="study.result" rows="4" required :aria-invalid="invalid(errors.studies[index]?.result)" /><small v-if="errors.studies[index]?.result" class="field-error" role="alert">{{ errors.studies[index]?.result }}</small></label>
-      <section class="medical-card-comment-section instrumental-study-comment"><h4>Комментарий</h4><textarea v-model="study.comment" class="medical-card-comment" rows="2" aria-label="Комментарий" /></section>
+      <section v-if="study.mode === 'narrative'" class="medical-card-comment-section instrumental-study-comment"><h4>Комментарий</h4><textarea v-model="study.comment" class="medical-card-comment" rows="2" aria-label="Комментарий" /></section>
     </section>
   </div>
-  <ConfirmationDialog v-model="confirmOpen" title="Удалить заполненные данные?" description="После подтверждения будут удалены данные выбранного исследования." confirm-label="Удалить" @confirm="confirmRemove" />
+  <ConfirmationDialog v-model="confirmOpen" title="Удалить заполненное исследование?" :description="confirmDescription" confirm-label="Удалить" @confirm="confirmRemove" />
 </template>

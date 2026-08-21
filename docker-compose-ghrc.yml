@@ -29,7 +29,7 @@ services:
       KLINOK_PUBLIC_ORIGIN: https://${KLINOK_DOMAIN:-klinok.sw.consulting}
       KLINOK_COOKIE_SECURE: "true"
       KLINOK_ENFORCE_ORIGIN: "true"
-      KLINOK_TRUST_PROXY: "1"
+      KLINOK_TRUST_PROXY: "uniquelocal"
       KLINOK_BOOTSTRAP_ACCOUNT_ID: ${KLINOK_BOOTSTRAP_ACCOUNT_ID:-bootstrap-administrator}
       KLINOK_SMTP_HOST: ${KLINOK_SMTP_HOST:-mail.nic.ru}
       KLINOK_SMTP_PORT: ${KLINOK_SMTP_PORT:-465}

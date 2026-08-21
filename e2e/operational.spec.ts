@@ -41,6 +41,14 @@ async function expectTopAligned(action: Locator, peer: Locator): Promise<void> {
   expect(Math.abs(actionBox!.y - peerBox!.y)).toBeLessThanOrEqual(1);
 }
 
+async function expectSameHorizontalBounds(first: Locator, second: Locator): Promise<void> {
+  const [firstBox, secondBox] = await Promise.all([first.boundingBox(), second.boundingBox()]);
+  expect(firstBox).not.toBeNull();
+  expect(secondBox).not.toBeNull();
+  expect(Math.abs(firstBox!.x - secondBox!.x)).toBeLessThanOrEqual(1);
+  expect(Math.abs(firstBox!.x + firstBox!.width - secondBox!.x - secondBox!.width)).toBeLessThanOrEqual(1);
+}
+
 async function verificationLink(request: APIRequestContext, email: string): Promise<string> {
   for (let attempt = 0; attempt < 60; attempt += 1) {
     const list = await request.get(`${mailpitUrl}/api/v1/messages`);
@@ -347,7 +355,7 @@ test("fresh provisioning, Doctor approval, grant, draft, and confirmation", asyn
   const confirmedInput = confirmedDiagnosis.getByRole("combobox", { name: "Подтверждённый диагноз" });
   const confirmedToggle = confirmedDiagnosis.locator(".app-catalog-toggle");
   const diagnosisRightActions = [
-    diagnosisCard.getByRole("button", { name: "Удалить раздел" }),
+    diagnosisCard.getByRole("button", { name: "Удалить раздел", exact: true }),
     preliminaryDiagnosis.getByRole("button", { name: "Назначить предварительный диагноз подтверждённым" }),
   ];
   await expectMedicalActionRail(diagnosisRightActions);
@@ -439,6 +447,28 @@ test("fresh provisioning, Doctor approval, grant, draft, and confirmation", asyn
     await selector.selectOption({ label: valueName });
     return selector;
   };
+  const addPancreas = await addInstrumentalFinding("Добавить раздел исследования", "Поджелудочная железа");
+  const pancreasValueSelector = await selectInstrumentalValue("Поджелудочная железа", "Визуализируется");
+  const pancreasRow = pancreasValueSelector.locator("xpath=ancestor::div[contains(concat(' ', normalize-space(@class), ' '), ' instrumental-root-choice-row ')][1]");
+  const pancreasHeading = pancreasRow.locator(":scope > .instrumental-finding-content > .instrumental-finding-name");
+  const deletePancreas = pancreasRow.getByRole("button", { name: "Удалить раздел «Поджелудочная железа»", exact: true });
+  await expect(pancreasHeading).toHaveText("Поджелудочная железа");
+  await expect(pancreasRow.locator(":scope > .instrumental-finding-content .instrumental-result-desktop-name")).toHaveCount(0);
+  await expectTopAligned(pancreasValueSelector, pancreasHeading);
+  await expectTopAligned(deletePancreas, pancreasHeading);
+  const addLiver = await addInstrumentalFinding("Добавить раздел исследования", "Печень");
+  const addFocalFindings = await addInstrumentalFinding("Добавить показатель для «Печень»", "Очаговые образования");
+  const focalFindingsSelector = await selectInstrumentalValue("Очаговые образования", "Визуализируются");
+  const focalCountSelector = instrumentalCard.getByRole("combobox", {
+    name: "Значение показателя «Визуализируются»",
+    exact: true,
+  });
+  const focalContinuationRow = focalCountSelector.locator("xpath=ancestor::div[contains(concat(' ', normalize-space(@class), ' '), ' instrumental-choice-continuation-row ')][1]");
+  const focalContinuationLevel = focalContinuationRow.locator("xpath=ancestor::div[contains(concat(' ', normalize-space(@class), ' '), ' instrumental-finding-level ')][1]");
+  await expect(focalContinuationRow.locator(".instrumental-result-desktop-name, .instrumental-result-mobile-name")).toHaveCount(0);
+  await expect(focalContinuationLevel.locator(":scope > .instrumental-result-headings")).toHaveCount(0);
+  await expectSameHorizontalBounds(focalFindingsSelector, focalCountSelector);
+  await focalCountSelector.selectOption({ label: "Множественные" });
   const addBladder = await addInstrumentalFinding("Добавить раздел исследования", "Мочевой пузырь");
   const addContents = await addInstrumentalFinding("Добавить показатель для «Мочевой пузырь»", "Содержимое");
   const contentsValueSelector = await selectInstrumentalValue("Содержимое", "Визуализируется");
@@ -447,15 +477,25 @@ test("fresh provisioning, Doctor approval, grant, draft, and confirmation", asyn
   const addSediment = await addInstrumentalFinding("Добавить показатель для «Визуализируется»", "Взвесь/осадок");
   const sedimentInput = instrumentalCard.getByLabel("Взвесь/осадок", { exact: true });
   await sedimentInput.fill("Незначительно");
+  const addConcrements = await addInstrumentalFinding("Добавить показатель для «Визуализируется»", "Конкременты");
+  await selectInstrumentalValue("Конкременты", "Множественные");
+  const addConcrementSize = await addInstrumentalFinding("Добавить показатель для «Конкременты»", "Размер");
+  const concrementSizeInput = instrumentalCard.getByLabel("Размер, мм", { exact: true });
+  await expect(concrementSizeInput).toHaveAttribute("type", "number");
+  await expect(concrementSizeInput).toHaveAttribute("step", "1");
+  await expect(concrementSizeInput.locator("xpath=following-sibling::*[contains(concat(' ', normalize-space(@class), ' '), ' instrumental-integer-unit ')]")).toHaveText("мм");
+  await concrementSizeInput.fill("4");
   const addConclusion = await addInstrumentalFinding("Добавить раздел исследования", "Заключение");
   await instrumentalCard.getByLabel("Заключение", { exact: true }).fill("Без патологии");
   const deleteInstrumentalStudy = instrumentalCard.getByRole("button", { name: "Удалить исследование" });
   const deleteSediment = instrumentalCard.getByRole("button", { name: "Удалить показатель «Взвесь/осадок»" });
+  const deleteConcrementSize = instrumentalCard.getByRole("button", { name: "Удалить показатель «Размер»", exact: true });
   const instrumentalResultHeadings = instrumentalCard.locator(".instrumental-result-headings")
     .filter({ hasText: "ПоказательРезультат" });
   await expectTopAligned(addInstrumentalStudy, instrumentalType);
   await expect(instrumentalResultHeadings.first()).toBeVisible();
   await expectTopAligned(deleteSediment, sedimentInput);
+  await expectTopAligned(deleteConcrementSize, concrementSizeInput);
 
   await therapeuticCard.getByRole("tab", { name: "Анамнез болезни" }).click();
   const therapeuticImport = therapeuticCard.getByRole("button", { name: "Импортировать из «Что случилось»" });
@@ -474,21 +514,28 @@ test("fresh provisioning, Doctor approval, grant, draft, and confirmation", asyn
     editorSave,
     ...diagnosisRightActions,
     ...differentialRemoves,
-    vaccinationCard.getByRole("button", { name: "Удалить раздел" }),
-    laboratoryCard.getByRole("button", { name: "Удалить раздел" }),
+    vaccinationCard.getByRole("button", { name: "Удалить раздел", exact: true }),
+    laboratoryCard.getByRole("button", { name: "Удалить раздел", exact: true }),
     addStudy,
     deleteStudy,
     addIndicator,
     deleteResult,
-    instrumentalCard.getByRole("button", { name: "Удалить раздел" }),
+    instrumentalCard.getByRole("button", { name: "Удалить раздел", exact: true }),
     addInstrumentalStudy,
     deleteInstrumentalStudy,
+    addPancreas,
+    deletePancreas,
+    addLiver,
+    addFocalFindings,
     addBladder,
     addContents,
     addSediment,
+    addConcrements,
+    addConcrementSize,
     addConclusion,
     deleteSediment,
-    therapeuticCard.getByRole("button", { name: "Удалить раздел" }),
+    deleteConcrementSize,
+    therapeuticCard.getByRole("button", { name: "Удалить раздел", exact: true }),
     therapeuticAdd,
     therapeuticDelete,
   ];
@@ -531,7 +578,10 @@ test("fresh provisioning, Doctor approval, grant, draft, and confirmation", asyn
   await expectHorizontalGap(indicator, indicatorToggle);
   await expectHorizontalGap(revaccinationInput, revaccinationToggle);
   await expectTopAligned(deleteResult, resultInput);
+  await expectTopAligned(deletePancreas, pancreasHeading);
   await expectTopAligned(deleteSediment, sedimentInput);
+  await expectTopAligned(deleteConcrementSize, concrementSizeInput);
+  await expectSameHorizontalBounds(focalFindingsSelector, focalCountSelector);
   await expect(instrumentalResultHeadings.first()).toBeHidden();
   await expect(contentsValueSelector.locator("..").locator(".instrumental-result-mobile-name")).toBeVisible();
   const narrowTabRows = await therapeuticTabs.evaluateAll((tabs) => tabs.reduce<number[]>((rows, tab) => {
@@ -553,6 +603,7 @@ test("fresh provisioning, Doctor approval, grant, draft, and confirmation", asyn
   const doctorRecord = doctorPage.locator(".medical-record-entry-details").filter({ hasText: "Всё хорошо" });
   await expect(doctorRecord).toBeVisible();
   await doctorRecord.locator("summary").click();
+  await expect(doctorRecord).toContainText("Размер: 4 мм");
   await doctorRecord.getByRole("button", { name: "Редактировать запись" }).click();
   const inlineEditor = doctorRecord.locator(".encounter-editor-inline");
   const inlineEditorHeading = inlineEditor.locator(".encounter-editor-heading");
