@@ -14,10 +14,12 @@ const props = withDefaults(defineProps<{
   errors?: Record<string, string>;
   depth?: number;
   parentName?: string;
+  choiceContinuation?: boolean;
 }>(), {
   errors: () => ({}),
   depth: 0,
   parentName: "исследование",
+  choiceContinuation: false,
 });
 const model = defineModel<readonly InstrumentalFindingValue[]>({ required: true });
 const pendingIds = ref<string[]>([]);
@@ -48,8 +50,9 @@ const options = computed(() => {
 });
 const pendingFinding = computed(() => indicatorCatalog.value.find((item) => item.id === pendingIds.value[0]
   && !model.value.some((value) => value.findingId === item.id)));
-const hasResultRows = computed(() => props.depth > 0
+const hasResultRows = computed(() => !props.choiceContinuation && props.depth > 0
   && (choiceCatalog.value.length > 0 || indicatorValues.value.some(isResultFinding)));
+const displayDepth = computed(() => Math.max(0, props.depth - (props.choiceContinuation ? 1 : 0)));
 
 function selectPending(ids: string[]) { pendingIds.value = ids.slice(0, 1); }
 function catalogItem(value: InstrumentalFindingValue) { return props.catalog.find((item) => item.id === value.findingId); }
@@ -57,7 +60,8 @@ function catalogValue(item: InstrumentalFindingCatalogItem): InstrumentalFinding
   return {
     findingId: item.id,
     findingName: item.name,
-    ...((item.kind === "short-text" || item.kind === "long-text") ? { value: "" } : {}),
+    ...((item.kind === "integer" || item.kind === "short-text" || item.kind === "long-text") ? { value: "" } : {}),
+    ...(item.unit ? { unit: item.unit } : {}),
     children: [],
   };
 }
@@ -93,17 +97,21 @@ function requestChoiceChange(
     return;
   }
   if (requestedId === current.findingId) return;
-  select.value = current.findingId;
   const replacement = choices.find((item) => item.id === requestedId);
+  if (replacement) {
+    update(orderedFor(catalog, [
+      ...values.filter((value) => value.findingId !== current.findingId),
+      catalogValue(replacement),
+    ]));
+    return;
+  }
+  select.value = current.findingId;
   pendingConfirmation.value = {
-    title: replacement ? "Заменить выбранное значение?" : "Удалить выбранное значение?",
-    description: replacement
-      ? `Значение «${current.findingName}» и все вложенные данные будут заменены.`
-      : `Значение «${current.findingName}» и все вложенные данные будут удалены.`,
-    confirmLabel: replacement ? "Заменить" : "Удалить",
+    title: "Удалить выбранное значение?",
+    description: `Значение «${current.findingName}» и все вложенные данные будут удалены.`,
+    confirmLabel: "Удалить",
     action: () => update(orderedFor(catalog, [
       ...values.filter((value) => value.findingId !== current.findingId),
-      ...(replacement ? [catalogValue(replacement)] : []),
     ])),
   };
 }
@@ -141,6 +149,9 @@ function selectedFindingChoicesWithChildren(finding: InstrumentalFindingValue, i
 function choiceChildrenCatalog(value: InstrumentalFindingValue, item?: InstrumentalFindingCatalogItem) {
   return directChoiceCatalog(item).find((choiceItem) => choiceItem.id === value.findingId)?.children ?? [];
 }
+function isChoiceContinuation(catalog: readonly InstrumentalFindingCatalogItem[]) {
+  return catalog.some((item) => item.kind === "choice");
+}
 function updateDirectIndicators(
   finding: InstrumentalFindingValue,
   item: InstrumentalFindingCatalogItem,
@@ -154,11 +165,17 @@ function updateDirectIndicators(
 }
 function isResultFinding(finding: InstrumentalFindingValue) {
   const item = catalogItem(finding);
-  return item?.kind === "short-text" || item?.kind === "long-text"
-    || (props.depth > 0 && directChoiceCatalog(item).length > 0);
+  return item?.kind === "integer" || item?.kind === "short-text" || item?.kind === "long-text"
+    || directChoiceCatalog(item).length > 0;
+}
+function isRootChoiceFinding(finding: InstrumentalFindingValue) {
+  return props.depth === 0 && directChoiceCatalog(catalogItem(finding)).length > 0;
 }
 function isRootFreeText(finding: InstrumentalFindingValue) {
   return props.depth === 0 && catalogItem(finding)?.kind === "long-text";
+}
+function findingUnit(finding: InstrumentalFindingValue) {
+  return finding.unit ?? catalogItem(finding)?.unit ?? "";
 }
 function nestedCatalog(finding: InstrumentalFindingValue) {
   const item = catalogItem(finding);
@@ -192,10 +209,10 @@ function catalogItemDeep(id: string, items: readonly InstrumentalFindingCatalogI
 }
 function removeNow(id: string) { model.value = model.value.filter((item) => item.findingId !== id); }
 function requestRemove(value: InstrumentalFindingValue) {
-  if (meaningful(value)) {
+  if (props.depth === 0 && meaningful(value)) {
     pendingConfirmation.value = {
-      title: "Удалить заполненный показатель?",
-      description: `Показатель «${value.findingName}» и все вложенные данные будут удалены.`,
+      title: "Удалить заполненный раздел?",
+      description: `Раздел «${value.findingName}» и все вложенные данные будут удалены.`,
       confirmLabel: "Удалить",
       action: () => removeNow(value.findingId),
     };
@@ -209,6 +226,9 @@ function confirmPending() {
 }
 function updateChildren(value: InstrumentalFindingValue, children: readonly InstrumentalFindingValue[]) {
   value.children = children;
+}
+function updateIntegerValue(finding: InstrumentalFindingValue, event: Event) {
+  finding.value = (event.currentTarget as HTMLInputElement).value;
 }
 </script>
 
@@ -243,11 +263,19 @@ function updateChildren(value: InstrumentalFindingValue, children: readonly Inst
       </div>
     </div>
 
-    <div v-if="choiceCatalog.length" class="instrumental-finding-row instrumental-result-row medical-card-action-subgrid">
-      <div class="instrumental-finding-content instrumental-result-content" :style="{ '--instrumental-depth': depth }">
-        <span class="instrumental-result-desktop-name">{{ parentName }}</span>
+    <div
+      v-if="choiceCatalog.length"
+      class="instrumental-finding-row instrumental-result-row medical-card-action-subgrid"
+      :class="{ 'instrumental-choice-continuation-row': choiceContinuation }"
+    >
+      <div
+        class="instrumental-finding-content instrumental-result-content"
+        :class="{ 'instrumental-choice-continuation-content': choiceContinuation }"
+        :style="{ '--instrumental-depth': displayDepth }"
+      >
+        <span v-if="!choiceContinuation" class="instrumental-result-desktop-name">{{ parentName }}</span>
         <label class="instrumental-result-control">
-          <span class="instrumental-result-mobile-name">{{ parentName }}</span>
+          <span v-if="!choiceContinuation" class="instrumental-result-mobile-name">{{ parentName }}</span>
           <select :value="choiceId" :aria-label="`Значение показателя «${parentName}»`" @change="requestChoiceSelection">
             <option value="">Не указано</option>
             <option v-for="item in choiceCatalog" :key="item.id" :value="item.id">{{ item.name }}</option>
@@ -264,6 +292,7 @@ function updateChildren(value: InstrumentalFindingValue, children: readonly Inst
       :errors="errors"
       :depth="depth + 1"
       :parent-name="choiceValue.findingName"
+      :choice-continuation="isChoiceContinuation(catalogItem(choiceValue)?.children ?? [])"
       @update:model-value="updateChildren(choiceValue, $event)"
     />
 
@@ -271,7 +300,10 @@ function updateChildren(value: InstrumentalFindingValue, children: readonly Inst
       v-for="finding in indicatorValues"
       :key="finding.findingId"
       class="instrumental-finding-row medical-card-action-subgrid"
-      :class="{ 'instrumental-result-row': isResultFinding(finding) && !isRootFreeText(finding) }"
+      :class="{
+        'instrumental-result-row': isResultFinding(finding) && !isRootFreeText(finding),
+        'instrumental-root-choice-row': isRootChoiceFinding(finding),
+      }"
     >
       <div
         class="instrumental-finding-content"
@@ -281,7 +313,27 @@ function updateChildren(value: InstrumentalFindingValue, children: readonly Inst
         }"
         :style="{ '--instrumental-depth': depth }"
       >
-        <template v-if="catalogItem(finding)?.kind === 'short-text'">
+        <template v-if="catalogItem(finding)?.kind === 'integer'">
+          <span class="instrumental-result-desktop-name">{{ finding.findingName }}</span>
+          <label class="instrumental-result-control">
+            <span class="instrumental-result-mobile-name">{{ finding.findingName }}</span>
+            <span class="instrumental-integer-field">
+              <input
+                :value="finding.value"
+                type="number"
+                min="0"
+                step="1"
+                inputmode="numeric"
+                :aria-label="`${finding.findingName}, ${findingUnit(finding)}`"
+                :aria-invalid="errors[finding.findingId] ? true : undefined"
+                @input="updateIntegerValue(finding, $event)"
+              />
+              <span class="instrumental-integer-unit" aria-hidden="true">{{ findingUnit(finding) }}</span>
+            </span>
+            <small v-if="errors[finding.findingId]" class="field-error" role="alert">{{ errors[finding.findingId] }}</small>
+          </label>
+        </template>
+        <template v-else-if="catalogItem(finding)?.kind === 'short-text'">
           <span class="instrumental-result-desktop-name">{{ finding.findingName }}</span>
           <label class="instrumental-result-control">
             <span class="instrumental-result-mobile-name">{{ finding.findingName }}</span>
@@ -293,16 +345,16 @@ function updateChildren(value: InstrumentalFindingValue, children: readonly Inst
           <strong v-if="isRootFreeText(finding)" class="instrumental-finding-name">{{ finding.findingName }}</strong>
           <span v-else class="instrumental-result-desktop-name">{{ finding.findingName }}</span>
           <label class="instrumental-result-control">
-            <span v-if="isRootFreeText(finding)">Результат</span>
-            <span v-else class="instrumental-result-mobile-name">{{ finding.findingName }}</span>
+            <span v-if="!isRootFreeText(finding)" class="instrumental-result-mobile-name">{{ finding.findingName }}</span>
             <textarea v-model="finding.value" :rows="isRootFreeText(finding) ? 4 : 2" :class="{ 'medical-card-comment': !isRootFreeText(finding) }" :aria-label="finding.findingName" :aria-invalid="errors[finding.findingId] ? true : undefined" />
             <small v-if="errors[finding.findingId]" class="field-error" role="alert">{{ errors[finding.findingId] }}</small>
           </label>
         </template>
         <template v-else-if="isResultFinding(finding)">
-          <span class="instrumental-result-desktop-name">{{ finding.findingName }}</span>
+          <strong v-if="isRootChoiceFinding(finding)" class="instrumental-finding-name">{{ finding.findingName }}</strong>
+          <span v-else class="instrumental-result-desktop-name">{{ finding.findingName }}</span>
           <label class="instrumental-result-control">
-            <span class="instrumental-result-mobile-name">{{ finding.findingName }}</span>
+            <span v-if="!isRootChoiceFinding(finding)" class="instrumental-result-mobile-name">{{ finding.findingName }}</span>
             <select
               :value="selectedChoiceId(finding, catalogItem(finding))"
               :aria-label="`Значение показателя «${finding.findingName}»`"
@@ -318,7 +370,13 @@ function updateChildren(value: InstrumentalFindingValue, children: readonly Inst
         <strong v-else class="instrumental-finding-name">{{ finding.findingName }}</strong>
         <small v-if="!isResultFinding(finding) && errors[finding.findingId]" class="field-error" role="alert">{{ errors[finding.findingId] }}</small>
       </div>
-      <button type="button" class="outline-action inline danger-outline medical-card-action instrumental-finding-delete" title="Удалить показатель" :aria-label="`Удалить показатель «${finding.findingName}»`" @click="requestRemove(finding)"><AppIcon name="trash" /></button>
+      <button
+        type="button"
+        class="outline-action inline danger-outline medical-card-action instrumental-finding-delete"
+        :title="depth ? 'Удалить показатель' : 'Удалить раздел'"
+        :aria-label="depth ? `Удалить показатель «${finding.findingName}»` : `Удалить раздел «${finding.findingName}»`"
+        @click="requestRemove(finding)"
+      ><AppIcon name="trash" /></button>
       <InstrumentalFindingEditor
         v-if="nestedCatalog(finding).length"
         :model-value="nestedValues(finding)"
@@ -336,12 +394,13 @@ function updateChildren(value: InstrumentalFindingValue, children: readonly Inst
         :errors="errors"
         :depth="depth + 1"
         :parent-name="choiceValue.findingName"
+        :choice-continuation="isChoiceContinuation(choiceChildrenCatalog(choiceValue, catalogItem(finding)))"
         @update:model-value="updateChildren(choiceValue, $event)"
       />
     </div>
     <ConfirmationDialog
       v-model="confirmOpen"
-      :title="pendingConfirmation?.title ?? 'Удалить заполненный показатель?'"
+      :title="pendingConfirmation?.title ?? 'Удалить заполненный раздел?'"
       :description="pendingConfirmation?.description ?? 'После подтверждения заполненные данные будут удалены.'"
       :confirm-label="pendingConfirmation?.confirmLabel ?? 'Удалить'"
       @confirm="confirmPending"

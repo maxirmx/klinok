@@ -35,7 +35,7 @@ services:
       KLINOK_DATABASE_URL: postgres://klinok:${KLINOK_POSTGRES_PASSWORD:-klinok-local-password}@postgres:5432/klinok
       KLINOK_PUBLIC_ORIGIN: http://localhost:${KLINOK_UI_PORT:-8080}
       KLINOK_COOKIE_SECURE: "false"
-      KLINOK_TRUST_PROXY: "1"
+      KLINOK_TRUST_PROXY: "uniquelocal"
       KLINOK_SMTP_HOST: mail
       KLINOK_SMTP_PORT: "1025"
       KLINOK_BOOTSTRAP_ACCOUNT_ID: bootstrap-administrator

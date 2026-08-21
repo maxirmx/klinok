@@ -3,12 +3,13 @@
 // This file is a part of Klinok application
 
 export type InstrumentalStudyMode = "tree" | "narrative";
-export type InstrumentalFindingKind = "group" | "choice" | "short-text" | "long-text";
+export type InstrumentalFindingKind = "group" | "choice" | "integer" | "short-text" | "long-text";
 
 export interface InstrumentalFindingCatalogItem {
   readonly id: string;
   readonly name: string;
   readonly kind: InstrumentalFindingKind;
+  readonly unit?: string;
   readonly children: readonly InstrumentalFindingCatalogItem[];
 }
 
@@ -23,6 +24,7 @@ export interface InstrumentalFindingValue {
   findingId: string;
   findingName: string;
   value?: string;
+  unit?: string;
   children: readonly InstrumentalFindingValue[];
 }
 
@@ -56,7 +58,7 @@ const node = (
 ): InstrumentalFindingCatalogItem => ({ id: `${prefix}.${code}`, name, kind, children });
 const group = (code: string, name: string, children: readonly InstrumentalFindingCatalogItem[]) => node(code, name, "group", children);
 const choice = (code: string, name: string, children: readonly InstrumentalFindingCatalogItem[] = []) => node(code, name, "choice", children);
-const shortText = (code: string, name: string) => node(code, name, "short-text");
+const integer = (code: string, name: string, unit: string) => ({ ...node(code, name, "integer"), unit });
 const longText = (code: string, name: string) => node(code, name, "long-text");
 
 const ultrasoundAbdomen: readonly InstrumentalFindingCatalogItem[] = [
@@ -87,7 +89,7 @@ const ultrasoundAbdomen: readonly InstrumentalFindingCatalogItem[] = [
     group("1.11", "Эхогенность", [
       choice("1.11.1", "Средняя"), choice("1.11.2", "Гиперэхогенные"), choice("1.11.3", "Гипоэхогенные"), choice("1.11.4", "Анэхогенные"),
     ]),
-    shortText("1.12", "Размер"),
+    integer("1.12", "Размер", "мм"),
   ]),
   group("2", "Желчный пузырь", [
     group("2.1", "Наполнение", [
@@ -114,11 +116,11 @@ const ultrasoundAbdomen: readonly InstrumentalFindingCatalogItem[] = [
         choice("2.7.2.1", "Удвоение"), choice("2.7.2.2", "Перетяжка"), choice("2.7.2.3", "Дополнительное колено"), choice("2.7.2.4", "Физиологический изгиб"),
       ]),
     ]),
-    shortText("2.8", "Размер"),
+    integer("2.8", "Размер", "мм"),
   ]),
   group("3", "Поджелудочная железа", [
     choice("3.0.1", "Визуализируется"), choice("3.0.2", "Не визуализируется"), choice("3.0.3", "Визуализируется фрагментарно"), choice("3.0.4", "Визуализация затруднена"),
-    shortText("3.1", "Размер"),
+    integer("3.1", "Размер", "мм"),
     group("3.2", "Паренхима", [choice("3.2.1", "Эхогенная"), choice("3.2.2", "Гиперэхогенная"), choice("3.2.3", "Гипоэхогенная"), choice("3.2.4", "Смешанной эхогенности")]),
     group("3.3", "Структура", [
       choice("3.3.1", "Однородная"), choice("3.3.2", "Неоднородная", [choice("3.3.2.1", "Слабо выраженно"), choice("3.3.2.2", "Выраженно")]), choice("3.3.3", "Дольчатая"),
@@ -137,12 +139,12 @@ const ultrasoundAbdomen: readonly InstrumentalFindingCatalogItem[] = [
     group("4.4", "Объёмные образования", [
       choice("4.4.1", "Не визуализируются"), choice("4.4.2", "Визуализируются", [choice("4.4.2.1", "Единичные"), choice("4.4.2.2", "Множественные")]),
     ]),
-    shortText("4.5", "Размер образований, мм"), longText("4.6", "Комментарии"),
+    integer("4.5", "Размер образований", "мм"), longText("4.6", "Комментарии"),
   ]),
   group("5", "Почка левая", [
     choice("5.0.1", "Не визуализируется"), choice("5.0.2", "Визуализируется"),
     group("5.1", "Размер", [choice("5.1.1", "Соответствует физиологической норме"), choice("5.1.2", "Увеличен"), choice("5.1.3", "Уменьшен")]),
-    shortText("5.2", "Длина, мм"), shortText("5.3", "Ширина, мм"), shortText("5.4", "Высота, мм"),
+    integer("5.2", "Длина", "мм"), integer("5.3", "Ширина", "мм"), integer("5.4", "Высота", "мм"),
     group("5.5", "Контуры", [choice("5.5.1", "Ровные"), choice("5.5.2", "Неровные")]),
     group("5.6", "Кортико-медуллярная дифференциация", [
       choice("5.6.1", "Выражена"), choice("5.6.2", "Сглажена"), choice("5.6.3", "Умеренно выражена"), choice("5.6.4", "Отсутствует"), choice("5.6.5", "Усилена"),
@@ -157,7 +159,7 @@ const ultrasoundAbdomen: readonly InstrumentalFindingCatalogItem[] = [
       ]),
     ]),
     group("5.8", "Лоханка", [
-      choice("5.8.1", "Не расширена"), choice("5.8.2", "Расширена"), choice("5.8.3", "Щелевидно расширена"), shortText("5.8.4", "Ширина, мм"),
+      choice("5.8.1", "Не расширена"), choice("5.8.2", "Расширена"), choice("5.8.3", "Щелевидно расширена"), integer("5.8.4", "Ширина", "мм"),
       group("5.8.5", "Эхогенность", [choice("5.8.5.1", "Не изменена"), choice("5.8.5.2", "Повышена"), choice("5.8.5.3", "Имеет признаки минерализации")]),
     ]),
     longText("5.9", "Комментарии"),
@@ -165,7 +167,7 @@ const ultrasoundAbdomen: readonly InstrumentalFindingCatalogItem[] = [
   group("6", "Почка правая", [
     choice("6.0.1", "Не визуализируется"), choice("6.0.2", "Визуализируется"),
     group("6.1", "Размер", [choice("6.1.1", "Соответствует физиологической норме"), choice("6.1.2", "Увеличен"), choice("6.1.3", "Уменьшен")]),
-    shortText("6.2", "Длина, мм"), shortText("6.3", "Ширина, мм"), shortText("6.4", "Высота, мм"),
+    integer("6.2", "Длина", "мм"), integer("6.3", "Ширина", "мм"), integer("6.4", "Высота", "мм"),
     group("6.5", "Контуры", [choice("6.5.1", "Ровные"), choice("6.5.2", "Неровные")]),
     group("6.6", "Кортико-медуллярная дифференциация", [
       choice("6.6.1", "Выражена"), choice("6.6.2", "Сглажена"), choice("6.6.3", "Умеренно выражена"), choice("6.6.4", "Отсутствует"), choice("6.6.5", "Усилена"),
@@ -180,7 +182,7 @@ const ultrasoundAbdomen: readonly InstrumentalFindingCatalogItem[] = [
       ]),
     ]),
     group("6.8", "Лоханка", [
-      choice("6.8.1", "Не расширена"), choice("6.8.2", "Расширена"), choice("6.8.3", "Щелевидно расширена"), shortText("6.8.4", "Ширина, мм"),
+      choice("6.8.1", "Не расширена"), choice("6.8.2", "Расширена"), choice("6.8.3", "Щелевидно расширена"), integer("6.8.4", "Ширина", "мм"),
       group("6.8.5", "Эхогенность", [choice("6.8.5.1", "Не изменена"), choice("6.8.5.2", "Повышена"), choice("6.8.5.3", "Имеет признаки минерализации")]),
     ]),
     longText("6.9", "Комментарии"),
@@ -196,7 +198,7 @@ const ultrasoundAbdomen: readonly InstrumentalFindingCatalogItem[] = [
       choice("9.1.1", "Слабо наполнен"), choice("9.1.2", "Умеренно наполнен"), choice("9.1.3", "Выраженно наполнен"), choice("9.1.4", "Переполнен"), choice("9.1.5", "Спавшийся"),
     ]),
     group("9.2", "Стенка", [
-      shortText("9.2.1", "Толщина, мм"),
+      integer("9.2.1", "Толщина", "мм"),
       group("9.2.2", "Слизистый слой", [
         choice("9.2.2.1", "Ровный"), choice("9.2.2.2", "Неровный"), choice("9.2.2.3", "Значимо неровный"), choice("9.2.2.4", "Отслоен частично"), choice("9.2.2.5", "Отслоен тотально"),
       ]),
@@ -205,20 +207,20 @@ const ultrasoundAbdomen: readonly InstrumentalFindingCatalogItem[] = [
       choice("9.3.1", "Не визуализируется"), choice("9.3.2", "Гетерогенное"), choice("9.3.3", "Анэхогенное"),
       choice("9.3.5", "Визуализируется", [
         longText("9.3.5.1", "Взвесь/осадок"),
-        group("9.3.5.2", "Конкременты", [choice("9.3.5.2.1", "Единичные"), choice("9.3.5.2.2", "Множественные"), shortText("9.3.5.2.3", "Размер, мм")]),
+        group("9.3.5.2", "Конкременты", [choice("9.3.5.2.1", "Единичные"), choice("9.3.5.2.2", "Множественные"), integer("9.3.5.2.3", "Размер", "мм")]),
       ]),
     ]),
     longText("9.4", "Комментарии"),
   ]),
   group("10", "Предстательная железа", [
-    shortText("10.0", "Размер, мм"),
+    integer("10.0", "Размер", "мм"),
     group("10.1", "Контуры", [choice("10.1.1", "Ровные"), choice("10.1.2", "Неровные"), choice("10.1.3", "Чёткие"), choice("10.1.4", "Нечёткие")]),
     group("10.2", "Структура", [choice("10.2.1", "Однородная"), choice("10.2.2", "Слабо неоднородная"), choice("10.2.3", "Неоднородная"), choice("10.2.4", "С очаговыми образованиями")]),
     group("10.3", "Эхогенность паренхимы", [choice("10.3.1", "Не изменена"), choice("10.3.2", "Гипоэхогенная"), choice("10.3.3", "Гиперэхогенная"), choice("10.3.4", "Смешанная")]),
     group("10.4", "Объёмные образования", [
       choice("10.4.1", "Не визуализируются"), choice("10.4.2", "Визуализируются", [choice("10.4.2.1", "Единичные"), choice("10.4.2.2", "Множественные")]),
     ]),
-    shortText("10.5", "Размер, мм"), longText("10.6", "Комментарии"),
+    integer("10.5", "Размер", "мм"), longText("10.6", "Комментарии"),
   ]),
   group("11", "Матка", [
     choice("11.0.1", "Визуализируется"), choice("11.0.2", "Не визуализируется"),
@@ -229,9 +231,9 @@ const ultrasoundAbdomen: readonly InstrumentalFindingCatalogItem[] = [
     ]),
     group("11.3", "Стенка", [
       choice("11.3.1", "Не утолщена"), choice("11.3.2", "Утолщена"), choice("11.3.3", "Неравномерно утолщена"), choice("11.3.4", "Слабо утолщена"),
-      choice("11.3.5", "Неоднородная"), choice("11.3.6", "Однородная"), shortText("11.3.7", "Толщина, мм"),
+      choice("11.3.5", "Неоднородная"), choice("11.3.6", "Однородная"), integer("11.3.7", "Толщина", "мм"),
     ]),
-    shortText("11.4", "Тело, размер, мм"),
+    integer("11.4", "Тело, размер", "мм"),
     group("11.5", "Рога", [
       choice("11.5.1", "Не визуализируются"), choice("11.5.2", "Визуализируются"), choice("11.5.3", "Визуализируются фрагментарно"), longText("11.5.4", "Комментарии"),
     ]),
@@ -241,9 +243,9 @@ const ultrasoundAbdomen: readonly InstrumentalFindingCatalogItem[] = [
   longText("12", "Правый яичник"), longText("13", "Левый яичник"),
   longText("14", "Правый надпочечник"), longText("15", "Левый надпочечник"),
   group("16", "ЖКТ", [
-    group("16.1", "ДПК", [choice("16.1.1", "Визуализируется"), choice("16.1.2", "Не визуализируется"), shortText("16.1.3", "Стенка толщиной, мм"), longText("16.1.4", "Прочее")]),
-    group("16.2", "Тощий кишечник", [choice("16.2.1", "Визуализируется"), choice("16.2.2", "Не визуализируется"), shortText("16.2.3", "Стенка толщиной, мм"), longText("16.2.4", "Прочее")]),
-    group("16.3", "Толстый кишечник", [choice("16.3.1", "Визуализируется"), choice("16.3.2", "Не визуализируется"), shortText("16.3.3", "Стенка толщиной, мм"), longText("16.3.4", "Прочее")]),
+    group("16.1", "ДПК", [choice("16.1.1", "Визуализируется"), choice("16.1.2", "Не визуализируется"), integer("16.1.3", "Стенка толщиной", "мм"), longText("16.1.4", "Прочее")]),
+    group("16.2", "Тощий кишечник", [choice("16.2.1", "Визуализируется"), choice("16.2.2", "Не визуализируется"), integer("16.2.3", "Стенка толщиной", "мм"), longText("16.2.4", "Прочее")]),
+    group("16.3", "Толстый кишечник", [choice("16.3.1", "Визуализируется"), choice("16.3.2", "Не визуализируется"), integer("16.3.3", "Стенка толщиной", "мм"), longText("16.3.4", "Прочее")]),
     longText("16.4", "Лимфоузлы"),
   ]),
   group("17", "Свободная жидкость в брюшной полости", [
@@ -299,15 +301,24 @@ function normalizeFindings(
     }
     const rawChildren = input.children ?? [];
     if (!Array.isArray(rawChildren)) throw new Error("Некорректная структура результатов инструментального исследования.");
-    if ((item.kind === "short-text" || item.kind === "long-text") && rawChildren.length) {
+    if ((item.kind === "integer" || item.kind === "short-text" || item.kind === "long-text") && rawChildren.length) {
       throw new Error("Поле свободного ввода не может содержать вложенные результаты.");
     }
     const children = normalizeFindings(rawChildren, item.children);
     if (item.kind === "group" && !children.length) throw new Error(`Заполните показатель «${item.name}».`);
-    if ((item.kind === "short-text" || item.kind === "long-text")) {
+    if (item.kind === "integer" || item.kind === "short-text" || item.kind === "long-text") {
       const text = String(input.value ?? "").trim();
       if (!text) throw new Error(`Заполните поле «${item.name}».`);
-      return { findingId: item.id, findingName: item.name, value: text, children };
+      if (item.kind === "integer" && !/^\d+$/.test(text)) {
+        throw new Error(`Укажите целое число для поля «${item.name}».`);
+      }
+      return {
+        findingId: item.id,
+        findingName: item.name,
+        value: text,
+        ...(item.unit ? { unit: item.unit } : {}),
+        children,
+      };
     }
     return { findingId: item.id, findingName: item.name, children };
   });

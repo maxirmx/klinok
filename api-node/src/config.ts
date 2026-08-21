@@ -9,7 +9,7 @@ export interface ApiConfig {
   publicOrigin: string;
   cookieSecure: boolean;
   enforceOrigin: boolean;
-  trustProxy: boolean | number | string;
+  trustProxy: boolean | string;
   sessionDays: number;
   bootstrapAccountId: string;
   legal: { personalDataConsentVersion: string; userAgreementVersion: string };
@@ -28,10 +28,12 @@ function positiveInteger(value: string | undefined, fallback: number): number {
   return parsed;
 }
 
-function proxy(value: string | undefined): boolean | number | string {
+function proxy(value: string | undefined): boolean | string {
   if (!value || value === "false") return false;
   if (value === "true") return true;
-  if (/^\d+$/.test(value)) return Number(value);
+  if (/^\d+$/.test(value)) {
+    throw new Error("KLINOK_TRUST_PROXY does not support numeric hop counts; use true, false, a named range, or an IP/CIDR range.");
+  }
   return value;
 }
 

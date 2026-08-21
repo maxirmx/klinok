@@ -185,6 +185,17 @@ describe("MedicalRecordEntry", () => {
                       }],
                     }],
                   }],
+                }, {
+                  findingId: "instrumental.finding.ultrasound-abdomen.10.0",
+                  findingName: "Размер",
+                  value: "12",
+                  unit: "мм",
+                  children: [],
+                }, {
+                  findingId: "instrumental.finding.ultrasound-abdomen.4.5",
+                  findingName: "Размер образований, мм",
+                  value: "7",
+                  children: [],
                 }],
               }, {
                 id: "223e4567-e89b-12d3-a456-426614174000",
@@ -210,6 +221,8 @@ describe("MedicalRecordEntry", () => {
     expect(history.findAll(".instrumental-history-findings .instrumental-history-findings")).toHaveLength(3);
     expect(history.text()).toContain("20.07.2026 · УЗИ органов брюшной полости");
     expect(history.text()).toContain("Взвесь/осадок: Незначительно");
+    expect(history.text()).toContain("Размер: 12 мм");
+    expect(history.text()).toContain("Размер образований, мм: 7");
     expect(history.text()).toContain("Очаговых изменений нет");
     expect(history.text()).toContain("Контроль");
   });

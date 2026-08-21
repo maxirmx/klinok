@@ -90,10 +90,10 @@ describe("LaboratoryTestsEditor", () => {
     expect(current.studies.map((candidate) => candidate.id)).toEqual([inserted.id, sibling.id]);
   });
 
-  it("removes an indicator from the latest study state after confirmation", async () => {
+  it("removes a populated indicator without confirmation", async () => {
     const type = laboratoryStudyTypeById("lab.study.cbc")!;
-    const [targetIndicator, retainedIndicator, addedIndicator] = type.indicators;
-    if (!targetIndicator || !retainedIndicator || !addedIndicator) throw new Error("CBC indicators are incomplete.");
+    const [targetIndicator, retainedIndicator] = type.indicators;
+    if (!targetIndicator || !retainedIndicator) throw new Error("CBC indicators are incomplete.");
     const targetResult = {
       indicatorId: targetIndicator.id,
       indicatorName: targetIndicator.name,
@@ -129,29 +129,11 @@ describe("LaboratoryTestsEditor", () => {
 
     await wrapper.get(`button[aria-label="Удалить показатель «${targetIndicator.name}»"]`).trigger("click");
     await flushPromises();
-    expect(wrapper.find('[role="alertdialog"]').exists()).toBe(true);
-
-    const addedResult = {
-      indicatorId: addedIndicator.id,
-      indicatorName: addedIndicator.name,
-      unit: addedIndicator.unit,
-      result: "новое значение",
-    };
-    current = { studies: [{
-      ...initialStudy,
-      laboratory: "Обновлённая лаборатория",
-      results: [{ ...retainedResult, result: "актуальное значение" }, addedResult],
-    }] };
-    await wrapper.setProps({ modelValue: current });
-    await wrapper.get('[role="alertdialog"] .danger').trigger("click");
-    await flushPromises();
+    expect(wrapper.find('[role="alertdialog"]').exists()).toBe(false);
 
     const updated = current.studies[0];
-    expect(updated?.laboratory).toBe("Обновлённая лаборатория");
-    expect(updated?.mode === "panel" ? updated.results : []).toEqual([
-      { ...retainedResult, result: "актуальное значение" },
-      addedResult,
-    ]);
+    expect(updated?.laboratory).toBe("Исходная лаборатория");
+    expect(updated?.mode === "panel" ? updated.results : []).toEqual([retainedResult]);
   });
 
   it("requires a fixed type before adding and removes every study mode", async () => {
@@ -317,23 +299,14 @@ describe("LaboratoryTestsEditor", () => {
 
     await wrapper.get('button[title="Удалить показатель"]').trigger("click");
     await flushPromises();
-    let dialog = wrapper.get('[role="alertdialog"]');
-    expect(dialog.text()).toContain("Удалить заполненный показатель?");
-    expect(dialog.text()).toContain(cbc.indicators[0]!.name);
-    await dialog.get(".outline-action").trigger("click");
-    await flushPromises();
-    expect(current.studies[0]?.mode === "panel" ? current.studies[0].results : []).toHaveLength(1);
-    await wrapper.get('button[title="Удалить показатель"]').trigger("click");
-    await flushPromises();
-    dialog = wrapper.get('[role="alertdialog"]');
-    await dialog.get(".danger").trigger("click");
-    await flushPromises();
+    expect(wrapper.find('[role="alertdialog"]').exists()).toBe(false);
     expect(current.studies[0]?.mode === "panel" ? current.studies[0].results : []).toHaveLength(0);
 
     await wrapper.get('button[title="Удалить исследование"]').trigger("click");
     await flushPromises();
-    dialog = wrapper.get('[role="alertdialog"]');
-    expect(dialog.text()).toContain("После подтверждения будут удалены данные выбранного исследования.");
+    let dialog = wrapper.get('[role="alertdialog"]');
+    expect(dialog.text()).toContain("Удалить заполненное исследование?");
+    expect(dialog.text()).toContain("Исследование «Общеклинический анализ крови» и все заполненные данные будут удалены.");
     await dialog.get(".outline-action").trigger("click");
     await flushPromises();
     expect(current.studies).toHaveLength(1);

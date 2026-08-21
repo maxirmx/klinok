@@ -34,8 +34,12 @@ function validateFindings(
     const item = catalogById.get(value.findingId);
     if (!item) continue;
     if (item.kind === "group" && !value.children.length) errors[item.id] = `Заполните показатель «${item.name}».`;
-    if ((item.kind === "short-text" || item.kind === "long-text") && !value.value?.trim()) {
-      errors[item.id] = `Заполните поле «${item.name}».`;
+    if (item.kind === "integer" || item.kind === "short-text" || item.kind === "long-text") {
+      const text = value.value?.trim() ?? "";
+      if (!text) errors[item.id] = `Заполните поле «${item.name}».`;
+      else if (item.kind === "integer" && !/^\d+$/.test(text)) {
+        errors[item.id] = `Укажите целое число для поля «${item.name}».`;
+      }
     }
     validateFindings(value.children, item.children, errors);
   }

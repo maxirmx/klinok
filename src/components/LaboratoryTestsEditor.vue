@@ -19,7 +19,7 @@ const pendingTypeIds = ref<string[]>([]);
 const pendingIndicatorIds = ref<Record<string, string[]>>({});
 const pendingType = computed(() => laboratoryStudyTypeById(pendingTypeIds.value[0] ?? ""));
 const confirmOpen = computed({ get: () => Boolean(pending.value), set: (value) => { if (!value) pending.value = null; } });
-const confirmTitle = computed(() => pending.value?.title ?? "Удалить заполненные данные?");
+const confirmTitle = computed(() => pending.value?.title ?? "Удалить заполненное исследование?");
 const confirmDescription = computed(() => pending.value?.description ?? "После подтверждения заполненные данные будут удалены.");
 const uuid = () => globalThis.crypto.randomUUID();
 function addStudy() {
@@ -54,7 +54,7 @@ function removeStudy(studyId: string) {
     const remaining = { ...pendingIndicatorIds.value };
     delete remaining[studyId];
     pendingIndicatorIds.value = remaining;
-  }, populated(study), "Удалить заполненные данные?", "После подтверждения будут удалены данные выбранного исследования.");
+  }, populated(study), "Удалить заполненное исследование?", `Исследование «${study.typeName}» и все заполненные данные будут удалены.`);
 }
 function indicatorOptions(study: LaboratoryStudyValue) {
   if (study.mode !== "panel") return [];
@@ -95,16 +95,10 @@ function addIndicator(study: LaboratoryStudyValue) {
 function removeIndicator(studyId: string, indicatorId: string) {
   const study = model.value.studies.find((candidate) => candidate.id === studyId);
   if (study?.mode !== "panel") return;
-  const result = study.results.find((candidate) => candidate.indicatorId === indicatorId);
-  if (!result) return;
-  destructive(() => {
-    const current = model.value.studies.find((candidate) => candidate.id === studyId);
-    if (current?.mode !== "panel") return;
-    updateStudy({
-      ...current,
-      results: current.results.filter((candidate) => candidate.indicatorId !== indicatorId),
-    });
-  }, Boolean(result.result.trim() || result.reference?.trim()), "Удалить заполненный показатель?", `Результат и референсные значения показателя «${result.indicatorName}» будут удалены.`);
+  updateStudy({
+    ...study,
+    results: study.results.filter((candidate) => candidate.indicatorId !== indicatorId),
+  });
 }
 function confirm() { const action = pending.value?.action; pending.value = null; action?.(); }
 function invalid(message?: string) { return message ? true : undefined; }

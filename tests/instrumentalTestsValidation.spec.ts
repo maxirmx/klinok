@@ -29,6 +29,16 @@ describe("instrumental draft validation", () => {
         findingName: "Печень",
         children: [],
       }, {
+        findingId: "instrumental.finding.ultrasound-abdomen.2",
+        findingName: "Желчный пузырь",
+        children: [{
+          findingId: "instrumental.finding.ultrasound-abdomen.2.8",
+          findingName: "Размер",
+          value: "4.2",
+          unit: "мм",
+          children: [],
+        }],
+      }, {
         findingId: "instrumental.finding.ultrasound-abdomen.19",
         findingName: "Заключение",
         value: " ",
@@ -39,6 +49,7 @@ describe("instrumental draft validation", () => {
     expect(parsed.errors.studies[0]).toMatchObject({ date: "Укажите корректную дату исследования.", result: "Укажите результат исследования." });
     expect(parsed.errors.studies[1]?.findings).toEqual({
       "instrumental.finding.ultrasound-abdomen.1": "Заполните показатель «Печень».",
+      "instrumental.finding.ultrasound-abdomen.2.8": "Укажите целое число для поля «Размер».",
       "instrumental.finding.ultrasound-abdomen.19": "Заполните поле «Заключение».",
     });
   });

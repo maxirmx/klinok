@@ -4,7 +4,11 @@
 
 import { flushPromises, mount, type VueWrapper } from "@vue/test-utils";
 import { describe, expect, it } from "vitest";
-import type { InstrumentalTestsSectionValue } from "@klinok/contracts";
+import type {
+  InstrumentalFindingCatalogItem,
+  InstrumentalFindingValue,
+  InstrumentalTestsSectionValue,
+} from "@klinok/contracts";
 import AppCatalogCombobox from "../src/components/AppCatalogCombobox.vue";
 import InstrumentalFindingEditor from "../src/components/InstrumentalFindingEditor.vue";
 import InstrumentalTestsEditor from "../src/components/InstrumentalTestsEditor.vue";
@@ -58,6 +62,49 @@ async function selectChoice(wrapper: VueWrapper, id: string) {
 }
 
 describe("InstrumentalTestsEditor", () => {
+  it("prefers a persisted measurement unit and falls back to the catalog unit", async () => {
+    const catalog: readonly InstrumentalFindingCatalogItem[] = [{
+      id: "size",
+      name: "Размер",
+      kind: "integer",
+      unit: "мм",
+      children: [],
+    }];
+    const finding: InstrumentalFindingValue = {
+      findingId: "size",
+      findingName: "Размер",
+      value: "12",
+      unit: "см",
+      children: [],
+    };
+    const wrapper = mount(InstrumentalFindingEditor, {
+      props: { catalog, modelValue: [finding] },
+    });
+
+    expect(wrapper.get('input[type="number"]').attributes("aria-label")).toBe("Размер, см");
+    expect(wrapper.get(".instrumental-integer-unit").text()).toBe("см");
+
+    await wrapper.setProps({ modelValue: [{ ...finding, unit: undefined }] });
+    expect(wrapper.get('input[type="number"]').attributes("aria-label")).toBe("Размер, мм");
+    expect(wrapper.get(".instrumental-integer-unit").text()).toBe("мм");
+  });
+
+  it("renders a level-zero choice in its section heading row", async () => {
+    const { wrapper, current } = mountEditor();
+    await chooseType(wrapper, "instrumental.study.ultrasound-abdomen");
+    await addFinding(wrapper, "instrumental.finding.ultrasound-abdomen.3");
+
+    const row = wrapper.get(".instrumental-root-choice-row");
+    expect(row.get(".instrumental-finding-name").text()).toBe("Поджелудочная железа");
+    expect(row.find(".instrumental-result-desktop-name").exists()).toBe(false);
+    expect(row.find(".instrumental-result-mobile-name").exists()).toBe(false);
+    const selector = row.get<HTMLSelectElement>('select[aria-label="Значение показателя «Поджелудочная железа»"]');
+    await selector.setValue("instrumental.finding.ultrasound-abdomen.3.0.1");
+    expect(current().studies[0]?.mode === "tree" ? current().studies[0].findings[0]?.children[0]?.findingName : undefined)
+      .toBe("Визуализируется");
+    expect(row.get('button[aria-label="Удалить раздел «Поджелудочная железа»"]').exists()).toBe(true);
+  });
+
   it("builds multiple ultrasound branches through arbitrary recursive levels", async () => {
     const { wrapper, current } = mountEditor();
     expect(wrapper.get(".instrumental-study-add").attributes("disabled")).toBeDefined();
@@ -72,16 +119,29 @@ describe("InstrumentalTestsEditor", () => {
     const rootFindingEditor = wrapper.findComponent(InstrumentalFindingEditor);
     expect(rootFindingEditor.findComponent(AppCatalogCombobox).props("placeholder")).toBe("Выберите раздел");
     expect(rootFindingEditor.get(".instrumental-finding-add").attributes("aria-label")).toBe("Добавить раздел");
+    expect(wrapper.find(".instrumental-study-comment").exists()).toBe(false);
 
     await addFinding(wrapper, "instrumental.finding.ultrasound-abdomen.9");
     await addFinding(wrapper, "instrumental.finding.ultrasound-abdomen.1");
     expect(current().studies[0]?.mode === "tree" ? current().studies[0].findings.map((item) => item.findingName) : []).toEqual(["Печень", "Мочевой пузырь"]);
     await addFinding(wrapper, "instrumental.finding.ultrasound-abdomen.1.10");
     await selectChoice(wrapper, "instrumental.finding.ultrasound-abdomen.1.10.2");
+    const focalContinuation = levelFor(wrapper, "instrumental.finding.ultrasound-abdomen.1.10.2.1");
+    expect(focalContinuation.props("choiceContinuation")).toBe(true);
+    expect(focalContinuation.find(".instrumental-result-headings").exists()).toBe(false);
+    const focalContinuationRow = focalContinuation.get(".instrumental-choice-continuation-row");
+    expect(focalContinuationRow.find(".instrumental-result-desktop-name").exists()).toBe(false);
+    expect(focalContinuationRow.find(".instrumental-result-mobile-name").exists()).toBe(false);
+    expect(focalContinuationRow.get("select").attributes("aria-label")).toBe("Значение показателя «Визуализируются»");
     await selectChoice(wrapper, "instrumental.finding.ultrasound-abdomen.1.10.2.2");
     const focalCount = wrapper.findAll("select").find((selector) =>
       selector.attributes("aria-label")?.includes("Визуализируются"))!;
     expect((focalCount.element as HTMLSelectElement).value).toBe("instrumental.finding.ultrasound-abdomen.1.10.2.2");
+    await selectChoice(wrapper, "instrumental.finding.ultrasound-abdomen.1.10.1");
+    expect(wrapper.find('[role="alertdialog"]').exists()).toBe(false);
+    expect(wrapper.find(".instrumental-choice-continuation-row").exists()).toBe(false);
+    const liver = current().studies[0]?.mode === "tree" ? current().studies[0].findings.find((item) => item.findingName === "Печень") : undefined;
+    expect(liver?.children[0]?.children).toEqual([expect.objectContaining({ findingName: "Не визуализируются", children: [] })]);
 
     await addFinding(wrapper, "instrumental.finding.ultrasound-abdomen.9.3");
     const bladderFindingLevel = levelFor(wrapper, "instrumental.finding.ultrasound-abdomen.9.3");
@@ -91,9 +151,7 @@ describe("InstrumentalTestsEditor", () => {
     await addFinding(wrapper, "instrumental.finding.ultrasound-abdomen.9.3.5.2");
     await selectChoice(wrapper, "instrumental.finding.ultrasound-abdomen.9.3.5.2.1");
     await selectChoice(wrapper, "instrumental.finding.ultrasound-abdomen.9.3.5.2.2");
-    expect(wrapper.get('[role="alertdialog"]').text()).toContain("Заменить выбранное значение");
-    await wrapper.get('[role="alertdialog"] .danger').trigger("click");
-    await flushPromises();
+    expect(wrapper.find('[role="alertdialog"]').exists()).toBe(false);
     await addFinding(wrapper, "instrumental.finding.ultrasound-abdomen.9.3.5.2.3");
 
     const valueField = wrapper.findAll(".instrumental-result-control").find((field) =>
@@ -103,14 +161,24 @@ describe("InstrumentalTestsEditor", () => {
     expect((valueField.get("select").element as HTMLSelectElement).value).toBe("instrumental.finding.ultrasound-abdomen.9.3.5.2.2");
     expect(wrapper.findAll(".instrumental-result-headings")[0]!.text()).toBe("ПоказательРезультат");
     const bladder = current().studies[0]?.mode === "tree" ? current().studies[0].findings.find((item) => item.findingName === "Мочевой пузырь") : undefined;
-    expect(bladder?.children[0]?.children[0]?.children[0]?.children.map((item) => item.findingName)).toEqual(["Множественные", "Размер, мм"]);
+    expect(bladder?.children[0]?.children[0]?.children[0]?.children.map((item) => item.findingName)).toEqual(["Множественные", "Размер"]);
 
-    const sizeLabel = wrapper.findAll(".instrumental-finding-content label").find((label) => label.get("span").text() === "Размер, мм")!;
-    await sizeLabel.get("input").setValue("4,2");
+    const sizeLabel = wrapper.findAll(".instrumental-finding-content label").find((label) =>
+      label.find('input[aria-label="Размер, мм"]').exists())!;
+    const sizeInput = sizeLabel.get("input");
+    expect(sizeInput.attributes()).toMatchObject({ type: "number", min: "0", step: "1", inputmode: "numeric" });
+    expect(sizeLabel.get(".instrumental-integer-unit").text()).toBe("мм");
+    await sizeInput.setValue("4");
     const deepContent = sizeLabel.element.closest<HTMLElement>(".instrumental-finding-content")!;
     expect(deepContent.style.getPropertyValue("--instrumental-depth")).toBe("3");
+    expect(bladder?.children[0]?.children[0]?.children[0]?.children.find((item) => item.findingName === "Размер"))
+      .toMatchObject({ value: "4", unit: "мм" });
     expect(wrapper.findAll(".instrumental-finding-add").every((button) => button.classes().includes("medical-card-action"))).toBe(true);
-    expect(wrapper.findAll(".instrumental-finding-delete").every((button) => button.attributes("title") === "Удалить показатель")).toBe(true);
+    expect(wrapper.findAll('button[title="Удалить раздел"]').map((button) => button.attributes("aria-label"))).toEqual([
+      "Удалить раздел «Печень»",
+      "Удалить раздел «Мочевой пузырь»",
+    ]);
+    expect(wrapper.findAll('button[title="Удалить показатель"]').length).toBeGreaterThan(0);
 
     await valueField.get("select").setValue("");
     await flushPromises();
@@ -119,23 +187,22 @@ describe("InstrumentalTestsEditor", () => {
     await flushPromises();
     expect((wrapper.findAll("select").find((selector) => selector.attributes("aria-label")?.includes("Конкременты"))!
       .element as HTMLSelectElement).value).toBe("");
-    expect(bladder?.children[0]?.children[0]?.children[0]?.children.map((item) => item.findingName)).toEqual(["Размер, мм"]);
+    expect(bladder?.children[0]?.children[0]?.children[0]?.children.map((item) => item.findingName)).toEqual(["Размер"]);
 
-    await wrapper.get('button[aria-label="Удалить показатель «Размер, мм»"]').trigger("click");
+    await wrapper.get('button[aria-label="Удалить показатель «Размер»"]').trigger("click");
     await flushPromises();
-    expect(wrapper.get('[role="alertdialog"]').text()).toContain("Размер, мм");
-    await wrapper.get('[role="alertdialog"] .danger').trigger("click");
-    await flushPromises();
-    expect(wrapper.find('button[aria-label="Удалить показатель «Размер, мм»"]').exists()).toBe(false);
+    expect(wrapper.find('[role="alertdialog"]').exists()).toBe(false);
+    expect(wrapper.find('button[aria-label="Удалить показатель «Размер»"]').exists()).toBe(false);
 
-    await wrapper.get('button[aria-label="Удалить показатель «Печень»"]').trigger("click");
+    await wrapper.get('button[aria-label="Удалить раздел «Печень»"]').trigger("click");
     await flushPromises();
-    expect(wrapper.get('[role="alertdialog"]').text()).toContain("Печень");
+    expect(wrapper.get('[role="alertdialog"]').text()).toContain("Удалить заполненный раздел?");
+    expect(wrapper.get('[role="alertdialog"]').text()).toContain("Раздел «Печень» и все вложенные данные будут удалены.");
     await wrapper.get('[role="alertdialog"] .danger').trigger("click");
     await flushPromises();
     expect(current().studies[0]?.mode === "tree" ? current().studies[0].findings.map((item) => item.findingName) : []).toEqual(["Мочевой пузырь"]);
 
-    await wrapper.get('button[aria-label="Удалить показатель «Мочевой пузырь»"]').trigger("click");
+    await wrapper.get('button[aria-label="Удалить раздел «Мочевой пузырь»"]').trigger("click");
     await flushPromises();
     expect(wrapper.get('[role="alertdialog"]').text()).toContain("Мочевой пузырь");
     await wrapper.get('[role="alertdialog"] .outline-action').trigger("click");
@@ -157,7 +224,8 @@ describe("InstrumentalTestsEditor", () => {
 
     expect(rootContent.classes()).toContain("instrumental-root-free-text");
     expect(rootContent.element.parentElement?.classList).not.toContain("instrumental-result-row");
-    expect(rootContent.get("label > span").text()).toBe("Результат");
+    expect(rootContent.find("label > span").exists()).toBe(false);
+    expect(rootContent.get("textarea").attributes("aria-label")).toBe("Левый надпочечник");
     expect(rootContent.get("textarea").attributes("rows")).toBe("4");
     expect(rootContent.get("textarea").classes()).not.toContain("medical-card-comment");
     expect(nestedContent.classes()).not.toContain("instrumental-root-free-text");
@@ -185,7 +253,8 @@ describe("InstrumentalTestsEditor", () => {
 
     await wrapper.get(".instrumental-study-delete").trigger("click");
     await flushPromises();
-    expect(wrapper.get('[role="alertdialog"]').text()).toContain("данные выбранного исследования");
+    expect(wrapper.get('[role="alertdialog"]').text()).toContain("Удалить заполненное исследование?");
+    expect(wrapper.get('[role="alertdialog"]').text()).toContain("Исследование «Рентген грудной и брюшной полости»");
     await wrapper.get('[role="alertdialog"] .danger').trigger("click");
     await flushPromises();
     expect(current().studies).toHaveLength(0);
