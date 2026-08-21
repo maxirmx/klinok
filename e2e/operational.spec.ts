@@ -315,9 +315,13 @@ test("fresh provisioning, Doctor approval, grant, draft, and confirmation", asyn
   await doctorPage.locator(".encounter-what-happened").getByLabel("Комментарий").fill("Состояние стабильное");
   await doctorPage.getByLabel("В стадии наблюдения", { exact: true }).check();
   await doctorPage.locator(".encounter-outcome").getByLabel("Комментарий").fill("Контроль через неделю");
-  await doctorPage.locator(".encounter-add-section select").selectOption("general-data");
+  const addSectionCard = doctorPage.locator(".encounter-add-section");
+  const addSectionSelect = addSectionCard.getByLabel("Добавить раздел", { exact: true });
+  await expect(addSectionCard).toHaveClass(/encounter-section-card/);
+  await expect(addSectionCard.getByRole("heading", { name: "Добавить раздел", exact: true })).toBeVisible();
+  await addSectionSelect.selectOption("general-data");
   await doctorPage.getByLabel("Вес, кг", { exact: true }).fill("14.3");
-  await doctorPage.locator(".encounter-add-section select").selectOption("therapeutic-appointment");
+  await addSectionSelect.selectOption("therapeutic-appointment");
   const therapeuticCard = doctorPage.locator(".encounter-section-card").filter({ hasText: "Терапевтический приём" });
   const therapeuticTabs = therapeuticCard.getByRole("tab");
   await expect(therapeuticTabs).toHaveCount(5);
@@ -329,7 +333,7 @@ test("fresh provisioning, Doctor approval, grant, draft, and confirmation", asyn
   await therapeuticCard.getByLabel("Текст рекомендаций").fill("Повторный осмотр через неделю");
   await therapeuticCard.getByRole("tab", { name: "Назначения" }).click();
   await therapeuticCard.getByLabel("Текст назначений").fill("Щадящий режим");
-  await doctorPage.locator(".encounter-add-section select").selectOption("diagnosis");
+  await addSectionSelect.selectOption("diagnosis");
   const diagnosisCard = doctorPage.locator(".encounter-section-card").filter({
     has: doctorPage.getByRole("heading", { name: "Диагноз", exact: true }),
   });
@@ -369,7 +373,7 @@ test("fresh provisioning, Doctor approval, grant, draft, and confirmation", asyn
   expect(differentialRemoveOffsets).toHaveLength(3);
   expect(Math.max(...differentialRemoveOffsets)).toBeLessThanOrEqual(1);
 
-  await doctorPage.locator(".encounter-add-section select").selectOption("vaccination");
+  await addSectionSelect.selectOption("vaccination");
   const vaccinationCard = doctorPage.locator(".encounter-section-card").filter({
     has: doctorPage.getByRole("heading", { name: "Вакцинация/чипирование", exact: true }),
   });
@@ -380,7 +384,7 @@ test("fresh provisioning, Doctor approval, grant, draft, and confirmation", asyn
   await expectHorizontalGap(revaccinationInput, revaccinationToggle);
   await expectTopAligned(revaccinationToggle, revaccinationInput);
 
-  await doctorPage.locator(".encounter-add-section select").selectOption("laboratory-tests");
+  await addSectionSelect.selectOption("laboratory-tests");
   const laboratoryCard = doctorPage.locator(".encounter-section-card").filter({
     has: doctorPage.getByRole("heading", { name: "Лабораторные исследования", exact: true }),
   });
@@ -407,7 +411,7 @@ test("fresh provisioning, Doctor approval, grant, draft, and confirmation", asyn
   await expectTopAligned(addIndicator, indicator);
   await expectTopAligned(deleteResult, resultInput);
 
-  await doctorPage.locator(".encounter-add-section select").selectOption("instrumental-tests");
+  await addSectionSelect.selectOption("instrumental-tests");
   const instrumentalCard = doctorPage.locator(".encounter-section-card").filter({
     has: doctorPage.getByRole("heading", { name: "Инструментальные исследования", exact: true }),
   });
@@ -438,18 +442,20 @@ test("fresh provisioning, Doctor approval, grant, draft, and confirmation", asyn
   const addBladder = await addInstrumentalFinding("Добавить раздел исследования", "Мочевой пузырь");
   const addContents = await addInstrumentalFinding("Добавить показатель для «Мочевой пузырь»", "Содержимое");
   const contentsValueSelector = await selectInstrumentalValue("Содержимое", "Визуализируется");
-  await expect(contentsValueSelector.locator("..")).toHaveClass(/therapeutic-select-field/);
+  await expect(contentsValueSelector.locator("..")).toHaveClass(/instrumental-result-control/);
   await expect(contentsValueSelector).not.toHaveAttribute("multiple");
   const addSediment = await addInstrumentalFinding("Добавить показатель для «Визуализируется»", "Взвесь/осадок");
-  await instrumentalCard.getByLabel("Взвесь/осадок", { exact: true }).fill("Незначительно");
+  const sedimentInput = instrumentalCard.getByLabel("Взвесь/осадок", { exact: true });
+  await sedimentInput.fill("Незначительно");
   const addConclusion = await addInstrumentalFinding("Добавить раздел исследования", "Заключение");
   await instrumentalCard.getByLabel("Заключение", { exact: true }).fill("Без патологии");
   const deleteInstrumentalStudy = instrumentalCard.getByRole("button", { name: "Удалить исследование" });
   const deleteSediment = instrumentalCard.getByRole("button", { name: "Удалить показатель «Взвесь/осадок»" });
+  const instrumentalResultHeadings = instrumentalCard.locator(".instrumental-result-headings")
+    .filter({ hasText: "ПоказательРезультат" });
   await expectTopAligned(addInstrumentalStudy, instrumentalType);
-  const sedimentLabel = instrumentalCard.locator(".instrumental-finding-content label")
-    .filter({ hasText: "Взвесь/осадок" }).locator("span");
-  await expectTopAligned(deleteSediment, sedimentLabel);
+  await expect(instrumentalResultHeadings.first()).toBeVisible();
+  await expectTopAligned(deleteSediment, sedimentInput);
 
   await therapeuticCard.getByRole("tab", { name: "Анамнез болезни" }).click();
   const therapeuticImport = therapeuticCard.getByRole("button", { name: "Импортировать из «Что случилось»" });
@@ -525,6 +531,9 @@ test("fresh provisioning, Doctor approval, grant, draft, and confirmation", asyn
   await expectHorizontalGap(indicator, indicatorToggle);
   await expectHorizontalGap(revaccinationInput, revaccinationToggle);
   await expectTopAligned(deleteResult, resultInput);
+  await expectTopAligned(deleteSediment, sedimentInput);
+  await expect(instrumentalResultHeadings.first()).toBeHidden();
+  await expect(contentsValueSelector.locator("..").locator(".instrumental-result-mobile-name")).toBeVisible();
   const narrowTabRows = await therapeuticTabs.evaluateAll((tabs) => tabs.reduce<number[]>((rows, tab) => {
     const top = Math.round(tab.getBoundingClientRect().top);
     if (!rows.some((candidate) => Math.abs(candidate - top) <= 2)) rows.push(top);

@@ -431,7 +431,10 @@ function submit() {
         <textarea :value="texts[kind] ?? ''" rows="4" required @input="updateText(kind, $event)" />
       </template>
     </article>
-    <label v-if="optionalAvailable.length" class="encounter-add-section"><span>Добавить раздел</span><select @change="selectOptional"><option value="">Выберите раздел</option><option v-for="kind in optionalAvailable" :key="kind" :value="kind">{{ ENCOUNTER_SECTION_LABELS[kind] }}</option></select></label>
+    <section v-if="optionalAvailable.length" class="encounter-section-card encounter-add-section">
+      <div class="doctor-heading"><h3>Добавить раздел</h3></div>
+      <select aria-label="Добавить раздел" @change="selectOptional"><option value="">Выберите раздел</option><option v-for="kind in optionalAvailable" :key="kind" :value="kind">{{ ENCOUNTER_SECTION_LABELS[kind] }}</option></select>
+    </section>
     <article class="encounter-section-card encounter-outcome">
       <div class="doctor-heading"><h3 id="encounter-outcome-heading">{{ ENCOUNTER_SECTION_LABELS.outcome }}</h3></div>
       <fieldset class="medical-card-option-panel encounter-outcome-option-panel">

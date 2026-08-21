@@ -1506,14 +1506,14 @@ describe("Doctor pages", () => {
     let dialog = wrapper.get('[role="alertdialog"]');
     expect(dialog.text()).toContain("Удалить раздел?");
     expect(dialog.text()).toContain("Раздел «Диагноз» и введённые в нём данные будут удалены из записи.");
-    expect(wrapper.find(".encounter-section-card:not(.encounter-what-happened):not(.encounter-outcome)").exists()).toBe(true);
+    expect(wrapper.find(".encounter-section-card:not(.encounter-what-happened):not(.encounter-outcome):not(.encounter-add-section)").exists()).toBe(true);
     await dialog.get(".outline-action").trigger("click");
-    expect(wrapper.find(".encounter-section-card:not(.encounter-what-happened):not(.encounter-outcome)").exists()).toBe(true);
+    expect(wrapper.find(".encounter-section-card:not(.encounter-what-happened):not(.encounter-outcome):not(.encounter-add-section)").exists()).toBe(true);
 
     await remove.trigger("click");
     dialog = wrapper.get('[role="alertdialog"]');
     await dialog.get(".danger").trigger("click");
-    expect(wrapper.find(".encounter-section-card:not(.encounter-what-happened):not(.encounter-outcome)").exists()).toBe(false);
+    expect(wrapper.find(".encounter-section-card:not(.encounter-what-happened):not(.encounter-outcome):not(.encounter-add-section)").exists()).toBe(false);
   });
 
   it("saves and promotes structured diagnoses while retaining their source values", async () => {
@@ -1703,7 +1703,10 @@ describe("Doctor pages", () => {
       .toEqual(["Всё хорошо, необходимо", "Не всё хорошо с", "Всё плохо"]);
     expect(wrapper.findAll(".encounter-condition-trees > .encounter-taxonomy > li > details").every((tree) => tree.attributes("open") === undefined)).toBe(true);
     expect(wrapper.get(".encounter-date-field").exists()).toBe(true);
-    expect(wrapper.get(".encounter-add-section").exists()).toBe(true);
+    const addSection = wrapper.get(".encounter-add-section");
+    expect(addSection.classes()).toContain("encounter-section-card");
+    expect(addSection.get("h3").text()).toBe("Добавить раздел");
+    expect(addSection.get("select").attributes("aria-label")).toBe("Добавить раздел");
     const checkbox = (label: string) => wrapper.findAll(".encounter-taxonomy label")
       .find((candidate) => candidate.text() === label)!
       .get<HTMLInputElement>('input[type="checkbox"]');
