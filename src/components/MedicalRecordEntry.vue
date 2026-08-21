@@ -5,6 +5,7 @@
 
 import { computed } from "vue";
 import AppIcon from "./AppIcon.vue";
+import InstrumentalFindingsView from "./InstrumentalFindingsView.vue";
 import PersonIdentity from "./PersonIdentity.vue";
 import TherapeuticAppointmentView from "./TherapeuticAppointmentView.vue";
 import {
@@ -19,6 +20,7 @@ import {
   isFreeTextValue,
   isDiagnosisValue,
   isGeneralDataValue,
+  isInstrumentalTestsValue,
   isOutcomeValue,
   isVaccinationValue,
   isLaboratoryTestsValue,
@@ -241,6 +243,14 @@ function formatLocalDateTime(value: string) {
             </div>
             <p v-else-if="study.mode === 'narrative'">{{ study.result }}</p>
             <dl v-else><div><dt>Инфекция</dt><dd>{{ study.infection }}</dd></div><div><dt>Метод</dt><dd>{{ study.method }}</dd></div><div><dt>Результат</dt><dd>{{ study.result === 'positive' ? 'Положительно' : 'Отрицательно' }}</dd></div></dl>
+            <p v-if="study.comment" class="encounter-history-comment">{{ study.comment }}</p>
+          </section>
+        </div>
+        <div v-else-if="item.kind === 'instrumental-tests' && isInstrumentalTestsValue(item.section.value)" class="instrumental-history">
+          <section v-for="study in item.section.value.studies" :key="study.id" class="instrumental-history-study">
+            <h4>{{ formatDate(study.date) }} · {{ study.typeName }}</h4>
+            <InstrumentalFindingsView v-if="study.mode === 'tree'" :findings="study.findings" />
+            <p v-else>{{ study.result }}</p>
             <p v-if="study.comment" class="encounter-history-comment">{{ study.comment }}</p>
           </section>
         </div>

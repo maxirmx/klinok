@@ -407,6 +407,46 @@ test("fresh provisioning, Doctor approval, grant, draft, and confirmation", asyn
   await expectTopAligned(addIndicator, indicator);
   await expectTopAligned(deleteResult, resultInput);
 
+  await doctorPage.locator(".encounter-add-section select").selectOption("instrumental-tests");
+  const instrumentalCard = doctorPage.locator(".encounter-section-card").filter({
+    has: doctorPage.getByRole("heading", { name: "Инструментальные исследования", exact: true }),
+  });
+  const instrumentalType = instrumentalCard.getByRole("combobox", { name: "Тип исследования" });
+  await instrumentalType.fill("УЗИ органов брюшной полости");
+  await instrumentalCard.getByRole("option", { name: "УЗИ органов брюшной полости", exact: true }).click();
+  const addInstrumentalStudy = instrumentalCard.getByRole("button", { name: "Добавить исследование" });
+  await addInstrumentalStudy.click();
+  const addInstrumentalFinding = async (comboboxName: string, findingName: string) => {
+    const combobox = instrumentalCard.getByRole("combobox", { name: comboboxName, exact: true });
+    await combobox.fill(findingName);
+    await instrumentalCard.getByRole("option", { name: findingName, exact: true }).click();
+    const createRow = combobox.locator("xpath=ancestor::div[contains(concat(' ', normalize-space(@class), ' '), ' instrumental-finding-create ')][1]");
+    const add = createRow.getByRole("button", { name: "Добавить показатель" });
+    await add.click();
+    return add;
+  };
+  const selectInstrumentalValue = async (indicatorName: string, valueName: string) => {
+    const combobox = instrumentalCard.getByRole("combobox", {
+      name: `Возможные значения показателя «${indicatorName}»`,
+      exact: true,
+    });
+    await combobox.fill(valueName);
+    await instrumentalCard.getByRole("option", { name: valueName, exact: true }).click();
+  };
+  const addBladder = await addInstrumentalFinding("Добавить раздел исследования", "Мочевой пузырь");
+  const addContents = await addInstrumentalFinding("Добавить показатель для «Мочевой пузырь»", "Содержимое");
+  await selectInstrumentalValue("Содержимое", "Визуализируется");
+  const addSediment = await addInstrumentalFinding("Добавить показатель для «Визуализируется»", "Взвесь/осадок");
+  await instrumentalCard.getByLabel("Взвесь/осадок", { exact: true }).fill("Незначительно");
+  const addConclusion = await addInstrumentalFinding("Добавить раздел исследования", "Заключение");
+  await instrumentalCard.getByLabel("Заключение", { exact: true }).fill("Без патологии");
+  const deleteInstrumentalStudy = instrumentalCard.getByRole("button", { name: "Удалить исследование" });
+  const deleteSediment = instrumentalCard.getByRole("button", { name: "Удалить показатель «Взвесь/осадок»" });
+  await expectTopAligned(addInstrumentalStudy, instrumentalType);
+  const sedimentLabel = instrumentalCard.locator(".instrumental-finding-content label")
+    .filter({ hasText: "Взвесь/осадок" }).locator("span");
+  await expectTopAligned(deleteSediment, sedimentLabel);
+
   await therapeuticCard.getByRole("tab", { name: "Анамнез болезни" }).click();
   const therapeuticImport = therapeuticCard.getByRole("button", { name: "Импортировать из «Что случилось»" });
   const therapeuticAdd = therapeuticCard.getByRole("button", { name: "Добавить проблему" });
@@ -430,6 +470,14 @@ test("fresh provisioning, Doctor approval, grant, draft, and confirmation", asyn
     deleteStudy,
     addIndicator,
     deleteResult,
+    instrumentalCard.getByRole("button", { name: "Удалить раздел" }),
+    addInstrumentalStudy,
+    deleteInstrumentalStudy,
+    addBladder,
+    addContents,
+    addSediment,
+    addConclusion,
+    deleteSediment,
     therapeuticCard.getByRole("button", { name: "Удалить раздел" }),
     therapeuticAdd,
     therapeuticDelete,
@@ -464,6 +512,7 @@ test("fresh provisioning, Doctor approval, grant, draft, and confirmation", asyn
   expect(await diagnosisCard.evaluate((card) => card.scrollWidth <= card.clientWidth + 1)).toBe(true);
   expect(await vaccinationCard.evaluate((card) => card.scrollWidth <= card.clientWidth + 1)).toBe(true);
   expect(await laboratoryCard.evaluate((card) => card.scrollWidth <= card.clientWidth + 1)).toBe(true);
+  expect(await instrumentalCard.evaluate((card) => card.scrollWidth <= card.clientWidth + 1)).toBe(true);
   await expectMedicalActionRail(medicalRailActions);
   await expectHorizontalGap(differentialInput, differentialAdd);
   await expectHorizontalGap(differentialAdd, differentialToggle);
@@ -558,6 +607,11 @@ test("fresh provisioning, Doctor approval, grant, draft, and confirmation", asyn
   await expect(ownerRecord.locator(".encounter-history-comment").getByText("Состояние стабильное", { exact: true })).toBeVisible();
   await expect(ownerRecord.getByText("В стадии наблюдения", { exact: true })).toBeVisible();
   await expect(ownerRecord.getByText("Контроль через неделю", { exact: true })).toBeVisible();
+  const ownerInstrumental = ownerRecord.locator(".encounter-history-section").filter({
+    has: ownerPage.getByRole("heading", { name: "Инструментальные исследования", exact: true }),
+  });
+  await expect(ownerInstrumental.getByText("Взвесь/осадок: Незначительно", { exact: true })).toBeVisible();
+  await expect(ownerInstrumental.getByText("Заключение: Без патологии", { exact: true })).toBeVisible();
   await expect(ownerRecord.locator("summary")).not.toContainText("Диагноз:");
   const ownerDiagnosis = ownerRecord.locator(".encounter-history-section").filter({
     has: ownerPage.getByRole("heading", { name: "Диагноз", exact: true }),

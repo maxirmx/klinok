@@ -60,6 +60,33 @@ describe("medical encounter templates", () => {
     expect(summary).toContain("Три дня");
   });
 
+  it("indexes hierarchical and narrative instrumental results", () => {
+    const tree = {
+      studies: [{
+        id: "123e4567-e89b-12d3-a456-426614174000",
+        date: "2026-07-21",
+        typeId: "instrumental.study.ultrasound-abdomen",
+        typeName: "УЗИ органов брюшной полости",
+        mode: "tree" as const,
+        comment: "Контроль",
+        findings: [{
+          findingId: "instrumental.finding.ultrasound-abdomen.19",
+          findingName: "Заключение",
+          value: "Без патологии",
+          children: [],
+        }],
+      }],
+    };
+    expect(sectionSearchText(tree)).toContain("УЗИ органов брюшной полости Контроль Заключение Без патологии");
+    expect(sectionSearchText({ studies: [{
+      ...tree.studies[0],
+      typeId: "instrumental.study.xray-thorax-abdomen",
+      typeName: "Рентген грудной и брюшной полости",
+      mode: "narrative",
+      result: "Очаговых изменений нет",
+    }] })).toContain("Очаговых изменений нет");
+  });
+
   it("defines, validates, and indexes the structured outcome template", () => {
     expect(OUTCOME_OPTIONS.map((option) => option.label)).toEqual([
       "Без наблюдения",

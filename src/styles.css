@@ -3240,3 +3240,62 @@ dd {
 .laboratory-infection { display: grid; grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr)); gap: .75rem; align-items: start; }
 .laboratory-history, .laboratory-history-study { display: grid; gap: .55rem; }
 .laboratory-history-study + .laboratory-history-study { border-top: 1px solid var(--border-color, #d7dde5); padding-top: 1rem; }
+.instrumental-study-create, .instrumental-study-list { display: grid; gap: 1rem; }
+.instrumental-study-create { gap: 0; }
+.instrumental-study-create-control { padding-inline-end: var(--medical-card-action-inset, 9px); }
+.instrumental-study-card {
+  display: grid;
+  min-width: 0;
+  gap: .85rem;
+  padding: 8px;
+  border: 1px solid var(--border-color, #d7dde5);
+  border-radius: .75rem;
+}
+.instrumental-study-card > .instrumental-study-heading { min-width: 0; flex-direction: row; align-items: flex-start; }
+.instrumental-study-heading > h4 { min-width: 0; margin: 0; overflow: hidden; flex: 1 1 auto; text-overflow: ellipsis; white-space: nowrap; }
+.workspace-content .instrumental-study-delete { flex: 0 0 34px; align-self: flex-start; }
+.instrumental-study-create > .field-error,
+.instrumental-study-card .field-error { display: block; margin-top: 4px; padding: 4px 6px; font-size: .75rem; line-height: 1.3; }
+.instrumental-study-card :is(input, textarea)[aria-invalid="true"],
+.instrumental-study-create input[aria-invalid="true"] {
+  border-color: var(--danger);
+  background: #fff7f6;
+  box-shadow: 0 0 0 1px var(--danger);
+}
+.instrumental-study-date { width: min(100%, 18rem); }
+.instrumental-finding-level,
+.instrumental-finding-create,
+.instrumental-finding-row { grid-column: 1 / -1; }
+.instrumental-finding-level { row-gap: 8px; }
+.instrumental-finding-create,
+.instrumental-finding-row { padding-top: 8px; align-items: start; }
+.instrumental-finding-row { border-top: 1px solid var(--border-color, #d7dde5); }
+.instrumental-finding-content {
+  grid-column: 1;
+  min-width: 0;
+  padding-inline-start: calc(var(--instrumental-depth, 0) * 14px);
+}
+.instrumental-finding-values {
+  grid-column: 1;
+  min-width: 0;
+  padding-inline-start: calc(var(--instrumental-depth, 0) * 14px);
+}
+.instrumental-selected-values { display: flex; min-width: 0; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.instrumental-selected-values > span {
+  max-width: 100%;
+  padding: 4px 8px;
+  border: 1px solid var(--accent);
+  border-radius: 999px;
+  background: var(--brand-sky-soft);
+  overflow-wrap: anywhere;
+}
+.instrumental-finding-content > label { display: grid; min-width: 0; gap: 3px; }
+.instrumental-finding-name { display: block; padding-top: 8px; overflow-wrap: anywhere; }
+.instrumental-finding-add,
+.instrumental-finding-delete { grid-column: 2; align-self: start; }
+.instrumental-history,
+.instrumental-history-study { display: grid; gap: .55rem; }
+.instrumental-history-study + .instrumental-history-study { border-top: 1px solid var(--border-color, #d7dde5); padding-top: 1rem; }
+.instrumental-history-findings { display: grid; gap: 4px; margin: 0; padding-inline-start: 1.25rem; }
+.instrumental-history-findings .instrumental-history-findings { margin-top: 4px; }
+.instrumental-history-findings li { min-width: 0; overflow-wrap: anywhere; }

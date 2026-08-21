@@ -151,6 +151,69 @@ describe("MedicalRecordEntry", () => {
     expect(history.text()).toContain("Натощак");
   });
 
+  it("renders hierarchical and narrative instrumental studies", () => {
+    const wrapper = mount(MedicalRecordEntry, {
+      props: {
+        record: {
+          ...record,
+          sections: {
+            ...record.sections,
+            "instrumental-tests": {
+              kind: "instrumental-tests",
+              templateVersion: "instrumental-tests-v1",
+              value: { studies: [{
+                id: "123e4567-e89b-12d3-a456-426614174000",
+                date: "2026-07-20",
+                typeId: "instrumental.study.ultrasound-abdomen",
+                typeName: "УЗИ органов брюшной полости",
+                mode: "tree",
+                comment: "Контроль",
+                findings: [{
+                  findingId: "instrumental.finding.ultrasound-abdomen.9",
+                  findingName: "Мочевой пузырь",
+                  children: [{
+                    findingId: "instrumental.finding.ultrasound-abdomen.9.3",
+                    findingName: "Содержимое",
+                    children: [{
+                      findingId: "instrumental.finding.ultrasound-abdomen.9.3.5",
+                      findingName: "Визуализируется",
+                      children: [{
+                        findingId: "instrumental.finding.ultrasound-abdomen.9.3.5.1",
+                        findingName: "Взвесь/осадок",
+                        value: "Незначительно",
+                        children: [],
+                      }],
+                    }],
+                  }],
+                }],
+              }, {
+                id: "223e4567-e89b-12d3-a456-426614174000",
+                date: "2026-07-21",
+                typeId: "instrumental.study.xray-thorax-abdomen",
+                typeName: "Рентген грудной и брюшной полости",
+                mode: "narrative",
+                result: "Очаговых изменений нет",
+              }] },
+              authorAccountId: "doctor-1",
+              authorDisplayName: "Вера Врач",
+              updatedAt: "2026-07-21T12:00:00.000Z",
+            },
+          },
+        },
+        mode: "details",
+        confirmed: false,
+        open: true,
+      },
+    });
+    const history = wrapper.get(".instrumental-history");
+    expect(history.findAll(".instrumental-history-study")).toHaveLength(2);
+    expect(history.findAll(".instrumental-history-findings .instrumental-history-findings")).toHaveLength(3);
+    expect(history.text()).toContain("20.07.2026 · УЗИ органов брюшной полости");
+    expect(history.text()).toContain("Взвесь/осадок: Незначительно");
+    expect(history.text()).toContain("Очаговых изменений нет");
+    expect(history.text()).toContain("Контроль");
+  });
+
   it.each([
     ["well.1", "Всё хорошо", "well"],
     ["problem.digestive.1", "Не всё хорошо", "problem"],

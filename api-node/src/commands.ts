@@ -9,6 +9,7 @@ import {
   isDiagnosisTaxonomyId,
   isOutcomeTaxonomyId,
   isWhatHappenedTaxonomyId,
+  normalizeInstrumentalTestsValue,
   normalizeLaboratoryTestsValue,
   type ClientCommand,
   type CommandResult,
@@ -186,7 +187,7 @@ export function validateMedicalEncounter(value: unknown): MedicalEncounterInput 
   for (const [kind, sectionValue] of Object.entries(sections)) {
     if (kind === "what-happened" || kind === "outcome" || kind === "diagnosis") continue;
     const structured = object(sectionValue);
-    if (["recommendations", "instrumental-tests", "procedures"].includes(kind)
+    if ((["recommendations", "procedures"].includes(kind) || (kind === "instrumental-tests" && "text" in structured))
       && (typeof structured.text !== "string" || !structured.text.trim() || structured.text.length > 50_000)) {
       throw new ApiError(400, "VALIDATION_FAILED", `The ${kind} section is invalid.`);
     }
@@ -200,6 +201,8 @@ export function validateMedicalEncounter(value: unknown): MedicalEncounterInput 
       ...currentSections,
       ...(sections["laboratory-tests"] && !("text" in object(sections["laboratory-tests"]))
         ? { "laboratory-tests": laboratorySection(sections["laboratory-tests"]) } : {}),
+      ...(sections["instrumental-tests"] && !("text" in object(sections["instrumental-tests"]))
+        ? { "instrumental-tests": instrumentalSection(sections["instrumental-tests"]) } : {}),
       ...(diagnosis ? { diagnosis } : {}),
     } as unknown as MedicalEncounterInput["sections"],
     ...(input.recordId ? { recordId: requireText(input.recordId, "recordId", 100) } : {}),
@@ -216,6 +219,7 @@ function medicalSections(input: MedicalEncounterInput, accountId: string, author
           : kind === "vaccination" && !(value && typeof value === "object" && "text" in value) ? "vaccination-v1"
             : kind === "therapeutic-appointment" && !(value && typeof value === "object" && "text" in value) ? "therapeutic-appointment-v1"
               : kind === "laboratory-tests" && !(value && typeof value === "object" && "text" in value) ? "laboratory-tests-v1"
+                : kind === "instrumental-tests" && !(value && typeof value === "object" && "text" in value) ? "instrumental-tests-v1"
               : "free-text-v0",
     value,
     authorAccountId: accountId,
@@ -227,6 +231,11 @@ function medicalSections(input: MedicalEncounterInput, accountId: string, author
 function laboratorySection(value: unknown) {
   try { return normalizeLaboratoryTestsValue(value); }
   catch (reason) { throw new ApiError(400, "VALIDATION_FAILED", reason instanceof Error ? reason.message : "The laboratory section is invalid."); }
+}
+
+function instrumentalSection(value: unknown) {
+  try { return normalizeInstrumentalTestsValue(value); }
+  catch (reason) { throw new ApiError(400, "VALIDATION_FAILED", reason instanceof Error ? reason.message : "The instrumental section is invalid."); }
 }
 
 function medicalRecordAuditState(
