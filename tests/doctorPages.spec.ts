@@ -1092,10 +1092,9 @@ describe("Doctor pages", () => {
     await flushPromises();
     await wrapper.get('button[title="Сохранить запись"]').trigger("click");
     await flushPromises();
-    const conclusion = editor.findAll(".instrumental-finding-content label")
-      .find((label) => label.get("span").text() === "Заключение")!;
-    expect(conclusion.get("textarea").attributes("aria-invalid")).toBe("true");
-    await conclusion.get("textarea").setValue("Без патологии");
+    const conclusion = editor.get<HTMLTextAreaElement>('textarea[aria-label="Заключение"]');
+    expect(conclusion.attributes("aria-invalid")).toBe("true");
+    await conclusion.setValue("Без патологии");
 
     await wrapper.get('button[title="Сохранить запись"]').trigger("click");
     await flushPromises();
