@@ -8,6 +8,7 @@ import AppIcon from "./AppIcon.vue";
 import DiagnosisEditor from "./DiagnosisEditor.vue";
 import TherapeuticAppointmentForm from "./TherapeuticAppointmentForm.vue";
 import LaboratoryTestsEditor from "./LaboratoryTestsEditor.vue";
+import InstrumentalTestsEditor from "./InstrumentalTestsEditor.vue";
 import WhatHappenedTree from "./WhatHappenedTree.vue";
 import {
   ENCOUNTER_SECTION_LABELS,
@@ -29,6 +30,7 @@ import {
   parseTherapeuticAppointmentDraft,
 } from "../therapeuticAppointment";
 import { parseLaboratoryTestsDraft } from "../laboratoryTests";
+import { parseInstrumentalTestsDraft } from "../instrumentalTests";
 import type {
   GeneralDataDraft,
   GeneralDataDraftErrors,
@@ -43,8 +45,9 @@ import type {
   TherapeuticAppointmentDraftErrors,
 } from "../therapeuticAppointment";
 import type { LaboratoryTestsDraftErrors } from "../laboratoryTests";
+import type { InstrumentalTestsDraftErrors } from "../instrumentalTests";
 import type { MedicalEncounterSectionKind } from "../repositories/types";
-import type { LaboratoryTestsSectionValue } from "@klinok/contracts";
+import type { InstrumentalTestsSectionValue, LaboratoryTestsSectionValue } from "@klinok/contracts";
 
 const props = defineProps<{
   busy: boolean;
@@ -70,12 +73,14 @@ const vaccination = defineModel<VaccinationDraft>("vaccination", { required: tru
 const therapeuticAppointment = defineModel<TherapeuticAppointmentDraft>("therapeuticAppointment", { required: true });
 const diagnosis = defineModel<DiagnosisDraft>("diagnosis", { required: true });
 const laboratoryTests = defineModel<LaboratoryTestsSectionValue>("laboratoryTests", { required: true });
+const instrumentalTests = defineModel<InstrumentalTestsSectionValue>("instrumentalTests", { required: true });
 const form = ref<HTMLFormElement | null>(null);
 const generalDataErrors = ref<GeneralDataDraftErrors>({});
 const vaccinationErrors = ref<VaccinationDraftErrors>({});
 const therapeuticErrors = ref<TherapeuticAppointmentDraftErrors>({});
 const diagnosisErrors = ref<DiagnosisDraftErrors>({});
 const laboratoryErrors = ref<LaboratoryTestsDraftErrors>({ studies: [] });
+const instrumentalErrors = ref<InstrumentalTestsDraftErrors>({ studies: [] });
 const revaccinationInterval = ref<RevaccinationInterval | "">("");
 const revaccinationChooserOpen = ref(false);
 const revaccinationDateId = useId();
@@ -98,6 +103,7 @@ watch(date, () => {
 });
 watch(diagnosis, () => { diagnosisErrors.value = {}; }, { deep: true });
 watch(laboratoryTests, () => { laboratoryErrors.value = { studies: [] }; }, { deep: true });
+watch(instrumentalTests, () => { instrumentalErrors.value = { studies: [] }; }, { deep: true });
 
 function toggleSelection(id: string) {
   const index = selectedIds.value.indexOf(id);
@@ -148,6 +154,13 @@ function selectOptional(event: Event) {
       laboratoryErrors.value = { studies: [] };
       const nextTexts = { ...texts.value };
       delete nextTexts["laboratory-tests"];
+      texts.value = nextTexts;
+    }
+    if (kind === "instrumental-tests") {
+      instrumentalTests.value = { studies: [] };
+      instrumentalErrors.value = { studies: [] };
+      const nextTexts = { ...texts.value };
+      delete nextTexts["instrumental-tests"];
       texts.value = nextTexts;
     }
   }
@@ -237,6 +250,11 @@ function submit() {
     laboratoryErrors.value = parsed.errors;
     if (!parsed.value) return;
   }
+  if (optionalKinds.value.includes("instrumental-tests") && texts.value["instrumental-tests"] === undefined) {
+    const parsed = parseInstrumentalTestsDraft(instrumentalTests.value);
+    instrumentalErrors.value = parsed.errors;
+    if (!parsed.value) return;
+  }
   if (form.value?.reportValidity() === false) return;
   emit("save");
 }
@@ -270,6 +288,7 @@ function submit() {
       :class="{
         'encounter-diagnosis': kind === 'diagnosis',
         'encounter-laboratory-tests': kind === 'laboratory-tests',
+        'encounter-instrumental-tests': kind === 'instrumental-tests',
       }"
     >
       <div class="doctor-heading">
@@ -404,12 +423,18 @@ function submit() {
       <template v-else-if="kind === 'laboratory-tests' && texts[kind] === undefined">
         <LaboratoryTestsEditor v-model="laboratoryTests" :encounter-date="date" :errors="laboratoryErrors" />
       </template>
+      <template v-else-if="kind === 'instrumental-tests' && texts[kind] === undefined">
+        <InstrumentalTestsEditor v-model="instrumentalTests" :encounter-date="date" :errors="instrumentalErrors" />
+      </template>
       <template v-else>
         <p class="temporary-note">{{ kind === 'general-data' ? 'Сохранён старый шаблон free-text-v0.' : 'Временный универсальный шаблон free-text-v0.' }}</p>
         <textarea :value="texts[kind] ?? ''" rows="4" required @input="updateText(kind, $event)" />
       </template>
     </article>
-    <label v-if="optionalAvailable.length" class="encounter-add-section"><span>Добавить раздел</span><select @change="selectOptional"><option value="">Выберите раздел</option><option v-for="kind in optionalAvailable" :key="kind" :value="kind">{{ ENCOUNTER_SECTION_LABELS[kind] }}</option></select></label>
+    <section v-if="optionalAvailable.length" class="encounter-section-card encounter-add-section">
+      <div class="doctor-heading"><h3>Добавить раздел</h3></div>
+      <select aria-label="Добавить раздел" @change="selectOptional"><option value="">Выберите раздел</option><option v-for="kind in optionalAvailable" :key="kind" :value="kind">{{ ENCOUNTER_SECTION_LABELS[kind] }}</option></select>
+    </section>
     <article class="encounter-section-card encounter-outcome">
       <div class="doctor-heading"><h3 id="encounter-outcome-heading">{{ ENCOUNTER_SECTION_LABELS.outcome }}</h3></div>
       <fieldset class="medical-card-option-panel encounter-outcome-option-panel">

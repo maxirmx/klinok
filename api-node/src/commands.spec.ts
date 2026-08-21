@@ -69,6 +69,75 @@ describe("command boundary", () => {
     expect(result.sections["laboratory-tests"]).toBeUndefined();
   });
 
+  it("preserves legacy instrumental text and normalizes structured instrumental studies", () => {
+    const base = {
+      petId: "pet-1",
+      encounterDate: "2026-08-10",
+      sections: {
+        "what-happened": { selectedIds: ["problem.research.1"], comment: "Контроль УЗИ" },
+        outcome: { selectedIds: ["outcome.observation"], comment: "" },
+      },
+    };
+    expect(validateMedicalEncounter({
+      ...base,
+      sections: { ...base.sections, "instrumental-tests": { text: "Старое описание УЗИ" } },
+    }).sections["instrumental-tests"]).toEqual({ text: "Старое описание УЗИ" });
+    expect(() => validateMedicalEncounter({
+      ...base,
+      sections: {
+        ...base.sections,
+        "instrumental-tests": { text: "Старое описание УЗИ", studies: [] },
+      },
+    })).toThrow("cannot combine legacy text with structured studies");
+
+    const structured = validateMedicalEncounter({
+      ...base,
+      sections: {
+        ...base.sections,
+        "instrumental-tests": { studies: [{
+          id: "123e4567-e89b-12d3-a456-426614174000",
+          date: "2026-08-10",
+          typeId: "instrumental.study.ultrasound-abdomen",
+          typeName: "forged",
+          mode: "narrative",
+          findings: [{
+            findingId: "instrumental.finding.ultrasound-abdomen.19",
+            findingName: "forged",
+            value: "  Без патологии  ",
+            children: [],
+          }],
+        }] },
+      },
+    });
+    expect(structured.sections["instrumental-tests"]).toMatchObject({ studies: [{
+      typeName: "УЗИ органов брюшной полости",
+      mode: "tree",
+      findings: [{ findingName: "Заключение", value: "Без патологии" }],
+    }] });
+    expect(() => validateMedicalEncounter({
+      ...base,
+      sections: { ...base.sections, "instrumental-tests": { studies: [] } },
+    })).toThrow("Добавьте хотя бы одно");
+    expect(() => validateMedicalEncounter({
+      ...base,
+      sections: { ...base.sections, "instrumental-tests": { studies: [{
+        id: "123e4567-e89b-12d3-a456-426614174000",
+        date: "2026-08-10",
+        typeId: "instrumental.study.ultrasound-abdomen",
+        findings: [{
+          findingId: "instrumental.finding.ultrasound-abdomen.1",
+          children: [{
+            findingId: "instrumental.finding.ultrasound-abdomen.1.3",
+            children: [
+              { findingId: "instrumental.finding.ultrasound-abdomen.1.3.1", children: [] },
+              { findingId: "instrumental.finding.ultrasound-abdomen.1.3.2", children: [] },
+            ],
+          }],
+        }],
+      }] } },
+    })).toThrow("не более одного");
+  });
+
   it("validates structured diagnosis catalog and free-form representations", () => {
     const input = {
       petId: "pet-1",

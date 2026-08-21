@@ -276,6 +276,16 @@ describe("Klinok repository facade", () => {
           differential: { selectedIds: [], customTexts: [] },
           confirmed: { selectedId: "diagnosis.digestive.001", customText: "" },
         },
+        "instrumental-tests": {
+          studies: [{
+            id: "123e4567-e89b-12d3-a456-426614174000",
+            date: "2026-08-10",
+            typeId: "instrumental.study.xray-thorax-abdomen",
+            typeName: "Рентген грудной и брюшной полости",
+            mode: "narrative",
+            result: "Без патологии",
+          }],
+        },
       },
     } as unknown as MedicalEncounterInput;
     await repository.executeOffline({ type: "record.create", entityId: "record-offline", payload: { input: encounter, title: "Приём" } });
@@ -297,6 +307,7 @@ describe("Klinok repository facade", () => {
         vaccination: { templateVersion: "free-text-v0" },
         "therapeutic-appointment": { templateVersion: "free-text-v0" },
         diagnosis: { templateVersion: "diagnosis-v2" },
+        "instrumental-tests": { templateVersion: "instrumental-tests-v1" },
       },
     });
     expect(repository.current.medical.records.find((record) => record.recordId === "record-offline")

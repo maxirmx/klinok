@@ -10,6 +10,8 @@ import type { DoctorPetAccessDto, PetAccessRequest } from "@klinok/contracts";
 import AppCatalogCombobox from "../src/components/AppCatalogCombobox.vue";
 import AppIcon from "../src/components/AppIcon.vue";
 import LaboratoryTestsEditor from "../src/components/LaboratoryTestsEditor.vue";
+import InstrumentalFindingEditor from "../src/components/InstrumentalFindingEditor.vue";
+import InstrumentalTestsEditor from "../src/components/InstrumentalTestsEditor.vue";
 import DoctorScreen from "../src/screens/DoctorScreen.vue";
 import type { SyncNotification } from "../src/repositories/offlineStore";
 import type { MedicalRecordDraft, MedicalSnapshot, PetProfile } from "../src/repositories/types";
@@ -1063,6 +1065,54 @@ describe("Doctor pages", () => {
     }));
   });
 
+  it("validates and saves structured instrumental studies", async () => {
+    const wrapper = await mountAt("/doctor/pets/pet-1", "doctor-pet-detail");
+    await flushPromises();
+    await wrapper.findAll(".encounter-taxonomy label").find((label) => label.text() === "Не ест")!
+      .get("input").trigger("change");
+    await wrapper.findAll(".encounter-outcome .check-row")
+      .find((option) => option.text() === "В стадии наблюдения")!
+      .get("input").trigger("change");
+    await wrapper.get<HTMLSelectElement>(".encounter-add-section select").setValue("instrumental-tests");
+
+    const editor = wrapper.getComponent(InstrumentalTestsEditor);
+    expect(wrapper.get(".encounter-instrumental-tests").getComponent(InstrumentalTestsEditor).exists()).toBe(true);
+    await wrapper.get('button[title="Сохранить запись"]').trigger("click");
+    expect(repositoryMocks.saveEncounter).not.toHaveBeenCalled();
+    expect(editor.get('[role="alert"]').text()).toContain("Добавьте хотя бы одно");
+
+    editor.findComponent(AppCatalogCombobox).vm.$emit("update:selectedIds", ["instrumental.study.ultrasound-abdomen"]);
+    await flushPromises();
+    await editor.get(".instrumental-study-add").trigger("click");
+    await flushPromises();
+    const findingEditor = editor.getComponent(InstrumentalFindingEditor);
+    findingEditor.findComponent(AppCatalogCombobox).vm.$emit("update:selectedIds", ["instrumental.finding.ultrasound-abdomen.19"]);
+    await flushPromises();
+    await findingEditor.get(".instrumental-finding-add").trigger("click");
+    await flushPromises();
+    await wrapper.get('button[title="Сохранить запись"]').trigger("click");
+    await flushPromises();
+    const conclusion = editor.get<HTMLTextAreaElement>('textarea[aria-label="Заключение"]');
+    expect(conclusion.attributes("aria-invalid")).toBe("true");
+    await conclusion.setValue("Без патологии");
+
+    await wrapper.get('button[title="Сохранить запись"]').trigger("click");
+    await flushPromises();
+    expect(repositoryMocks.saveEncounter).toHaveBeenCalledWith(expect.objectContaining({
+      petId: "pet-1",
+      sections: expect.objectContaining({
+        "instrumental-tests": {
+          studies: [expect.objectContaining({
+            typeId: "instrumental.study.ultrasound-abdomen",
+            typeName: "УЗИ органов брюшной полости",
+            mode: "tree",
+            findings: [expect.objectContaining({ findingName: "Заключение", value: "Без патологии" })],
+          })],
+        },
+      }),
+    }));
+  });
+
   it("restores structured laboratory studies in the inline editor", async () => {
     const laboratoryRecord: MedicalRecordDraft = {
       ...medicalRecord,
@@ -1086,6 +1136,21 @@ describe("Doctor pages", () => {
           authorDisplayName: "Вера Врач",
           updatedAt: "2026-07-21T10:00:00.000Z",
         },
+        "instrumental-tests": {
+          kind: "instrumental-tests",
+          templateVersion: "instrumental-tests-v1",
+          value: { studies: [{
+            id: "223e4567-e89b-12d3-a456-426614174000",
+            date: "2026-07-21",
+            typeId: "instrumental.study.xray-thorax-abdomen",
+            typeName: "Рентген грудной и брюшной полости",
+            mode: "narrative",
+            result: "Без патологии",
+          }] },
+          authorAccountId: "doctor-1",
+          authorDisplayName: "Вера Врач",
+          updatedAt: "2026-07-21T10:00:00.000Z",
+        },
       },
     };
     await setMedical(snapshot(undefined, { records: [laboratoryRecord] }));
@@ -1093,9 +1158,12 @@ describe("Doctor pages", () => {
     await flushPromises();
     await wrapper.get(".medical-record-edit").trigger("click");
     const editor = wrapper.get(".encounter-editor-inline").getComponent(LaboratoryTestsEditor);
+    const instrumentalEditor = wrapper.get(".encounter-editor-inline").getComponent(InstrumentalTestsEditor);
 
     expect(editor.findAll(".laboratory-study-card")).toHaveLength(1);
     expect(editor.get<HTMLInputElement>(".laboratory-metadata label:nth-child(2) input").element.value).toBe("Ветлаб");
+    expect(instrumentalEditor.get(".instrumental-study-heading h4").text()).toBe("Рентген грудной и брюшной полости");
+    expect(instrumentalEditor.get<HTMLTextAreaElement>(".instrumental-study-card > label textarea").element.value).toBe("Без патологии");
     editor.findAllComponents(AppCatalogCombobox)[0]!.vm.$emit("update:selectedIds", ["lab.study.cbc"]);
     await flushPromises();
     await editor.get('button[title="Добавить исследование"]').trigger("click");
@@ -1139,6 +1207,16 @@ describe("Doctor pages", () => {
                   results: [{ indicatorId: "lab.indicator.cbc.001", indicatorName: "Гематокрит", unit: "%", result: "42" }],
                 }],
               },
+              "instrumental-tests": {
+                studies: [{
+                  id: "223e4567-e89b-12d3-a456-426614174000",
+                  date: "2026-08-15",
+                  typeId: "instrumental.study.xray-thorax-abdomen",
+                  typeName: "Рентген грудной и брюшной полости",
+                  mode: "narrative",
+                  result: "Очаговых изменений нет",
+                }],
+              },
               outcome: { selectedIds: ["outcome.observation"], comment: "" },
             },
           },
@@ -1153,8 +1231,10 @@ describe("Doctor pages", () => {
     await flushPromises();
 
     const editor = wrapper.get(".doctor-pet-detail > .encounter-editor").getComponent(LaboratoryTestsEditor);
+    const instrumentalEditor = wrapper.get(".doctor-pet-detail > .encounter-editor").getComponent(InstrumentalTestsEditor);
     expect(editor.findAll(".laboratory-study-card")).toHaveLength(1);
     expect(editor.get(".laboratory-study-heading h4").text()).toBe("Общеклинический анализ крови");
+    expect(instrumentalEditor.get(".instrumental-study-heading h4").text()).toBe("Рентген грудной и брюшной полости");
     expect(wrapper.text()).toContain("Черновик восстановлен");
   });
 
@@ -1425,14 +1505,14 @@ describe("Doctor pages", () => {
     let dialog = wrapper.get('[role="alertdialog"]');
     expect(dialog.text()).toContain("Удалить раздел?");
     expect(dialog.text()).toContain("Раздел «Диагноз» и введённые в нём данные будут удалены из записи.");
-    expect(wrapper.find(".encounter-section-card:not(.encounter-what-happened):not(.encounter-outcome)").exists()).toBe(true);
+    expect(wrapper.find(".encounter-section-card:not(.encounter-what-happened):not(.encounter-outcome):not(.encounter-add-section)").exists()).toBe(true);
     await dialog.get(".outline-action").trigger("click");
-    expect(wrapper.find(".encounter-section-card:not(.encounter-what-happened):not(.encounter-outcome)").exists()).toBe(true);
+    expect(wrapper.find(".encounter-section-card:not(.encounter-what-happened):not(.encounter-outcome):not(.encounter-add-section)").exists()).toBe(true);
 
     await remove.trigger("click");
     dialog = wrapper.get('[role="alertdialog"]');
     await dialog.get(".danger").trigger("click");
-    expect(wrapper.find(".encounter-section-card:not(.encounter-what-happened):not(.encounter-outcome)").exists()).toBe(false);
+    expect(wrapper.find(".encounter-section-card:not(.encounter-what-happened):not(.encounter-outcome):not(.encounter-add-section)").exists()).toBe(false);
   });
 
   it("saves and promotes structured diagnoses while retaining their source values", async () => {
@@ -1545,6 +1625,38 @@ describe("Doctor pages", () => {
     }));
   });
 
+  it("preserves a legacy free-text instrumental section while editing", async () => {
+    const legacyRecord: MedicalRecordDraft = {
+      ...medicalRecord,
+      sections: {
+        ...medicalRecord.sections,
+        "instrumental-tests": {
+          kind: "instrumental-tests",
+          templateVersion: "free-text-v0",
+          value: { text: "Старое описание УЗИ" },
+          authorAccountId: "doctor-1",
+          authorDisplayName: "Вера Врач",
+          updatedAt: "2026-07-21T10:00:00.000Z",
+        },
+      },
+    };
+    await setMedical(snapshot(undefined, { records: [legacyRecord] }));
+    const wrapper = await mountAt("/doctor/pets/pet-1", "doctor-pet-detail");
+    await flushPromises();
+    expect(wrapper.find(".instrumental-history").exists()).toBe(false);
+    expect(wrapper.text()).toContain("Старое описание УЗИ");
+    await wrapper.get(".medical-record-edit").trigger("click");
+    const card = wrapper.findAll(".encounter-section-card")
+      .find((candidate) => candidate.get("h3").text() === "Инструментальные исследования")!;
+    expect(card.findComponent(InstrumentalTestsEditor).exists()).toBe(false);
+    expect(card.get<HTMLTextAreaElement>("textarea").element.value).toBe("Старое описание УЗИ");
+    await wrapper.get('.encounter-editor-inline button[title="Сохранить запись"]').trigger("click");
+    await flushPromises();
+    expect(repositoryMocks.saveEncounter).toHaveBeenCalledWith(expect.objectContaining({
+      sections: expect.objectContaining({ "instrumental-tests": { text: "Старое описание УЗИ" } }),
+    }));
+  });
+
   it("preserves a legacy free-text therapeutic section while editing", async () => {
     const legacyRecord: MedicalRecordDraft = {
       ...medicalRecord,
@@ -1590,7 +1702,10 @@ describe("Doctor pages", () => {
       .toEqual(["Всё хорошо, необходимо", "Не всё хорошо с", "Всё плохо"]);
     expect(wrapper.findAll(".encounter-condition-trees > .encounter-taxonomy > li > details").every((tree) => tree.attributes("open") === undefined)).toBe(true);
     expect(wrapper.get(".encounter-date-field").exists()).toBe(true);
-    expect(wrapper.get(".encounter-add-section").exists()).toBe(true);
+    const addSection = wrapper.get(".encounter-add-section");
+    expect(addSection.classes()).toContain("encounter-section-card");
+    expect(addSection.get("h3").text()).toBe("Добавить раздел");
+    expect(addSection.get("select").attributes("aria-label")).toBe("Добавить раздел");
     const checkbox = (label: string) => wrapper.findAll(".encounter-taxonomy label")
       .find((candidate) => candidate.text() === label)!
       .get<HTMLInputElement>('input[type="checkbox"]');

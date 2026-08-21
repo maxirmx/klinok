@@ -7,7 +7,9 @@ import { computed, reactive, ref, toRaw, watch } from "vue";
 import { RouterLink, useRoute, useRouter } from "vue-router";
 import {
   normalizeRussianSearchText,
+  normalizeInstrumentalTestsValue,
   normalizeLaboratoryTestsValue,
+  type InstrumentalTestsSectionValue,
   type LaboratoryTestsSectionValue,
   type DirectoryPetDto,
   type DirectoryProfileDto,
@@ -146,6 +148,7 @@ const encounter = reactive({
   therapeuticAppointment: emptyTherapeuticAppointmentDraft(),
   diagnosis: emptyDiagnosisDraft(),
   laboratoryTests: { studies: [] } as LaboratoryTestsSectionValue,
+  instrumentalTests: { studies: [] } as InstrumentalTestsSectionValue,
 });
 
 const profileName = computed(() => [appState.control.profile?.firstName, appState.control.profile?.patronymic, appState.control.profile?.lastName].filter(Boolean).join(" "));
@@ -369,6 +372,7 @@ function removeOptional(kind: MedicalEncounterSectionKind) {
   if (kind === "therapeutic-appointment") encounter.therapeuticAppointment = emptyTherapeuticAppointmentDraft();
   if (kind === "diagnosis") encounter.diagnosis = emptyDiagnosisDraft();
   if (kind === "laboratory-tests") encounter.laboratoryTests = { studies: [] };
+  if (kind === "instrumental-tests") encounter.instrumentalTests = { studies: [] };
 }
 
 function requestRemoveOptional(kind: MedicalEncounterSectionKind) {
@@ -398,6 +402,7 @@ function resetEncounter() {
   encounter.therapeuticAppointment = emptyTherapeuticAppointmentDraft();
   encounter.diagnosis = emptyDiagnosisDraft();
   encounter.laboratoryTests = { studies: [] };
+  encounter.instrumentalTests = { studies: [] };
 }
 
 async function saveEncounter() {
@@ -411,6 +416,8 @@ async function saveEncounter() {
         optionalSections[kind] = parsed.value;
       } else if (kind === "laboratory-tests" && encounter.texts[kind] === undefined) {
         optionalSections[kind] = normalizeLaboratoryTestsValue(encounter.laboratoryTests);
+      } else if (kind === "instrumental-tests" && encounter.texts[kind] === undefined) {
+        optionalSections[kind] = normalizeInstrumentalTestsValue(encounter.instrumentalTests);
       } else if (kind === "general-data" && encounter.texts[kind] === undefined) {
         const parsed = parseGeneralDataDraft(encounter.generalData);
         if (!parsed.value) throw new Error("Проверьте показатели в разделе «Общие данные/Габитус».");
@@ -468,6 +475,9 @@ function editRecord(record: (typeof appState.medical.records)[number]) {
   const laboratoryValue = record.sections["laboratory-tests"]?.value;
   encounter.laboratoryTests = laboratoryValue && typeof laboratoryValue === "object" && "studies" in laboratoryValue
     ? structuredClone(toRaw(laboratoryValue as LaboratoryTestsSectionValue)) : { studies: [] };
+  const instrumentalValue = record.sections["instrumental-tests"]?.value;
+  encounter.instrumentalTests = instrumentalValue && typeof instrumentalValue === "object" && "studies" in instrumentalValue
+    ? structuredClone(toRaw(instrumentalValue as InstrumentalTestsSectionValue)) : { studies: [] };
   encounter.texts = Object.fromEntries(encounter.optionalKinds.flatMap((kind) => {
     const value = record.sections[kind]?.value;
     return kind !== "diagnosis" && isFreeTextValue(value) ? [[kind, value.text]] : [];
@@ -505,6 +515,9 @@ function recoverRecordDraft(command: {
   const laboratoryValue = input.sections["laboratory-tests"];
   encounter.laboratoryTests = laboratoryValue && typeof laboratoryValue === "object" && "studies" in laboratoryValue
     ? structuredClone(toRaw(laboratoryValue as LaboratoryTestsSectionValue)) : { studies: [] };
+  const instrumentalValue = input.sections["instrumental-tests"];
+  encounter.instrumentalTests = instrumentalValue && typeof instrumentalValue === "object" && "studies" in instrumentalValue
+    ? structuredClone(toRaw(instrumentalValue as InstrumentalTestsSectionValue)) : { studies: [] };
   encounter.texts = Object.fromEntries(encounter.optionalKinds.flatMap((kind) => {
     const value = input.sections[kind];
     return kind !== "diagnosis" && isFreeTextValue(value) ? [[kind, value.text]] : [];
@@ -868,6 +881,7 @@ watch(delegationPageCount, (pageCount) => {
           v-model:therapeutic-appointment="encounter.therapeuticAppointment"
           v-model:diagnosis="encounter.diagnosis"
           v-model:laboratory-tests="encounter.laboratoryTests"
+          v-model:instrumental-tests="encounter.instrumentalTests"
           :busy="busy"
           :editing="false"
           :latest-confirmed-vaccination="selectedPet.latestConfirmedVaccination"
@@ -916,6 +930,7 @@ watch(delegationPageCount, (pageCount) => {
                 v-model:therapeutic-appointment="encounter.therapeuticAppointment"
                 v-model:diagnosis="encounter.diagnosis"
                 v-model:laboratory-tests="encounter.laboratoryTests"
+                v-model:instrumental-tests="encounter.instrumentalTests"
                 :busy="busy"
                 editing
                 :latest-confirmed-vaccination="selectedPet.latestConfirmedVaccination"

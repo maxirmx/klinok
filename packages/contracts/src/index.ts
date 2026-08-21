@@ -3,8 +3,25 @@
 // This file is a part of Klinok application
 
 import type { DiagnosisSectionValue } from "./diagnosis.js";
+import type { InstrumentalTestsSectionValue } from "./instrumental.js";
 import type { LaboratoryTestsSectionValue } from "./laboratory.js";
 
+export {
+  INSTRUMENTAL_STUDY_CATALOG,
+  INSTRUMENTAL_STUDY_OPTIONS,
+  instrumentalFindingById,
+  instrumentalStudyTypeById,
+  normalizeInstrumentalTestsValue,
+  type InstrumentalFindingCatalogItem,
+  type InstrumentalFindingKind,
+  type InstrumentalFindingValue,
+  type InstrumentalNarrativeStudyValue,
+  type InstrumentalStudyMode,
+  type InstrumentalStudyTypeCatalogItem,
+  type InstrumentalStudyValue,
+  type InstrumentalTestsSectionValue,
+  type InstrumentalTreeStudyValue,
+} from "./instrumental.js";
 export {
   DIAGNOSIS_CATALOG,
   DIAGNOSIS_CATALOG_OPTIONS,
@@ -321,8 +338,8 @@ export interface TherapeuticAppointmentSectionValue {
 
 export interface MedicalEncounterSection {
   kind: MedicalEncounterSectionKind;
-  templateVersion: "what-happened-v1" | "outcome-v1" | "diagnosis-v1" | "diagnosis-v2" | "general-data-v1" | "vaccination-v1" | "therapeutic-appointment-v1" | "laboratory-tests-v1" | "free-text-v0";
-  value: WhatHappenedSectionValue | OutcomeSectionValue | DiagnosisSectionValue | GeneralDataSectionValue | VaccinationSectionValue | TherapeuticAppointmentSectionValue | LaboratoryTestsSectionValue | FreeTextSectionValue;
+  templateVersion: "what-happened-v1" | "outcome-v1" | "diagnosis-v1" | "diagnosis-v2" | "general-data-v1" | "vaccination-v1" | "therapeutic-appointment-v1" | "laboratory-tests-v1" | "instrumental-tests-v1" | "free-text-v0";
+  value: WhatHappenedSectionValue | OutcomeSectionValue | DiagnosisSectionValue | GeneralDataSectionValue | VaccinationSectionValue | TherapeuticAppointmentSectionValue | LaboratoryTestsSectionValue | InstrumentalTestsSectionValue | FreeTextSectionValue;
   authorAccountId: string;
   authorDisplayName: string;
   updatedAt: string;

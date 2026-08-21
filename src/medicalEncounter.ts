@@ -7,6 +7,8 @@ import type {
   DiagnosisTaxonomyId,
   FreeTextSectionValue,
   GeneralDataSectionValue,
+  InstrumentalFindingValue,
+  InstrumentalTestsSectionValue,
   MedicalEncounterSectionKind,
   MedicalRecordDraft,
   OutcomeSectionValue,
@@ -741,12 +743,24 @@ export function sectionSearchText(value: unknown): string {
   if (isTherapeuticAppointmentValue(value)) return therapeuticAppointmentSearchText(value);
   if (isGeneralDataValue(value)) return generalDataMeasurements(value).map((item) => `${item.label} ${item.value}`).join(" ");
   if (isVaccinationValue(value)) return vaccinationDetails(value).map((item) => `${item.label} ${item.value}`).join(" ");
+  if (isInstrumentalTestsValue(value)) return value.studies.flatMap((study) => [study.date, study.typeName, study.comment,
+    study.mode === "narrative" ? study.result : instrumentalFindingSearchText(study.findings)]).flat(Infinity).filter(Boolean).join(" ");
   if (isLaboratoryTestsValue(value)) return value.studies.flatMap((study) => [study.date, study.typeName, study.laboratory, study.technician, study.equipment, study.comment, study.mode === "panel" ? study.results.flatMap((result) => [result.indicatorName, result.result, result.unit, result.reference]) : study.mode === "narrative" ? study.result : [study.infection, study.method, study.result]]).flat(Infinity).filter(Boolean).join(" ");
   return "";
 }
 
 export function isLaboratoryTestsValue(value: unknown): value is LaboratoryTestsSectionValue {
-  return Boolean(value && typeof value === "object" && Array.isArray((value as LaboratoryTestsSectionValue).studies));
+  return Boolean(value && typeof value === "object" && Array.isArray((value as LaboratoryTestsSectionValue).studies)
+    && (value as LaboratoryTestsSectionValue).studies.every((study) => typeof study?.typeId === "string" && study.typeId.startsWith("lab.study.")));
+}
+
+function instrumentalFindingSearchText(findings: readonly InstrumentalFindingValue[]): string[] {
+  return findings.flatMap((finding) => [finding.findingName, finding.value, ...instrumentalFindingSearchText(finding.children)]).filter(Boolean) as string[];
+}
+
+export function isInstrumentalTestsValue(value: unknown): value is InstrumentalTestsSectionValue {
+  return Boolean(value && typeof value === "object" && Array.isArray((value as InstrumentalTestsSectionValue).studies)
+    && (value as InstrumentalTestsSectionValue).studies.every((study) => typeof study?.typeId === "string" && study.typeId.startsWith("instrumental.study.")));
 }
 
 export function whatHappenedSelectedIds(value: unknown): readonly string[] {
