@@ -22,12 +22,20 @@ const props = withDefaults(defineProps<{
 const model = defineModel<readonly InstrumentalFindingValue[]>({ required: true });
 const pendingIds = ref<string[]>([]);
 const removeTarget = ref<InstrumentalFindingValue | null>(null);
-const confirmOpen = computed({ get: () => Boolean(removeTarget.value), set: (value) => { if (!value) removeTarget.value = null; } });
+const pendingChoiceId = ref<string | null>(null);
+const confirmOpen = computed({
+  get: () => Boolean(removeTarget.value),
+  set: (value) => {
+    if (!value) {
+      removeTarget.value = null;
+      pendingChoiceId.value = null;
+    }
+  },
+});
 const choiceCatalog = computed(() => props.catalog.filter((item) => item.kind === "choice"));
 const indicatorCatalog = computed(() => props.catalog.filter((item) => item.kind !== "choice"));
-const choiceOptions = computed(() => choiceCatalog.value.map((item) => ({ id: item.id, label: item.name })));
-const choiceIds = computed(() => model.value.filter((value) => catalogItem(value)?.kind === "choice").map((value) => value.findingId));
 const choiceValues = computed(() => model.value.filter((value) => catalogItem(value)?.kind === "choice"));
+const choiceId = computed(() => choiceValues.value[0]?.findingId ?? "");
 const indicatorValues = computed(() => model.value.filter((value) => catalogItem(value)?.kind !== "choice"));
 const selectedChoicesWithChildren = computed(() => choiceValues.value.filter((value) => {
   const item = catalogItem(value);
@@ -40,36 +48,45 @@ const options = computed(() => {
 const pendingFinding = computed(() => indicatorCatalog.value.find((item) => item.id === pendingIds.value[0]
   && !model.value.some((value) => value.findingId === item.id)));
 const removeTargetIsChoice = computed(() => removeTarget.value ? catalogItem(removeTarget.value)?.kind === "choice" : false);
+const choiceRemovalTitle = computed(() => pendingChoiceId.value
+  ? "Заменить выбранное значение?"
+  : "Удалить выбранное значение?");
 
 function selectPending(ids: string[]) { pendingIds.value = ids.slice(0, 1); }
 function catalogItem(value: InstrumentalFindingValue) { return props.catalog.find((item) => item.id === value.findingId); }
-function addCatalogItem(item: InstrumentalFindingCatalogItem) {
-  const value: InstrumentalFindingValue = {
+function catalogValue(item: InstrumentalFindingCatalogItem): InstrumentalFindingValue {
+  return {
     findingId: item.id,
     findingName: item.name,
     ...((item.kind === "short-text" || item.kind === "long-text") ? { value: "" } : {}),
     children: [],
   };
+}
+function ordered(values: readonly InstrumentalFindingValue[]): InstrumentalFindingValue[] {
   const order = new Map(props.catalog.map((candidate, index) => [candidate.id, index]));
-  model.value = [...model.value, value].sort((left, right) =>
+  return [...values].sort((left, right) =>
     (order.get(left.findingId) ?? Number.MAX_SAFE_INTEGER) - (order.get(right.findingId) ?? Number.MAX_SAFE_INTEGER));
 }
+function addCatalogItem(item: InstrumentalFindingCatalogItem) { model.value = ordered([...model.value, catalogValue(item)]); }
 function addFinding() {
   const item = pendingFinding.value;
   if (!item) return;
   addCatalogItem(item);
   pendingIds.value = [];
 }
-function updateChoiceIds(ids: string[]) {
-  const requested = new Set(ids);
-  const removed = choiceValues.value.find((value) => !requested.has(value.findingId));
-  if (removed) {
-    removeTarget.value = removed;
+function requestChoiceSelection(event: Event) {
+  const select = event.currentTarget as HTMLSelectElement;
+  const requestedId = select.value;
+  const current = choiceValues.value[0];
+  if (!current) {
+    const item = choiceCatalog.value.find((candidate) => candidate.id === requestedId);
+    if (item) addCatalogItem(item);
     return;
   }
-  for (const item of choiceCatalog.value) {
-    if (requested.has(item.id) && !choiceIds.value.includes(item.id)) addCatalogItem(item);
-  }
+  if (requestedId === current.findingId) return;
+  select.value = current.findingId;
+  pendingChoiceId.value = requestedId;
+  removeTarget.value = current;
 }
 function meaningful(value: InstrumentalFindingValue): boolean {
   const item = catalogItem(value);
@@ -89,13 +106,21 @@ function catalogItemDeep(id: string, items: readonly InstrumentalFindingCatalogI
 }
 function removeNow(id: string) { model.value = model.value.filter((item) => item.findingId !== id); }
 function requestRemove(value: InstrumentalFindingValue) {
-  if (meaningful(value)) removeTarget.value = value;
+  if (meaningful(value)) {
+    pendingChoiceId.value = null;
+    removeTarget.value = value;
+  }
   else removeNow(value.findingId);
 }
 function confirmRemove() {
   const target = removeTarget.value;
+  const replacementId = removeTargetIsChoice.value ? pendingChoiceId.value : null;
   removeTarget.value = null;
-  if (target) removeNow(target.findingId);
+  pendingChoiceId.value = null;
+  const replacement = replacementId ? choiceCatalog.value.find((item) => item.id === replacementId) : undefined;
+  if (target && replacement) {
+    model.value = ordered([...model.value.filter((item) => item.findingId !== target.findingId), catalogValue(replacement)]);
+  } else if (target) removeNow(target.findingId);
 }
 function updateChildren(value: InstrumentalFindingValue, children: readonly InstrumentalFindingValue[]) {
   value.children = children;
@@ -104,22 +129,13 @@ function updateChildren(value: InstrumentalFindingValue, children: readonly Inst
 
 <template>
   <div class="instrumental-finding-level medical-card-action-subgrid">
-    <div v-if="choiceCatalog.length" class="instrumental-finding-values" :style="{ '--instrumental-depth': depth }">
-      <span class="field-label">Возможные значения: {{ parentName }}</span>
-      <AppCatalogCombobox
-        :selected-ids="choiceIds"
-        :label="`Возможные значения показателя «${parentName}»`"
-        :options="choiceOptions"
-        custom-text=""
-        multiple
-        :allow-custom="false"
-        placeholder="Выберите одно или несколько значений"
-        @update:selected-ids="updateChoiceIds"
-      />
-      <div v-if="choiceValues.length" class="instrumental-selected-values" aria-label="Выбранные значения">
-        <span v-for="value in choiceValues" :key="value.findingId">{{ value.findingName }}</span>
-      </div>
-    </div>
+    <label v-if="choiceCatalog.length" class="therapeutic-select-field instrumental-value-field" :style="{ '--instrumental-depth': depth }">
+      <span>Значение</span>
+      <select :value="choiceId" :aria-label="`Значение показателя «${parentName}»`" @change="requestChoiceSelection">
+        <option value="">Не указано</option>
+        <option v-for="item in choiceCatalog" :key="item.id" :value="item.id">{{ item.name }}</option>
+      </select>
+    </label>
 
     <InstrumentalFindingEditor
       v-for="choiceValue in selectedChoicesWithChildren"
@@ -132,21 +148,27 @@ function updateChildren(value: InstrumentalFindingValue, children: readonly Inst
       @update:model-value="updateChildren(choiceValue, $event)"
     />
 
-    <div v-if="indicatorCatalog.length" class="instrumental-finding-create medical-card-action-subgrid">
-      <div class="instrumental-finding-content" :style="{ '--instrumental-depth': depth }">
-        <span class="field-label">{{ depth ? `Добавить для «${parentName}»` : 'Раздел исследования' }}</span>
-        <AppCatalogCombobox
-          :selected-ids="pendingIds"
-          :label="depth ? `Добавить показатель для «${parentName}»` : 'Добавить раздел исследования'"
-          :options="options"
-          custom-text=""
-          :allow-custom="false"
-          placeholder="Выберите показатель"
-          disabled-title="Все показатели добавлены"
-          @update:selected-ids="selectPending"
-        />
-      </div>
-      <button type="button" class="outline-action inline medical-card-action instrumental-finding-add" :disabled="!pendingFinding" title="Добавить показатель" aria-label="Добавить показатель" @click="addFinding"><AppIcon name="plus" /></button>
+    <div v-if="indicatorCatalog.length" class="instrumental-finding-create medical-card-action-subgrid" :style="{ '--instrumental-depth': depth }">
+      <span class="field-label instrumental-finding-create-label">{{ depth ? `Добавить для «${parentName}»` : 'Раздел исследования' }}</span>
+      <AppCatalogCombobox
+        class="instrumental-finding-picker"
+        :selected-ids="pendingIds"
+        :label="depth ? `Добавить показатель для «${parentName}»` : 'Добавить раздел исследования'"
+        :options="options"
+        custom-text=""
+        :allow-custom="false"
+        :placeholder="depth ? 'Выберите показатель' : 'Выберите раздел'"
+        :disabled-title="depth ? 'Все показатели добавлены' : 'Все разделы добавлены'"
+        @update:selected-ids="selectPending"
+      />
+      <button
+        type="button"
+        class="outline-action inline medical-card-action instrumental-finding-add"
+        :disabled="!pendingFinding"
+        :title="depth ? 'Добавить показатель' : 'Добавить раздел'"
+        :aria-label="depth ? 'Добавить показатель' : 'Добавить раздел'"
+        @click="addFinding"
+      ><AppIcon name="plus" /></button>
     </div>
 
     <div v-for="finding in indicatorValues" :key="finding.findingId" class="instrumental-finding-row medical-card-action-subgrid">
@@ -173,11 +195,13 @@ function updateChildren(value: InstrumentalFindingValue, children: readonly Inst
     </div>
     <ConfirmationDialog
       v-model="confirmOpen"
-      :title="removeTargetIsChoice ? 'Удалить выбранное значение?' : 'Удалить заполненный показатель?'"
+      :title="removeTargetIsChoice ? choiceRemovalTitle : 'Удалить заполненный показатель?'"
       :description="removeTargetIsChoice
-        ? `Значение «${removeTarget?.findingName ?? ''}» и все вложенные данные будут удалены.`
+        ? pendingChoiceId
+          ? `Значение «${removeTarget?.findingName ?? ''}» и все вложенные данные будут заменены.`
+          : `Значение «${removeTarget?.findingName ?? ''}» и все вложенные данные будут удалены.`
         : `Показатель «${removeTarget?.findingName ?? ''}» и все вложенные данные будут удалены.`"
-      confirm-label="Удалить"
+      :confirm-label="removeTargetIsChoice && pendingChoiceId ? 'Заменить' : 'Удалить'"
       @confirm="confirmRemove"
     />
   </div>

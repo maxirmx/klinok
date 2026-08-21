@@ -52,10 +52,9 @@ async function addFinding(wrapper: VueWrapper, id: string) {
 
 async function selectChoice(wrapper: VueWrapper, id: string) {
   const level = levelFor(wrapper, id);
-  const selector = level.findAllComponents(AppCatalogCombobox).find((candidate) =>
-    candidate.props("options").some((item: { id: string }) => item.id === id));
+  const selector = level.findAll("select").find((candidate) => candidate.find(`option[value="${id}"]`).exists());
   if (!selector) throw new Error(`Missing value selector for ${id}`);
-  selector.vm.$emit("update:selectedIds", [...selector.props("selectedIds"), id]);
+  await selector.setValue(id);
   await flushPromises();
 }
 
@@ -71,29 +70,33 @@ describe("InstrumentalTestsEditor", () => {
       findings: [],
     });
     expect(wrapper.get(".instrumental-study-delete").attributes("aria-label")).toBe("Удалить исследование");
+    const rootFindingEditor = wrapper.findComponent(InstrumentalFindingEditor);
+    expect(rootFindingEditor.findComponent(AppCatalogCombobox).props("placeholder")).toBe("Выберите раздел");
+    expect(rootFindingEditor.get(".instrumental-finding-add").attributes("aria-label")).toBe("Добавить раздел");
 
     await addFinding(wrapper, "instrumental.finding.ultrasound-abdomen.9");
     await addFinding(wrapper, "instrumental.finding.ultrasound-abdomen.1");
     expect(current().studies[0]?.mode === "tree" ? current().studies[0].findings.map((item) => item.findingName) : []).toEqual(["Печень", "Мочевой пузырь"]);
 
     await addFinding(wrapper, "instrumental.finding.ultrasound-abdomen.9.3");
+    expect(levelFor(wrapper, "instrumental.finding.ultrasound-abdomen.9.3")
+      .findComponent(AppCatalogCombobox).props("placeholder")).toBe("Выберите показатель");
     await selectChoice(wrapper, "instrumental.finding.ultrasound-abdomen.9.3.5");
     await addFinding(wrapper, "instrumental.finding.ultrasound-abdomen.9.3.5.2");
     await selectChoice(wrapper, "instrumental.finding.ultrasound-abdomen.9.3.5.2.1");
     await selectChoice(wrapper, "instrumental.finding.ultrasound-abdomen.9.3.5.2.2");
+    expect(wrapper.get('[role="alertdialog"]').text()).toContain("Заменить выбранное значение");
+    await wrapper.get('[role="alertdialog"] .danger').trigger("click");
+    await flushPromises();
     await addFinding(wrapper, "instrumental.finding.ultrasound-abdomen.9.3.5.2.3");
 
-    expect(wrapper.findAll(".instrumental-selected-values span").map((item) => item.text())).toEqual(expect.arrayContaining([
-      "Визуализируется", "Единичные", "Множественные",
-    ]));
-    const valueSelector = levelFor(wrapper, "instrumental.finding.ultrasound-abdomen.9.3.5.2.1")
-      .findAllComponents(AppCatalogCombobox).find((candidate) => candidate.props("multiple"));
-    expect(valueSelector?.props("label")).toContain("Конкременты");
-    valueSelector?.vm.$emit("update:selectedIds", ["instrumental.finding.ultrasound-abdomen.9.3.5.2.2"]);
-    await flushPromises();
-    expect(wrapper.get('[role="alertdialog"]').text()).toContain("Удалить выбранное значение");
-    await wrapper.get('[role="alertdialog"] .outline-action').trigger("click");
-    await flushPromises();
+    const valueField = levelFor(wrapper, "instrumental.finding.ultrasound-abdomen.9.3.5.2.1").get(".instrumental-value-field");
+    expect(valueField.classes()).toContain("therapeutic-select-field");
+    expect(valueField.get("span").text()).toBe("Значение");
+    expect(valueField.get("select").attributes("aria-label")).toContain("Конкременты");
+    expect((valueField.get("select").element as HTMLSelectElement).value).toBe("instrumental.finding.ultrasound-abdomen.9.3.5.2.2");
+    const bladder = current().studies[0]?.mode === "tree" ? current().studies[0].findings.find((item) => item.findingName === "Мочевой пузырь") : undefined;
+    expect(bladder?.children[0]?.children[0]?.children[0]?.children.map((item) => item.findingName)).toEqual(["Множественные", "Размер, мм"]);
 
     const sizeLabel = wrapper.findAll(".instrumental-finding-content label").find((label) => label.get("span").text() === "Размер, мм")!;
     await sizeLabel.get("input").setValue("4,2");
@@ -101,6 +104,14 @@ describe("InstrumentalTestsEditor", () => {
     expect(deepContent.style.getPropertyValue("--instrumental-depth")).toBe("4");
     expect(wrapper.findAll(".instrumental-finding-add").every((button) => button.classes().includes("medical-card-action"))).toBe(true);
     expect(wrapper.findAll(".instrumental-finding-delete").every((button) => button.attributes("title") === "Удалить показатель")).toBe(true);
+
+    await valueField.get("select").setValue("");
+    await flushPromises();
+    expect(wrapper.get('[role="alertdialog"]').text()).toContain("Удалить выбранное значение");
+    await wrapper.get('[role="alertdialog"] .danger').trigger("click");
+    await flushPromises();
+    expect((levelFor(wrapper, "instrumental.finding.ultrasound-abdomen.9.3.5.2.1").get("select").element as HTMLSelectElement).value).toBe("");
+    expect(bladder?.children[0]?.children[0]?.children[0]?.children.map((item) => item.findingName)).toEqual(["Размер, мм"]);
 
     await wrapper.get('button[aria-label="Удалить показатель «Размер, мм»"]').trigger("click");
     await flushPromises();

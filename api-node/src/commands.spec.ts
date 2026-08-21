@@ -111,6 +111,24 @@ describe("command boundary", () => {
       ...base,
       sections: { ...base.sections, "instrumental-tests": { studies: [] } },
     })).toThrow("Добавьте хотя бы одно");
+    expect(() => validateMedicalEncounter({
+      ...base,
+      sections: { ...base.sections, "instrumental-tests": { studies: [{
+        id: "123e4567-e89b-12d3-a456-426614174000",
+        date: "2026-08-10",
+        typeId: "instrumental.study.ultrasound-abdomen",
+        findings: [{
+          findingId: "instrumental.finding.ultrasound-abdomen.1",
+          children: [{
+            findingId: "instrumental.finding.ultrasound-abdomen.1.3",
+            children: [
+              { findingId: "instrumental.finding.ultrasound-abdomen.1.3.1", children: [] },
+              { findingId: "instrumental.finding.ultrasound-abdomen.1.3.2", children: [] },
+            ],
+          }],
+        }],
+      }] } },
+    })).toThrow("не более одного");
   });
 
   it("validates structured diagnosis catalog and free-form representations", () => {

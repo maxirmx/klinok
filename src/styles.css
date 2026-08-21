@@ -3197,7 +3197,12 @@ dd {
 .laboratory-result-row > .laboratory-result-indicator { display: none; }
 .laboratory-editor-results .laboratory-result-row { grid-template-columns: minmax(0, 1fr) 34px; }
 .laboratory-editor-results .laboratory-result-row > label { grid-column: 1; }
-.laboratory-result-delete { grid-column: 2; grid-row: 1; align-self: start; }
+.laboratory-result-delete {
+  grid-column: 2;
+  grid-row: 1;
+  align-self: start;
+}
+.workspace-content .laboratory-editor-results .laboratory-result-row .laboratory-result-delete { margin-top: 16px; }
 .laboratory-result-row input { width: 100%; min-width: 0; box-sizing: border-box; }
 .laboratory-result-label,
 .laboratory-result-mobile-name {
@@ -3226,6 +3231,7 @@ dd {
   .laboratory-result-row > .laboratory-result-indicator { display: grid; }
   .laboratory-editor-results .laboratory-result-row > label,
   .laboratory-result-delete { grid-column: auto; grid-row: auto; }
+  .workspace-content .laboratory-editor-results .laboratory-result-row .laboratory-result-delete { margin-top: 0; }
   .laboratory-result-label { display: none; }
   .laboratory-result-mobile-name { display: none; }
 }
@@ -3269,29 +3275,29 @@ dd {
 .instrumental-finding-level { row-gap: 8px; }
 .instrumental-finding-create,
 .instrumental-finding-row { padding-top: 8px; align-items: start; }
+.instrumental-finding-create { row-gap: 3px; }
 .instrumental-finding-row { border-top: 1px solid var(--border-color, #d7dde5); }
+.instrumental-finding-create-label,
+.instrumental-finding-picker {
+  grid-column: 1;
+  min-width: 0;
+  padding-inline-start: calc(var(--instrumental-depth, 0) * 14px);
+}
+.instrumental-finding-create-label { grid-row: 1; }
+.instrumental-finding-picker { grid-row: 2; }
 .instrumental-finding-content {
   grid-column: 1;
   min-width: 0;
   padding-inline-start: calc(var(--instrumental-depth, 0) * 14px);
 }
-.instrumental-finding-values {
+.instrumental-value-field {
   grid-column: 1;
   min-width: 0;
   padding-inline-start: calc(var(--instrumental-depth, 0) * 14px);
 }
-.instrumental-selected-values { display: flex; min-width: 0; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
-.instrumental-selected-values > span {
-  max-width: 100%;
-  padding: 4px 8px;
-  border: 1px solid var(--accent);
-  border-radius: 999px;
-  background: var(--brand-sky-soft);
-  overflow-wrap: anywhere;
-}
 .instrumental-finding-content > label { display: grid; min-width: 0; gap: 3px; }
 .instrumental-finding-name { display: block; padding-top: 8px; overflow-wrap: anywhere; }
-.instrumental-finding-add,
+.instrumental-finding-add { grid-column: 2; grid-row: 2; align-self: start; }
 .instrumental-finding-delete { grid-column: 2; align-self: start; }
 .instrumental-history,
 .instrumental-history-study { display: grid; gap: .55rem; }

@@ -421,21 +421,25 @@ test("fresh provisioning, Doctor approval, grant, draft, and confirmation", asyn
     await combobox.fill(findingName);
     await instrumentalCard.getByRole("option", { name: findingName, exact: true }).click();
     const createRow = combobox.locator("xpath=ancestor::div[contains(concat(' ', normalize-space(@class), ' '), ' instrumental-finding-create ')][1]");
-    const add = createRow.getByRole("button", { name: "Добавить показатель" });
+    const actionName = comboboxName === "Добавить раздел исследования" ? "Добавить раздел" : "Добавить показатель";
+    const add = createRow.getByRole("button", { name: actionName });
+    await expectTopAligned(add, createRow.locator(".app-catalog-control"));
     await add.click();
     return add;
   };
   const selectInstrumentalValue = async (indicatorName: string, valueName: string) => {
-    const combobox = instrumentalCard.getByRole("combobox", {
-      name: `Возможные значения показателя «${indicatorName}»`,
+    const selector = instrumentalCard.getByRole("combobox", {
+      name: `Значение показателя «${indicatorName}»`,
       exact: true,
     });
-    await combobox.fill(valueName);
-    await instrumentalCard.getByRole("option", { name: valueName, exact: true }).click();
+    await selector.selectOption({ label: valueName });
+    return selector;
   };
   const addBladder = await addInstrumentalFinding("Добавить раздел исследования", "Мочевой пузырь");
   const addContents = await addInstrumentalFinding("Добавить показатель для «Мочевой пузырь»", "Содержимое");
-  await selectInstrumentalValue("Содержимое", "Визуализируется");
+  const contentsValueSelector = await selectInstrumentalValue("Содержимое", "Визуализируется");
+  await expect(contentsValueSelector.locator("..")).toHaveClass(/therapeutic-select-field/);
+  await expect(contentsValueSelector).not.toHaveAttribute("multiple");
   const addSediment = await addInstrumentalFinding("Добавить показатель для «Визуализируется»", "Взвесь/осадок");
   await instrumentalCard.getByLabel("Взвесь/осадок", { exact: true }).fill("Незначительно");
   const addConclusion = await addInstrumentalFinding("Добавить раздел исследования", "Заключение");
@@ -520,7 +524,7 @@ test("fresh provisioning, Doctor approval, grant, draft, and confirmation", asyn
   await expectHorizontalGap(studyType, typeToggle);
   await expectHorizontalGap(indicator, indicatorToggle);
   await expectHorizontalGap(revaccinationInput, revaccinationToggle);
-  await expectTopAligned(deleteResult, laboratoryCard.locator(".laboratory-result-mobile-name"));
+  await expectTopAligned(deleteResult, resultInput);
   const narrowTabRows = await therapeuticTabs.evaluateAll((tabs) => tabs.reduce<number[]>((rows, tab) => {
     const top = Math.round(tab.getBoundingClientRect().top);
     if (!rows.some((candidate) => Math.abs(candidate - top) <= 2)) rows.push(top);

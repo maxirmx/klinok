@@ -287,11 +287,16 @@ function normalizeFindings(
   const catalogById = new Map(catalog.map((item) => [item.id, item]));
   const catalogOrder = new Map(catalog.map((item, index) => [item.id, index]));
   const seen = new Set<string>();
+  let selectedChoice = false;
   const normalized = value.map((raw) => {
     const input = object(raw);
     const item = catalogById.get(String(input.findingId ?? ""));
     if (!item || seen.has(item.id)) throw new Error("Некорректная структура результатов инструментального исследования.");
     seen.add(item.id);
+    if (item.kind === "choice") {
+      if (selectedChoice) throw new Error("Для показателя можно выбрать не более одного значения.");
+      selectedChoice = true;
+    }
     const rawChildren = input.children ?? [];
     if (!Array.isArray(rawChildren)) throw new Error("Некорректная структура результатов инструментального исследования.");
     if ((item.kind === "short-text" || item.kind === "long-text") && rawChildren.length) {

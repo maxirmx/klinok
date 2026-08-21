@@ -50,7 +50,6 @@ describe("instrumental study contracts", () => {
         value("instrumental.finding.ultrasound-abdomen.1", [
           value("instrumental.finding.ultrasound-abdomen.1.10", [
             value("instrumental.finding.ultrasound-abdomen.1.10.2", [
-              value("instrumental.finding.ultrasound-abdomen.1.10.2.2"),
               value("instrumental.finding.ultrasound-abdomen.1.10.2.1"),
             ]),
           ]),
@@ -64,7 +63,7 @@ describe("instrumental study contracts", () => {
       "instrumental.finding.ultrasound-abdomen.1",
       "instrumental.finding.ultrasound-abdomen.19",
     ]);
-    expect(study.findings[0]!.children[0]!.children[0]!.children.map((finding) => finding.findingName)).toEqual(["Единичные", "Множественные"]);
+    expect(study.findings[0]!.children[0]!.children[0]!.children.map((finding) => finding.findingName)).toEqual(["Единичные"]);
     expect(study.findings[1]).toMatchObject({ findingName: "Заключение", value: "Без патологии" });
   });
 
@@ -96,6 +95,7 @@ describe("instrumental study contracts", () => {
     ["empty group", { studies: [{ ...base, typeId: "instrumental.study.ultrasound-abdomen", findings: [value("instrumental.finding.ultrasound-abdomen.1")] }] }, "Печень"],
     ["empty text", { studies: [{ ...base, typeId: "instrumental.study.ultrasound-abdomen", findings: [value("instrumental.finding.ultrasound-abdomen.19", [], " ")] }] }, "Заключение"],
     ["misplaced child", { studies: [{ ...base, typeId: "instrumental.study.ultrasound-abdomen", findings: [value("instrumental.finding.ultrasound-abdomen.1", [value("instrumental.finding.ultrasound-abdomen.2.1", [])])] }] }, "структура"],
+    ["multiple values", { studies: [{ ...base, typeId: "instrumental.study.ultrasound-abdomen", findings: [value("instrumental.finding.ultrasound-abdomen.1", [value("instrumental.finding.ultrasound-abdomen.1.3", [value("instrumental.finding.ultrasound-abdomen.1.3.1"), value("instrumental.finding.ultrasound-abdomen.1.3.2")])])] }] }, "не более одного"],
     ["text children", { studies: [{ ...base, typeId: "instrumental.study.ultrasound-abdomen", findings: [value("instrumental.finding.ultrasound-abdomen.19", [value("instrumental.finding.ultrasound-abdomen.1")], "text")] }] }, "вложенные"],
   ])("rejects %s", (_name, input, message) => {
     expect(() => normalizeInstrumentalTestsValue(input, "2026-08-15")).toThrow(message as string);
