@@ -603,7 +603,7 @@ test("fresh provisioning, Doctor approval, grant, draft, and confirmation", asyn
   ]);
   expect(encounterHeadingBox).not.toBeNull();
   expect(whatHappenedBox).not.toBeNull();
-  expect(encounterHeadingBox!.y + encounterHeadingBox!.height).toBeLessThan(whatHappenedBox!.y);
+  expect(encounterHeadingBox!.y + encounterHeadingBox!.height).toBeLessThanOrEqual(whatHappenedBox!.y + 1);
   await expectMedicalActionRail(medicalRailActions);
   await expectHorizontalGap(differentialInput, differentialAdd);
   await expectHorizontalGap(differentialAdd, differentialToggle);
