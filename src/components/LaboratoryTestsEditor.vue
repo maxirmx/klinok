@@ -7,6 +7,7 @@ import { computed, ref } from "vue";
 import { LABORATORY_STUDY_OPTIONS, laboratoryStudyTypeById, type LaboratoryStudyValue, type LaboratoryTestsSectionValue } from "@klinok/contracts";
 import AppCatalogCombobox from "./AppCatalogCombobox.vue";
 import AppIcon from "./AppIcon.vue";
+import AppSelect from "./AppSelect.vue";
 import ConfirmationDialog from "./ConfirmationDialog.vue";
 import type { LaboratoryTestsDraftErrors } from "../laboratoryTests";
 
@@ -21,6 +22,7 @@ const pendingType = computed(() => laboratoryStudyTypeById(pendingTypeIds.value[
 const confirmOpen = computed({ get: () => Boolean(pending.value), set: (value) => { if (!value) pending.value = null; } });
 const confirmTitle = computed(() => pending.value?.title ?? "Удалить заполненное исследование?");
 const confirmDescription = computed(() => pending.value?.description ?? "После подтверждения заполненные данные будут удалены.");
+const infectionMethodOptions = ["ПЦР", "ИФА", "РМА", "ELISA", "ИХА"].map((method) => ({ value: method, label: method }));
 const uuid = () => globalThis.crypto.randomUUID();
 function addStudy() {
   const type = pendingType.value;
@@ -102,6 +104,9 @@ function removeIndicator(studyId: string, indicatorId: string) {
 }
 function confirm() { const action = pending.value?.action; pending.value = null; action?.(); }
 function invalid(message?: string) { return message ? true : undefined; }
+function updateInfectionMethod(study: Extract<LaboratoryStudyValue, { mode: "infection" }>, value: string) {
+  study.method = value as Extract<LaboratoryStudyValue, { mode: "infection" }>["method"];
+}
 </script>
 
 <template>
@@ -173,7 +178,7 @@ function invalid(message?: string) { return message ? true : undefined; }
         </div>
       </template>
       <label v-else-if="study.mode === 'narrative'"><span>Результат</span><textarea v-model="study.result" rows="4" required :aria-invalid="invalid(errors.studies[index]?.result)" /><small v-if="errors.studies[index]?.result" class="field-error" role="alert">{{ errors.studies[index]?.result }}</small></label>
-      <div v-else-if="study.mode === 'infection'" class="laboratory-infection"><label><span>Инфекция</span><input v-model="study.infection" required :aria-invalid="invalid(errors.studies[index]?.infection)" /><small v-if="errors.studies[index]?.infection" class="field-error" role="alert">{{ errors.studies[index]?.infection }}</small></label><label><span>Метод</span><select v-model="study.method" :aria-invalid="invalid(errors.studies[index]?.method)"><option v-for="method in ['ПЦР','ИФА','РМА','ELISA','ИХА']" :key="method">{{ method }}</option></select><small v-if="errors.studies[index]?.method" class="field-error" role="alert">{{ errors.studies[index]?.method }}</small></label><fieldset class="medical-card-option-panel" :aria-invalid="invalid(errors.studies[index]?.infectionResult)"><legend>Результат</legend><div class="medical-card-options"><label><input v-model="study.result" type="radio" value="positive" /> Положительно</label><label><input v-model="study.result" type="radio" value="negative" /> Отрицательно</label></div><small v-if="errors.studies[index]?.infectionResult" class="field-error" role="alert">{{ errors.studies[index]?.infectionResult }}</small></fieldset></div>
+      <div v-else-if="study.mode === 'infection'" class="laboratory-infection"><label><span>Инфекция</span><input v-model="study.infection" required :aria-invalid="invalid(errors.studies[index]?.infection)" /><small v-if="errors.studies[index]?.infection" class="field-error" role="alert">{{ errors.studies[index]?.infection }}</small></label><label><span>Метод</span><AppSelect :model-value="study.method" :options="infectionMethodOptions" :invalid="Boolean(errors.studies[index]?.method)" @update:model-value="updateInfectionMethod(study, $event)" /><small v-if="errors.studies[index]?.method" class="field-error" role="alert">{{ errors.studies[index]?.method }}</small></label><fieldset class="medical-card-option-panel" :aria-invalid="invalid(errors.studies[index]?.infectionResult)"><legend>Результат</legend><div class="medical-card-options"><label><input v-model="study.result" type="radio" value="positive" /> Положительно</label><label><input v-model="study.result" type="radio" value="negative" /> Отрицательно</label></div><small v-if="errors.studies[index]?.infectionResult" class="field-error" role="alert">{{ errors.studies[index]?.infectionResult }}</small></fieldset></div>
       <section class="medical-card-comment-section laboratory-study-comment"><h4>Комментарий</h4><textarea v-model="study.comment" class="medical-card-comment" rows="2" aria-label="Комментарий" /></section>
     </section>
   </div>

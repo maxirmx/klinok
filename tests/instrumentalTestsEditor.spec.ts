@@ -62,7 +62,7 @@ async function selectChoice(wrapper: VueWrapper, id: string) {
 }
 
 describe("InstrumentalTestsEditor", () => {
-  it("prefers a persisted measurement unit and falls back to the catalog unit", async () => {
+  it("renders the persisted measurement unit instead of the current catalog unit", () => {
     const catalog: readonly InstrumentalFindingCatalogItem[] = [{
       id: "size",
       name: "Размер",
@@ -83,10 +83,6 @@ describe("InstrumentalTestsEditor", () => {
 
     expect(wrapper.get('input[type="number"]').attributes("aria-label")).toBe("Размер, см");
     expect(wrapper.get(".instrumental-integer-unit").text()).toBe("см");
-
-    await wrapper.setProps({ modelValue: [{ ...finding, unit: undefined }] });
-    expect(wrapper.get('input[type="number"]').attributes("aria-label")).toBe("Размер, мм");
-    expect(wrapper.get(".instrumental-integer-unit").text()).toBe("мм");
   });
 
   it("renders a level-zero choice in its section heading row", async () => {

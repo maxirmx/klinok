@@ -14,6 +14,7 @@ import type {
   TherapeuticCategoryDefinition,
   TherapeuticQuestionDefinition,
 } from "../therapeuticAppointment";
+import AppSelect from "./AppSelect.vue";
 
 const props = defineProps<{ categories: readonly TherapeuticCategoryDefinition[] }>();
 const selectedIds = defineModel<string[]>({ required: true });
@@ -35,13 +36,19 @@ const wideSelectQuestionIds = computed(() => new Set(props.categories.flatMap((c
   return [...wideIds];
 })));
 
-function replaceSingle(question: TherapeuticQuestionDefinition, event: Event) {
-  const value = (event.target as HTMLSelectElement).value;
+function replaceSingle(question: TherapeuticQuestionDefinition, value: string) {
   const questionIds = new Set(question.options.map((option) => option.id));
   selectedIds.value = pruneTherapeuticSelections([
     ...selectedIds.value.filter((id) => !questionIds.has(id)),
     ...(value ? [value] : []),
   ]);
+}
+
+function selectOptions(question: TherapeuticQuestionDefinition) {
+  return [
+    { value: "", label: "Не указано" },
+    ...question.options.map((option) => ({ value: option.id, label: option.label })),
+  ];
 }
 
 function toggleMultiple(question: TherapeuticQuestionDefinition, id: string) {
@@ -65,10 +72,11 @@ function selectedValue(question: TherapeuticQuestionDefinition): string {
             :class="{ 'therapeutic-select-field-wide': wideSelectQuestionIds.has(question.id) }"
           >
             <span>{{ question.label }}</span>
-            <select :value="selectedValue(question)" @change="replaceSingle(question, $event)">
-              <option value="">Не указано</option>
-              <option v-for="option in question.options" :key="option.id" :value="option.id">{{ option.label }}</option>
-            </select>
+            <AppSelect
+              :model-value="selectedValue(question)"
+              :options="selectOptions(question)"
+              @update:model-value="replaceSingle(question, $event)"
+            />
           </label>
           <fieldset
             v-else-if="question.mode === 'multiple' && therapeuticQuestionVisible(question, selectedIds)"

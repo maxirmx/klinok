@@ -8,6 +8,7 @@ import { useRouter } from "vue-router";
 import { normalizeRussianSearchText, type AccountProfile, type DirectoryProfileDto, type DirectoryUserDto, type Role, type RoleRequest, type RoleStatus } from "@klinok/contracts";
 import AppIcon from "../components/AppIcon.vue";
 import AppPaginator from "../components/AppPaginator.vue";
+import AppSelect from "../components/AppSelect.vue";
 import ModalDialog from "../components/ModalDialog.vue";
 import PendingCountBadge from "../components/PendingCountBadge.vue";
 import PersonIdentity from "../components/PersonIdentity.vue";
@@ -30,6 +31,20 @@ type SortDirection = "asc" | "desc";
 type DecisionAction = "approve" | "reject" | "revoke" | "restore";
 type AuditCategory = "request" | "approve" | "restore" | "reject" | "revoke" | "bootstrap";
 type RoleActionTarget = Pick<RoleRequest, "accountId" | "requestId" | "revision" | "role" | "status">;
+const auditRoleOptions = [
+  { value: "", label: "Все роли" },
+  { value: "doctor", label: "Ветеринар" },
+  { value: "administrator", label: "Администратор" },
+];
+const auditActionOptions = [
+  { value: "", label: "Все действия" },
+  { value: "request", label: "Запрос" },
+  { value: "approve", label: "Одобрение" },
+  { value: "restore", label: "Восстановление" },
+  { value: "reject", label: "Отказ" },
+  { value: "revoke", label: "Отзыв или приостановка" },
+  { value: "bootstrap", label: "Инициализация" },
+];
 
 type AdministratorRow = DirectoryUserDto;
 
@@ -83,6 +98,9 @@ const auditPage = ref(1);
 const auditPageSize = ref(readPageSize(auditPageSizeKey));
 const auditProfiles = ref<Record<string, DirectoryProfileDto>>({});
 let auditProfilesRefreshId = 0;
+
+function updateAuditRole(value: string) { auditRole.value = value as AdvancedRole | ""; }
+function updateAuditAction(value: string) { auditAction.value = value as AuditCategory | ""; }
 
 const roleLabels: Record<Role, string> = {
   owner: "Владелец",
@@ -672,23 +690,11 @@ onBeforeUnmount(clearDirectoryRefreshTimer);
           </label>
           <label>
             <span>Роль</span>
-            <select v-model="auditRole">
-              <option value="">Все роли</option>
-              <option value="doctor">Ветеринар</option>
-              <option value="administrator">Администратор</option>
-            </select>
+            <AppSelect :model-value="auditRole" :options="auditRoleOptions" @update:model-value="updateAuditRole" />
           </label>
           <label>
             <span>Действие</span>
-            <select v-model="auditAction">
-              <option value="">Все действия</option>
-              <option value="request">Запрос</option>
-              <option value="approve">Одобрение</option>
-              <option value="restore">Восстановление</option>
-              <option value="reject">Отказ</option>
-              <option value="revoke">Отзыв или приостановка</option>
-              <option value="bootstrap">Инициализация</option>
-            </select>
+            <AppSelect :model-value="auditAction" :options="auditActionOptions" @update:model-value="updateAuditAction" />
           </label>
         </div>
 

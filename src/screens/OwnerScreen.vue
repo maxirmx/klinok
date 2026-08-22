@@ -13,6 +13,7 @@ import {
 } from "@klinok/contracts";
 import AppIcon from "../components/AppIcon.vue";
 import AppPaginator from "../components/AppPaginator.vue";
+import AppSelect from "../components/AppSelect.vue";
 import ConfirmationDialog from "../components/ConfirmationDialog.vue";
 import MedicalRecordEntry from "../components/MedicalRecordEntry.vue";
 import LaboratoryComparison from "../components/LaboratoryComparison.vue";
@@ -41,6 +42,24 @@ import { useAlertStore } from "../stores/alert";
 
 const PET_SPECIES = ["Собака", "Кошка", "Другое"] as const;
 type PetSpecies = (typeof PET_SPECIES)[number];
+const petSpeciesOptions = PET_SPECIES.map((species) => ({ value: species, label: species }));
+const petSexOptions = [
+  { value: "", label: "Выберите", disabled: true },
+  ...PET_SEXES.map((sex) => ({ value: sex, label: sex })),
+];
+const medicalSectionOptions = [
+  { value: "", label: "Все разделы" },
+  ...Object.entries(ENCOUNTER_SECTION_LABELS).map(([value, label]) => ({ value, label })),
+];
+const medicalStatusOptions = [
+  { value: "", label: "Все статусы" },
+  { value: "confirmed", label: "Подтверждённые" },
+  { value: "unconfirmed", label: "Не подтверждённые" },
+];
+const medicalSortOptions = [
+  { value: "desc", label: "Сначала новые" },
+  { value: "asc", label: "Сначала старые" },
+];
 
 const props = defineProps<{ role: "owner"; scenarioId: string }>();
 const route = useRoute();
@@ -104,6 +123,13 @@ const medicalStatus = ref<"" | "confirmed" | "unconfirmed">("");
 const medicalSort = ref<"desc" | "asc">("desc");
 const accessPage = ref(1);
 const accessPageSize = ref<(typeof pageSizes)[number]>(10);
+
+function updatePetSpecies(value: string) { draft.species = value as PetSpecies; }
+function updatePetSex(value: string) { draft.sex = value as PetSex | ""; }
+function updateMedicalSection(value: string) { medicalSection.value = value as MedicalEncounterSectionKind | ""; }
+function updateMedicalStatus(value: string) { medicalStatus.value = value as "" | "confirmed" | "unconfirmed"; }
+function updateMedicalSort(value: string) { medicalSort.value = value as "desc" | "asc"; }
+
 const pageTitle = computed(() => {
   if (isHome.value) return "Мои питомцы";
   if (isCreate.value) return "Добавить питомца";
@@ -650,17 +676,12 @@ function confirmMedicalRecord(record: MedicalRecordDraft) {
           <label><span>Кличка</span><input v-model="draft.name" required /></label>
           <label>
             <span>Вид</span>
-            <select v-model="draft.species" required>
-              <option v-for="species in PET_SPECIES" :key="species" :value="species">{{ species }}</option>
-            </select>
+            <AppSelect :model-value="draft.species" :options="petSpeciesOptions" required @update:model-value="updatePetSpecies" />
           </label>
           <label><span>Порода</span><input v-model="draft.breed" required /></label>
           <label>
             <span>Пол</span>
-            <select v-model="draft.sex" required>
-              <option value="" disabled>Выберите</option>
-              <option v-for="sex in PET_SEXES" :key="sex" :value="sex">{{ sex }}</option>
-            </select>
+            <AppSelect :model-value="draft.sex" :options="petSexOptions" required @update:model-value="updatePetSex" />
           </label>
           <fieldset class="owner-birth-field">
             <legend>Дата рождения</legend>
@@ -822,9 +843,9 @@ function confirmMedicalRecord(record: MedicalRecordDraft) {
           <input v-model="medicalQuery" type="search" placeholder="Содержание или автор" aria-label="Поиск по истории" />
           <label class="medical-record-date-filter"><span>Дата с</span><input v-model="medicalFrom" type="date" /></label>
           <label class="medical-record-date-filter"><span>Дата по</span><input v-model="medicalTo" type="date" /></label>
-          <select v-model="medicalSection" aria-label="Раздел"><option value="">Все разделы</option><option v-for="(label, kind) in ENCOUNTER_SECTION_LABELS" :key="kind" :value="kind">{{ label }}</option></select>
-          <select v-model="medicalStatus" aria-label="Статус"><option value="">Все статусы</option><option value="confirmed">Подтверждённые</option><option value="unconfirmed">Не подтверждённые</option></select>
-          <select v-model="medicalSort" aria-label="Порядок"><option value="desc">Сначала новые</option><option value="asc">Сначала старые</option></select>
+          <AppSelect :model-value="medicalSection" :options="medicalSectionOptions" aria-label="Раздел" @update:model-value="updateMedicalSection" />
+          <AppSelect :model-value="medicalStatus" :options="medicalStatusOptions" aria-label="Статус" @update:model-value="updateMedicalStatus" />
+          <AppSelect :model-value="medicalSort" :options="medicalSortOptions" aria-label="Порядок" @update:model-value="updateMedicalSort" />
         </div>
         <p v-if="!petRecords.length">Записей в медицинской карте пока нет.</p>
         <p v-else-if="!filteredPetRecords.length">Записи по выбранным условиям не найдены.</p>
