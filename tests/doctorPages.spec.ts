@@ -927,7 +927,9 @@ describe("Doctor pages", () => {
     const save = wrapper.get<HTMLButtonElement>('.encounter-editor-heading button[title="Сохранить запись"]');
     expect(save.element.disabled).toBe(true);
     const dateField = wrapper.get(".encounter-date-field");
+    expect(dateField.element.closest(".encounter-editor-heading")).not.toBeNull();
     expect(dateField.get("span").text()).toBe("Дата");
+    expect(dateField.get("span").classes()).toContain("visually-hidden");
     expect(dateField.get('input[type="date"]').exists()).toBe(true);
     const notEating = wrapper.findAll(".encounter-taxonomy label").find((label) => label.text() === "Не ест");
     expect(notEating).toBeDefined();
@@ -1558,9 +1560,11 @@ describe("Doctor pages", () => {
     const wrapper = await mountAt("/doctor/pets/pet-1", "doctor-pet-detail");
     await flushPromises();
     const record = wrapper.get(".medical-record-entry-details");
+    expect(wrapper.find(".doctor-history-filters").exists()).toBe(true);
 
     await record.get(".medical-record-edit").trigger("click");
     const inlineEditor = record.get(".encounter-editor-inline");
+    expect(wrapper.find(".doctor-history-filters").exists()).toBe(false);
     expect(record.attributes()).toHaveProperty("open");
     expect(inlineEditor.get("h2").text()).toBe("Редактирование записи");
     const editorActions = inlineEditor.findAll(".encounter-editor-heading button");
@@ -1576,10 +1580,12 @@ describe("Doctor pages", () => {
 
     await inlineEditor.get('button[title="Отменить редактирование"]').trigger("click");
     expect(record.find(".encounter-editor-inline").exists()).toBe(false);
+    expect(wrapper.find(".doctor-history-filters").exists()).toBe(true);
     expect(wrapper.get(".doctor-pet-detail > .encounter-editor h2").text()).toBe("Сегодняшний приём");
 
     await record.get(".medical-record-edit").trigger("click");
     const activeEditor = record.get(".encounter-editor-inline");
+    expect(wrapper.find(".doctor-history-filters").exists()).toBe(false);
     await activeEditor.get(".encounter-what-happened textarea").setValue("Обновлённый комментарий");
     await activeEditor.get('button[title="Сохранить запись"]').trigger("click");
     await flushPromises();
@@ -1591,6 +1597,7 @@ describe("Doctor pages", () => {
       }),
     }));
     expect(record.find(".encounter-editor-inline").exists()).toBe(false);
+    expect(wrapper.find(".doctor-history-filters").exists()).toBe(true);
   });
 
   it("preserves a legacy free-text general-data section while editing", async () => {

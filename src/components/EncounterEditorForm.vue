@@ -5,6 +5,7 @@
 
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, useId, watch } from "vue";
 import AppIcon from "./AppIcon.vue";
+import AppSelect from "./AppSelect.vue";
 import DiagnosisEditor from "./DiagnosisEditor.vue";
 import TherapeuticAppointmentForm from "./TherapeuticAppointmentForm.vue";
 import LaboratoryTestsEditor from "./LaboratoryTestsEditor.vue";
@@ -86,6 +87,15 @@ const revaccinationChooserOpen = ref(false);
 const revaccinationDateId = useId();
 const revaccinationMenuRoot = ref<HTMLElement | null>(null);
 const optionalAvailable = computed(() => OPTIONAL_ENCOUNTER_SECTION_KINDS.filter((kind) => !optionalKinds.value.includes(kind)));
+const optionalSectionOptions = computed(() => [
+  { value: "", label: "Выберите раздел" },
+  ...optionalAvailable.value.map((kind) => ({ value: kind, label: ENCOUNTER_SECTION_LABELS[kind] })),
+]);
+const vaccinationComplicationOptions = [
+  { value: "", label: "Не указано" },
+  { value: "yes", label: "Были" },
+  { value: "no", label: "Не было" },
+];
 const revaccinationIntervalOptions = computed(() => REVACCINATION_INTERVAL_OPTIONS
   .filter((option) => option.value !== "next-birthday" || props.petBirthDate));
 
@@ -121,9 +131,8 @@ function toggleOutcome(id: string) {
   outcomeSelectedIds.value = replaceConflictingOutcome(outcomeSelectedIds.value, id);
 }
 
-function selectOptional(event: Event) {
-  const select = event.target as HTMLSelectElement;
-  const kind = select.value as MedicalEncounterSectionKind;
+function selectOptional(value: string) {
+  const kind = value as MedicalEncounterSectionKind;
   if (kind && !optionalKinds.value.includes(kind)) {
     optionalKinds.value = [...optionalKinds.value, kind];
     if (kind === "vaccination") {
@@ -164,7 +173,10 @@ function selectOptional(event: Event) {
       texts.value = nextTexts;
     }
   }
-  select.value = "";
+}
+
+function updateVaccinationComplications(value: string) {
+  vaccination.value.previousVaccinationComplications = value as VaccinationDraft["previousVaccinationComplications"];
 }
 
 function updateText(kind: MedicalEncounterSectionKind, event: Event) {
@@ -264,12 +276,12 @@ function submit() {
   <form ref="form" class="form-stack" @submit.prevent="submit">
     <div class="doctor-heading encounter-editor-heading">
       <h2>{{ editing ? 'Редактирование записи' : 'Сегодняшний приём' }}</h2>
+      <label class="encounter-date-field"><span class="visually-hidden">Дата</span><input v-model="date" type="date" required /></label>
       <div class="row-actions medical-card-actions medical-card-section-rail">
         <button v-if="editing" type="button" class="outline-action inline medical-card-action" title="Отменить редактирование" aria-label="Отменить редактирование" @click="emit('cancel')"><AppIcon name="close" /></button>
         <button class="primary-action inline medical-card-action" type="button" :disabled="busy || !selectedIds.length || !outcomeSelectedIds.length" title="Сохранить запись" aria-label="Сохранить запись" @click="submit"><AppIcon name="check" /></button>
       </div>
     </div>
-    <label class="encounter-date-field"><span>Дата</span><input v-model="date" type="date" required /></label>
     <article class="encounter-section-card encounter-what-happened">
       <div class="doctor-heading"><h3>{{ WHAT_HAPPENED_TREE.label }}</h3></div>
       <div class="encounter-chips"><button v-for="id in selectedIds" :key="id" type="button" class="selection-chip" @click="toggleSelection(id)">{{ whatHappenedPath(id) }} ×</button></div>
@@ -349,11 +361,11 @@ function submit() {
           </label>
           <label class="vaccination-complications">
             <span title="Осложнения после предыдущей вакцинации">Осложнения после предыдущей вакцинации</span>
-            <select v-model="vaccination.previousVaccinationComplications">
-              <option value="">Не указано</option>
-              <option value="yes">Были</option>
-              <option value="no">Не было</option>
-            </select>
+            <AppSelect
+              :model-value="vaccination.previousVaccinationComplications"
+              :options="vaccinationComplicationOptions"
+              @update:model-value="updateVaccinationComplications"
+            />
           </label>
           <label>
             <span title="Название нынешней вакцины">Название нынешней вакцины</span>
@@ -433,7 +445,7 @@ function submit() {
     </article>
     <section v-if="optionalAvailable.length" class="encounter-section-card encounter-add-section">
       <div class="doctor-heading"><h3>Добавить раздел</h3></div>
-      <select aria-label="Добавить раздел" @change="selectOptional"><option value="">Выберите раздел</option><option v-for="kind in optionalAvailable" :key="kind" :value="kind">{{ ENCOUNTER_SECTION_LABELS[kind] }}</option></select>
+      <AppSelect model-value="" :options="optionalSectionOptions" aria-label="Добавить раздел" @update:model-value="selectOptional" />
     </section>
     <article class="encounter-section-card encounter-outcome">
       <div class="doctor-heading"><h3 id="encounter-outcome-heading">{{ ENCOUNTER_SECTION_LABELS.outcome }}</h3></div>

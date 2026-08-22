@@ -19,6 +19,7 @@ import {
 import AccessStatusField from "../components/AccessStatusField.vue";
 import AppIcon from "../components/AppIcon.vue";
 import AppPaginator from "../components/AppPaginator.vue";
+import AppSelect from "../components/AppSelect.vue";
 import ConfirmationDialog from "../components/ConfirmationDialog.vue";
 import EncounterEditorForm from "../components/EncounterEditorForm.vue";
 import MedicalRecordEntry from "../components/MedicalRecordEntry.vue";
@@ -76,6 +77,25 @@ const props = defineProps<{ role: "doctor"; scenarioId: string }>();
 type HomeSortField = "owner" | "pet";
 type SortDirection = "asc" | "desc";
 type HomeAccessFilter = "all" | DoctorPetAccessDto["status"];
+const homeFilterOptions = [
+  { value: "all", label: "Все" },
+  { value: "granted", label: "Медицинские карты" },
+  { value: "requested", label: "Ожидающие запросы" },
+  { value: "revoked", label: "Отозванные" },
+];
+const historySectionOptions = [
+  { value: "", label: "Все разделы" },
+  ...Object.entries(ENCOUNTER_SECTION_LABELS).map(([value, label]) => ({ value, label })),
+];
+const historyStatusOptions = [
+  { value: "", label: "Все статусы" },
+  { value: "confirmed", label: "Подтверждённые" },
+  { value: "unconfirmed", label: "Не подтверждённые" },
+];
+const historySortOptions = [
+  { value: "desc", label: "Сначала новые" },
+  { value: "asc", label: "Сначала старые" },
+];
 interface DoctorHomeAccessRow {
   petId: string;
   ownerAccountId: string;
@@ -134,6 +154,12 @@ const historyStatus = ref<"" | "confirmed" | "unconfirmed">("");
 const historySort = ref<"desc" | "asc">("desc");
 const historyPage = ref(1);
 const historyPageSize = ref<(typeof pageSizes)[number]>(10);
+
+function updateHomeFilter(value: string) { homeFilter.value = value as HomeAccessFilter; }
+function updateHistorySection(value: string) { historySection.value = value as MedicalEncounterSectionKind | ""; }
+function updateHistoryStatus(value: string) { historyStatus.value = value as "" | "confirmed" | "unconfirmed"; }
+function updateHistorySort(value: string) { historySort.value = value as "desc" | "asc"; }
+
 const encounter = reactive({
   recordId: "",
   date: new Date().toISOString().slice(0, 10),
@@ -694,12 +720,7 @@ watch(delegationPageCount, (pageCount) => {
       <div class="doctor-access-filters">
         <label class="doctor-access-global-filter">
           <span>Показывать</span>
-          <select v-model="homeFilter" aria-label="Показывать">
-            <option value="all">Все</option>
-            <option value="granted">Медицинские карты</option>
-            <option value="requested">Ожидающие запросы</option>
-            <option value="revoked">Отозванные</option>
-          </select>
+          <AppSelect :model-value="homeFilter" :options="homeFilterOptions" aria-label="Показывать" @update:model-value="updateHomeFilter" />
         </label>
         <label class="administrator-search">
           <span>ФИО владельца, кличка, вид или полный идентификатор</span>
@@ -896,13 +917,13 @@ watch(delegationPageCount, (pageCount) => {
 
       <article class="panel doctor-medical-record">
         <h2>Медицинская карта</h2>
-        <div class="doctor-history-filters">
+        <div v-if="!encounter.recordId" class="doctor-history-filters">
           <input v-model="historyQuery" type="search" placeholder="Содержание или автор" aria-label="Поиск по истории" />
           <label class="doctor-history-date-filter"><span>Дата с</span><input v-model="historyFrom" type="date" /></label>
           <label class="doctor-history-date-filter"><span>Дата по</span><input v-model="historyTo" type="date" /></label>
-          <select v-model="historySection" aria-label="Раздел"><option value="">Все разделы</option><option v-for="(label, kind) in ENCOUNTER_SECTION_LABELS" :key="kind" :value="kind">{{ label }}</option></select>
-          <select v-model="historyStatus" aria-label="Статус"><option value="">Все статусы</option><option value="confirmed">Подтверждённые</option><option value="unconfirmed">Не подтверждённые</option></select>
-          <select v-model="historySort" aria-label="Порядок"><option value="desc">Сначала новые</option><option value="asc">Сначала старые</option></select>
+          <AppSelect :model-value="historySection" :options="historySectionOptions" aria-label="Раздел" @update:model-value="updateHistorySection" />
+          <AppSelect :model-value="historyStatus" :options="historyStatusOptions" aria-label="Статус" @update:model-value="updateHistoryStatus" />
+          <AppSelect :model-value="historySort" :options="historySortOptions" aria-label="Порядок" @update:model-value="updateHistorySort" />
         </div>
         <MedicalRecordEntry
           v-for="record in pagedRecords"

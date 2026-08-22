@@ -744,13 +744,17 @@ dd {
   margin-inline-end: calc(var(--medical-card-action-inset, 9px) + 1px);
 }
 .encounter-editor fieldset { display: grid; gap: 3px; min-width: 0; }
-.encounter-editor-heading { align-items: flex-start; }
+.encounter-editor-heading {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 190px) auto;
+  align-items: flex-start;
+}
 .encounter-editor > form > .encounter-editor-heading {
   position: sticky;
   top: 59px;
   z-index: 12;
   padding: 6px 14px;
-  border: 1px solid var(--line);
+  border: 2px solid var(--line);
   border-radius: 9px;
   background: rgba(255, 255, 255, .97);
   box-shadow: 0 5px 16px rgba(18, 24, 40, .06);
@@ -774,7 +778,7 @@ dd {
   align-items: start;
   gap: 8px;
 }
-.workspace-content .encounter-editor .encounter-add-section > select { width: 100%; min-width: 0; box-sizing: border-box; }
+.workspace-content .encounter-editor .encounter-add-section > .app-select { width: 100%; min-width: 0; box-sizing: border-box; }
 .encounter-what-happened > .doctor-heading h3 { margin: 0; }
 .encounter-condition-trees { display: grid; gap: 3px; }
 .encounter-condition-trees > .encounter-taxonomy { padding-left: 0; }
@@ -847,9 +851,97 @@ dd {
   padding: 0;
 }
 .app-catalog-combobox { position: relative; min-width: 0; }
+.app-select {
+  position: relative;
+  display: grid;
+  width: 100%;
+  min-width: 0;
+  min-height: 32px;
+  align-items: stretch;
+  border: 1px solid #d0d5dd;
+  border-radius: 7px;
+  background: #fff;
+  color: #101828;
+  font: inherit;
+  font-size: 11.5px;
+  line-height: 1.35;
+}
+.app-select-value {
+  display: block;
+  min-width: 0;
+  align-self: center;
+  padding: 6px 30px 6px 8px;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+.app-select-chevron {
+  position: absolute;
+  top: 50%;
+  right: 8px;
+  width: 16px;
+  height: 16px;
+  color: currentColor;
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+.app-select > select.app-select-native {
+  position: absolute;
+  z-index: 1;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  min-height: 100%;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+.app-select:focus-within {
+  border-color: #219653;
+  outline: 2px solid rgba(33,150,83,.25);
+}
+.app-select.invalid,
+.app-select:has(> select[aria-invalid="true"]) {
+  border-color: var(--danger);
+  background: #fff7f6;
+  box-shadow: 0 0 0 1px var(--danger);
+}
+.app-select.disabled {
+  background: #f2f4f7;
+  color: var(--text-muted);
+}
+.app-select.disabled > select.app-select-native { cursor: not-allowed; }
 .app-catalog-control { display: grid; grid-template-columns: minmax(0, 1fr) 34px; gap: 8px; min-width: 0; }
 .app-catalog-control.has-custom-add { grid-template-columns: minmax(0, 1fr) 34px 34px; }
-.app-catalog-control > input { width: 100%; min-width: 0; box-sizing: border-box; }
+.app-catalog-input-shell { position: relative; display: grid; min-width: 0; }
+.app-catalog-input-shell > :is(input, .app-catalog-selected-value) { grid-column: 1; grid-row: 1; }
+.app-catalog-input-shell > input { width: 100%; min-width: 0; box-sizing: border-box; }
+.app-catalog-selected-value {
+  z-index: 1;
+  display: flex;
+  min-width: 0;
+  min-height: 32px;
+  align-items: center;
+  border: 1px solid #d0d5dd;
+  border-radius: 7px;
+  padding: 6px 8px;
+  background: #fff;
+  color: #101828;
+  font: inherit;
+  font-size: 11.5px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+  white-space: normal;
+  pointer-events: none;
+}
+.app-catalog-input-shell > input:focus-visible + .app-catalog-selected-value {
+  border-color: #219653;
+  outline: 2px solid rgba(33,150,83,.25);
+}
+.app-catalog-input-shell > input[aria-invalid="true"] + .app-catalog-selected-value {
+  border-color: var(--danger);
+  background: #fff7f6;
+  box-shadow: 0 0 0 1px var(--danger);
+}
 .app-catalog-options {
   position: absolute;
   z-index: 30;
@@ -918,6 +1010,7 @@ dd {
   border-radius: 6px;
   background: transparent;
   color: var(--text);
+  overflow-wrap: anywhere;
   text-align: left;
 }
 .app-catalog-option:hover,
@@ -965,7 +1058,7 @@ dd {
 .vaccination-complications { min-width: 0; }
 .vaccination-fields input[type="text"],
 .vaccination-fields input[type="date"],
-.vaccination-fields select { width: 100%; min-width: 0; box-sizing: border-box; }
+.vaccination-fields .app-select { width: 100%; min-width: 0; box-sizing: border-box; }
 .vaccination-fields label > span {
   display: block;
   min-width: 120px;
@@ -1080,13 +1173,12 @@ dd {
 }
 .therapeutic-primary-text,
 .therapeutic-short-text > textarea,
-.therapeutic-problem-card label:not(.check-row) :is(input, select),
-.therapeutic-select-field select { width: 100%; min-width: 0; box-sizing: border-box; }
+.therapeutic-problem-card label:not(.check-row) :is(input, .app-select),
+.therapeutic-select-field .app-select { width: 100%; min-width: 0; box-sizing: border-box; }
 .therapeutic-select-field-wide {
   grid-column: 1 / -1;
   grid-template-columns: minmax(130px, 190px) minmax(0, 1fr);
 }
-.therapeutic-select-field select { text-overflow: ellipsis; }
 .therapeutic-problems { display: grid; gap: 8px; }
 .therapeutic-problem-card {
   display: grid;
@@ -1324,7 +1416,12 @@ dd {
 @media (max-width: 760px) {
   .doctor-heading { align-items: stretch; flex-direction: column; }
   .doctor-access-heading { align-items: center; flex-direction: row; }
-  .encounter-editor-heading { align-items: flex-start; flex-direction: row; }
+  .encounter-editor-heading {
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: flex-start;
+  }
+  .encounter-editor-heading > .encounter-date-field { grid-column: 1 / -1; }
+  .encounter-editor-heading > .medical-card-actions { grid-column: 2; grid-row: 1; }
   .owner-encounter-record > .owner-encounter-summary { grid-template-columns: auto minmax(0, 1fr); }
   .owner-encounter-summary > .status-badge { grid-column: 2; justify-self: start; }
   .doctor-history-filters,
@@ -2243,8 +2340,8 @@ dd {
   font-weight: 500;
   line-height: 1.35;
 }
-.owner-form-grid :is(input:not([type="checkbox"]):not([type="radio"]), select, textarea),
-.grant-access-form :is(input:not([type="checkbox"]):not([type="radio"]), select, textarea) {
+.owner-form-grid :is(input:not([type="checkbox"]):not([type="radio"]), textarea),
+.grant-access-form :is(input:not([type="checkbox"]):not([type="radio"]), textarea) {
   width: 100%;
   border: 1px solid #d0d5dd;
   border-radius: 7px;
@@ -2255,14 +2352,26 @@ dd {
   font-size: .9rem;
   line-height: 1.35;
 }
-.owner-form-grid :is(input:not([type="checkbox"]):not([type="radio"]), select),
-.grant-access-form :is(input:not([type="checkbox"]):not([type="radio"]), select) {
+.owner-form-grid input:not([type="checkbox"]):not([type="radio"]),
+.grant-access-form input:not([type="checkbox"]):not([type="radio"]) {
   height: 32px;
   min-height: 32px;
 }
+.owner-form-grid .app-select {
+  width: 100%;
+  min-height: 32px;
+  font-family: var(--font);
+  font-size: .9rem;
+  line-height: 1.35;
+}
+.owner-form-grid .app-select-value { font-size: inherit; }
 .owner-color-field .app-catalog-control {
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 6px;
+}
+.owner-color-field .app-catalog-selected-value {
+  font-size: .9rem;
+  line-height: 1.35;
 }
 .workspace-content .owner-color-field .app-catalog-toggle {
   width: 32px;
@@ -2518,9 +2627,8 @@ dd {
   font-size: 12px;
   font-weight: 400;
 }
-.doctor-access-global-filter select {
+.doctor-access-global-filter .app-select {
   width: 100%;
-  height: 40px;
   min-height: 40px;
   box-sizing: border-box;
 }
@@ -2663,10 +2771,9 @@ dd {
   pointer-events: none;
 }
 .administrator-search input,
-.administrator-audit-filters select,
-.app-paginator select {
+.administrator-audit-filters .app-select,
+.app-paginator .app-select {
   width: 100%;
-  height: 40px;
   min-height: 40px;
   box-sizing: border-box;
   border: 1px solid #d0d5dd;
@@ -2678,11 +2785,9 @@ dd {
 .workspace-content .administrator-search-control > input[type="search"] {
   padding: 8px 12px 8px 38px;
 }
-.administrator-audit-filters select,
-.app-paginator select { padding: 7px 30px 7px 10px; }
 .administrator-search input:focus-visible,
-.administrator-audit-filters select:focus-visible,
-.app-paginator select:focus-visible {
+.administrator-audit-filters .app-select:focus-within,
+.app-paginator .app-select:focus-within {
   border-color: var(--brand);
   outline: 3px solid rgba(17, 130, 91, .14);
 }
@@ -2791,11 +2896,10 @@ dd {
   justify-self: end;
   gap: 8px;
 }
-.app-paginator select {
+.app-paginator .app-select {
   width: 88px;
   min-width: 88px;
   min-height: 34px;
-  padding-right: 36px;
   font-variant-numeric: tabular-nums;
 }
 .app-paginator-buttons {
@@ -3313,7 +3417,7 @@ dd {
 }
 .instrumental-result-content { align-content: start; gap: 2px; }
 .instrumental-result-control { display: grid; min-width: 0; align-content: start; gap: 2px; }
-.instrumental-result-control :is(input, select, textarea) { width: 100%; min-width: 0; box-sizing: border-box; }
+.instrumental-result-control :is(input, .app-select, textarea) { width: 100%; min-width: 0; box-sizing: border-box; }
 .instrumental-integer-field { display: grid; grid-template-columns: minmax(0, 1fr) auto; min-width: 0; }
 .workspace-content .instrumental-integer-field > input {
   border-start-end-radius: 0;

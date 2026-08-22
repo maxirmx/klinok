@@ -5,6 +5,7 @@
 
 import { computed, nextTick, ref, useId, watch } from "vue";
 import AppIcon from "./AppIcon.vue";
+import AppSelect from "./AppSelect.vue";
 import TherapeuticQuestionGroups from "./TherapeuticQuestionGroups.vue";
 import { whatHappenedPath } from "../medicalEncounter";
 import {
@@ -37,6 +38,15 @@ const activeTab = ref<TherapeuticTab>("disease");
 const tabButtons = ref<HTMLButtonElement[]>([]);
 const formRoot = ref<HTMLElement | null>(null);
 const baseId = useId();
+const onsetOptions = selectOptions(PROBLEM_ONSET_OPTIONS);
+const frequencyOptions = selectOptions(PROBLEM_FREQUENCY_OPTIONS);
+const priorTherapyOptions = selectOptions(PROBLEM_THERAPY_OPTIONS);
+const medicationUseOptions = selectOptions(PROBLEM_MEDICATION_USE_OPTIONS);
+const medicationDynamicsOptions = selectOptions(PROBLEM_DYNAMICS_OPTIONS);
+
+function selectOptions(options: readonly { id: string; label: string }[]) {
+  return [{ value: "", label: "Не указано" }, ...options.map((option) => ({ value: option.id, label: option.label }))];
+}
 
 const importableSourceIds = computed(() => {
   const imported = new Set(therapeutic.value.diseaseAnamnesis.problems.map((problem) => problem.sourceWhatHappenedId));
@@ -153,8 +163,8 @@ function updateProblemMedicationName(id: string, event: Event) {
 
 type ProblemSelectField = "onsetId" | "frequencyId" | "priorTherapyId" | "medicationUseId" | "medicationDynamicsId";
 
-function updateProblemSelect(id: string, field: ProblemSelectField, event: Event) {
-  const value = (event.target as HTMLSelectElement).value || undefined;
+function updateProblemSelect(id: string, field: ProblemSelectField, requestedValue: string) {
+  const value = requestedValue || undefined;
   updateProblem(id, (problem) => {
     const next = { ...problem, [field]: value };
     if (field === "priorTherapyId" && value !== "problem.therapy.performed") {
@@ -289,10 +299,10 @@ function panelId(tab: TherapeuticTab) {
             <small v-if="errors.problems?.[problem.id]" class="field-error">{{ errors.problems[problem.id] }}</small>
           </label>
           <div class="therapeutic-problem-fields">
-            <label><span>Как давно началось</span><select :value="problem.onsetId ?? ''" @change="updateProblemSelect(problem.id, 'onsetId', $event)"><option value="">Не указано</option><option v-for="option in PROBLEM_ONSET_OPTIONS" :key="option.id" :value="option.id">{{ option.label }}</option></select></label>
-            <label><span>Периодичность проявления</span><select :value="problem.frequencyId ?? ''" @change="updateProblemSelect(problem.id, 'frequencyId', $event)"><option value="">Не указано</option><option v-for="option in PROBLEM_FREQUENCY_OPTIONS" :key="option.id" :value="option.id">{{ option.label }}</option></select></label>
-            <label><span>Терапия до осмотра</span><select :value="problem.priorTherapyId ?? ''" @change="updateProblemSelect(problem.id, 'priorTherapyId', $event)"><option value="">Не указано</option><option v-for="option in PROBLEM_THERAPY_OPTIONS" :key="option.id" :value="option.id">{{ option.label }}</option></select></label>
-            <label v-if="problem.priorTherapyId === 'problem.therapy.performed'"><span>Препараты</span><select :value="problem.medicationUseId ?? ''" @change="updateProblemSelect(problem.id, 'medicationUseId', $event)"><option value="">Не указано</option><option v-for="option in PROBLEM_MEDICATION_USE_OPTIONS" :key="option.id" :value="option.id">{{ option.label }}</option></select></label>
+            <label><span>Как давно началось</span><AppSelect :model-value="problem.onsetId ?? ''" :options="onsetOptions" @update:model-value="updateProblemSelect(problem.id, 'onsetId', $event)" /></label>
+            <label><span>Периодичность проявления</span><AppSelect :model-value="problem.frequencyId ?? ''" :options="frequencyOptions" @update:model-value="updateProblemSelect(problem.id, 'frequencyId', $event)" /></label>
+            <label><span>Терапия до осмотра</span><AppSelect :model-value="problem.priorTherapyId ?? ''" :options="priorTherapyOptions" @update:model-value="updateProblemSelect(problem.id, 'priorTherapyId', $event)" /></label>
+            <label v-if="problem.priorTherapyId === 'problem.therapy.performed'"><span>Препараты</span><AppSelect :model-value="problem.medicationUseId ?? ''" :options="medicationUseOptions" @update:model-value="updateProblemSelect(problem.id, 'medicationUseId', $event)" /></label>
             <fieldset v-if="problem.medicationUseId === 'problem.medication.used'" class="medical-card-option-panel therapeutic-problem-medications">
               <legend class="visually-hidden">Применявшиеся препараты</legend>
               <span class="therapeutic-group-label" aria-hidden="true">Применявшиеся препараты</span>
@@ -309,7 +319,7 @@ function panelId(tab: TherapeuticTab) {
                 @input="updateProblemMedicationName(problem.id, $event)"
               />
             </label>
-            <label v-if="problem.medicationUseId === 'problem.medication.used'"><span>Динамика</span><select :value="problem.medicationDynamicsId ?? ''" @change="updateProblemSelect(problem.id, 'medicationDynamicsId', $event)"><option value="">Не указано</option><option v-for="option in PROBLEM_DYNAMICS_OPTIONS" :key="option.id" :value="option.id">{{ option.label }}</option></select></label>
+            <label v-if="problem.medicationUseId === 'problem.medication.used'"><span>Динамика</span><AppSelect :model-value="problem.medicationDynamicsId ?? ''" :options="medicationDynamicsOptions" @update:model-value="updateProblemSelect(problem.id, 'medicationDynamicsId', $event)" /></label>
           </div>
         </article>
       </div>

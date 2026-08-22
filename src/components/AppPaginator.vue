@@ -5,6 +5,7 @@
 
 import { computed } from "vue";
 import AppIcon from "./AppIcon.vue";
+import AppSelect from "./AppSelect.vue";
 
 const props = withDefaults(defineProps<{
   page: number;
@@ -28,13 +29,14 @@ const pageCount = computed(() => Math.max(1, Math.ceil(props.totalItems / props.
 const currentPage = computed(() => Math.min(Math.max(1, props.page), pageCount.value));
 const pageStart = computed(() => props.totalItems ? (currentPage.value - 1) * props.pageSize + 1 : 0);
 const pageEnd = computed(() => Math.min(currentPage.value * props.pageSize, props.totalItems));
+const pageSizeOptions = computed(() => props.pageSizes.map((size) => ({ value: String(size), label: String(size) })));
 
 function selectPage(page: number) {
   emit("update:page", Math.min(Math.max(1, page), pageCount.value));
 }
 
-function selectPageSize(event: Event) {
-  emit("update:pageSize", Number((event.target as HTMLSelectElement).value));
+function selectPageSize(value: string) {
+  emit("update:pageSize", Number(value));
 }
 </script>
 
@@ -74,9 +76,7 @@ function selectPageSize(event: Event) {
     </div>
     <label>
       <span>{{ pageSizeLabel }}</span>
-      <select :value="pageSize" @change="selectPageSize">
-        <option v-for="size in pageSizes" :key="size" :value="size">{{ size }}</option>
-      </select>
+      <AppSelect :model-value="String(pageSize)" :options="pageSizeOptions" @update:model-value="selectPageSize" />
     </label>
   </nav>
 </template>

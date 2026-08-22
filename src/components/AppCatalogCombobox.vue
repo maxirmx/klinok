@@ -70,6 +70,7 @@ const activeIndex = ref(-1);
 const activeCategoryId = ref("");
 const activeCategoryIndex = ref(-1);
 const searching = ref(false);
+const editing = ref(false);
 const inputValue = ref("");
 const inputId = useId();
 const listboxId = `${inputId}-options`;
@@ -116,6 +117,9 @@ const activeCategory = computed(() => categories.value.find((category) => catego
 const query = computed(() => normalizeSearch(props.twoLevel && !searching.value ? "" : inputValue.value));
 const showingCategories = computed(() => props.twoLevel && !query.value && !activeCategory.value);
 const showingCategoryOptions = computed(() => props.twoLevel && !query.value && Boolean(activeCategory.value));
+const closedDisplayValue = computed(() => !props.multiple && !open.value && !editing.value
+  ? inputValue.value
+  : "");
 
 function filterGroups(groups: readonly CatalogGroup[], query: string, parents: string[] = []): CatalogGroup[] {
   return groups.flatMap((group) => {
@@ -175,6 +179,7 @@ function closeOptions() {
   activeCategoryId.value = "";
   activeCategoryIndex.value = -1;
   searching.value = false;
+  editing.value = false;
   syncInputValue();
 }
 
@@ -225,6 +230,7 @@ function selectOption(option: CatalogOption) {
   activeCategoryId.value = "";
   activeCategoryIndex.value = -1;
   searching.value = false;
+  editing.value = false;
   void nextTick(() => input.value?.focus());
 }
 
@@ -237,6 +243,7 @@ function addCustomValue() {
   activeCategoryId.value = "";
   activeCategoryIndex.value = -1;
   searching.value = false;
+  editing.value = false;
   void nextTick(() => input.value?.focus());
 }
 
@@ -244,6 +251,7 @@ function handleInput(event: Event) {
   const value = (event.target as HTMLInputElement).value;
   inputValue.value = value;
   searching.value = true;
+  editing.value = true;
   activeCategoryId.value = "";
   activeCategoryIndex.value = !normalizeSearch(value) && props.twoLevel && categories.value.length ? 0 : -1;
   if (!props.multiple) {
@@ -258,6 +266,10 @@ function handleInput(event: Event) {
   open.value = true;
   activeIndex.value = visibleOptions.value.length ? 0 : -1;
   ensureActiveVisible();
+}
+
+function beginEditing() {
+  editing.value = true;
 }
 
 function moveActive(delta: 1 | -1) {
@@ -324,26 +336,30 @@ onBeforeUnmount(() => {
   <div ref="root" class="app-catalog-combobox">
     <label v-if="showLabel" :for="inputId"><span>{{ label }}</span></label>
     <div class="app-catalog-control" :class="{ 'has-custom-add': allowCustom && multiple }">
-      <input
-        :id="inputId"
-        ref="input"
-        :value="inputValue"
-        type="text"
-        role="combobox"
-        autocomplete="off"
-        aria-autocomplete="list"
-        :aria-label="label"
-        :aria-controls="listboxId"
-        :aria-expanded="open"
-        :aria-invalid="invalid || undefined"
-        :aria-activedescendant="activeOptionId"
-        :placeholder="placeholder"
-        @input="handleInput"
-        @keydown.down.prevent="moveActive(1)"
-        @keydown.up.prevent="moveActive(-1)"
-        @keydown.enter.prevent="selectActive"
-        @keydown.esc.stop.prevent="handleEscape"
-      />
+      <span class="app-catalog-input-shell">
+        <input
+          :id="inputId"
+          ref="input"
+          :value="inputValue"
+          type="text"
+          role="combobox"
+          autocomplete="off"
+          aria-autocomplete="list"
+          :aria-label="label"
+          :aria-controls="listboxId"
+          :aria-expanded="open"
+          :aria-invalid="invalid || undefined"
+          :aria-activedescendant="activeOptionId"
+          :placeholder="placeholder"
+          @pointerdown="beginEditing"
+          @input="handleInput"
+          @keydown.down.prevent="moveActive(1)"
+          @keydown.up.prevent="moveActive(-1)"
+          @keydown.enter.prevent="selectActive"
+          @keydown.esc.stop.prevent="handleEscape"
+        />
+        <span v-if="closedDisplayValue" class="app-catalog-selected-value" aria-hidden="true">{{ closedDisplayValue }}</span>
+      </span>
       <button
         v-if="allowCustom && multiple"
         type="button"

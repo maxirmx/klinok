@@ -7,6 +7,7 @@ import { computed, ref } from "vue";
 import type { InstrumentalFindingCatalogItem, InstrumentalFindingValue } from "@klinok/contracts";
 import AppCatalogCombobox from "./AppCatalogCombobox.vue";
 import AppIcon from "./AppIcon.vue";
+import AppSelect from "./AppSelect.vue";
 import ConfirmationDialog from "./ConfirmationDialog.vue";
 
 const props = withDefaults(defineProps<{
@@ -36,6 +37,7 @@ const confirmOpen = computed({
   },
 });
 const choiceCatalog = computed(() => props.catalog.filter((item) => item.kind === "choice"));
+const choiceOptions = computed(() => selectOptions(choiceCatalog.value));
 const indicatorCatalog = computed(() => props.catalog.filter((item) => item.kind !== "choice"));
 const choiceValues = computed(() => model.value.filter((value) => catalogItem(value)?.kind === "choice"));
 const choiceId = computed(() => choiceValues.value[0]?.findingId ?? "");
@@ -82,13 +84,11 @@ function addFinding() {
   pendingIds.value = [];
 }
 function requestChoiceChange(
-  event: Event,
+  requestedId: string,
   catalog: readonly InstrumentalFindingCatalogItem[],
   values: readonly InstrumentalFindingValue[],
   update: (next: readonly InstrumentalFindingValue[]) => void,
 ) {
-  const select = event.currentTarget as HTMLSelectElement;
-  const requestedId = select.value;
   const choices = catalog.filter((item) => item.kind === "choice");
   const current = values.find((value) => choices.some((item) => item.id === value.findingId));
   if (!current) {
@@ -105,7 +105,6 @@ function requestChoiceChange(
     ]));
     return;
   }
-  select.value = current.findingId;
   pendingConfirmation.value = {
     title: "Удалить выбранное значение?",
     description: `Значение «${current.findingName}» и все вложенные данные будут удалены.`,
@@ -115,22 +114,31 @@ function requestChoiceChange(
     ])),
   };
 }
-function requestChoiceSelection(event: Event) {
-  requestChoiceChange(event, props.catalog, model.value, (next) => { model.value = next; });
+function requestChoiceSelection(requestedId: string) {
+  requestChoiceChange(requestedId, props.catalog, model.value, (next) => { model.value = next; });
 }
 function requestFindingChoiceSelection(
   finding: InstrumentalFindingValue,
   item: InstrumentalFindingCatalogItem | undefined,
-  event: Event,
+  requestedId: string,
 ) {
   if (!item) return;
-  requestChoiceChange(event, item.children, finding.children, (next) => { finding.children = next; });
+  requestChoiceChange(requestedId, item.children, finding.children, (next) => { finding.children = next; });
 }
 function directChoiceCatalog(item?: InstrumentalFindingCatalogItem) {
   return item?.children.filter((child) => child.kind === "choice") ?? [];
 }
 function directIndicatorCatalog(item?: InstrumentalFindingCatalogItem) {
   return item?.children.filter((child) => child.kind !== "choice") ?? [];
+}
+function selectOptions(items: readonly InstrumentalFindingCatalogItem[]) {
+  return [
+    { value: "", label: "Не указано" },
+    ...items.map((item) => ({ value: item.id, label: item.name })),
+  ];
+}
+function directChoiceOptions(item?: InstrumentalFindingCatalogItem) {
+  return selectOptions(directChoiceCatalog(item));
 }
 function directIndicatorValues(finding: InstrumentalFindingValue, item?: InstrumentalFindingCatalogItem) {
   const ids = new Set(directIndicatorCatalog(item).map((child) => child.id));
@@ -173,9 +181,6 @@ function isRootChoiceFinding(finding: InstrumentalFindingValue) {
 }
 function isRootFreeText(finding: InstrumentalFindingValue) {
   return props.depth === 0 && catalogItem(finding)?.kind === "long-text";
-}
-function findingUnit(finding: InstrumentalFindingValue) {
-  return finding.unit ?? catalogItem(finding)?.unit ?? "";
 }
 function nestedCatalog(finding: InstrumentalFindingValue) {
   const item = catalogItem(finding);
@@ -276,10 +281,12 @@ function updateIntegerValue(finding: InstrumentalFindingValue, event: Event) {
         <span v-if="!choiceContinuation" class="instrumental-result-desktop-name">{{ parentName }}</span>
         <label class="instrumental-result-control">
           <span v-if="!choiceContinuation" class="instrumental-result-mobile-name">{{ parentName }}</span>
-          <select :value="choiceId" :aria-label="`Значение показателя «${parentName}»`" @change="requestChoiceSelection">
-            <option value="">Не указано</option>
-            <option v-for="item in choiceCatalog" :key="item.id" :value="item.id">{{ item.name }}</option>
-          </select>
+          <AppSelect
+            :model-value="choiceId"
+            :options="choiceOptions"
+            :aria-label="`Значение показателя «${parentName}»`"
+            @update:model-value="requestChoiceSelection"
+          />
         </label>
       </div>
     </div>
@@ -324,11 +331,11 @@ function updateIntegerValue(finding: InstrumentalFindingValue, event: Event) {
                 min="0"
                 step="1"
                 inputmode="numeric"
-                :aria-label="`${finding.findingName}, ${findingUnit(finding)}`"
+                :aria-label="`${finding.findingName}, ${finding.unit}`"
                 :aria-invalid="errors[finding.findingId] ? true : undefined"
                 @input="updateIntegerValue(finding, $event)"
               />
-              <span class="instrumental-integer-unit" aria-hidden="true">{{ findingUnit(finding) }}</span>
+              <span class="instrumental-integer-unit" aria-hidden="true">{{ finding.unit }}</span>
             </span>
             <small v-if="errors[finding.findingId]" class="field-error" role="alert">{{ errors[finding.findingId] }}</small>
           </label>
@@ -355,15 +362,13 @@ function updateIntegerValue(finding: InstrumentalFindingValue, event: Event) {
           <span v-else class="instrumental-result-desktop-name">{{ finding.findingName }}</span>
           <label class="instrumental-result-control">
             <span v-if="!isRootChoiceFinding(finding)" class="instrumental-result-mobile-name">{{ finding.findingName }}</span>
-            <select
-              :value="selectedChoiceId(finding, catalogItem(finding))"
+            <AppSelect
+              :model-value="selectedChoiceId(finding, catalogItem(finding))"
+              :options="directChoiceOptions(catalogItem(finding))"
               :aria-label="`Значение показателя «${finding.findingName}»`"
-              :aria-invalid="errors[finding.findingId] ? true : undefined"
-              @change="requestFindingChoiceSelection(finding, catalogItem(finding), $event)"
-            >
-              <option value="">Не указано</option>
-              <option v-for="item in directChoiceCatalog(catalogItem(finding))" :key="item.id" :value="item.id">{{ item.name }}</option>
-            </select>
+              :invalid="Boolean(errors[finding.findingId])"
+              @update:model-value="requestFindingChoiceSelection(finding, catalogItem(finding), $event)"
+            />
             <small v-if="errors[finding.findingId]" class="field-error" role="alert">{{ errors[finding.findingId] }}</small>
           </label>
         </template>

@@ -9,6 +9,8 @@ import { promisify } from "node:util";
 
 const password = "correct horse battery";
 const replicationTimeout = 30_000;
+const longDiagnosisValue = "Подозрение на анафилактическую реакцию после применения лекарственного препарата";
+const longInstrumentalValue = "Анэхогенное с эхогенными включениями";
 const execFile = promisify(execFileCallback);
 const mailpitUrl = process.env.KLINOK_E2E_MAILPIT_URL ?? "http://localhost:8025";
 
@@ -47,6 +49,20 @@ async function expectSameHorizontalBounds(first: Locator, second: Locator): Prom
   expect(secondBox).not.toBeNull();
   expect(Math.abs(firstBox!.x - secondBox!.x)).toBeLessThanOrEqual(1);
   expect(Math.abs(firstBox!.x + firstBox!.width - secondBox!.x - secondBox!.width)).toBeLessThanOrEqual(1);
+}
+
+async function expectWrappedValue(value: Locator, text: string): Promise<void> {
+  await expect(value).toHaveText(text);
+  const measurement = await value.evaluate((element) => {
+    const style = getComputedStyle(element);
+    return {
+      fits: element.scrollWidth <= element.clientWidth + 1,
+      height: element.getBoundingClientRect().height,
+      lineHeight: Number.parseFloat(style.lineHeight),
+    };
+  });
+  expect(measurement.fits).toBe(true);
+  expect(measurement.height).toBeGreaterThan(measurement.lineHeight * 1.5);
 }
 
 async function verificationLink(request: APIRequestContext, email: string): Promise<string> {
@@ -359,7 +375,7 @@ test("fresh provisioning, Doctor approval, grant, draft, and confirmation", asyn
     preliminaryDiagnosis.getByRole("button", { name: "Назначить предварительный диагноз подтверждённым" }),
   ];
   await expectMedicalActionRail(diagnosisRightActions);
-  await preliminaryDiagnosis.getByRole("combobox", { name: "Предварительный диагноз" }).fill("Подозрение на анафилаксию");
+  await preliminaryDiagnosis.getByRole("combobox", { name: "Предварительный диагноз" }).fill(longDiagnosisValue);
   await preliminaryDiagnosis.getByRole("button", { name: "Назначить предварительный диагноз подтверждённым" }).click();
   await differentialDiagnosis.getByRole("button", { name: "Показать варианты диагнозов" }).click();
   await expect(differentialDiagnosis.getByText("Выберите категорию", { exact: true })).toBeVisible();
@@ -443,7 +459,7 @@ test("fresh provisioning, Doctor approval, grant, draft, and confirmation", asyn
     const selector = instrumentalCard.getByRole("combobox", {
       name: `Значение показателя «${indicatorName}»`,
       exact: true,
-    });
+    }).filter({ hasText: valueName });
     await selector.selectOption({ label: valueName });
     return selector;
   };
@@ -472,7 +488,9 @@ test("fresh provisioning, Doctor approval, grant, draft, and confirmation", asyn
   const addBladder = await addInstrumentalFinding("Добавить раздел исследования", "Мочевой пузырь");
   const addContents = await addInstrumentalFinding("Добавить показатель для «Мочевой пузырь»", "Содержимое");
   const contentsValueSelector = await selectInstrumentalValue("Содержимое", "Визуализируется");
-  await expect(contentsValueSelector.locator("..")).toHaveClass(/instrumental-result-control/);
+  const contentsValueControl = contentsValueSelector.first()
+    .locator("xpath=ancestor::label[contains(concat(' ', normalize-space(@class), ' '), ' instrumental-result-control ')][1]");
+  await expect(contentsValueControl).toHaveClass(/instrumental-result-control/);
   await expect(contentsValueSelector).not.toHaveAttribute("multiple");
   const addSediment = await addInstrumentalFinding("Добавить показатель для «Визуализируется»", "Взвесь/осадок");
   const sedimentInput = instrumentalCard.getByLabel("Взвесь/осадок", { exact: true });
@@ -485,6 +503,12 @@ test("fresh provisioning, Doctor approval, grant, draft, and confirmation", asyn
   await expect(concrementSizeInput).toHaveAttribute("step", "1");
   await expect(concrementSizeInput.locator("xpath=following-sibling::*[contains(concat(' ', normalize-space(@class), ' '), ' instrumental-integer-unit ')]")).toHaveText("мм");
   await concrementSizeInput.fill("4");
+  const addUterus = await addInstrumentalFinding("Добавить раздел исследования", "Матка");
+  const uterusValueSelector = await selectInstrumentalValue("Матка", "Визуализируется");
+  const uterusRow = uterusValueSelector.locator("xpath=ancestor::div[contains(concat(' ', normalize-space(@class), ' '), ' instrumental-root-choice-row ')][1]");
+  const deleteUterus = uterusRow.getByRole("button", { name: "Удалить раздел «Матка»", exact: true });
+  const addUterusContents = await addInstrumentalFinding("Добавить показатель для «Матка»", "Содержимое");
+  const uterusContentsSelector = await selectInstrumentalValue("Содержимое", longInstrumentalValue);
   const addConclusion = await addInstrumentalFinding("Добавить раздел исследования", "Заключение");
   await instrumentalCard.getByLabel("Заключение", { exact: true }).fill("Без патологии");
   const deleteInstrumentalStudy = instrumentalCard.getByRole("button", { name: "Удалить исследование" });
@@ -532,6 +556,9 @@ test("fresh provisioning, Doctor approval, grant, draft, and confirmation", asyn
     addSediment,
     addConcrements,
     addConcrementSize,
+    addUterus,
+    deleteUterus,
+    addUterusContents,
     addConclusion,
     deleteSediment,
     deleteConcrementSize,
@@ -583,7 +610,9 @@ test("fresh provisioning, Doctor approval, grant, draft, and confirmation", asyn
   await expectTopAligned(deleteConcrementSize, concrementSizeInput);
   await expectSameHorizontalBounds(focalFindingsSelector, focalCountSelector);
   await expect(instrumentalResultHeadings.first()).toBeHidden();
-  await expect(contentsValueSelector.locator("..").locator(".instrumental-result-mobile-name")).toBeVisible();
+  await expect(contentsValueControl.locator(".instrumental-result-mobile-name")).toBeVisible();
+  await expectWrappedValue(uterusContentsSelector.locator("..").locator(".app-select-value"), longInstrumentalValue);
+  await expectWrappedValue(preliminaryDiagnosis.locator(".app-catalog-selected-value"), longDiagnosisValue);
   const narrowTabRows = await therapeuticTabs.evaluateAll((tabs) => tabs.reduce<number[]>((rows, tab) => {
     const top = Math.round(tab.getBoundingClientRect().top);
     if (!rows.some((candidate) => Math.abs(candidate - top) <= 2)) rows.push(top);
@@ -680,7 +709,7 @@ test("fresh provisioning, Doctor approval, grant, draft, and confirmation", asyn
   const ownerDiagnosis = ownerRecord.locator(".encounter-history-section").filter({
     has: ownerPage.getByRole("heading", { name: "Диагноз", exact: true }),
   });
-  await expect(ownerDiagnosis.getByText("Подозрение на анафилаксию", { exact: true })).toBeVisible();
+  await expect(ownerDiagnosis.getByText(longDiagnosisValue, { exact: true })).toBeVisible();
   await expect(ownerDiagnosis.getByText("Отёк Квинке", { exact: true })).toHaveCount(1);
   await expect(ownerDiagnosis.getByText("Реакция на корм", { exact: true })).toBeVisible();
   await expect(ownerDiagnosis.getByText("Просто шок", { exact: true })).toBeVisible();
