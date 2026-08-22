@@ -597,6 +597,13 @@ test("fresh provisioning, Doctor approval, grant, draft, and confirmation", asyn
   expect(await vaccinationCard.evaluate((card) => card.scrollWidth <= card.clientWidth + 1)).toBe(true);
   expect(await laboratoryCard.evaluate((card) => card.scrollWidth <= card.clientWidth + 1)).toBe(true);
   expect(await instrumentalCard.evaluate((card) => card.scrollWidth <= card.clientWidth + 1)).toBe(true);
+  const [encounterHeadingBox, whatHappenedBox] = await Promise.all([
+    doctorPage.locator(".doctor-pet-detail > .encounter-editor .encounter-editor-heading").boundingBox(),
+    doctorPage.locator(".doctor-pet-detail > .encounter-editor .encounter-what-happened").boundingBox(),
+  ]);
+  expect(encounterHeadingBox).not.toBeNull();
+  expect(whatHappenedBox).not.toBeNull();
+  expect(encounterHeadingBox!.y + encounterHeadingBox!.height).toBeLessThanOrEqual(whatHappenedBox!.y + 1);
   await expectMedicalActionRail(medicalRailActions);
   await expectHorizontalGap(differentialInput, differentialAdd);
   await expectHorizontalGap(differentialAdd, differentialToggle);
