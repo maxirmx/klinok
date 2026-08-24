@@ -14,6 +14,43 @@ import AppCatalogCombobox from "../src/components/AppCatalogCombobox.vue";
 import LaboratoryTestsEditor from "../src/components/LaboratoryTestsEditor.vue";
 
 describe("LaboratoryTestsEditor", () => {
+  it("hides the indicator selector when every indicator is already added", async () => {
+    const type = laboratoryStudyTypeById("lab.study.cbc")!;
+    let current: LaboratoryTestsSectionValue = { studies: [{
+      id: "complete-panel",
+      date: "2026-08-15",
+      typeId: type.id,
+      typeName: type.name,
+      mode: "panel",
+      laboratory: "Ветлаб",
+      results: type.indicators.map((indicator) => ({
+        indicatorId: indicator.id,
+        indicatorName: indicator.name,
+        unit: indicator.unit,
+        result: "1",
+      })),
+    }] };
+    const wrapper = mount(LaboratoryTestsEditor, {
+      props: {
+        modelValue: current,
+        encounterDate: "2026-08-15",
+        "onUpdate:modelValue": (value: LaboratoryTestsSectionValue) => {
+          current = value;
+          void wrapper.setProps({ modelValue: value });
+        },
+      },
+    });
+
+    expect(wrapper.find(".laboratory-indicator-create").exists()).toBe(false);
+    expect(wrapper.find('input[aria-label="Добавить показатель"]').exists()).toBe(false);
+
+    await wrapper.get('button[title="Удалить показатель"]').trigger("click");
+    await flushPromises();
+
+    expect(wrapper.get(".laboratory-indicator-create").exists()).toBe(true);
+    expect(wrapper.get('input[aria-label="Добавить показатель"]').exists()).toBe(true);
+  });
+
   it("removes a study with whitespace-only text without confirmation", async () => {
     const type = laboratoryStudyTypeById("lab.study.cbc")!;
     let current: LaboratoryTestsSectionValue = { studies: [{

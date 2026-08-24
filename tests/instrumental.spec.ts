@@ -5,13 +5,16 @@
 import { describe, expect, it } from "vitest";
 import {
   INSTRUMENTAL_STUDY_CATALOG,
+  canonicalizeInstrumentalFindingValues,
   instrumentalFindingById,
   normalizeInstrumentalTestsValue,
   type InstrumentalFindingCatalogItem,
   type InstrumentalFindingValue,
-} from "@klinok/contracts";
+} from "../packages/contracts/src/instrumental";
 
 const base = { id: "123e4567-e89b-12d3-a456-426614174000", date: "2026-08-15" };
+const prefix = "instrumental.finding.ultrasound-abdomen";
+const id = (code: string) => `${prefix}.${code}`;
 const value = (id: string, children: InstrumentalFindingValue[] = [], text?: string): InstrumentalFindingValue => ({
   findingId: id,
   findingName: "forged",
@@ -46,6 +49,42 @@ describe("instrumental study contracts", () => {
       "9.2.1", "9.3.5.2.3", "10.0", "10.5", "11.3.7", "11.4", "16.1.3", "16.2.3", "16.3.3",
     ]);
     expect(integers.every((item) => item.unit === "мм" && !item.name.includes("мм"))).toBe(true);
+  });
+
+  it("nests conditional liver, gallbladder, and spleen findings while preserving stable IDs", () => {
+    const liver = instrumentalFindingById(id("1"))!;
+    const liverVisible = instrumentalFindingById(id("1.10.2"))!;
+    expect(liver.children.map((item) => item.id)).not.toContain(id("1.11"));
+    expect(liver.children.map((item) => item.id)).not.toContain(id("1.12"));
+    expect(liverVisible.children.map((item) => item.id)).toEqual([
+      id("1.10.2.1"), id("1.10.2.2"), id("1.11"), id("1.12"),
+    ]);
+
+    const gallbladder = instrumentalFindingById(id("2"))!;
+    const sedimentVisible = instrumentalFindingById(id("2.5.2"))!;
+    expect(gallbladder.children.map((item) => item.id)).not.toContain(id("2.6"));
+    expect(sedimentVisible.children.at(-1)).toMatchObject({ id: id("2.6"), selectionMode: "multiple" });
+
+    const spleen = instrumentalFindingById(id("4"))!;
+    expect(spleen.children.map((item) => item.id)).toContain(id("4.6"));
+    expect(spleen.children.map((item) => item.id)).not.toContain(id("4.5"));
+    expect(instrumentalFindingById(id("4.4.2"))!.children.map((item) => item.id)).toEqual([
+      id("4.4.2.1"), id("4.4.2.2"), id("4.5"),
+    ]);
+  });
+
+  it("describes prostate contours as two required independent selection sets", () => {
+    expect(instrumentalFindingById(id("10.1"))?.selectionSets).toEqual([{
+      key: "regularity",
+      name: "Ровность контуров",
+      choiceIds: [id("10.1.1"), id("10.1.2")],
+      required: true,
+    }, {
+      key: "definition",
+      name: "Чёткость контуров",
+      choiceIds: [id("10.1.3"), id("10.1.4")],
+      required: true,
+    }]);
   });
 
   it("normalizes names, text, and recursive sibling order", () => {
@@ -99,14 +138,98 @@ describe("instrumental study contracts", () => {
       ...base,
       typeId: "instrumental.study.ultrasound-abdomen",
       findings: [value("instrumental.finding.ultrasound-abdomen.1", [
-        { ...value("instrumental.finding.ultrasound-abdomen.1.12", [], " 12 "), unit: "forged" },
+        value(id("1.10"), [value(id("1.10.2"), [
+          { ...value(id("1.12"), [], " 12 "), unit: "forged" },
+        ])]),
       ])],
     }] });
-    expect(section.studies[0]).toMatchObject({ mode: "tree", findings: [{ children: [{
+    expect(section.studies[0]).toMatchObject({ mode: "tree", findings: [{ children: [{ children: [{ children: [{
       findingName: "Размер",
       value: "12",
       unit: "мм",
-    }] }] });
+    }] }] }] }] });
+  });
+
+  it("canonicalizes legacy conditional siblings and drops them for inactive branches", () => {
+    const unchanged = [value(id("19"), [], "Без патологии")];
+    expect(canonicalizeInstrumentalFindingValues(unchanged)).toBe(unchanged);
+    const section = normalizeInstrumentalTestsValue({ studies: [{
+      ...base,
+      typeId: "instrumental.study.ultrasound-abdomen",
+      findings: [
+        value(id("1"), [
+          value(id("1.10"), [value(id("1.10.2"), [value(id("1.10.2.2"))])]),
+          value(id("1.11"), [value(id("1.11.3"))]),
+          value(id("1.12"), [], "8"),
+        ]),
+        value(id("2"), [
+          value(id("2.5"), [value(id("2.5.2"), [value(id("2.5.2.1"))])]),
+          value(id("2.6"), [value(id("2.6.7"))]),
+        ]),
+        value(id("4"), [
+          value(id("4.4"), [value(id("4.4.2"), [value(id("4.4.2.1"))])]),
+          value(id("4.5"), [], "6"),
+          value(id("4.6"), [], "Независимый комментарий"),
+        ]),
+      ],
+    }] });
+    const study = section.studies[0]!;
+    if (study.mode !== "tree") throw new Error("Expected tree study");
+    const activeChildren = (rootId: string, selectorId: string) => study.findings.find((item) => item.findingId === rootId)!
+      .children.find((item) => item.findingId === selectorId)!.children[0]!.children;
+    expect(activeChildren(id("1"), id("1.10")).map((item) => item.findingId)).toEqual([
+      id("1.10.2.2"), id("1.11"), id("1.12"),
+    ]);
+    expect(activeChildren(id("2"), id("2.5"))[1]).toMatchObject({
+      findingId: id("2.6"),
+      children: [{ findingId: id("2.6.7") }],
+    });
+    expect(activeChildren(id("4"), id("4.4"))[1]).toMatchObject({ findingId: id("4.5"), value: "6" });
+    expect(study.findings[2]!.children.at(-1)).toMatchObject({ findingId: id("4.6"), value: "Независимый комментарий" });
+
+    const inactive = normalizeInstrumentalTestsValue({ studies: [{
+      ...base,
+      typeId: "instrumental.study.ultrasound-abdomen",
+      findings: [
+        value(id("1"), [value(id("1.10"), [value(id("1.10.1"))]), value(id("1.12"), [], "8")]),
+        value(id("2"), [value(id("2.5"), [value(id("2.5.1"))]), value(id("2.6"), [value(id("2.6.1"))])]),
+        value(id("4"), [value(id("4.4"), [value(id("4.4.1"))]), value(id("4.5"), [], "6"), value(id("4.6"), [], "Комментарий")]),
+      ],
+    }] }).studies[0]!;
+    if (inactive.mode !== "tree") throw new Error("Expected tree study");
+    expect(inactive.findings[0]!.children).toHaveLength(1);
+    expect(inactive.findings[1]!.children).toHaveLength(1);
+    expect(inactive.findings[2]!.children.map((item) => item.findingId)).toEqual([id("4.4"), id("4.6")]);
+  });
+
+  it("normalizes optional multi-select choices in catalog order and omits an empty container", () => {
+    const studyFor = (sedimentCharacter: InstrumentalFindingValue) => ({ studies: [{
+      ...base,
+      typeId: "instrumental.study.ultrasound-abdomen",
+      findings: [value(id("2"), [value(id("2.5"), [value(id("2.5.2"), [sedimentCharacter])])])],
+    }] });
+    const normalized = normalizeInstrumentalTestsValue(studyFor(value(id("2.6"), [
+      value(id("2.6.7")), value(id("2.6.1")), value(id("2.6.4")),
+    ]))).studies[0]!;
+    if (normalized.mode !== "tree") throw new Error("Expected tree study");
+    expect(normalized.findings[0]!.children[0]!.children[0]!.children[0]!.children.map((item) => item.findingId)).toEqual([
+      id("2.6.1"), id("2.6.4"), id("2.6.7"),
+    ]);
+    const empty = normalizeInstrumentalTestsValue(studyFor(value(id("2.6")))).studies[0]!;
+    if (empty.mode !== "tree") throw new Error("Expected tree study");
+    expect(empty.findings[0]!.children[0]!.children[0]!.children).toEqual([]);
+  });
+
+  it("normalizes one prostate contour choice from each required set in catalog order", () => {
+    const normalized = normalizeInstrumentalTestsValue({ studies: [{
+      ...base,
+      typeId: "instrumental.study.ultrasound-abdomen",
+      findings: [value(id("10"), [value(id("10.1"), [value(id("10.1.4")), value(id("10.1.1"))])])],
+    }] }).studies[0]!;
+    if (normalized.mode !== "tree") throw new Error("Expected tree study");
+    expect(normalized.findings[0]!.children[0]!.children.map((item) => item.findingId)).toEqual([
+      id("10.1.1"), id("10.1.4"),
+    ]);
   });
 
   it.each([
@@ -119,10 +242,14 @@ describe("instrumental study contracts", () => {
     ["empty tree", { studies: [{ ...base, typeId: "instrumental.study.ultrasound-abdomen", findings: [] }] }, "Добавьте результаты"],
     ["empty group", { studies: [{ ...base, typeId: "instrumental.study.ultrasound-abdomen", findings: [value("instrumental.finding.ultrasound-abdomen.1")] }] }, "Печень"],
     ["empty text", { studies: [{ ...base, typeId: "instrumental.study.ultrasound-abdomen", findings: [value("instrumental.finding.ultrasound-abdomen.19", [], " ")] }] }, "Заключение"],
-    ["fractional measurement", { studies: [{ ...base, typeId: "instrumental.study.ultrasound-abdomen", findings: [value("instrumental.finding.ultrasound-abdomen.1", [value("instrumental.finding.ultrasound-abdomen.1.12", [], "4.2")])] }] }, "целое число"],
-    ["negative measurement", { studies: [{ ...base, typeId: "instrumental.study.ultrasound-abdomen", findings: [value("instrumental.finding.ultrasound-abdomen.1", [value("instrumental.finding.ultrasound-abdomen.1.12", [], "-4")])] }] }, "целое число"],
+    ["fractional measurement", { studies: [{ ...base, typeId: "instrumental.study.ultrasound-abdomen", findings: [value(id("1"), [value(id("1.10"), [value(id("1.10.2"), [value(id("1.12"), [], "4.2")])])])] }] }, "целое число"],
+    ["negative measurement", { studies: [{ ...base, typeId: "instrumental.study.ultrasound-abdomen", findings: [value(id("1"), [value(id("1.10"), [value(id("1.10.2"), [value(id("1.12"), [], "-4")])])])] }] }, "целое число"],
     ["misplaced child", { studies: [{ ...base, typeId: "instrumental.study.ultrasound-abdomen", findings: [value("instrumental.finding.ultrasound-abdomen.1", [value("instrumental.finding.ultrasound-abdomen.2.1", [])])] }] }, "структура"],
     ["multiple values", { studies: [{ ...base, typeId: "instrumental.study.ultrasound-abdomen", findings: [value("instrumental.finding.ultrasound-abdomen.1", [value("instrumental.finding.ultrasound-abdomen.1.3", [value("instrumental.finding.ultrasound-abdomen.1.3.1"), value("instrumental.finding.ultrasound-abdomen.1.3.2")])])] }] }, "не более одного"],
+    ["incomplete contour sets", { studies: [{ ...base, typeId: "instrumental.study.ultrasound-abdomen", findings: [value(id("10"), [value(id("10.1"), [value(id("10.1.1"))])])] }] }, "Чёткость контуров"],
+    ["conflicting contour values", { studies: [{ ...base, typeId: "instrumental.study.ultrasound-abdomen", findings: [value(id("10"), [value(id("10.1"), [value(id("10.1.1")), value(id("10.1.2")), value(id("10.1.3"))])])] }] }, "Ровность контуров"],
+    ["duplicate multi-select value", { studies: [{ ...base, typeId: "instrumental.study.ultrasound-abdomen", findings: [value(id("2"), [value(id("2.5"), [value(id("2.5.2"), [value(id("2.6"), [value(id("2.6.1")), value(id("2.6.1"))])])])])] }] }, "структура"],
+    ["unknown multi-select value", { studies: [{ ...base, typeId: "instrumental.study.ultrasound-abdomen", findings: [value(id("2"), [value(id("2.5"), [value(id("2.5.2"), [value(id("2.6"), [value(id("2.6.99"))])])])])] }] }, "структура"],
     ["text children", { studies: [{ ...base, typeId: "instrumental.study.ultrasound-abdomen", findings: [value("instrumental.finding.ultrasound-abdomen.19", [value("instrumental.finding.ultrasound-abdomen.1")], "text")] }] }, "вложенные"],
   ])("rejects %s", (_name, input, message) => {
     expect(() => normalizeInstrumentalTestsValue(input, "2026-08-15")).toThrow(message as string);

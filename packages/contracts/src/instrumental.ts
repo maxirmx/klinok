@@ -4,12 +4,22 @@
 
 export type InstrumentalStudyMode = "tree" | "narrative";
 export type InstrumentalFindingKind = "group" | "choice" | "integer" | "short-text" | "long-text";
+export type InstrumentalSelectionMode = "single" | "multiple";
+
+export interface InstrumentalSelectionSet {
+  readonly key: string;
+  readonly name: string;
+  readonly choiceIds: readonly string[];
+  readonly required?: boolean;
+}
 
 export interface InstrumentalFindingCatalogItem {
   readonly id: string;
   readonly name: string;
   readonly kind: InstrumentalFindingKind;
   readonly unit?: string;
+  readonly selectionMode?: InstrumentalSelectionMode;
+  readonly selectionSets?: readonly InstrumentalSelectionSet[];
   readonly children: readonly InstrumentalFindingCatalogItem[];
 }
 
@@ -60,6 +70,16 @@ const group = (code: string, name: string, children: readonly InstrumentalFindin
 const choice = (code: string, name: string, children: readonly InstrumentalFindingCatalogItem[] = []) => node(code, name, "choice", children);
 const integer = (code: string, name: string, unit: string) => ({ ...node(code, name, "integer"), unit });
 const longText = (code: string, name: string) => node(code, name, "long-text");
+const multipleGroup = (code: string, name: string, children: readonly InstrumentalFindingCatalogItem[]) => ({
+  ...group(code, name, children),
+  selectionMode: "multiple" as const,
+});
+const selectionSetGroup = (
+  code: string,
+  name: string,
+  children: readonly InstrumentalFindingCatalogItem[],
+  selectionSets: readonly InstrumentalSelectionSet[],
+) => ({ ...group(code, name, children), selectionSets });
 
 const ultrasoundAbdomen: readonly InstrumentalFindingCatalogItem[] = [
   group("1", "Печень", [
@@ -84,12 +104,14 @@ const ultrasoundAbdomen: readonly InstrumentalFindingCatalogItem[] = [
     group("1.9", "Внутрипечёночные протоки", [choice("1.9.1", "Не расширены"), choice("1.9.2", "Расширены")]),
     group("1.10", "Очаговые образования", [
       choice("1.10.1", "Не визуализируются"),
-      choice("1.10.2", "Визуализируются", [choice("1.10.2.1", "Единичные"), choice("1.10.2.2", "Множественные")]),
+      choice("1.10.2", "Визуализируются", [
+        choice("1.10.2.1", "Единичные"), choice("1.10.2.2", "Множественные"),
+        group("1.11", "Эхогенность", [
+          choice("1.11.1", "Средняя"), choice("1.11.2", "Гиперэхогенные"), choice("1.11.3", "Гипоэхогенные"), choice("1.11.4", "Анэхогенные"),
+        ]),
+        integer("1.12", "Размер", "мм"),
+      ]),
     ]),
-    group("1.11", "Эхогенность", [
-      choice("1.11.1", "Средняя"), choice("1.11.2", "Гиперэхогенные"), choice("1.11.3", "Гипоэхогенные"), choice("1.11.4", "Анэхогенные"),
-    ]),
-    integer("1.12", "Размер", "мм"),
   ]),
   group("2", "Желчный пузырь", [
     group("2.1", "Наполнение", [
@@ -105,11 +127,11 @@ const ultrasoundAbdomen: readonly InstrumentalFindingCatalogItem[] = [
       choice("2.5.1", "Не визуализируется"),
       choice("2.5.2", "Визуализируется", [
         choice("2.5.2.1", "В незначительном количестве"), choice("2.5.2.2", "В умеренном количестве"), choice("2.5.2.3", "В значимом количестве"),
+        multipleGroup("2.6", "Характер осадка", [
+          choice("2.6.1", "Смешанный"), choice("2.6.2", "Сгусток"), choice("2.6.3", "Минеральный осадок"), choice("2.6.4", "Конкременты"),
+          choice("2.6.5", "Пристеночный"), choice("2.6.6", "Неподвижный"), choice("2.6.7", "Подвижный"),
+        ]),
       ]),
-    ]),
-    group("2.6", "Характер осадка", [
-      choice("2.6.1", "Смешанный"), choice("2.6.2", "Сгусток"), choice("2.6.3", "Минеральный осадок"), choice("2.6.4", "Конкременты"),
-      choice("2.6.5", "Пристеночный"), choice("2.6.6", "Неподвижный"), choice("2.6.7", "Подвижный"),
     ]),
     group("2.7", "Структурные деформации", [
       choice("2.7.1", "Не визуализируются"), choice("2.7.2", "Визуализируются", [
@@ -137,9 +159,11 @@ const ultrasoundAbdomen: readonly InstrumentalFindingCatalogItem[] = [
     ]),
     group("4.3", "Сосуды", [choice("4.3.1", "Расширены"), choice("4.3.2", "Не расширены"), choice("4.3.3", "Со стенками повышенной эхогенности")]),
     group("4.4", "Объёмные образования", [
-      choice("4.4.1", "Не визуализируются"), choice("4.4.2", "Визуализируются", [choice("4.4.2.1", "Единичные"), choice("4.4.2.2", "Множественные")]),
+      choice("4.4.1", "Не визуализируются"), choice("4.4.2", "Визуализируются", [
+        choice("4.4.2.1", "Единичные"), choice("4.4.2.2", "Множественные"), integer("4.5", "Размер образований", "мм"),
+      ]),
     ]),
-    integer("4.5", "Размер образований", "мм"), longText("4.6", "Комментарии"),
+    longText("4.6", "Комментарии"),
   ]),
   group("5", "Почка левая", [
     choice("5.0.1", "Не визуализируется"), choice("5.0.2", "Визуализируется"),
@@ -214,7 +238,19 @@ const ultrasoundAbdomen: readonly InstrumentalFindingCatalogItem[] = [
   ]),
   group("10", "Предстательная железа", [
     integer("10.0", "Размер", "мм"),
-    group("10.1", "Контуры", [choice("10.1.1", "Ровные"), choice("10.1.2", "Неровные"), choice("10.1.3", "Чёткие"), choice("10.1.4", "Нечёткие")]),
+    selectionSetGroup("10.1", "Контуры", [
+      choice("10.1.1", "Ровные"), choice("10.1.2", "Неровные"), choice("10.1.3", "Чёткие"), choice("10.1.4", "Нечёткие"),
+    ], [{
+      key: "regularity",
+      name: "Ровность контуров",
+      choiceIds: [`${prefix}.10.1.1`, `${prefix}.10.1.2`],
+      required: true,
+    }, {
+      key: "definition",
+      name: "Чёткость контуров",
+      choiceIds: [`${prefix}.10.1.3`, `${prefix}.10.1.4`],
+      required: true,
+    }]),
     group("10.2", "Структура", [choice("10.2.1", "Однородная"), choice("10.2.2", "Слабо неоднородная"), choice("10.2.3", "Неоднородная"), choice("10.2.4", "С очаговыми образованиями")]),
     group("10.3", "Эхогенность паренхимы", [choice("10.3.1", "Не изменена"), choice("10.3.2", "Гипоэхогенная"), choice("10.3.3", "Гиперэхогенная"), choice("10.3.4", "Смешанная")]),
     group("10.4", "Объёмные образования", [
@@ -281,47 +317,166 @@ function object(value: unknown): Record<string, unknown> {
   return value as Record<string, unknown>;
 }
 
+interface LegacyConditionalFindingMove {
+  readonly parentId: string;
+  readonly selectorId: string;
+  readonly activeChoiceId: string;
+  readonly childIds: readonly string[];
+}
+
+const legacyConditionalFindingMoves: readonly LegacyConditionalFindingMove[] = [{
+  parentId: `${prefix}.1`,
+  selectorId: `${prefix}.1.10`,
+  activeChoiceId: `${prefix}.1.10.2`,
+  childIds: [`${prefix}.1.11`, `${prefix}.1.12`],
+}, {
+  parentId: `${prefix}.2`,
+  selectorId: `${prefix}.2.5`,
+  activeChoiceId: `${prefix}.2.5.2`,
+  childIds: [`${prefix}.2.6`],
+}, {
+  parentId: `${prefix}.4`,
+  selectorId: `${prefix}.4.4`,
+  activeChoiceId: `${prefix}.4.4.2`,
+  childIds: [`${prefix}.4.5`],
+}];
+
+function findingId(value: unknown): string {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? String((value as Record<string, unknown>).findingId ?? "")
+    : "";
+}
+
+function canonicalizeLegacyFinding(value: unknown): unknown {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return value;
+  const input = value as Record<string, unknown>;
+  const rawChildren = input.children;
+  let children = Array.isArray(rawChildren)
+    ? canonicalizeLegacyFindingValues(rawChildren)
+    : rawChildren;
+  let changed = children !== rawChildren;
+  const move = legacyConditionalFindingMoves.find((candidate) => candidate.parentId === findingId(input));
+  if (move && Array.isArray(children)) {
+    const legacyIds = new Set(move.childIds);
+    const legacyChildren = children.filter((child) => legacyIds.has(findingId(child)));
+    if (legacyChildren.length) {
+      const nextChildren = children.filter((child) => !legacyIds.has(findingId(child)));
+      const selectorIndex = nextChildren.findIndex((child) => findingId(child) === move.selectorId);
+      const selector = nextChildren[selectorIndex];
+      if (selector && typeof selector === "object" && !Array.isArray(selector)) {
+        const selectorInput = selector as Record<string, unknown>;
+        const selectorChildren = selectorInput.children;
+        if (Array.isArray(selectorChildren)) {
+          const activeIndex = selectorChildren.findIndex((child) => findingId(child) === move.activeChoiceId);
+          const activeChoice = selectorChildren[activeIndex];
+          if (activeChoice && typeof activeChoice === "object" && !Array.isArray(activeChoice)) {
+            const activeInput = activeChoice as Record<string, unknown>;
+            if (Array.isArray(activeInput.children)) {
+              const nextSelectorChildren = [...selectorChildren];
+              nextSelectorChildren[activeIndex] = { ...activeInput, children: [...activeInput.children, ...legacyChildren] };
+              nextChildren[selectorIndex] = { ...selectorInput, children: nextSelectorChildren };
+            }
+          }
+        }
+      }
+      children = nextChildren;
+      changed = true;
+    }
+  }
+  return changed ? { ...input, children } : value;
+}
+
+function canonicalizeLegacyFindingValues(value: readonly unknown[]): readonly unknown[] {
+  let changed = false;
+  const canonical = value.map((item) => {
+    const next = canonicalizeLegacyFinding(item);
+    if (next !== item) changed = true;
+    return next;
+  });
+  return changed ? canonical : value;
+}
+
+export function canonicalizeInstrumentalFindingValues(
+  value: readonly InstrumentalFindingValue[],
+): readonly InstrumentalFindingValue[] {
+  return canonicalizeLegacyFindingValues(value) as readonly InstrumentalFindingValue[];
+}
+
+function validateChoiceCardinality(
+  values: readonly InstrumentalFindingValue[],
+  parent?: InstrumentalFindingCatalogItem,
+) {
+  const selectedIds = values.filter((item) => instrumentalFindingById(item.findingId)?.kind === "choice")
+    .map((item) => item.findingId);
+  if (parent?.selectionSets?.length) {
+    const setByChoiceId = new Map<string, InstrumentalSelectionSet>();
+    for (const set of parent.selectionSets) {
+      for (const choiceId of set.choiceIds) {
+        if (setByChoiceId.has(choiceId)) throw new Error("Некорректное описание наборов выбора.");
+        setByChoiceId.set(choiceId, set);
+      }
+    }
+    const selectedBySet = new Map(parent.selectionSets.map((set) => [set.key, 0]));
+    for (const id of selectedIds) {
+      const set = setByChoiceId.get(id);
+      if (!set) throw new Error("Некорректная структура результатов инструментального исследования.");
+      const count = (selectedBySet.get(set.key) ?? 0) + 1;
+      if (count > 1) throw new Error(`Для характеристики «${set.name}» можно выбрать не более одного значения.`);
+      selectedBySet.set(set.key, count);
+    }
+    for (const set of parent.selectionSets) {
+      if (set.required && !selectedBySet.get(set.key)) throw new Error(`Заполните характеристику «${set.name}».`);
+    }
+    return;
+  }
+  if (parent?.selectionMode !== "multiple" && selectedIds.length > 1) {
+    throw new Error("Для показателя можно выбрать не более одного значения.");
+  }
+}
+
 function normalizeFindings(
   value: unknown,
   catalog: readonly InstrumentalFindingCatalogItem[],
+  parent?: InstrumentalFindingCatalogItem,
 ): InstrumentalFindingValue[] {
   if (!Array.isArray(value)) throw new Error("Некорректные результаты инструментального исследования.");
   const catalogById = new Map(catalog.map((item) => [item.id, item]));
   const catalogOrder = new Map(catalog.map((item, index) => [item.id, index]));
   const seen = new Set<string>();
-  let selectedChoice = false;
-  const normalized = value.map((raw) => {
+  const normalized: InstrumentalFindingValue[] = [];
+  for (const raw of value) {
     const input = object(raw);
     const item = catalogById.get(String(input.findingId ?? ""));
     if (!item || seen.has(item.id)) throw new Error("Некорректная структура результатов инструментального исследования.");
     seen.add(item.id);
-    if (item.kind === "choice") {
-      if (selectedChoice) throw new Error("Для показателя можно выбрать не более одного значения.");
-      selectedChoice = true;
-    }
     const rawChildren = input.children ?? [];
     if (!Array.isArray(rawChildren)) throw new Error("Некорректная структура результатов инструментального исследования.");
     if ((item.kind === "integer" || item.kind === "short-text" || item.kind === "long-text") && rawChildren.length) {
       throw new Error("Поле свободного ввода не может содержать вложенные результаты.");
     }
-    const children = normalizeFindings(rawChildren, item.children);
-    if (item.kind === "group" && !children.length) throw new Error(`Заполните показатель «${item.name}».`);
+    const children = normalizeFindings(rawChildren, item.children, item);
+    if (item.kind === "group" && !children.length) {
+      if (item.selectionMode === "multiple") continue;
+      throw new Error(`Заполните показатель «${item.name}».`);
+    }
     if (item.kind === "integer" || item.kind === "short-text" || item.kind === "long-text") {
       const text = String(input.value ?? "").trim();
       if (!text) throw new Error(`Заполните поле «${item.name}».`);
       if (item.kind === "integer" && !/^\d+$/.test(text)) {
         throw new Error(`Укажите целое число для поля «${item.name}».`);
       }
-      return {
+      normalized.push({
         findingId: item.id,
         findingName: item.name,
         value: text,
         ...(item.unit ? { unit: item.unit } : {}),
         children,
-      };
+      });
+    } else {
+      normalized.push({ findingId: item.id, findingName: item.name, children });
     }
-    return { findingId: item.id, findingName: item.name, children };
-  });
+  }
+  validateChoiceCardinality(normalized, parent);
   return normalized.sort((left, right) => (catalogOrder.get(left.findingId) ?? 0) - (catalogOrder.get(right.findingId) ?? 0));
 }
 
@@ -349,7 +504,10 @@ export function normalizeInstrumentalTestsValue(
       return { ...base, mode: "narrative", result };
     }
     if (!Array.isArray(input.findings) || !input.findings.length) throw new Error("Добавьте результаты инструментального исследования.");
-    return { ...base, mode: "tree", findings: normalizeFindings(input.findings, type.findings) };
+    const canonicalFindings = Array.isArray(input.findings)
+      ? canonicalizeLegacyFindingValues(input.findings)
+      : input.findings;
+    return { ...base, mode: "tree", findings: normalizeFindings(canonicalFindings, type.findings) };
   });
   return { studies };
 }

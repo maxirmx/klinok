@@ -3,9 +3,10 @@
 // All rights reserved.
 // This file is a part of Klinok application
 
-import { computed, ref } from "vue";
+import { computed, onBeforeMount, ref } from "vue";
 import {
   INSTRUMENTAL_STUDY_OPTIONS,
+  canonicalizeInstrumentalFindingValues,
   instrumentalFindingById,
   instrumentalStudyTypeById,
   type InstrumentalFindingValue,
@@ -30,6 +31,18 @@ const confirmDescription = computed(() => pending.value
   ? `Исследование «${pending.value.typeName}» и все заполненные данные будут удалены.`
   : "После подтверждения заполненные данные будут удалены.");
 const uuid = () => globalThis.crypto.randomUUID();
+
+onBeforeMount(() => {
+  let changed = false;
+  const studies = model.value.studies.map((study) => {
+    if (study.mode !== "tree") return study;
+    const findings = canonicalizeInstrumentalFindingValues(study.findings);
+    if (findings === study.findings) return study;
+    changed = true;
+    return { ...study, findings };
+  });
+  if (changed) model.value = { studies };
+});
 
 function addStudy() {
   const type = pendingType.value;
