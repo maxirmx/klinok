@@ -3394,6 +3394,7 @@ dd {
 .instrumental-finding-create,
 .instrumental-finding-row { padding-top: 8px; align-items: start; }
 .instrumental-finding-create { padding-bottom: 8px; row-gap: 3px; }
+.instrumental-finding-create-after-values { border-top: 1px solid var(--border-color, #d7dde5); }
 .instrumental-finding-row { border-top: 1px solid var(--border-color, #d7dde5); }
 .instrumental-finding-create-label,
 .instrumental-finding-picker {

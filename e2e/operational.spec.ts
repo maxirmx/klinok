@@ -447,12 +447,27 @@ test("fresh provisioning, Doctor approval, grant, draft, and confirmation", asyn
   await laboratoryCard.getByLabel("Лаборатория", { exact: true }).fill("Ветлаб");
   const indicator = laboratoryCard.getByRole("combobox", { name: "Добавить показатель" });
   const indicatorToggle = laboratoryCard.locator(".laboratory-indicator-create .app-catalog-toggle");
-  await indicatorToggle.click();
-  await laboratoryCard.getByRole("option", { name: /Лейкоциты \(WBC\)/ }).click();
   const addIndicator = laboratoryCard.getByRole("button", { name: "Добавить показатель" });
-  await addIndicator.click();
-  const resultInput = laboratoryCard.getByLabel("Лейкоциты (WBC), результат", { exact: true });
+  const addLaboratoryIndicator = async (optionName: RegExp, indicatorName: string) => {
+    await indicatorToggle.click();
+    await laboratoryCard.getByRole("option", { name: optionName }).click();
+    await addIndicator.click();
+    const input = laboratoryCard.getByLabel(`${indicatorName}, результат`, { exact: true });
+    await expect(input).toBeFocused();
+    return input;
+  };
+  const resultInput = await addLaboratoryIndicator(/Лейкоциты \(WBC\)/, "Лейкоциты (WBC)");
   await resultInput.fill("7.2");
+  const hematocritInput = await addLaboratoryIndicator(/Гематокрит \(Hct, PCV\)/, "Гематокрит (Hct, PCV)");
+  await expect(resultInput).toHaveValue("7.2");
+  await hematocritInput.fill("42");
+  const hemoglobinInput = await addLaboratoryIndicator(/Гемоглобин \(Hgb\)/, "Гемоглобин (Hgb)");
+  await hemoglobinInput.fill("145");
+  expect(await laboratoryCard.locator(".laboratory-study-card").evaluate((card) => {
+    const results = card.querySelector(".laboratory-panel-results");
+    const create = card.querySelector(".laboratory-indicator-create");
+    return Boolean(results && create && (results.compareDocumentPosition(create) & Node.DOCUMENT_POSITION_FOLLOWING));
+  })).toBe(true);
   const deleteStudy = laboratoryCard.getByRole("button", { name: "Удалить исследование" });
   const deleteResult = laboratoryCard.getByRole("button", { name: /Удалить показатель «Лейкоциты/ });
   const typeToggle = laboratoryCard.locator(".laboratory-study-create .app-catalog-toggle");
@@ -480,6 +495,18 @@ test("fresh provisioning, Doctor approval, grant, draft, and confirmation", asyn
     const add = createRow.getByRole("button", { name: actionName });
     await expectTopAligned(add, createRow.locator(".app-catalog-control"));
     await add.click();
+    await expect.poll(async () => instrumentalCard.locator(":focus").evaluateAll((elements, name) =>
+      elements.some((element) => element.closest("[data-finding-id]")?.textContent?.includes(name)), findingName))
+      .toBe(true);
+    if (await createRow.count()) {
+      expect(await createRow.locator("..").evaluate((level) => {
+        const children = Array.from(level.children);
+        const createIndex = children.findIndex((child) => child.classList.contains("instrumental-finding-create"));
+        return createIndex >= 0 && children
+          .filter((child) => child.hasAttribute("data-finding-id"))
+          .every((child) => children.indexOf(child) < createIndex);
+      })).toBe(true);
+    }
     return add;
   };
   const selectInstrumentalValue = async (indicatorName: string, valueName: string) => {
@@ -498,6 +525,18 @@ test("fresh provisioning, Doctor approval, grant, draft, and confirmation", asyn
     const add = createRow.getByRole("button", { name: "Добавить показатель" });
     await expectTopAligned(add, createRow.locator(".app-catalog-control"));
     await add.click();
+    await expect.poll(async () => instrumentalCard.locator(":focus").evaluateAll((elements, name) =>
+      elements.some((element) => element.closest("[data-finding-id]")?.textContent?.includes(name)), findingName))
+      .toBe(true);
+    if (await createRow.count()) {
+      expect(await level.evaluate((element) => {
+        const children = Array.from(element.children);
+        const createIndex = children.findIndex((child) => child.classList.contains("instrumental-finding-create"));
+        return createIndex >= 0 && children
+          .filter((child) => child.hasAttribute("data-finding-id"))
+          .every((child) => children.indexOf(child) < createIndex);
+      })).toBe(true);
+    }
     return add;
   };
   const addPancreas = await addInstrumentalFinding("Добавить раздел исследования", "Поджелудочная железа");

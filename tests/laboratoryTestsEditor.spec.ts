@@ -14,6 +14,58 @@ import AppCatalogCombobox from "../src/components/AppCatalogCombobox.vue";
 import LaboratoryTestsEditor from "../src/components/LaboratoryTestsEditor.vue";
 
 describe("LaboratoryTestsEditor", () => {
+  it("places indicator creation after results, preserves values, and focuses an added result", async () => {
+    const type = laboratoryStudyTypeById("lab.study.cbc")!;
+    const [firstIndicator, secondIndicator] = type.indicators;
+    if (!firstIndicator || !secondIndicator) throw new Error("CBC indicators are incomplete.");
+    let current: LaboratoryTestsSectionValue = { studies: [{
+      id: "ordered-panel",
+      date: "2026-08-15",
+      typeId: type.id,
+      typeName: type.name,
+      mode: "panel",
+      laboratory: "Ветлаб",
+      results: [{
+        indicatorId: firstIndicator.id,
+        indicatorName: firstIndicator.name,
+        unit: firstIndicator.unit,
+        result: "7.2",
+      }],
+    }] };
+    const wrapper = mount(LaboratoryTestsEditor, {
+      attachTo: document.body,
+      props: {
+        modelValue: current,
+        encounterDate: "2026-08-15",
+        "onUpdate:modelValue": (value: LaboratoryTestsSectionValue) => {
+          current = value;
+          void wrapper.setProps({ modelValue: value });
+        },
+      },
+    });
+    const resultList = wrapper.get(".laboratory-panel-results");
+    const createRow = wrapper.get(".laboratory-indicator-create");
+    const cardChildren = Array.from(wrapper.get(".laboratory-study-card").element.children);
+    expect(cardChildren.indexOf(resultList.element)).toBeLessThan(cardChildren.indexOf(createRow.element));
+
+    const indicatorCombobox = wrapper.findAllComponents(AppCatalogCombobox)
+      .find((candidate) => candidate.props("label") === "Добавить показатель")!;
+    indicatorCombobox.vm.$emit("update:selectedIds", [secondIndicator.id]);
+    await flushPromises();
+    await wrapper.get(".laboratory-indicator-add").trigger("click");
+    await flushPromises();
+
+    expect(current.studies[0]?.mode === "panel" ? current.studies[0].results : []).toEqual([
+      expect.objectContaining({ indicatorId: firstIndicator.id, result: "7.2" }),
+      expect.objectContaining({ indicatorId: secondIndicator.id, result: "" }),
+    ]);
+    expect(document.activeElement).toBe(wrapper.get(`input[aria-label="${secondIndicator.name}, результат"]`).element);
+    const updatedCardChildren = Array.from(wrapper.get(".laboratory-study-card").element.children);
+    expect(updatedCardChildren.indexOf(wrapper.get(".laboratory-panel-results").element))
+      .toBeLessThan(updatedCardChildren.indexOf(wrapper.get(".laboratory-indicator-create").element));
+    wrapper.unmount();
+  });
+
   it("hides the indicator selector when every indicator is already added", async () => {
     const type = laboratoryStudyTypeById("lab.study.cbc")!;
     let current: LaboratoryTestsSectionValue = { studies: [{
