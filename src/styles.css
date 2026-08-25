@@ -3487,6 +3487,20 @@ dd {
     border-end-start-radius: 4px;
     content: "";
   }
+  .instrumental-finding-content:not(.instrumental-result-content):not([data-hierarchy-depth="0"]) {
+    position: relative;
+  }
+  .instrumental-finding-content:not(.instrumental-result-content):not([data-hierarchy-depth="0"])::before {
+    position: absolute;
+    inset-block-start: .15em;
+    inset-inline-start: calc(var(--instrumental-depth, 1) * 22px - 14px);
+    width: 8px;
+    height: .7em;
+    border-block-end: 2px solid var(--border-color, #d7dde5);
+    border-inline-start: 2px solid var(--border-color, #d7dde5);
+    border-end-start-radius: 4px;
+    content: "";
+  }
   .instrumental-result-mobile-name { display: none; }
   .workspace-content .instrumental-findings-grid .instrumental-result-row .instrumental-finding-delete { margin-top: 0; }
 }

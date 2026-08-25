@@ -60,6 +60,14 @@ async function expectHierarchyTextIndent(parent: Locator, child: Locator, minimu
   expect(childX - parentX).toBeGreaterThanOrEqual(minimum);
 }
 
+async function expectHierarchyMarker(target: Locator): Promise<void> {
+  const marker = await target.evaluate((element) => {
+    const style = getComputedStyle(element, "::before");
+    return { content: style.content, inlineBorder: style.borderInlineStartWidth };
+  });
+  expect(marker).toEqual({ content: '""', inlineBorder: "2px" });
+}
+
 async function expectSameHorizontalBounds(first: Locator, second: Locator): Promise<void> {
   const [firstBox, secondBox] = await Promise.all([first.boundingBox(), second.boundingBox()]);
   expect(firstBox).not.toBeNull();
@@ -604,6 +612,16 @@ test("fresh provisioning, Doctor approval, grant, draft, and confirmation", asyn
   expect(definitionBox).not.toBeNull();
   expect(Math.abs(regularityBox!.y - definitionBox!.y)).toBeLessThanOrEqual(1);
   const addBladder = await addInstrumentalFinding("Добавить раздел исследования", "Мочевой пузырь");
+  await addInstrumentalFinding("Добавить показатель для «Мочевой пузырь»", "Стенка");
+  const deleteBladderWall = instrumentalCard.getByRole("button", { name: "Удалить показатель «Стенка»", exact: true });
+  const bladderWallContent = deleteBladderWall
+    .locator("xpath=ancestor::div[contains(concat(' ', normalize-space(@class), ' '), ' instrumental-finding-row ')][1]")
+    .locator(":scope > .instrumental-finding-content");
+  await expect(bladderWallContent).toHaveAttribute("data-hierarchy-depth", "1");
+  await expectHierarchyMarker(bladderWallContent);
+  await deleteBladderWall.click();
+  await expect(bladderWallContent).toHaveCount(0);
+  await expect(doctorPage.getByRole("alertdialog")).toHaveCount(0);
   const addContents = await addInstrumentalFinding("Добавить показатель для «Мочевой пузырь»", "Содержимое");
   const contentsValueSelector = await selectInstrumentalValue("Содержимое", "Визуализируется");
   const contentsValueControl = contentsValueSelector.first()

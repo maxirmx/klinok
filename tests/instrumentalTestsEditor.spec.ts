@@ -142,6 +142,20 @@ describe("InstrumentalTestsEditor", () => {
     expect(row.get('button[aria-label="Удалить раздел «Поджелудочная железа»"]').exists()).toBe(true);
   });
 
+  it("marks a nested non-result group at its logical hierarchy depth", async () => {
+    const { wrapper } = mountEditor();
+    await chooseType(wrapper, "instrumental.study.ultrasound-abdomen");
+    await addFinding(wrapper, id("9"));
+    await addFinding(wrapper, id("9.2"));
+
+    const wallRow = wrapper.get('button[aria-label="Удалить показатель «Стенка»"]')
+      .element.closest<HTMLElement>(".instrumental-finding-row")!;
+    const wallContent = wallRow.querySelector<HTMLElement>(":scope > .instrumental-finding-content")!;
+    expect(wallContent.dataset.hierarchyDepth).toBe("1");
+    expect(wallContent.classList).not.toContain("instrumental-result-content");
+    expect(wallContent.querySelector(".instrumental-finding-name")?.textContent).toBe("Стенка");
+  });
+
   it("builds multiple ultrasound branches through arbitrary recursive levels", async () => {
     const { wrapper, current } = mountEditor();
     expect(wrapper.get(".instrumental-study-add").attributes("disabled")).toBeDefined();
