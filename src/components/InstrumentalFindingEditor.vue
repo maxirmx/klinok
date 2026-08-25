@@ -3,7 +3,7 @@
 // All rights reserved.
 // This file is a part of Klinok application
 
-import { computed, ref } from "vue";
+import { computed, nextTick, ref } from "vue";
 import type {
   InstrumentalFindingCatalogItem,
   InstrumentalFindingValue,
@@ -28,6 +28,7 @@ const props = withDefaults(defineProps<{
 });
 const model = defineModel<readonly InstrumentalFindingValue[]>({ required: true });
 const pendingIds = ref<string[]>([]);
+const levelElement = ref<HTMLElement | null>(null);
 const pendingConfirmation = ref<{
   title: string;
   description: string;
@@ -62,6 +63,8 @@ const pendingFinding = computed(() => indicatorCatalog.value.find((item) => item
   && !model.value.some((value) => value.findingId === item.id)));
 const hasResultRows = computed(() => !props.choiceContinuation && props.depth > 0
   && (choiceCatalog.value.length > 0 || multipleChoiceCatalog.value.length > 0 || indicatorValues.value.some(isResultFinding)));
+const hasRenderedValues = computed(() => choiceCatalog.value.length > 0
+  || multipleChoiceCatalog.value.length > 0 || model.value.length > 0);
 const choiceRowDepth = computed(() => Math.max(0, props.depth - (props.choiceContinuation ? 1 : 0)));
 
 function selectPending(ids: string[]) { pendingIds.value = ids.slice(0, 1); }
@@ -90,6 +93,14 @@ function addFinding() {
   if (!item) return;
   addCatalogItem(item);
   pendingIds.value = [];
+  void nextTick(() => {
+    const row = Array.from(levelElement.value?.children ?? []).find((element) =>
+      element instanceof HTMLElement && element.dataset.findingId === item.id) as HTMLElement | undefined;
+    const field = row?.querySelector<HTMLElement>(
+      'input:not([type="hidden"]), select, textarea, button:not(.instrumental-finding-delete)',
+    );
+    (field ?? row)?.focus();
+  });
 }
 function requestChoiceChange(
   requestedId: string,
@@ -309,30 +320,7 @@ function updateIntegerValue(finding: InstrumentalFindingValue, event: Event) {
 </script>
 
 <template>
-  <div class="instrumental-finding-level medical-card-action-subgrid">
-    <div v-if="options.length" class="instrumental-finding-create medical-card-action-subgrid" :style="{ '--instrumental-depth': depth }" :data-hierarchy-depth="depth">
-      <span class="field-label instrumental-finding-create-label">{{ depth ? 'Показатель' : 'Раздел исследования' }}</span>
-      <AppCatalogCombobox
-        class="instrumental-finding-picker"
-        :selected-ids="pendingIds"
-        :label="depth ? `Добавить показатель для «${parentName}»` : 'Добавить раздел исследования'"
-        :options="options"
-        custom-text=""
-        :allow-custom="false"
-        :placeholder="depth ? 'Выберите показатель' : 'Выберите раздел'"
-        :disabled-title="depth ? 'Все показатели добавлены' : 'Все разделы добавлены'"
-        @update:selected-ids="selectPending"
-      />
-      <button
-        type="button"
-        class="outline-action inline medical-card-action instrumental-finding-add"
-        :disabled="!pendingFinding"
-        :title="depth ? 'Добавить показатель' : 'Добавить раздел'"
-        :aria-label="depth ? 'Добавить показатель' : 'Добавить раздел'"
-        @click="addFinding"
-      ><AppIcon name="plus" /></button>
-    </div>
-
+  <div ref="levelElement" class="instrumental-finding-level medical-card-action-subgrid">
     <div v-if="hasResultRows" class="instrumental-result-headings medical-card-action-subgrid" aria-hidden="true">
       <div class="instrumental-result-heading-content" :style="{ '--instrumental-depth': depth }" :data-hierarchy-depth="depth">
         <span>Показатель</span><span>Результат</span>
@@ -407,6 +395,8 @@ function updateIntegerValue(finding: InstrumentalFindingValue, event: Event) {
       v-for="finding in indicatorValues"
       :key="finding.findingId"
       class="instrumental-finding-row medical-card-action-subgrid"
+      :data-finding-id="finding.findingId"
+      tabindex="-1"
       :class="{
         'instrumental-result-row': isResultFinding(finding) && !isRootFreeText(finding),
         'instrumental-root-choice-row': isRootChoiceFinding(finding),
@@ -528,6 +518,34 @@ function updateIntegerValue(finding: InstrumentalFindingValue, event: Event) {
         :choice-continuation="isChoiceContinuation(choiceChildrenCatalog(choiceValue, catalogItem(finding)))"
         @update:model-value="updateChildren(choiceValue, $event)"
       />
+    </div>
+    <div
+      v-if="options.length"
+      class="instrumental-finding-create medical-card-action-subgrid"
+      :class="{ 'instrumental-finding-create-after-values': hasRenderedValues }"
+      :style="{ '--instrumental-depth': depth }"
+      :data-hierarchy-depth="depth"
+    >
+      <span class="field-label instrumental-finding-create-label">{{ depth ? 'Показатель' : 'Раздел исследования' }}</span>
+      <AppCatalogCombobox
+        class="instrumental-finding-picker"
+        :selected-ids="pendingIds"
+        :label="depth ? `Добавить показатель для «${parentName}»` : 'Добавить раздел исследования'"
+        :options="options"
+        custom-text=""
+        :allow-custom="false"
+        :placeholder="depth ? 'Выберите показатель' : 'Выберите раздел'"
+        :disabled-title="depth ? 'Все показатели добавлены' : 'Все разделы добавлены'"
+        @update:selected-ids="selectPending"
+      />
+      <button
+        type="button"
+        class="outline-action inline medical-card-action instrumental-finding-add"
+        :disabled="!pendingFinding"
+        :title="depth ? 'Добавить показатель' : 'Добавить раздел'"
+        :aria-label="depth ? 'Добавить показатель' : 'Добавить раздел'"
+        @click="addFinding"
+      ><AppIcon name="plus" /></button>
     </div>
     <ConfirmationDialog
       v-model="confirmOpen"

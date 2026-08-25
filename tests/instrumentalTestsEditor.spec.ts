@@ -56,7 +56,11 @@ async function addFinding(wrapper: VueWrapper, id: string) {
   if (!selector) throw new Error(`Missing indicator selector for ${id}`);
   selector.vm.$emit("update:selectedIds", [id]);
   await flushPromises();
-  await level.get(".instrumental-finding-add").trigger("click");
+  const createElement = selector.element.closest(".instrumental-finding-create");
+  const createRow = level.findAll(".instrumental-finding-create")
+    .find((candidate) => candidate.element === createElement);
+  if (!createRow) throw new Error(`Missing create row for ${id}`);
+  await createRow.get(".instrumental-finding-add").trigger("click");
   await flushPromises();
 }
 
@@ -68,6 +72,53 @@ async function selectChoice(wrapper: VueWrapper, id: string) {
 }
 
 describe("InstrumentalTestsEditor", () => {
+  it("places level creation after values, preserves data, and focuses an added finding", async () => {
+    const catalog: readonly InstrumentalFindingCatalogItem[] = [
+      { id: "first", name: "Первый", kind: "short-text", children: [] },
+      { id: "second", name: "Второй", kind: "short-text", children: [] },
+    ];
+    let current: readonly InstrumentalFindingValue[] = [{
+      findingId: "first",
+      findingName: "Первый",
+      value: "Сохранено",
+      children: [],
+    }];
+    const wrapper = mount(InstrumentalFindingEditor, {
+      attachTo: document.body,
+      props: {
+        catalog,
+        modelValue: current,
+        depth: 1,
+        parentName: "Раздел",
+        "onUpdate:modelValue": (value: readonly InstrumentalFindingValue[]) => {
+          current = value;
+          void wrapper.setProps({ modelValue: value });
+        },
+      },
+    });
+    const levelChildren = Array.from(wrapper.element.children);
+    expect(levelChildren.indexOf(wrapper.get('[data-finding-id="first"]').element))
+      .toBeLessThan(levelChildren.indexOf(wrapper.get(".instrumental-finding-create").element));
+
+    wrapper.findComponent(AppCatalogCombobox).vm.$emit("update:selectedIds", ["second"]);
+    await flushPromises();
+    await wrapper.get(".instrumental-finding-add").trigger("click");
+    await flushPromises();
+
+    expect(current).toEqual([
+      expect.objectContaining({ findingId: "first", value: "Сохранено" }),
+      expect.objectContaining({ findingId: "second", value: "" }),
+    ]);
+    expect(document.activeElement).toBe(wrapper.get('input[aria-label="Второй"]').element);
+    expect(wrapper.find(".instrumental-finding-create").exists()).toBe(false);
+
+    await wrapper.get('button[aria-label="Удалить показатель «Второй»"]').trigger("click");
+    await flushPromises();
+    expect(wrapper.find('[role="alertdialog"]').exists()).toBe(false);
+    expect(wrapper.get(".instrumental-finding-create-after-values").exists()).toBe(true);
+    wrapper.unmount();
+  });
+
   it("hides an indicator selector when every indicator at its level is already added", async () => {
     const catalog: readonly InstrumentalFindingCatalogItem[] = [{
       id: "size",

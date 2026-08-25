@@ -3,7 +3,7 @@
 // All rights reserved.
 // This file is a part of Klinok application
 
-import { computed, ref } from "vue";
+import { computed, nextTick, ref } from "vue";
 import { LABORATORY_STUDY_OPTIONS, laboratoryStudyTypeById, type LaboratoryStudyValue, type LaboratoryTestsSectionValue } from "@klinok/contracts";
 import AppCatalogCombobox from "./AppCatalogCombobox.vue";
 import AppIcon from "./AppIcon.vue";
@@ -18,6 +18,7 @@ const model = defineModel<LaboratoryTestsSectionValue>({ required: true });
 const pending = ref<{ action: () => void; title: string; description: string } | null>(null);
 const pendingTypeIds = ref<string[]>([]);
 const pendingIndicatorIds = ref<Record<string, string[]>>({});
+const resultFields = new Map<string, HTMLInputElement>();
 const pendingType = computed(() => laboratoryStudyTypeById(pendingTypeIds.value[0] ?? ""));
 const confirmOpen = computed({ get: () => Boolean(pending.value), set: (value) => { if (!value) pending.value = null; } });
 const confirmTitle = computed(() => pending.value?.title ?? "Удалить заполненное исследование?");
@@ -67,6 +68,12 @@ function indicatorOptions(study: LaboratoryStudyValue) {
     .map((indicator) => ({ id: indicator.id, label: `${indicator.name} · ${indicator.unit || "—"}` }));
 }
 function selectedIndicatorIds(studyId: string) { return pendingIndicatorIds.value[studyId] ?? []; }
+function resultFieldKey(studyId: string, indicatorId: string) { return `${studyId}:${indicatorId}`; }
+function setResultField(studyId: string, indicatorId: string, element: unknown) {
+  const key = resultFieldKey(studyId, indicatorId);
+  if (element instanceof HTMLInputElement) resultFields.set(key, element);
+  else resultFields.delete(key);
+}
 function selectIndicator(studyId: string, ids: string[]) {
   pendingIndicatorIds.value = { ...pendingIndicatorIds.value, [studyId]: ids.slice(0, 1) };
 }
@@ -93,6 +100,7 @@ function addIndicator(study: LaboratoryStudyValue) {
     }],
   });
   selectIndicator(study.id, []);
+  void nextTick(() => resultFields.get(resultFieldKey(study.id, indicator.id))?.focus());
 }
 function removeIndicator(studyId: string, indicatorId: string) {
   const study = model.value.studies.find((candidate) => candidate.id === studyId);
@@ -129,6 +137,29 @@ function updateInfectionMethod(study: Extract<LaboratoryStudyValue, { mode: "inf
         <label><span>Оборудование</span><input v-model="study.equipment" /></label>
       </div>
       <template v-if="study.mode === 'panel' && study.typeId">
+        <div v-if="study.results.length" class="laboratory-panel-results laboratory-editor-results" role="group" aria-label="Показатели исследования">
+          <div class="laboratory-panel-layout" :class="{ 'laboratory-panel-layout-multiple': study.results.length > 1 }">
+            <div class="laboratory-result-headings laboratory-result-headings-primary" aria-hidden="true">
+              <span>Показатель</span><span>Результат</span><span>Референсные значения</span>
+            </div>
+            <div v-if="study.results.length > 1" class="laboratory-result-headings laboratory-result-headings-secondary" aria-hidden="true">
+              <span>Показатель</span><span>Результат</span><span>Референсные значения</span>
+            </div>
+            <div v-for="result in study.results" :key="result.indicatorId" class="laboratory-result-row medical-card-action-grid">
+              <div class="laboratory-result-indicator">
+                <span>{{ result.indicatorName }}</span>
+                <span class="laboratory-result-unit">{{ result.unit || '—' }}</span>
+              </div>
+              <label>
+                <span class="laboratory-result-mobile-name" :title="`${result.indicatorName} · ${result.unit || '—'}`">{{ result.indicatorName }} · {{ result.unit || '—' }}</span>
+                <input :ref="(element) => setResultField(study.id, result.indicatorId, element)" v-model="result.result" required :aria-label="`${result.indicatorName}, результат`" :aria-invalid="invalid(errors.studies[index]?.indicators?.[result.indicatorId])" />
+                <small v-if="errors.studies[index]?.indicators?.[result.indicatorId]" class="field-error" role="alert">{{ errors.studies[index]?.indicators?.[result.indicatorId] }}</small>
+              </label>
+              <label><span class="laboratory-result-label">Референсные значения</span><input v-model="result.reference" /></label>
+              <button type="button" class="outline-action inline danger-outline medical-card-action laboratory-result-delete" title="Удалить показатель" :aria-label="`Удалить показатель «${result.indicatorName}»`" @click="removeIndicator(study.id, result.indicatorId)"><AppIcon name="trash" /></button>
+            </div>
+          </div>
+        </div>
         <div v-if="indicatorOptions(study).length" class="laboratory-indicator-create">
           <span class="field-label">Показатель</span>
           <div class="laboratory-indicator-create-control medical-card-action-grid">
@@ -151,29 +182,6 @@ function updateInfectionMethod(study: Extract<LaboratoryStudyValue, { mode: "inf
               aria-label="Добавить показатель"
               @click="addIndicator(study)"
             ><AppIcon name="plus" /></button>
-          </div>
-        </div>
-        <div v-if="study.results.length" class="laboratory-panel-results laboratory-editor-results" role="group" aria-label="Показатели исследования">
-          <div class="laboratory-panel-layout" :class="{ 'laboratory-panel-layout-multiple': study.results.length > 1 }">
-            <div class="laboratory-result-headings laboratory-result-headings-primary" aria-hidden="true">
-              <span>Показатель</span><span>Результат</span><span>Референсные значения</span>
-            </div>
-            <div v-if="study.results.length > 1" class="laboratory-result-headings laboratory-result-headings-secondary" aria-hidden="true">
-              <span>Показатель</span><span>Результат</span><span>Референсные значения</span>
-            </div>
-            <div v-for="result in study.results" :key="result.indicatorId" class="laboratory-result-row medical-card-action-grid">
-              <div class="laboratory-result-indicator">
-                <span>{{ result.indicatorName }}</span>
-                <span class="laboratory-result-unit">{{ result.unit || '—' }}</span>
-              </div>
-              <label>
-                <span class="laboratory-result-mobile-name" :title="`${result.indicatorName} · ${result.unit || '—'}`">{{ result.indicatorName }} · {{ result.unit || '—' }}</span>
-                <input v-model="result.result" required :aria-label="`${result.indicatorName}, результат`" :aria-invalid="invalid(errors.studies[index]?.indicators?.[result.indicatorId])" />
-                <small v-if="errors.studies[index]?.indicators?.[result.indicatorId]" class="field-error" role="alert">{{ errors.studies[index]?.indicators?.[result.indicatorId] }}</small>
-              </label>
-              <label><span class="laboratory-result-label">Референсные значения</span><input v-model="result.reference" /></label>
-              <button type="button" class="outline-action inline danger-outline medical-card-action laboratory-result-delete" title="Удалить показатель" :aria-label="`Удалить показатель «${result.indicatorName}»`" @click="removeIndicator(study.id, result.indicatorId)"><AppIcon name="trash" /></button>
-            </div>
           </div>
         </div>
       </template>
