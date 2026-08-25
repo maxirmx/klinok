@@ -40,6 +40,17 @@
 - Set medical-card comment textareas to `rows="2"` and apply the shared `medical-card-comment` class so global textarea minimum heights do not enlarge them. Keep larger textareas for standalone free-text sections whose primary content is not a comment.
 - In read-only medical-record history, structured section body text and values must inherit the same font family, size, weight, and line height as the `Что случилось` section. Labels may use the shared smaller muted-label treatment, but nested templates must not introduce a different body typography scale.
 
+## Instrumental hierarchy
+
+- Use one logical depth model in every editable structured instrumental study, including new-record and existing-record editors. Root `Раздел` rows are depth 0, their direct indicators are depth 1, and every conditionally revealed or otherwise nested child advances exactly one depth from its owning indicator. Apply this model to groups, single choices, integers, short and long text, selection sets, multiple-choice panels, and add controls; do not flatten any render mode into its parent depth.
+- Treat a choice-continuation selector as the result continuation of its owning indicator: keep the continuation selector at the owning indicator's visual depth and in the shared result column, without repeating the indicator label. Render indicators and controls revealed by that selected choice at the next logical depth.
+- On wide layouts, express each logical depth with a `22px` label/tree-marker step. Indent the indicator label and hierarchy marker, while keeping column headings and every result control aligned to the common result column. Hierarchy rendering must not move or create a competing trailing action rail.
+- On narrow layouts, indent the complete child content by the same `22px` step per logical depth while preserving the fixed action size, top alignment, order, spacing, and inline-end action-rail position. Nested content must not create horizontal page or card overflow.
+- Hide an instrumental or laboratory indicator add row, including its selector and add button, when no catalog options remain at that level. Restore the row immediately when removing an indicator makes an option available again.
+- Require destructive confirmation only at `Раздел` level and above, such as deleting a populated section or study. Removing or clearing indicators, choice values, selection-set values, nested groups, and other descendants below `Раздел` must be immediate, even when they contain nested data.
+- Keep read-only instrumental history on its existing recursive nested-list presentation. Do not apply editable-editor depth markers, indentation rules, controls, or action-rail layout to read-only views.
+- Add regression coverage for hierarchy changes across depths 0 through 3, every affected render mode, exhausted selectors, confirmation boundaries, wide label indentation with aligned result columns, and narrow indentation without overflow.
+
 ## User-facing alerts
 
 - Use `src/stores/alert.ts` for transient operation success and error messages that belong to the current page. Render them only through the shared `src/components/AppAlert.vue` surface; do not add screen-local page-level alert implementations.

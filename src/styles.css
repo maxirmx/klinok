@@ -3399,14 +3399,14 @@ dd {
 .instrumental-finding-picker {
   grid-column: 1;
   min-width: 0;
-  padding-inline-start: calc(var(--instrumental-depth, 0) * 14px);
+  padding-inline-start: calc(var(--instrumental-depth, 0) * 22px);
 }
 .instrumental-finding-create-label { grid-row: 1; }
 .instrumental-finding-picker { grid-row: 2; }
 .instrumental-finding-content {
   grid-column: 1;
   min-width: 0;
-  padding-inline-start: calc(var(--instrumental-depth, 0) * 14px);
+  padding-inline-start: calc(var(--instrumental-depth, 0) * 22px);
 }
 .instrumental-result-headings { display: none; }
 .instrumental-result-heading-content,
@@ -3415,11 +3415,15 @@ dd {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   min-width: 0;
-  padding-inline-start: calc(var(--instrumental-depth, 0) * 14px);
+  padding-inline-start: calc(var(--instrumental-depth, 0) * 22px);
 }
 .instrumental-result-content { align-content: start; gap: 2px; }
 .instrumental-result-control { display: grid; min-width: 0; align-content: start; gap: 2px; }
 .instrumental-result-control :is(input, .app-select, textarea) { width: 100%; min-width: 0; box-sizing: border-box; }
+.instrumental-multiple-choice-panel { min-width: 0; }
+.instrumental-multiple-choice-panel > .medical-card-options { margin-top: 3px; }
+.instrumental-selection-set-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px 10px; }
+.instrumental-selection-set-field { display: grid; min-width: 0; align-content: start; gap: 2px; }
 .instrumental-integer-field { display: grid; grid-template-columns: minmax(0, 1fr) auto; min-width: 0; }
 .workspace-content .instrumental-integer-field > input {
   border-start-end-radius: 0;
@@ -3460,9 +3464,43 @@ dd {
   .instrumental-result-content {
     grid-template-columns: minmax(12rem, 1.5fr) minmax(8rem, 1fr);
     gap: .75rem;
+    padding-inline-start: 0;
   }
   .instrumental-choice-continuation-content > .instrumental-result-control { grid-column: 2; }
-  .instrumental-result-desktop-name { display: block; min-width: 0; overflow-wrap: anywhere; }
+  .instrumental-selection-set-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .instrumental-selection-set-field-wide { grid-column: 1 / -1; }
+  .instrumental-result-desktop-name {
+    position: relative;
+    display: block;
+    min-width: 0;
+    padding-inline-start: calc(var(--instrumental-depth, 0) * 22px);
+    overflow-wrap: anywhere;
+  }
+  .instrumental-result-content:not([data-hierarchy-depth="0"]) > .instrumental-result-desktop-name::before {
+    position: absolute;
+    inset-block-start: .15em;
+    inset-inline-start: calc(var(--instrumental-depth, 1) * 22px - 14px);
+    width: 8px;
+    height: .7em;
+    border-block-end: 2px solid var(--border-color, #d7dde5);
+    border-inline-start: 2px solid var(--border-color, #d7dde5);
+    border-end-start-radius: 4px;
+    content: "";
+  }
+  .instrumental-finding-content:not(.instrumental-result-content):not([data-hierarchy-depth="0"]) {
+    position: relative;
+  }
+  .instrumental-finding-content:not(.instrumental-result-content):not([data-hierarchy-depth="0"])::before {
+    position: absolute;
+    inset-block-start: .15em;
+    inset-inline-start: calc(var(--instrumental-depth, 1) * 22px - 14px);
+    width: 8px;
+    height: .7em;
+    border-block-end: 2px solid var(--border-color, #d7dde5);
+    border-inline-start: 2px solid var(--border-color, #d7dde5);
+    border-end-start-radius: 4px;
+    content: "";
+  }
   .instrumental-result-mobile-name { display: none; }
   .workspace-content .instrumental-findings-grid .instrumental-result-row .instrumental-finding-delete { margin-top: 0; }
 }

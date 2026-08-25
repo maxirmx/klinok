@@ -3,6 +3,7 @@
 // This file is a part of Klinok application
 
 import {
+  canonicalizeInstrumentalFindingValues,
   instrumentalStudyTypeById,
   normalizeInstrumentalTestsValue,
 } from "./repositories/types";
@@ -33,7 +34,16 @@ function validateFindings(
   for (const value of values) {
     const item = catalogById.get(value.findingId);
     if (!item) continue;
-    if (item.kind === "group" && !value.children.length) errors[item.id] = `Заполните показатель «${item.name}».`;
+    if (item.selectionSets?.length) {
+      const selectedIds = new Set(value.children.map((child) => child.findingId));
+      for (const set of item.selectionSets) {
+        if (set.required && !set.choiceIds.some((id) => selectedIds.has(id))) {
+          errors[`${item.id}:${set.key}`] = `Заполните характеристику «${set.name}».`;
+        }
+      }
+    } else if (item.kind === "group" && !value.children.length && item.selectionMode !== "multiple") {
+      errors[item.id] = `Заполните показатель «${item.name}».`;
+    }
     if (item.kind === "integer" || item.kind === "short-text" || item.kind === "long-text") {
       const text = value.value?.trim() ?? "";
       if (!text) errors[item.id] = `Заполните поле «${item.name}».`;
@@ -70,7 +80,7 @@ export function parseInstrumentalTestsDraft(
     } else {
       errors.findings = {};
       if (!study.findings.length) errors.section = "Добавьте результаты инструментального исследования.";
-      validateFindings(study.findings, type.findings, errors.findings);
+      validateFindings(canonicalizeInstrumentalFindingValues(study.findings), type.findings, errors.findings);
     }
     return errors;
   });

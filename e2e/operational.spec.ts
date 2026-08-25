@@ -43,6 +43,31 @@ async function expectTopAligned(action: Locator, peer: Locator): Promise<void> {
   expect(Math.abs(actionBox!.y - peerBox!.y)).toBeLessThanOrEqual(1);
 }
 
+async function expectHierarchyIndent(parent: Locator, child: Locator, minimum = 18): Promise<void> {
+  const [parentBox, childBox] = await Promise.all([parent.boundingBox(), child.boundingBox()]);
+  expect(parentBox).not.toBeNull();
+  expect(childBox).not.toBeNull();
+  expect(childBox!.x - parentBox!.x).toBeGreaterThanOrEqual(minimum);
+}
+
+async function expectHierarchyTextIndent(parent: Locator, child: Locator, minimum = 18): Promise<void> {
+  const textStart = (element: Element) => {
+    const range = document.createRange();
+    range.selectNodeContents(element);
+    return range.getBoundingClientRect().x;
+  };
+  const [parentX, childX] = await Promise.all([parent.evaluate(textStart), child.evaluate(textStart)]);
+  expect(childX - parentX).toBeGreaterThanOrEqual(minimum);
+}
+
+async function expectHierarchyMarker(target: Locator): Promise<void> {
+  const marker = await target.evaluate((element) => {
+    const style = getComputedStyle(element, "::before");
+    return { content: style.content, inlineBorder: style.borderInlineStartWidth };
+  });
+  expect(marker).toEqual({ content: '""', inlineBorder: "2px" });
+}
+
 async function expectSameHorizontalBounds(first: Locator, second: Locator): Promise<void> {
   const [firstBox, secondBox] = await Promise.all([first.boundingBox(), second.boundingBox()]);
   expect(firstBox).not.toBeNull();
@@ -463,6 +488,16 @@ test("fresh provisioning, Doctor approval, grant, draft, and confirmation", asyn
     await selector.selectOption({ label: valueName });
     return selector;
   };
+  const addNestedInstrumentalFinding = async (level: Locator, findingName: string) => {
+    const createRow = level.locator(":scope > .instrumental-finding-create");
+    const combobox = createRow.getByRole("combobox");
+    await combobox.fill(findingName);
+    await createRow.getByRole("option", { name: findingName, exact: true }).click();
+    const add = createRow.getByRole("button", { name: "Добавить показатель" });
+    await expectTopAligned(add, createRow.locator(".app-catalog-control"));
+    await add.click();
+    return add;
+  };
   const addPancreas = await addInstrumentalFinding("Добавить раздел исследования", "Поджелудочная железа");
   const pancreasValueSelector = await selectInstrumentalValue("Поджелудочная железа", "Визуализируется");
   const pancreasRow = pancreasValueSelector.locator("xpath=ancestor::div[contains(concat(' ', normalize-space(@class), ' '), ' instrumental-root-choice-row ')][1]");
@@ -475,30 +510,131 @@ test("fresh provisioning, Doctor approval, grant, draft, and confirmation", asyn
   const addLiver = await addInstrumentalFinding("Добавить раздел исследования", "Печень");
   const addFocalFindings = await addInstrumentalFinding("Добавить показатель для «Печень»", "Очаговые образования");
   const focalFindingsSelector = await selectInstrumentalValue("Очаговые образования", "Визуализируются");
-  const focalCountSelector = instrumentalCard.getByRole("combobox", {
+  const focalFindingsRow = focalFindingsSelector
+    .locator("xpath=ancestor::div[contains(concat(' ', normalize-space(@class), ' '), ' instrumental-finding-row ')][1]");
+  const focalContinuationLevel = focalFindingsRow.locator(":scope > .instrumental-finding-level");
+  const focalCountSelector = focalContinuationLevel.getByRole("combobox", {
     name: "Значение показателя «Визуализируются»",
     exact: true,
   });
   const focalContinuationRow = focalCountSelector.locator("xpath=ancestor::div[contains(concat(' ', normalize-space(@class), ' '), ' instrumental-choice-continuation-row ')][1]");
-  const focalContinuationLevel = focalContinuationRow.locator("xpath=ancestor::div[contains(concat(' ', normalize-space(@class), ' '), ' instrumental-finding-level ')][1]");
   await expect(focalContinuationRow.locator(".instrumental-result-desktop-name, .instrumental-result-mobile-name")).toHaveCount(0);
   await expect(focalContinuationLevel.locator(":scope > .instrumental-result-headings")).toHaveCount(0);
   await expectSameHorizontalBounds(focalFindingsSelector, focalCountSelector);
   await focalCountSelector.selectOption({ label: "Множественные" });
+  await addNestedInstrumentalFinding(focalContinuationLevel, "Эхогенность");
+  const focalEchogenicitySelector = focalContinuationLevel.getByRole("combobox", {
+    name: "Значение показателя «Эхогенность»",
+    exact: true,
+  });
+  const focalEchogenicityRow = focalEchogenicitySelector
+    .locator("xpath=ancestor::div[contains(concat(' ', normalize-space(@class), ' '), ' instrumental-finding-row ')][1]");
+  await expectHierarchyTextIndent(
+    focalFindingsRow.locator(":scope > .instrumental-finding-content > .instrumental-result-desktop-name"),
+    focalEchogenicityRow.locator(":scope > .instrumental-finding-content > .instrumental-result-desktop-name"),
+  );
+  await focalEchogenicitySelector.selectOption({ label: "Гипоэхогенные" });
+  await addNestedInstrumentalFinding(focalContinuationLevel, "Размер");
+  const focalSizeInput = focalContinuationLevel.getByLabel("Размер, мм", { exact: true });
+  const focalSizeField = focalSizeInput.locator("xpath=ancestor::*[contains(concat(' ', normalize-space(@class), ' '), ' instrumental-integer-field ')][1]");
+  await focalSizeInput.fill("9");
+  await expectSameHorizontalBounds(focalFindingsSelector, focalEchogenicitySelector);
+  await expectSameHorizontalBounds(focalFindingsSelector, focalSizeField);
+  await focalFindingsSelector.selectOption({ label: "Не визуализируются" });
+  await expect(focalContinuationLevel).toHaveCount(0);
+  await focalFindingsSelector.selectOption({ label: "Визуализируются" });
+  await focalCountSelector.selectOption({ label: "Множественные" });
+  await addNestedInstrumentalFinding(focalContinuationLevel, "Эхогенность");
+  await focalEchogenicitySelector.selectOption({ label: "Гипоэхогенные" });
+  await addNestedInstrumentalFinding(focalContinuationLevel, "Размер");
+  await focalSizeInput.fill("9");
+  await expect(focalContinuationLevel.locator(":scope > .instrumental-finding-create")).toHaveCount(0);
+
+  const addGallbladder = await addInstrumentalFinding("Добавить раздел исследования", "Желчный пузырь");
+  const addGallbladderSediment = await addInstrumentalFinding("Добавить показатель для «Желчный пузырь»", "Осадок");
+  const gallbladderSedimentSelector = await selectInstrumentalValue("Осадок", "Визуализируется");
+  const gallbladderSedimentRow = gallbladderSedimentSelector
+    .locator("xpath=ancestor::div[contains(concat(' ', normalize-space(@class), ' '), ' instrumental-finding-row ')][1]");
+  const gallbladderVisibleLevel = gallbladderSedimentRow.locator(":scope > .instrumental-finding-level");
+  const sedimentAmountSelector = gallbladderVisibleLevel.getByRole("combobox", {
+    name: "Значение показателя «Визуализируется»",
+    exact: true,
+  });
+  await sedimentAmountSelector.selectOption({ label: "В умеренном количестве" });
+  const sedimentCharacterPanel = gallbladderVisibleLevel.getByRole("group", { name: "Характер осадка", exact: true });
+  await expect(sedimentCharacterPanel.getByRole("checkbox")).toHaveCount(7);
+  await sedimentCharacterPanel.getByRole("checkbox", { name: "Смешанный", exact: true }).check();
+  await sedimentCharacterPanel.getByRole("checkbox", { name: "Подвижный", exact: true }).check();
+  await expectSameHorizontalBounds(gallbladderSedimentSelector, sedimentCharacterPanel);
+  await gallbladderSedimentSelector.selectOption({ label: "Не визуализируется" });
+  await expect(sedimentCharacterPanel).toHaveCount(0);
+  await gallbladderSedimentSelector.selectOption({ label: "Визуализируется" });
+  await sedimentAmountSelector.selectOption({ label: "В умеренном количестве" });
+  await sedimentCharacterPanel.getByRole("checkbox", { name: "Смешанный", exact: true }).check();
+  await sedimentCharacterPanel.getByRole("checkbox", { name: "Подвижный", exact: true }).check();
+
+  const addSpleen = await addInstrumentalFinding("Добавить раздел исследования", "Селезёнка");
+  const addSpleenMasses = await addInstrumentalFinding("Добавить показатель для «Селезёнка»", "Объёмные образования");
+  const spleenMassesSelector = await selectInstrumentalValue("Объёмные образования", "Визуализируются");
+  const spleenMassesRow = spleenMassesSelector
+    .locator("xpath=ancestor::div[contains(concat(' ', normalize-space(@class), ' '), ' instrumental-finding-row ')][1]");
+  const spleenVisibleLevel = spleenMassesRow.locator(":scope > .instrumental-finding-level");
+  const spleenCountSelector = spleenVisibleLevel.getByRole("combobox", {
+    name: "Значение показателя «Визуализируются»",
+    exact: true,
+  });
+  await spleenCountSelector.selectOption({ label: "Единичные" });
+  await addNestedInstrumentalFinding(spleenVisibleLevel, "Размер образований");
+  const spleenSizeInput = spleenVisibleLevel.getByLabel("Размер образований, мм", { exact: true });
+  const spleenSizeField = spleenSizeInput.locator("xpath=ancestor::*[contains(concat(' ', normalize-space(@class), ' '), ' instrumental-integer-field ')][1]");
+  await spleenSizeInput.fill("11");
+  const addSpleenComment = await addInstrumentalFinding("Добавить показатель для «Селезёнка»", "Комментарии");
+  const spleenLevel = spleenMassesRow.locator("xpath=ancestor::div[contains(concat(' ', normalize-space(@class), ' '), ' instrumental-finding-level ')][1]");
+  const spleenComment = spleenLevel.getByLabel("Комментарии", { exact: true });
+  await spleenComment.fill("Без иных изменений");
+  await expectSameHorizontalBounds(spleenMassesSelector, spleenSizeField);
+  await spleenMassesSelector.selectOption({ label: "Не визуализируются" });
+  await expect(spleenSizeInput).toHaveCount(0);
+  await expect(spleenComment).toHaveValue("Без иных изменений");
+  await spleenMassesSelector.selectOption({ label: "Визуализируются" });
+  await spleenCountSelector.selectOption({ label: "Единичные" });
+  await addNestedInstrumentalFinding(spleenVisibleLevel, "Размер образований");
+  await spleenSizeInput.fill("11");
+
+  const addProstate = await addInstrumentalFinding("Добавить раздел исследования", "Предстательная железа");
+  const addProstateContours = await addInstrumentalFinding("Добавить показатель для «Предстательная железа»", "Контуры");
+  const contourRegularity = instrumentalCard.getByRole("combobox", { name: "Ровность контуров", exact: true });
+  const contourDefinition = instrumentalCard.getByRole("combobox", { name: "Чёткость контуров", exact: true });
+  await contourRegularity.selectOption({ label: "Ровные" });
+  await contourDefinition.selectOption({ label: "Нечёткие" });
+  const [regularityBox, definitionBox] = await Promise.all([contourRegularity.boundingBox(), contourDefinition.boundingBox()]);
+  expect(regularityBox).not.toBeNull();
+  expect(definitionBox).not.toBeNull();
+  expect(Math.abs(regularityBox!.y - definitionBox!.y)).toBeLessThanOrEqual(1);
   const addBladder = await addInstrumentalFinding("Добавить раздел исследования", "Мочевой пузырь");
+  await addInstrumentalFinding("Добавить показатель для «Мочевой пузырь»", "Стенка");
+  const deleteBladderWall = instrumentalCard.getByRole("button", { name: "Удалить показатель «Стенка»", exact: true });
+  const bladderWallContent = deleteBladderWall
+    .locator("xpath=ancestor::div[contains(concat(' ', normalize-space(@class), ' '), ' instrumental-finding-row ')][1]")
+    .locator(":scope > .instrumental-finding-content");
+  await expect(bladderWallContent).toHaveAttribute("data-hierarchy-depth", "1");
+  await expectHierarchyMarker(bladderWallContent);
+  await deleteBladderWall.click();
+  await expect(bladderWallContent).toHaveCount(0);
+  await expect(doctorPage.getByRole("alertdialog")).toHaveCount(0);
   const addContents = await addInstrumentalFinding("Добавить показатель для «Мочевой пузырь»", "Содержимое");
   const contentsValueSelector = await selectInstrumentalValue("Содержимое", "Визуализируется");
   const contentsValueControl = contentsValueSelector.first()
     .locator("xpath=ancestor::label[contains(concat(' ', normalize-space(@class), ' '), ' instrumental-result-control ')][1]");
   await expect(contentsValueControl).toHaveClass(/instrumental-result-control/);
   await expect(contentsValueSelector).not.toHaveAttribute("multiple");
-  const addSediment = await addInstrumentalFinding("Добавить показатель для «Визуализируется»", "Взвесь/осадок");
+  await addInstrumentalFinding("Добавить показатель для «Визуализируется»", "Взвесь/осадок");
   const sedimentInput = instrumentalCard.getByLabel("Взвесь/осадок", { exact: true });
   await sedimentInput.fill("Незначительно");
-  const addConcrements = await addInstrumentalFinding("Добавить показатель для «Визуализируется»", "Конкременты");
+  await addInstrumentalFinding("Добавить показатель для «Визуализируется»", "Конкременты");
   await selectInstrumentalValue("Конкременты", "Множественные");
-  const addConcrementSize = await addInstrumentalFinding("Добавить показатель для «Конкременты»", "Размер");
-  const concrementSizeInput = instrumentalCard.getByLabel("Размер, мм", { exact: true });
+  await addInstrumentalFinding("Добавить показатель для «Конкременты»", "Размер");
+  const concrementSizeInput = instrumentalCard.getByLabel("Размер, мм", { exact: true }).last();
   await expect(concrementSizeInput).toHaveAttribute("type", "number");
   await expect(concrementSizeInput).toHaveAttribute("step", "1");
   await expect(concrementSizeInput.locator("xpath=following-sibling::*[contains(concat(' ', normalize-space(@class), ' '), ' instrumental-integer-unit ')]")).toHaveText("мм");
@@ -513,7 +649,9 @@ test("fresh provisioning, Doctor approval, grant, draft, and confirmation", asyn
   await instrumentalCard.getByLabel("Заключение", { exact: true }).fill("Без патологии");
   const deleteInstrumentalStudy = instrumentalCard.getByRole("button", { name: "Удалить исследование" });
   const deleteSediment = instrumentalCard.getByRole("button", { name: "Удалить показатель «Взвесь/осадок»" });
-  const deleteConcrementSize = instrumentalCard.getByRole("button", { name: "Удалить показатель «Размер»", exact: true });
+  const deleteConcrementSize = concrementSizeInput
+    .locator("xpath=ancestor::div[contains(concat(' ', normalize-space(@class), ' '), ' instrumental-finding-row ')][1]")
+    .getByRole("button", { name: "Удалить показатель «Размер»", exact: true });
   const instrumentalResultHeadings = instrumentalCard.locator(".instrumental-result-headings")
     .filter({ hasText: "ПоказательРезультат" });
   await expectTopAligned(addInstrumentalStudy, instrumentalType);
@@ -551,11 +689,15 @@ test("fresh provisioning, Doctor approval, grant, draft, and confirmation", asyn
     deletePancreas,
     addLiver,
     addFocalFindings,
+    addGallbladder,
+    addGallbladderSediment,
+    addSpleen,
+    addSpleenMasses,
+    addSpleenComment,
+    addProstate,
+    addProstateContours,
     addBladder,
     addContents,
-    addSediment,
-    addConcrements,
-    addConcrementSize,
     addUterus,
     deleteUterus,
     addUterusContents,
@@ -616,6 +758,16 @@ test("fresh provisioning, Doctor approval, grant, draft, and confirmation", asyn
   await expectTopAligned(deleteSediment, sedimentInput);
   await expectTopAligned(deleteConcrementSize, concrementSizeInput);
   await expectSameHorizontalBounds(focalFindingsSelector, focalCountSelector);
+  await expectHierarchyIndent(focalFindingsSelector, focalEchogenicitySelector);
+  await expectHierarchyIndent(focalFindingsSelector, focalSizeField);
+  await expectHierarchyIndent(gallbladderSedimentSelector, sedimentCharacterPanel);
+  await expectHierarchyIndent(spleenMassesSelector, spleenSizeField);
+  const [narrowRegularityBox, narrowDefinitionBox] = await Promise.all([
+    contourRegularity.boundingBox(), contourDefinition.boundingBox(),
+  ]);
+  expect(narrowRegularityBox).not.toBeNull();
+  expect(narrowDefinitionBox).not.toBeNull();
+  expect(narrowDefinitionBox!.y).toBeGreaterThan(narrowRegularityBox!.y + narrowRegularityBox!.height - 1);
   await expect(instrumentalResultHeadings.first()).toBeHidden();
   await expect(contentsValueControl.locator(".instrumental-result-mobile-name")).toBeVisible();
   await expectWrappedValue(uterusContentsSelector.locator("..").locator(".app-select-value"), longInstrumentalValue);
@@ -640,6 +792,13 @@ test("fresh provisioning, Doctor approval, grant, draft, and confirmation", asyn
   await expect(doctorRecord).toBeVisible();
   await doctorRecord.locator("summary").click();
   await expect(doctorRecord).toContainText("Размер: 4 мм");
+  await expect(doctorRecord).toContainText("Гипоэхогенные");
+  await expect(doctorRecord).toContainText("Размер: 9 мм");
+  await expect(doctorRecord).toContainText("Смешанный");
+  await expect(doctorRecord).toContainText("Подвижный");
+  await expect(doctorRecord).toContainText("Размер образований: 11 мм");
+  await expect(doctorRecord).toContainText("Ровные");
+  await expect(doctorRecord).toContainText("Нечёткие");
   await doctorRecord.getByRole("button", { name: "Редактировать запись" }).click();
   const inlineEditor = doctorRecord.locator(".encounter-editor-inline");
   const inlineEditorHeading = inlineEditor.locator(".encounter-editor-heading");
@@ -712,6 +871,13 @@ test("fresh provisioning, Doctor approval, grant, draft, and confirmation", asyn
   });
   await expect(ownerInstrumental.getByText("Взвесь/осадок: Незначительно", { exact: true })).toBeVisible();
   await expect(ownerInstrumental.getByText("Заключение: Без патологии", { exact: true })).toBeVisible();
+  await expect(ownerInstrumental.getByText("Гипоэхогенные", { exact: true })).toBeVisible();
+  await expect(ownerInstrumental.getByText("Размер: 9 мм", { exact: true })).toBeVisible();
+  await expect(ownerInstrumental.getByText("Смешанный", { exact: true })).toBeVisible();
+  await expect(ownerInstrumental.getByText("Подвижный", { exact: true })).toBeVisible();
+  await expect(ownerInstrumental.getByText("Размер образований: 11 мм", { exact: true })).toBeVisible();
+  await expect(ownerInstrumental.getByText("Ровные", { exact: true })).toBeVisible();
+  await expect(ownerInstrumental.getByText("Нечёткие", { exact: true })).toBeVisible();
   await expect(ownerRecord.locator("summary")).not.toContainText("Диагноз:");
   const ownerDiagnosis = ownerRecord.locator(".encounter-history-section").filter({
     has: ownerPage.getByRole("heading", { name: "Диагноз", exact: true }),

@@ -40,6 +40,7 @@ export {
   DIAGNOSIS_CATALOG_OPTIONS,
   INSTRUMENTAL_STUDY_CATALOG,
   INSTRUMENTAL_STUDY_OPTIONS,
+  canonicalizeInstrumentalFindingValues,
   MEDICAL_ENCOUNTER_SECTION_KINDS,
   isDiagnosisTaxonomyId,
   instrumentalFindingById,

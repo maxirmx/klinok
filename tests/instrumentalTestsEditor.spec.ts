@@ -11,21 +11,27 @@ import type {
 } from "@klinok/contracts";
 import AppCatalogCombobox from "../src/components/AppCatalogCombobox.vue";
 import InstrumentalFindingEditor from "../src/components/InstrumentalFindingEditor.vue";
+import InstrumentalFindingsView from "../src/components/InstrumentalFindingsView.vue";
 import InstrumentalTestsEditor from "../src/components/InstrumentalTestsEditor.vue";
+
+const prefix = "instrumental.finding.ultrasound-abdomen";
+const id = (code: string) => `${prefix}.${code}`;
 
 function mountEditor(initial: InstrumentalTestsSectionValue = { studies: [] }, errors?: object) {
   let current = initial;
-  const wrapper = mount(InstrumentalTestsEditor, {
+  let wrapper: VueWrapper;
+  wrapper = mount(InstrumentalTestsEditor, {
     props: {
       modelValue: current,
       encounterDate: "2026-08-15",
       ...(errors ? { errors } : {}),
       "onUpdate:modelValue": (value: InstrumentalTestsSectionValue) => {
         current = value;
-        void wrapper.setProps({ modelValue: value });
+        if (wrapper) void wrapper.setProps({ modelValue: value });
       },
     },
   });
+  if (current !== initial) void wrapper.setProps({ modelValue: current });
   return { wrapper, current: () => current };
 }
 
@@ -62,6 +68,41 @@ async function selectChoice(wrapper: VueWrapper, id: string) {
 }
 
 describe("InstrumentalTestsEditor", () => {
+  it("hides an indicator selector when every indicator at its level is already added", async () => {
+    const catalog: readonly InstrumentalFindingCatalogItem[] = [{
+      id: "size",
+      name: "Размер",
+      kind: "integer",
+      unit: "мм",
+      children: [],
+    }];
+    const finding: InstrumentalFindingValue = {
+      findingId: "size",
+      findingName: "Размер",
+      value: "12",
+      unit: "мм",
+      children: [],
+    };
+    const wrapper = mount(InstrumentalFindingEditor, {
+      props: {
+        catalog,
+        modelValue: [finding],
+        depth: 1,
+        parentName: "Печень",
+      },
+    });
+
+    expect(wrapper.find(".instrumental-finding-create").exists()).toBe(false);
+    expect(wrapper.find('input[aria-label="Добавить показатель для «Печень»"]').exists()).toBe(false);
+
+    await wrapper.get('button[aria-label="Удалить показатель «Размер»"]').trigger("click");
+    await flushPromises();
+
+    expect(wrapper.find('[role="alertdialog"]').exists()).toBe(false);
+    expect(wrapper.get(".instrumental-finding-create-label").text()).toBe("Показатель");
+    expect(wrapper.get('input[aria-label="Добавить показатель для «Печень»"]').exists()).toBe(true);
+  });
+
   it("renders the persisted measurement unit instead of the current catalog unit", () => {
     const catalog: readonly InstrumentalFindingCatalogItem[] = [{
       id: "size",
@@ -101,6 +142,20 @@ describe("InstrumentalTestsEditor", () => {
     expect(row.get('button[aria-label="Удалить раздел «Поджелудочная железа»"]').exists()).toBe(true);
   });
 
+  it("marks a nested non-result group at its logical hierarchy depth", async () => {
+    const { wrapper } = mountEditor();
+    await chooseType(wrapper, "instrumental.study.ultrasound-abdomen");
+    await addFinding(wrapper, id("9"));
+    await addFinding(wrapper, id("9.2"));
+
+    const wallRow = wrapper.get('button[aria-label="Удалить показатель «Стенка»"]')
+      .element.closest<HTMLElement>(".instrumental-finding-row")!;
+    const wallContent = wallRow.querySelector<HTMLElement>(":scope > .instrumental-finding-content")!;
+    expect(wallContent.dataset.hierarchyDepth).toBe("1");
+    expect(wallContent.classList).not.toContain("instrumental-result-content");
+    expect(wallContent.querySelector(".instrumental-finding-name")?.textContent).toBe("Стенка");
+  });
+
   it("builds multiple ultrasound branches through arbitrary recursive levels", async () => {
     const { wrapper, current } = mountEditor();
     expect(wrapper.get(".instrumental-study-add").attributes("disabled")).toBeDefined();
@@ -115,6 +170,7 @@ describe("InstrumentalTestsEditor", () => {
     const rootFindingEditor = wrapper.findComponent(InstrumentalFindingEditor);
     expect(rootFindingEditor.findComponent(AppCatalogCombobox).props("placeholder")).toBe("Выберите раздел");
     expect(rootFindingEditor.get(".instrumental-finding-add").attributes("aria-label")).toBe("Добавить раздел");
+    expect(rootFindingEditor.get(".instrumental-finding-create").attributes("data-hierarchy-depth")).toBe("0");
     expect(wrapper.find(".instrumental-study-comment").exists()).toBe(false);
 
     await addFinding(wrapper, "instrumental.finding.ultrasound-abdomen.9");
@@ -126,6 +182,7 @@ describe("InstrumentalTestsEditor", () => {
     expect(focalContinuation.props("choiceContinuation")).toBe(true);
     expect(focalContinuation.find(".instrumental-result-headings").exists()).toBe(false);
     const focalContinuationRow = focalContinuation.get(".instrumental-choice-continuation-row");
+    expect(focalContinuationRow.get(".instrumental-result-content").attributes("data-hierarchy-depth")).toBe("1");
     expect(focalContinuationRow.find(".instrumental-result-desktop-name").exists()).toBe(false);
     expect(focalContinuationRow.find(".instrumental-result-mobile-name").exists()).toBe(false);
     expect(focalContinuationRow.get("select").attributes("aria-label")).toBe("Значение показателя «Визуализируются»");
@@ -153,6 +210,7 @@ describe("InstrumentalTestsEditor", () => {
     const valueField = wrapper.findAll(".instrumental-result-control").find((field) =>
       field.get("select").attributes("aria-label")?.includes("Конкременты"))!;
     expect(valueField.get(".instrumental-result-mobile-name").text()).toBe("Конкременты");
+    expect(valueField.element.closest<HTMLElement>(".instrumental-result-content")!.dataset.hierarchyDepth).toBe("2");
     expect(valueField.get("select").attributes("multiple")).toBeUndefined();
     expect((valueField.get("select").element as HTMLSelectElement).value).toBe("instrumental.finding.ultrasound-abdomen.9.3.5.2.2");
     expect(wrapper.findAll(".instrumental-result-headings")[0]!.text()).toBe("ПоказательРезультат");
@@ -166,7 +224,9 @@ describe("InstrumentalTestsEditor", () => {
     expect(sizeLabel.get(".instrumental-integer-unit").text()).toBe("мм");
     await sizeInput.setValue("4");
     const deepContent = sizeLabel.element.closest<HTMLElement>(".instrumental-finding-content")!;
-    expect(deepContent.style.getPropertyValue("--instrumental-depth")).toBe("3");
+    expect(deepContent.dataset.hierarchyDepth).toBe("3");
+    expect(wrapper.get(`select[aria-label="Значение показателя «Содержимое»"]`)
+      .element.closest<HTMLElement>(".instrumental-result-content")!.dataset.hierarchyDepth).toBe("1");
     expect(bladder?.children[0]?.children[0]?.children[0]?.children.find((item) => item.findingName === "Размер"))
       .toMatchObject({ value: "4", unit: "мм" });
     expect(wrapper.findAll(".instrumental-finding-add").every((button) => button.classes().includes("medical-card-action"))).toBe(true);
@@ -178,9 +238,7 @@ describe("InstrumentalTestsEditor", () => {
 
     await valueField.get("select").setValue("");
     await flushPromises();
-    expect(wrapper.get('[role="alertdialog"]').text()).toContain("Удалить выбранное значение");
-    await wrapper.get('[role="alertdialog"] .danger').trigger("click");
-    await flushPromises();
+    expect(wrapper.find('[role="alertdialog"]').exists()).toBe(false);
     expect((wrapper.findAll("select").find((selector) => selector.attributes("aria-label")?.includes("Конкременты"))!
       .element as HTMLSelectElement).value).toBe("");
     expect(bladder?.children[0]?.children[0]?.children[0]?.children.map((item) => item.findingName)).toEqual(["Размер"]);
@@ -205,6 +263,181 @@ describe("InstrumentalTestsEditor", () => {
     expect(current().studies[0]?.mode === "tree" ? current().studies[0].findings : []).toHaveLength(1);
   });
 
+  it("shows, aligns, persists, and clears conditional liver and spleen measurements", async () => {
+    const { wrapper, current } = mountEditor();
+    await chooseType(wrapper, "instrumental.study.ultrasound-abdomen");
+    await addFinding(wrapper, id("1"));
+    await addFinding(wrapper, id("1.10"));
+    expect(wrapper.find(`option[value="${id("1.11")}"]`).exists()).toBe(false);
+    expect(wrapper.find('input[aria-label="Размер, мм"]').exists()).toBe(false);
+
+    await selectChoice(wrapper, id("1.10.2"));
+    const continuation = levelFor(wrapper, id("1.10.2.1"));
+    expect(continuation.props("choiceContinuation")).toBe(true);
+    expect(continuation.get(".instrumental-finding-create").attributes("data-hierarchy-depth")).toBe("2");
+    await addFinding(wrapper, id("1.11"));
+    await addFinding(wrapper, id("1.12"));
+    await selectChoice(wrapper, id("1.11.3"));
+    await wrapper.get('input[aria-label="Размер, мм"]').setValue("9");
+    const focalSelectorContent = wrapper.get(`select[aria-label="Значение показателя «Очаговые образования»"]`)
+      .element.closest<HTMLElement>(".instrumental-finding-content")!;
+    const echogenicityContent = wrapper.get(`select[aria-label="Значение показателя «Эхогенность»"]`)
+      .element.closest<HTMLElement>(".instrumental-finding-content")!;
+    const sizeContent = wrapper.get('input[aria-label="Размер, мм"]').element
+      .closest<HTMLElement>(".instrumental-finding-content")!;
+    expect(focalSelectorContent.dataset.hierarchyDepth).toBe("1");
+    expect(echogenicityContent.dataset.hierarchyDepth).toBe("2");
+    expect(sizeContent.dataset.hierarchyDepth).toBe("2");
+    await selectChoice(wrapper, id("1.10.1"));
+    expect(wrapper.find(`select[aria-label="Значение показателя «Эхогенность»"]`).exists()).toBe(false);
+    expect(wrapper.find('input[aria-label="Размер, мм"]').exists()).toBe(false);
+    const liver = current().studies[0]?.mode === "tree" ? current().studies[0].findings[0] : undefined;
+    expect(liver?.children[0]?.children).toEqual([expect.objectContaining({ findingId: id("1.10.1"), children: [] })]);
+
+    await addFinding(wrapper, id("4"));
+    await addFinding(wrapper, id("4.4"));
+    await addFinding(wrapper, id("4.6"));
+    await wrapper.get('textarea[aria-label="Комментарии"]').setValue("Сохраняется");
+    await selectChoice(wrapper, id("4.4.2"));
+    await addFinding(wrapper, id("4.5"));
+    const spleenSize = wrapper.get('input[aria-label="Размер образований, мм"]');
+    await spleenSize.setValue("12");
+    expect(wrapper.get(`select[aria-label="Значение показателя «Объёмные образования»"]`)
+      .element.closest<HTMLElement>(".instrumental-finding-content")!.dataset.hierarchyDepth).toBe("1");
+    expect(spleenSize.element.closest<HTMLElement>(".instrumental-finding-content")!.dataset.hierarchyDepth).toBe("2");
+    await selectChoice(wrapper, id("4.4.1"));
+    expect(wrapper.find('input[aria-label="Размер образований, мм"]').exists()).toBe(false);
+    expect(wrapper.get<HTMLTextAreaElement>('textarea[aria-label="Комментарии"]').element.value).toBe("Сохраняется");
+  });
+
+  it("renders sediment character as an optional checkbox group and keeps 0..N selections canonical", async () => {
+    const { wrapper, current } = mountEditor();
+    await chooseType(wrapper, "instrumental.study.ultrasound-abdomen");
+    await addFinding(wrapper, id("2"));
+    await addFinding(wrapper, id("2.5"));
+    expect(wrapper.find("fieldset.instrumental-multiple-choice-panel").exists()).toBe(false);
+    await selectChoice(wrapper, id("2.5.2"));
+
+    const panel = wrapper.get("fieldset.instrumental-multiple-choice-panel");
+    expect(panel.element.closest<HTMLElement>(".instrumental-result-content")!.dataset.hierarchyDepth).toBe("2");
+    expect(panel.get("legend.visually-hidden").text()).toBe("Характер осадка");
+    expect(panel.get(".medical-card-options").exists()).toBe(true);
+    expect(panel.findAll('input[type="checkbox"]')).toHaveLength(7);
+    expect(panel.find("select").exists()).toBe(false);
+    const checkbox = (name: string) => panel.findAll("label.check-row")
+      .find((label) => label.text() === name)!.get<HTMLInputElement>('input[type="checkbox"]');
+    const activeChildren = () => current().studies[0]?.mode === "tree"
+      ? current().studies[0].findings[0]?.children[0]?.children[0]?.children ?? []
+      : [];
+    expect(activeChildren()).toEqual([]);
+    await checkbox("Подвижный").setValue(true);
+    await checkbox("Смешанный").setValue(true);
+    expect(activeChildren()[0]).toMatchObject({
+      findingId: id("2.6"),
+      children: [{ findingId: id("2.6.1") }, { findingId: id("2.6.7") }],
+    });
+    await checkbox("Подвижный").setValue(false);
+    await checkbox("Смешанный").setValue(false);
+    expect(activeChildren()).toEqual([]);
+    await checkbox("Конкременты").setValue(true);
+    await selectChoice(wrapper, id("2.5.1"));
+    expect(wrapper.find("fieldset.instrumental-multiple-choice-panel").exists()).toBe(false);
+    expect(current().studies[0]?.mode === "tree" ? current().studies[0].findings[0]?.children[0]?.children : [])
+      .toEqual([expect.objectContaining({ findingId: id("2.5.1"), children: [] })]);
+  });
+
+  it("edits prostate contour selection sets independently and in catalog order", async () => {
+    const { wrapper, current } = mountEditor();
+    await chooseType(wrapper, "instrumental.study.ultrasound-abdomen");
+    await addFinding(wrapper, id("10"));
+    await addFinding(wrapper, id("10.1"));
+
+    const regularity = wrapper.get<HTMLSelectElement>('select[aria-label="Ровность контуров"]');
+    const definition = wrapper.get<HTMLSelectElement>('select[aria-label="Чёткость контуров"]');
+    expect(regularity.findAll("option").map((option) => option.text())).toEqual(["Не указано", "Ровные", "Неровные"]);
+    expect(definition.findAll("option").map((option) => option.text())).toEqual(["Не указано", "Чёткие", "Нечёткие"]);
+    expect(wrapper.get(".instrumental-selection-set-grid").findAll(".instrumental-selection-set-field")).toHaveLength(2);
+    expect(wrapper.get(".instrumental-selection-set-grid").element
+      .closest<HTMLElement>(".instrumental-result-content")!.dataset.hierarchyDepth).toBe("1");
+    expect(wrapper.find(".instrumental-selection-set-field-wide").exists()).toBe(false);
+    await wrapper.setProps({ errors: { studies: [{ findings: {
+      [`${id("10.1")}:regularity`]: "Заполните характеристику «Ровность контуров».",
+      [`${id("10.1")}:definition`]: "Заполните характеристику «Чёткость контуров».",
+    } }] } });
+    expect(wrapper.findAll(".instrumental-selection-set-field .field-error").map((error) => error.text())).toEqual([
+      "Заполните характеристику «Ровность контуров».",
+      "Заполните характеристику «Чёткость контуров».",
+    ]);
+    expect(regularity.attributes("aria-invalid")).toBe("true");
+    expect(definition.attributes("aria-invalid")).toBe("true");
+    await definition.setValue(id("10.1.4"));
+    await regularity.setValue(id("10.1.1"));
+    expect(definition.element.value).toBe(id("10.1.4"));
+    const contours = current().studies[0]?.mode === "tree"
+      ? current().studies[0].findings[0]?.children[0]
+      : undefined;
+    expect(contours?.children.map((child) => child.findingId)).toEqual([id("10.1.1"), id("10.1.4")]);
+    await regularity.setValue(id("10.1.2"));
+    expect(definition.element.value).toBe(id("10.1.4"));
+    expect(contours?.children.map((child) => child.findingId)).toEqual([id("10.1.2"), id("10.1.4")]);
+    await regularity.setValue("");
+    await definition.setValue("");
+    expect(wrapper.find('[role="alertdialog"]').exists()).toBe(false);
+    expect(contours?.children).toEqual([]);
+    await regularity.setValue(id("10.1.1"));
+    await regularity.setValue("");
+    await definition.setValue(id("10.1.3"));
+    await definition.setValue("");
+    expect(wrapper.find('[role="alertdialog"]').exists()).toBe(false);
+    expect(contours?.children).toEqual([]);
+    await wrapper.get('button[aria-label="Удалить показатель «Контуры»"]').trigger("click");
+    expect(wrapper.find('select[aria-label="Ровность контуров"]').exists()).toBe(false);
+  });
+
+  it("canonicalizes legacy conditional siblings before editing", async () => {
+    const initial: InstrumentalTestsSectionValue = { studies: [{
+      id: "123e4567-e89b-12d3-a456-426614174000",
+      date: "2026-08-15",
+      typeId: "instrumental.study.ultrasound-abdomen",
+      typeName: "УЗИ органов брюшной полости",
+      mode: "tree",
+      findings: [{
+        findingId: id("1"), findingName: "Печень", children: [{
+          findingId: id("1.10"), findingName: "Очаговые образования", children: [{
+            findingId: id("1.10.2"), findingName: "Визуализируются", children: [],
+          }],
+        }, {
+          findingId: id("1.12"), findingName: "Размер", value: "7", unit: "мм", children: [],
+        }],
+      }],
+    }] };
+    const { wrapper, current } = mountEditor(initial);
+    await flushPromises();
+    expect(current().studies[0]?.mode === "tree"
+      ? current().studies[0].findings[0]?.children[0]?.children[0]?.children[0]
+      : undefined).toMatchObject({ findingId: id("1.12"), value: "7" });
+    expect(wrapper.get<HTMLInputElement>('input[aria-label="Размер, мм"]').element.value).toBe("7");
+  });
+
+  it("renders multiple and legacy single contour choices recursively in history", () => {
+    const wrapper = mount(InstrumentalFindingsView, { props: { findings: [{
+      findingId: id("10.1"), findingName: "Контуры", children: [
+        { findingId: id("10.1.1"), findingName: "Ровные", children: [] },
+        { findingId: id("10.1.4"), findingName: "Нечёткие", children: [] },
+      ],
+    }, {
+      findingId: id("2.6"), findingName: "Характер осадка", children: [
+        { findingId: id("2.6.1"), findingName: "Смешанный", children: [] },
+        { findingId: id("2.6.7"), findingName: "Подвижный", children: [] },
+      ],
+    }] } });
+    expect(wrapper.text()).toContain("Контуры");
+    expect(wrapper.text()).toContain("Ровные");
+    expect(wrapper.text()).toContain("Нечёткие");
+    expect(wrapper.text()).toContain("Смешанный");
+    expect(wrapper.text()).toContain("Подвижный");
+  });
+
   it("formats root free-text findings like narrative laboratory results", async () => {
     const { wrapper } = mountEditor();
     await chooseType(wrapper, "instrumental.study.ultrasound-abdomen");
@@ -219,12 +452,14 @@ describe("InstrumentalTestsEditor", () => {
         && content.find(".instrumental-result-mobile-name").text() === "Комментарии")!;
 
     expect(rootContent.classes()).toContain("instrumental-root-free-text");
+    expect(rootContent.attributes("data-hierarchy-depth")).toBe("0");
     expect(rootContent.element.parentElement?.classList).not.toContain("instrumental-result-row");
     expect(rootContent.find("label > span").exists()).toBe(false);
     expect(rootContent.get("textarea").attributes("aria-label")).toBe("Левый надпочечник");
     expect(rootContent.get("textarea").attributes("rows")).toBe("4");
     expect(rootContent.get("textarea").classes()).not.toContain("medical-card-comment");
     expect(nestedContent.classes()).not.toContain("instrumental-root-free-text");
+    expect(nestedContent.attributes("data-hierarchy-depth")).toBe("1");
     expect(nestedContent.get("textarea").attributes("rows")).toBe("2");
     expect(nestedContent.get("textarea").classes()).toContain("medical-card-comment");
   });

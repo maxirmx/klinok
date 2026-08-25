@@ -129,7 +129,7 @@ function updateInfectionMethod(study: Extract<LaboratoryStudyValue, { mode: "inf
         <label><span>Оборудование</span><input v-model="study.equipment" /></label>
       </div>
       <template v-if="study.mode === 'panel' && study.typeId">
-        <div class="laboratory-indicator-create">
+        <div v-if="indicatorOptions(study).length" class="laboratory-indicator-create">
           <span class="field-label">Показатель</span>
           <div class="laboratory-indicator-create-control medical-card-action-grid">
             <AppCatalogCombobox
