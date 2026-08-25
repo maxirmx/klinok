@@ -1747,10 +1747,12 @@ describe("Doctor pages", () => {
     await flushPromises();
     const form = wrapper.get(".encounter-editor > form");
     expect(form.element.lastElementChild?.classList.contains("encounter-outcome")).toBe(true);
-    expect(wrapper.findAll(".encounter-add-section option").map((option) => option.text())).not.toContain("Исход");
+    expect(wrapper.findAll(".encounter-add-section option").map((option) => option.text())).not.toContain("Итог");
     expect(wrapper.find(".encounter-outcome .encounter-section-delete").exists()).toBe(false);
+    expect(wrapper.get(".encounter-outcome h3").text()).toBe("Итог");
     expect(wrapper.get(".encounter-outcome-options").classes()).toContain("medical-card-options");
     expect(wrapper.get(".encounter-outcome-option-panel").element.tagName).toBe("FIELDSET");
+    expect(wrapper.get(".encounter-outcome-option-panel legend").text()).toBe("Итог");
     expect(wrapper.get(".encounter-outcome-option-panel").classes()).toContain("medical-card-option-panel");
     expect(wrapper.get(".encounter-outcome .medical-card-comment-section h4").text()).toBe("Комментарий");
     expect(wrapper.get(".encounter-outcome textarea").attributes("aria-label")).toBe("Комментарий");
@@ -1845,8 +1847,12 @@ describe("Doctor pages", () => {
     expect(saveEncounterButton.text()).toBe("");
     expect(saveEncounterButton.attributes("aria-label")).toBe("Сохранить запись");
     expect(saveEncounterButton.getComponent(AppIcon).props("name")).toBe("check");
+    expect(wrapper.findAll('.doctor-history-filters select[aria-label="Раздел"] option').map((option) => option.text()))
+      .toContain("Итог");
 
     await wrapper.get('.doctor-history-filters input[type="search"]').setValue("Вёра");
+    expect(wrapper.findAll(".medical-record-entry-details")).toHaveLength(1);
+    await wrapper.get('.doctor-history-filters input[type="search"]').setValue("Итог");
     expect(wrapper.findAll(".medical-record-entry-details")).toHaveLength(1);
     await wrapper.get('.doctor-history-filters input[type="search"]').setValue("");
 

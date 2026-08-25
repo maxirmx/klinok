@@ -254,7 +254,7 @@ describe("MedicalRecordEntry", () => {
     const summary = wrapper.get(".owner-encounter-summary");
     expect(summary.text()).toContain(label);
     expect(summary.text()).not.toContain("Подробный комментарий");
-    expect(summary.text()).toContain("Исход: Выздоровление; Улучшение; Назначено лечение");
+    expect(summary.text()).toContain("Итог: Выздоровление; Улучшение; Назначено лечение");
     expect(summary.get(`.medical-record-condition-${tone}`).text()).toBe(label);
   });
 
@@ -319,7 +319,7 @@ describe("MedicalRecordEntry", () => {
     expect(wrapper.find(".medical-record-chevron-collapsed").exists()).toBe(true);
     expect(wrapper.find(".medical-record-chevron-expanded").exists()).toBe(true);
     expect(wrapper.findAll(".encounter-history-section h3").map((node) => node.text()))
-      .toEqual(["Что случилось", "Общие данные/Габитус", "Диагноз", "Исход"]);
+      .toEqual(["Что случилось", "Общие данные/Габитус", "Диагноз", "Итог"]);
     expect(wrapper.get(".owner-encounter-sections").findAll(":scope > .encounter-history-section")).toHaveLength(4);
     expect(wrapper.get(".owner-encounter-sections").classes()).not.toContain("owner-encounter-sections-editing");
     const summary = wrapper.get(".owner-encounter-summary");
@@ -352,7 +352,7 @@ describe("MedicalRecordEntry", () => {
     await wrapper.setProps({ confirmed: false });
     const edit = wrapper.get(".medical-record-edit");
     expect(wrapper.get(".owner-encounter-summary").find(".medical-record-actions").exists()).toBe(false);
-    expect(wrapper.get(".medical-record-collapsed-outcome").text()).toBe("· Исход: Выздоровление; Улучшение; Назначено лечение");
+    expect(wrapper.get(".medical-record-collapsed-outcome").text()).toBe("· Итог: Выздоровление; Улучшение; Назначено лечение");
     expect(wrapper.get(".medical-record-collapsed-diagnosis").text()).toBe("· Диагноз: Гингивит острый");
     expect(wrapper.findAll(".encounter-history-section")[0]!.get(".encounter-history-heading").find(".medical-record-actions").exists()).toBe(true);
     expect(edit.text()).toBe("");
@@ -437,7 +437,7 @@ describe("MedicalRecordEntry", () => {
       },
     });
 
-    expect(wrapper.get(".owner-encounter-summary").text()).toContain("Исход: Не заполнено");
+    expect(wrapper.get(".owner-encounter-summary").text()).toContain("Итог: Не заполнено");
   });
 
   it("renders structured vaccination and chipping details", () => {

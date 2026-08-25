@@ -45,7 +45,6 @@ import {
   emptyDiagnosisDraft,
   emptyGeneralDataDraft,
   emptyVaccinationDraft,
-  encounterSummary,
   generalDataDraft,
   isFreeTextValue,
   isDiagnosisValue,
@@ -53,10 +52,10 @@ import {
   isOutcomeValue,
   isVaccinationValue,
   isWhatHappenedValue,
+  medicalRecordSearchText,
   parseGeneralDataDraft,
   parseDiagnosisDraft,
   parseVaccinationDraft,
-  sectionSearchText,
   vaccinationDraft,
 } from "../medicalEncounter";
 import {
@@ -256,7 +255,7 @@ const filteredRecords = computed(() => petRecords.value.filter((record) => {
   if (historyTo.value && record.encounterDate > historyTo.value) return false;
   if (historySection.value && !record.sections[historySection.value]) return false;
   const query = normalizeRussianSearchText(historyQuery.value);
-  const content = normalizeRussianSearchText(`${encounterSummary(record)} ${record.authorDisplayName} ${record.authorAccountId} ${Object.values(record.sections).map((section) => section ? sectionSearchText(section.value) : "").join(" ")}`);
+  const content = normalizeRussianSearchText(medicalRecordSearchText(record));
   return !query || content.includes(query);
 }).sort((left, right) => (historySort.value === "desc" ? -1 : 1) * (left.encounterDate.localeCompare(right.encounterDate) || left.createdAt.localeCompare(right.createdAt))));
 const pagedRecords = computed(() => filteredRecords.value.slice((historyPage.value - 1) * historyPageSize.value, historyPage.value * historyPageSize.value));

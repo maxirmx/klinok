@@ -27,8 +27,7 @@ import WorkspaceShell from "../components/WorkspaceShell.vue";
 import { appState, logout, requireRepository, searchDoctorDirectory } from "../appStore";
 import {
   ENCOUNTER_SECTION_LABELS,
-  encounterSummary,
-  sectionSearchText,
+  medicalRecordSearchText,
 } from "../medicalEncounter";
 import {
   normalizePetInput,
@@ -154,7 +153,7 @@ const filteredPetRecords = computed(() => petRecords.value.filter((record) => {
   if (medicalSection.value && !record.sections[medicalSection.value]) return false;
   const query = normalizeRussianSearchText(medicalQuery.value);
   if (!query) return true;
-  const content = normalizeRussianSearchText(`${encounterSummary(record)} ${record.authorDisplayName} ${record.authorAccountId} ${Object.values(record.sections).map((section) => section ? sectionSearchText(section.value) : "").join(" ")}`);
+  const content = normalizeRussianSearchText(medicalRecordSearchText(record));
   return content.includes(query);
 }).sort((left, right) => (medicalSort.value === "desc" ? -1 : 1)
   * (left.encounterDate.localeCompare(right.encounterDate) || left.createdAt.localeCompare(right.createdAt))));
