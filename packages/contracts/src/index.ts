@@ -261,7 +261,7 @@ export const MEDICAL_ENCOUNTER_SECTION_KINDS = [
 export type MedicalEncounterSectionKind = (typeof MEDICAL_ENCOUNTER_SECTION_KINDS)[number];
 
 export const WHAT_HAPPENED_TAXONOMY_RANGES = {
-  well: 7,
+  well: 9,
   "problem.general": 18,
   "problem.digestive": 25,
   "problem.respiratory": 5,
