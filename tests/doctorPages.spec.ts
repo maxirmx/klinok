@@ -931,9 +931,14 @@ describe("Doctor pages", () => {
     expect(dateField.get("span").text()).toBe("Дата");
     expect(dateField.get("span").classes()).toContain("visually-hidden");
     expect(dateField.get('input[type="date"]').exists()).toBe(true);
-    const notEating = wrapper.findAll(".encounter-taxonomy label").find((label) => label.text() === "Не ест");
-    expect(notEating).toBeDefined();
-    await notEating!.get("input").trigger("change");
+    const bloodSampling = wrapper.findAll(".encounter-taxonomy label")
+      .find((label) => label.text() === "Взятие анализов")!;
+    const research = wrapper.findAll(".encounter-taxonomy label")
+      .find((label) => label.text() === "Проведение исследования")!;
+    await bloodSampling.get("input").trigger("change");
+    await research.get("input").trigger("change");
+    expect(bloodSampling.get<HTMLInputElement>("input").element.checked).toBe(true);
+    expect(research.get<HTMLInputElement>("input").element.checked).toBe(true);
     expect(save.element.disabled).toBe(true);
     const outcomeOption = (label: string) => wrapper.findAll(".encounter-outcome .check-row")
       .find((option) => option.text() === label)!;
@@ -942,7 +947,7 @@ describe("Doctor pages", () => {
     await outcomeOption("Выздоровление").get("input").trigger("change");
     expect(outcomeOption("Улучшение").get<HTMLInputElement>("input").element.checked).toBe(true);
     expect(outcomeOption("Выздоровление").get<HTMLInputElement>("input").element.checked).toBe(true);
-    await wrapper.get(".encounter-what-happened textarea").setValue("Не ест со вчерашнего дня");
+    await wrapper.get(".encounter-what-happened textarea").setValue("Плановый визит");
     await wrapper.get(".encounter-outcome textarea").setValue("Контроль через неделю");
     await save.trigger("click");
     await flushPromises();
@@ -950,8 +955,8 @@ describe("Doctor pages", () => {
       petId: "pet-1",
       sections: {
         "what-happened": {
-          selectedIds: ["problem.digestive.1"],
-          comment: "Не ест со вчерашнего дня",
+          selectedIds: ["well.8", "well.9"],
+          comment: "Плановый визит",
         },
         outcome: {
           selectedIds: ["outcome.recovery", "outcome.improvement"],
@@ -1707,6 +1712,18 @@ describe("Doctor pages", () => {
     expect(wrapper.findAll('.encounter-condition-trees > .encounter-taxonomy[role="tree"]')).toHaveLength(3);
     expect(wrapper.findAll('.encounter-condition-trees > .encounter-taxonomy[role="tree"]').map((tree) => tree.attributes("aria-label")))
       .toEqual(["Всё хорошо, необходимо", "Не всё хорошо с", "Всё плохо"]);
+    expect(wrapper.findAll('.encounter-condition-trees > .encounter-taxonomy[aria-label="Всё хорошо, необходимо"] label')
+      .map((label) => label.text())).toEqual([
+      "Контрольный осмотр",
+      "Чипирование",
+      "Вакцинация",
+      "Стрижка",
+      "Манипуляции",
+      "Транспортировка",
+      "Повторный осмотр",
+      "Взятие анализов",
+      "Проведение исследования",
+    ]);
     expect(wrapper.findAll(".encounter-condition-trees > .encounter-taxonomy > li > details").every((tree) => tree.attributes("open") === undefined)).toBe(true);
     expect(wrapper.get(".encounter-date-field").exists()).toBe(true);
     const addSection = wrapper.get(".encounter-add-section");

@@ -3,6 +3,7 @@
 // This file is a part of Klinok application
 
 import { describe, expect, it } from "vitest";
+import { isWhatHappenedTaxonomyId } from "../packages/contracts/src/index";
 import {
   ENCOUNTER_SECTION_LABELS,
   WHAT_HAPPENED_TREE,
@@ -34,6 +35,25 @@ import { DIAGNOSIS_CATALOG, DIAGNOSIS_CATALOG_OPTIONS } from "../src/repositorie
 describe("medical encounter templates", () => {
   it("contains stable, arbitrary-depth taxonomy identifiers including laboratory groups", () => {
     expect(WHAT_HAPPENED_TREE.label).toBe("Что случилось");
+    const well = WHAT_HAPPENED_TREE.children?.find((node) => node.id === "well");
+    expect(well?.children?.map(({ id, label }) => ({ id, label }))).toEqual([
+      { id: "well.1", label: "Контрольный осмотр" },
+      { id: "well.2", label: "Чипирование" },
+      { id: "well.3", label: "Вакцинация" },
+      { id: "well.4", label: "Стрижка" },
+      { id: "well.5", label: "Манипуляции" },
+      { id: "well.6", label: "Транспортировка" },
+      { id: "well.7", label: "Повторный осмотр" },
+      { id: "well.8", label: "Взятие анализов" },
+      { id: "well.9", label: "Проведение исследования" },
+    ]);
+    expect(whatHappenedPath("well.1")).toBe("Всё хорошо, необходимо › Контрольный осмотр");
+    expect(whatHappenedPath("well.8")).toBe("Всё хорошо, необходимо › Взятие анализов");
+    expect(whatHappenedPath("well.9")).toBe("Всё хорошо, необходимо › Проведение исследования");
+    expect(isWhatHappenedTaxonomyId("well.1")).toBe(true);
+    expect(isWhatHappenedTaxonomyId("well.8")).toBe(true);
+    expect(isWhatHappenedTaxonomyId("well.9")).toBe(true);
+    expect(isWhatHappenedTaxonomyId("well.10")).toBe(false);
     const laboratory = WHAT_HAPPENED_TREE.children?.find((node) => node.id === "problem")?.children
       ?.find((node) => node.id === "problem.laboratory");
     expect(laboratory?.children?.map((node) => node.id)).toEqual([
@@ -60,6 +80,32 @@ describe("medical encounter templates", () => {
     });
     expect(summary).toContain("Кашляет");
     expect(summary).toContain("Три дня");
+  });
+
+  it("summarizes and indexes the new well-visit options from stable stored identifiers", () => {
+    const sections = {
+      "what-happened": {
+        kind: "what-happened" as const,
+        templateVersion: "what-happened-v1" as const,
+        value: { selectedIds: ["well.8", "well.9"], comment: "Плановый визит" },
+        authorAccountId: "doctor-1",
+        authorDisplayName: "Вера Врач",
+        updatedAt: "2026-08-25T10:00:00.000Z",
+      },
+    };
+    const record = {
+      sections,
+      text: "Плановый визит",
+      authorAccountId: "doctor-1",
+      authorDisplayName: "Вера Врач",
+    };
+
+    expect(encounterSummary(record)).toBe(
+      "Всё хорошо, необходимо › Взятие анализов; Всё хорошо, необходимо › Проведение исследования; Плановый визит",
+    );
+    expect(medicalRecordSearchText(record)).toContain("Взятие анализов");
+    expect(medicalRecordSearchText(record)).toContain("Проведение исследования");
+    expect(sections["what-happened"].value.selectedIds).toEqual(["well.8", "well.9"]);
   });
 
   it("indexes hierarchical and narrative instrumental results", () => {

@@ -55,6 +55,31 @@ async function confirmVaccinationAgainst(current: { confirmed: unknown; profile:
 }
 
 describe("command boundary", () => {
+  it("accepts the appended well-visit taxonomy IDs without changing existing identifiers", () => {
+    const result = validateMedicalEncounter({
+      petId: "pet-1",
+      encounterDate: "2026-08-10",
+      sections: {
+        "what-happened": {
+          selectedIds: ["well.1", "well.7", "well.8", "well.9"],
+          comment: "Плановый визит",
+        },
+        outcome: { selectedIds: ["outcome.observation"], comment: "" },
+      },
+    });
+
+    expect(result.sections["what-happened"].selectedIds)
+      .toEqual(["well.1", "well.7", "well.8", "well.9"]);
+    expect(() => validateMedicalEncounter({
+      petId: "pet-1",
+      encounterDate: "2026-08-10",
+      sections: {
+        "what-happened": { selectedIds: ["well.10"], comment: "" },
+        outcome: { selectedIds: ["outcome.observation"], comment: "" },
+      },
+    })).toThrow("The what-happened section is invalid.");
+  });
+
   it("silently omits legacy free-text laboratory sections", () => {
     const result = validateMedicalEncounter({
       petId: "pet-1",

@@ -376,6 +376,8 @@ test("fresh provisioning, Doctor approval, grant, draft, and confirmation", asyn
   await expect(therapeuticTabs).toHaveCount(5);
   await therapeuticCard.getByRole("button", { name: "Импортировать из «Что случилось»" }).click();
   await expect(therapeuticCard.getByLabel("Проблема", { exact: true })).toHaveValue("Контрольный осмотр");
+  await doctorPage.getByLabel("Взятие анализов", { exact: true }).check();
+  await doctorPage.getByLabel("Проведение исследования", { exact: true }).check();
   await therapeuticCard.getByLabel("Как давно началось").selectOption("problem.onset.today");
   await expect(therapeuticCard.getByLabel("Как давно началось")).toHaveValue("problem.onset.today");
   await therapeuticCard.getByRole("tab", { name: "Рекомендации" }).click();
@@ -791,6 +793,8 @@ test("fresh provisioning, Doctor approval, grant, draft, and confirmation", asyn
   const doctorRecord = doctorPage.locator(".medical-record-entry-details").filter({ hasText: "Всё хорошо" });
   await expect(doctorRecord).toBeVisible();
   await doctorRecord.locator("summary").click();
+  await expect(doctorRecord.getByText("Всё хорошо, необходимо › Взятие анализов", { exact: true })).toBeVisible();
+  await expect(doctorRecord.getByText("Всё хорошо, необходимо › Проведение исследования", { exact: true })).toBeVisible();
   await expect(doctorRecord).toContainText("Размер: 4 мм");
   await expect(doctorRecord).toContainText("Гипоэхогенные");
   await expect(doctorRecord).toContainText("Размер: 9 мм");
@@ -801,6 +805,8 @@ test("fresh provisioning, Doctor approval, grant, draft, and confirmation", asyn
   await expect(doctorRecord).toContainText("Нечёткие");
   await doctorRecord.getByRole("button", { name: "Редактировать запись" }).click();
   const inlineEditor = doctorRecord.locator(".encounter-editor-inline");
+  await expect(inlineEditor.getByLabel("Взятие анализов", { exact: true })).toBeChecked();
+  await expect(inlineEditor.getByLabel("Проведение исследования", { exact: true })).toBeChecked();
   const inlineEditorHeading = inlineEditor.locator(".encounter-editor-heading");
   const editCancel = inlineEditorHeading.getByRole("button", { name: "Отменить редактирование" });
   const editSave = inlineEditorHeading.getByRole("button", { name: "Сохранить запись" });
@@ -822,7 +828,12 @@ test("fresh provisioning, Doctor approval, grant, draft, and confirmation", asyn
   await ownerPage.bringToFront();
   await expectEmailText(request, ownerEmail, "Новая медицинская запись о питомце «Ёжик» ожидает Вашего подтверждения.");
   const ownerRecord = ownerPage.locator(".medical-record-entry-details").filter({ hasText: "Всё хорошо" });
+  const ownerHistorySearch = ownerPage.getByRole("searchbox", { name: "Поиск по истории" });
+  await ownerHistorySearch.fill("Взятие анализов");
   await expect(ownerRecord).toBeVisible({ timeout: replicationTimeout });
+  await ownerHistorySearch.fill("Проведение исследования");
+  await expect(ownerRecord).toBeVisible({ timeout: replicationTimeout });
+  await ownerHistorySearch.fill("");
   const laboratoryComparison = ownerPage.locator(".laboratory-comparison");
   await expect(laboratoryComparison).toBeVisible({ timeout: replicationTimeout });
   await ownerPage.setViewportSize({ width: 1280, height: 720 });
@@ -863,6 +874,8 @@ test("fresh provisioning, Doctor approval, grant, draft, and confirmation", asyn
   await expect(laboratoryComparison.locator(".laboratory-comparison-desktop")).toBeVisible();
   await expect(mobileLaboratoryHistory).toBeHidden();
   await ownerRecord.locator("summary").click();
+  await expect(ownerRecord.getByText("Всё хорошо, необходимо › Взятие анализов", { exact: true })).toBeVisible();
+  await expect(ownerRecord.getByText("Всё хорошо, необходимо › Проведение исследования", { exact: true })).toBeVisible();
   await expect(ownerRecord.locator(".encounter-history-comment").getByText("Состояние стабильное", { exact: true })).toBeVisible();
   await expect(ownerRecord.getByText("В стадии наблюдения", { exact: true })).toBeVisible();
   await expect(ownerRecord.getByText("Контроль через неделю", { exact: true })).toBeVisible();
@@ -933,6 +946,7 @@ test("fresh provisioning, Doctor approval, grant, draft, and confirmation", asyn
       AND before_state='null'::jsonb AND after_state->>'status'='unconfirmed'
       AND after_state->'record'->>'recordId'='${recordId}'
       AND after_state->'record'->'sections'->'what-happened' IS NOT NULL
+      AND after_state->'record'->'sections'->'what-happened'->'value'->'selectedIds' @> '["well.8", "well.9"]'::jsonb
       AND after_state->'record'->'sections'->'diagnosis'->>'templateVersion'='diagnosis-v2'
       AND after_state->'record'->'sections'->'diagnosis'->'value'->'differential'->'customTexts' @> '["Реакция на корм", "Просто шок"]'::jsonb
       AND after_state->'record'->'sections'->'diagnosis'->'value'->'confirmed'='{"customText": ""}'::jsonb`)).toBe("1");
