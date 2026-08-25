@@ -133,7 +133,7 @@ function formatLocalDateTime(value: string) {
           </template>
           <template v-else>{{ encounterSummary(record) }}</template>
           <span v-if="collapsedDiagnosis" class="medical-record-collapsed-diagnosis"> · Диагноз: {{ collapsedDiagnosis }}</span>
-          <span class="medical-record-collapsed-outcome"> · Исход: {{ collapsedOutcome }}</span>
+          <span class="medical-record-collapsed-outcome"> · Итог: {{ collapsedOutcome }}</span>
         </strong>
         <small>Редакция {{ record.revision }} · {{ record.authorDisplayName }}</small>
       </span>

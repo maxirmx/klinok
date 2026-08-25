@@ -141,7 +141,7 @@ export const ENCOUNTER_SECTION_LABELS: Record<MedicalEncounterSectionKind, strin
   "laboratory-tests": "Лабораторные исследования",
   "instrumental-tests": "Инструментальные исследования",
   procedures: "Манипуляции",
-  outcome: "Исход",
+  outcome: "Итог",
 };
 
 export const OPTIONAL_ENCOUNTER_SECTION_KINDS = (Object.keys(ENCOUNTER_SECTION_LABELS) as MedicalEncounterSectionKind[])
@@ -189,14 +189,14 @@ export function replaceConflictingOutcome(ids: readonly string[], id: string): s
 export function outcomeValidationError(value: unknown): string {
   if (!value || typeof value !== "object" || !("selectedIds" in value) || !("comment" in value) ||
     !Array.isArray((value as OutcomeSectionValue).selectedIds) || typeof (value as OutcomeSectionValue).comment !== "string") {
-    return "Заполните раздел «Исход».";
+    return "Заполните раздел «Итог».";
   }
   const ids = (value as OutcomeSectionValue).selectedIds;
-  if (!ids.length) return "В разделе «Исход» выберите хотя бы один вариант.";
-  if (ids.some((id) => typeof id !== "string" || !outcomeLabels.has(id))) return "Раздел «Исход» содержит неизвестный вариант.";
-  if (new Set(ids).size !== ids.length) return "Раздел «Исход» содержит повторяющийся вариант.";
+  if (!ids.length) return "В разделе «Итог» выберите хотя бы один вариант.";
+  if (ids.some((id) => typeof id !== "string" || !outcomeLabels.has(id))) return "Раздел «Итог» содержит неизвестный вариант.";
+  if (new Set(ids).size !== ids.length) return "Раздел «Итог» содержит повторяющийся вариант.";
   if (ids.some((id, index) => ids.slice(index + 1).some((other) => outcomeIdsConflict(id, other)))) {
-    return "Раздел «Исход» содержит несовместимые варианты.";
+    return "Раздел «Итог» содержит несовместимые варианты.";
   }
   return "";
 }
@@ -780,4 +780,15 @@ export function encounterSummary(record: { sections?: MedicalRecordDraft["sectio
   if (!isWhatHappenedValue(value)) return record.text || "Не заполнено";
   const selected = value.selectedIds.map(whatHappenedPath);
   return [...selected, value.comment.trim()].filter(Boolean).join("; ") || "Не заполнено";
+}
+
+export function medicalRecordSearchText(record: Pick<MedicalRecordDraft,
+  "sections" | "text" | "authorDisplayName" | "authorAccountId">): string {
+  const sections = (Object.entries(record.sections) as Array<[
+    MedicalEncounterSectionKind,
+    MedicalRecordDraft["sections"][MedicalEncounterSectionKind],
+  ]>).flatMap(([kind, section]) => section
+    ? [ENCOUNTER_SECTION_LABELS[kind], sectionSearchText(section.value)]
+    : []);
+  return [encounterSummary(record), record.authorDisplayName, record.authorAccountId, ...sections].join(" ");
 }

@@ -4,6 +4,7 @@
 
 import { describe, expect, it } from "vitest";
 import {
+  ENCOUNTER_SECTION_LABELS,
   WHAT_HAPPENED_TREE,
   OUTCOME_OPTIONS,
   calculateNextRevaccinationDate,
@@ -17,6 +18,7 @@ import {
   isGeneralDataValue,
   isDiagnosisValue,
   isVaccinationValue,
+  medicalRecordSearchText,
   normalizeDiagnosisValue,
   parseGeneralDataDraft,
   parseDiagnosisDraft,
@@ -88,6 +90,7 @@ describe("medical encounter templates", () => {
   });
 
   it("defines, validates, and indexes the structured outcome template", () => {
+    expect(ENCOUNTER_SECTION_LABELS.outcome).toBe("Итог");
     expect(OUTCOME_OPTIONS.map((option) => option.label)).toEqual([
       "Без наблюдения",
       "В стадии наблюдения",
@@ -104,12 +107,35 @@ describe("medical encounter templates", () => {
     expect(outcomeValidationError(recoveryAndImprovement)).toBe("");
     expect(sectionSearchText(recoveryAndImprovement))
       .toBe("Выздоровление; Улучшение; Контроль через неделю");
-    expect(outcomeValidationError({ selectedIds: [], comment: "" })).toContain("хотя бы один");
-    expect(outcomeValidationError({ selectedIds: ["outcome.unknown"], comment: "" })).toContain("неизвестный");
+    expect(outcomeValidationError(undefined)).toBe("Заполните раздел «Итог».");
+    expect(outcomeValidationError({ selectedIds: [], comment: "" }))
+      .toBe("В разделе «Итог» выберите хотя бы один вариант.");
+    expect(outcomeValidationError({ selectedIds: ["outcome.unknown"], comment: "" }))
+      .toBe("Раздел «Итог» содержит неизвестный вариант.");
     expect(outcomeValidationError({ selectedIds: ["outcome.recovery", "outcome.recovery"], comment: "" }))
-      .toContain("повторяющийся");
+      .toBe("Раздел «Итог» содержит повторяющийся вариант.");
     expect(outcomeValidationError({ selectedIds: ["outcome.death", "outcome.observation"], comment: "" }))
-      .toContain("несовместимые");
+      .toBe("Раздел «Итог» содержит несовместимые варианты.");
+  });
+
+  it("indexes unchanged stored outcome records under the new section name", () => {
+    const storedOutcome = {
+      kind: "outcome" as const,
+      templateVersion: "outcome-v1" as const,
+      value: { selectedIds: ["outcome.recovery"], comment: "Контроль завершён" },
+      authorAccountId: "doctor-1",
+      authorDisplayName: "Вера Врач",
+      updatedAt: "2026-07-21T12:00:00.000Z",
+    };
+
+    expect(medicalRecordSearchText({
+      sections: { outcome: storedOutcome },
+      text: "",
+      authorAccountId: "doctor-1",
+      authorDisplayName: "Вера Врач",
+    })).toContain("Итог Выздоровление; Контроль завершён");
+    expect(storedOutcome.kind).toBe("outcome");
+    expect(storedOutcome.templateVersion).toBe("outcome-v1");
   });
 
   it("replaces only outcome selections that conflict with the newly selected option", () => {
