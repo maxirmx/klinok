@@ -215,10 +215,11 @@ describe("medical encounter templates", () => {
       .toEqual(["Ротовая полость", "Глаза", "Ушные проходы", "Нос"]);
     expect(DIAGNOSIS_CATALOG.find((group) => group.id === "infectious")?.groups?.map((group) => group.label))
       .toEqual(["Вирусные", "Бактериальные", "Паразитарные"]);
-    expect(DIAGNOSIS_CATALOG_OPTIONS).toHaveLength(392);
-    expect(new Set(DIAGNOSIS_CATALOG_OPTIONS.map((option) => option.id)).size).toBe(392);
+    expect(DIAGNOSIS_CATALOG_OPTIONS).toHaveLength(393);
+    expect(new Set(DIAGNOSIS_CATALOG_OPTIONS.map((option) => option.id)).size).toBe(393);
     expect(DIAGNOSIS_CATALOG_OPTIONS).toEqual(expect.arrayContaining([
       expect.objectContaining({ id: "diagnosis.general.001", label: "Шок гиповолемический" }),
+      expect.objectContaining({ id: "diagnosis.general.019", label: "Клинически здорово" }),
       expect.objectContaining({ label: "Вестибулярный синдром периферический" }),
       expect.objectContaining({ label: "Вестибулярный синдром центральный" }),
       expect.objectContaining({ id: "diagnosis.infectious.viral.009", label: "Коронавирусный энтерит" }),

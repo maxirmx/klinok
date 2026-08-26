@@ -24,6 +24,20 @@ describe("DiagnosisCombobox", () => {
     expect(wrapper.emitted("update:selectedIds")?.at(-1)).toEqual([["diagnosis.general.012"]]);
   });
 
+  it("offers the clinically healthy diagnosis from the general catalog", async () => {
+    const wrapper = mount(DiagnosisCombobox, {
+      props: { label: "Диагноз", selectedIds: [], customText: "" },
+    });
+    const input = wrapper.get<HTMLInputElement>('input[role="combobox"]');
+    await input.setValue("клинически здорово");
+
+    const group = wrapper.get('[role="group"][aria-label="Патологии общего состояния"]');
+    expect(group.get('[role="option"]').text()).toBe("Клинически здорово");
+    await group.get('[role="option"]').trigger("click");
+
+    expect(wrapper.emitted("update:selectedIds")?.at(-1)).toEqual([["diagnosis.general.019"]]);
+  });
+
   it("preserves nested category labels and toggles multiple selections", async () => {
     const wrapper = mount(DiagnosisCombobox, {
       props: { label: "Дифференциальные диагнозы", selectedIds: [], customTexts: [], multiple: true },
