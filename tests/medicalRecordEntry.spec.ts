@@ -539,8 +539,10 @@ describe("MedicalRecordEntry", () => {
 
     const section = wrapper.findAll(".encounter-history-section")
       .find((candidate) => candidate.get("h3").text() === "Терапевтический приём")!;
-    expect(section.find('[role="tablist"]').exists()).toBe(false);
-    expect(section.find('button').exists()).toBe(false);
+    const therapeuticView = section.get(".therapeutic-appointment-view");
+    expect(therapeuticView.find('[role="tablist"]').exists()).toBe(false);
+    expect(therapeuticView.find('[role="tab"]').exists()).toBe(false);
+    expect(therapeuticView.find('[role="tabpanel"]').exists()).toBe(false);
     expect(section.findAll(".therapeutic-history-block > h4").map((heading) => heading.text())).toEqual([
       "Анамнез болезни", "Анамнез жизни", "Осмотр", "Рекомендации", "Назначения",
     ]);

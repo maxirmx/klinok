@@ -19,9 +19,9 @@ const lifeDetails = computed(() => therapeuticSelectionDetails(props.value.lifeA
 const examinationDetails = computed(() => therapeuticSelectionDetails(props.value.examination.selectedIds, EXAMINATION_CATEGORIES));
 const hasLife = computed(() => Boolean(props.value.lifeAnamnesis.text || lifeDetails.value.length
   || props.value.lifeAnamnesis.currentMedications || props.value.lifeAnamnesis.allergies));
-const populatedProblems = computed(() => props.value.diseaseAnamnesis.problems.filter((problem) =>
-  Boolean(problem.title || problemDetails(problem).length),
-));
+const populatedProblems = computed(() => props.value.diseaseAnamnesis.problems
+  .map((problem) => ({ problem, details: problemDetails(problem) }))
+  .filter(({ problem, details }) => Boolean(problem.title || details.length)));
 const hasDisease = computed(() => Boolean(props.value.diseaseAnamnesis.text || populatedProblems.value.length || diseaseDetails.value.length));
 const hasExamination = computed(() => Boolean(props.value.examination.text || examinationDetails.value.length));
 
@@ -49,10 +49,10 @@ function problemDetails(problem: TherapeuticProblemValue): Array<{ label: string
         <div><dt>Комментарий</dt><dd class="therapeutic-history-text">{{ value.diseaseAnamnesis.text }}</dd></div>
       </dl>
       <div v-if="populatedProblems.length" class="therapeutic-history-problems">
-        <article v-for="(problem, index) in populatedProblems" :key="problem.id">
+        <article v-for="({ problem, details }, index) in populatedProblems" :key="problem.id">
           <h5>Проблема {{ index + 1 }}<template v-if="problem.title">: {{ problem.title }}</template></h5>
-          <dl v-if="problemDetails(problem).length" class="therapeutic-history-values">
-            <div v-for="detail in problemDetails(problem)" :key="detail.label"><dt>{{ detail.label }}</dt><dd>{{ detail.value }}</dd></div>
+          <dl v-if="details.length" class="therapeutic-history-values">
+            <div v-for="detail in details" :key="detail.label"><dt>{{ detail.label }}</dt><dd>{{ detail.value }}</dd></div>
           </dl>
         </article>
       </div>
@@ -65,7 +65,7 @@ function problemDetails(problem: TherapeuticProblemValue): Array<{ label: string
       class="therapeutic-history-block"
     >
       <h4>Анамнез жизни</h4>
-      <dl v-if="hasLife" class="therapeutic-history-values">
+      <dl class="therapeutic-history-values">
         <div v-if="value.lifeAnamnesis.text"><dt>Комментарий</dt><dd class="therapeutic-history-text">{{ value.lifeAnamnesis.text }}</dd></div>
         <div v-for="detail in lifeDetails" :key="detail.key"><dt>{{ detail.label }}</dt><dd>{{ detail.value }}</dd></div>
         <div v-if="value.lifeAnamnesis.currentMedications"><dt>Получаемые препараты</dt><dd class="therapeutic-history-text">{{ value.lifeAnamnesis.currentMedications }}</dd></div>
@@ -89,14 +89,14 @@ function problemDetails(problem: TherapeuticProblemValue): Array<{ label: string
       class="therapeutic-history-block"
     >
       <h4>Рекомендации</h4>
-      <p v-if="value.recommendations" class="therapeutic-history-text">{{ value.recommendations }}</p>
+      <p class="therapeutic-history-text">{{ value.recommendations }}</p>
     </section>
     <section
       v-if="value.prescriptions"
       class="therapeutic-history-block"
     >
       <h4>Назначения</h4>
-      <p v-if="value.prescriptions" class="therapeutic-history-text">{{ value.prescriptions }}</p>
+      <p class="therapeutic-history-text">{{ value.prescriptions }}</p>
     </section>
   </div>
 </template>
