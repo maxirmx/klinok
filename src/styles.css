@@ -3526,6 +3526,9 @@ dd {
 .instrumental-history,
 .instrumental-history-study { display: grid; gap: .55rem; }
 .instrumental-history-study + .instrumental-history-study { border-top: 1px solid var(--border-color, #d7dde5); padding-top: 1rem; }
-.instrumental-history-findings { display: grid; gap: 4px; margin: 0; padding-inline-start: 1.25rem; }
-.instrumental-history-findings .instrumental-history-findings { margin-top: 4px; }
-.instrumental-history-findings li { min-width: 0; overflow-wrap: anywhere; }
+.instrumental-history-findings,
+.therapeutic-history-findings { display: grid; gap: 4px; margin: 0; padding-inline-start: 1.25rem; }
+.instrumental-history-findings .instrumental-history-findings,
+.therapeutic-history-findings .therapeutic-history-findings { margin-top: 4px; }
+.instrumental-history-findings li,
+.therapeutic-history-findings li { min-width: 0; overflow-wrap: anywhere; }

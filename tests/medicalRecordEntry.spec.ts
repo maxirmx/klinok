@@ -521,7 +521,14 @@ describe("MedicalRecordEntry", () => {
                   currentMedications: "Не получает",
                   allergies: "Не выявлены",
                 },
-                examination: { text: "Контактен", selectedIds: ["exam.general.state.good"] },
+                examination: {
+                  text: "Контактен",
+                  selectedIds: [
+                    "exam.general.state.good",
+                    "exam.mucosa.color.pale-pink",
+                    "exam.mucosa.moisture.moist",
+                  ],
+                },
                 recommendations: "Контроль через неделю",
                 prescriptions: "Диетический корм",
               },
@@ -552,6 +559,18 @@ describe("MedicalRecordEntry", () => {
     expect(section.text()).toContain("Содержится в квартире");
     expect(section.text()).toContain("Контроль через неделю");
     expect(section.text()).toContain("Диетический корм");
+    const examination = section.findAll(".therapeutic-history-block")
+      .find((block) => block.get("h4").text() === "Осмотр")!;
+    expect(examination.findAll(".therapeutic-history-finding-group > span").map((item) => item.text())).toEqual([
+      "Общее состояние",
+      "Видимые слизистые оболочки (ВСО)",
+    ]);
+    const mucosa = examination.findAll(".therapeutic-history-finding-group")
+      .find((group) => group.get(":scope > span").text() === "Видимые слизистые оболочки (ВСО)")!;
+    expect(mucosa.findAll(".therapeutic-history-finding-detail > span").map((item) => item.text())).toEqual([
+      "Цвет: Бледно-розовые",
+      "Влажность: Влажные",
+    ]);
     expect(section.get(".therapeutic-history-text").text()).toBe("Снижение аппетита\nсо вчерашнего дня");
   });
 

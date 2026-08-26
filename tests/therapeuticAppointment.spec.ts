@@ -19,6 +19,7 @@ import {
   therapeuticCatalogDiagnostics,
   therapeuticOptionLabel,
   therapeuticSelectionDetails,
+  therapeuticSelectionGroups,
 } from "../src/therapeuticAppointment";
 
 describe("therapeutic appointment template", () => {
@@ -194,5 +195,16 @@ describe("therapeutic appointment template", () => {
       DISEASE_ANAMNESIS_CATEGORIES,
     );
     expect(details.map((detail) => detail.value)).toEqual(["Изменилась", "Стало более вялым"]);
+    expect(therapeuticSelectionGroups([
+      "exam.mucosa.color.pale-pink",
+      "exam.mucosa.moisture.moist",
+    ], EXAMINATION_CATEGORIES)).toEqual([{
+      key: "exam.mucosa",
+      label: "Видимые слизистые оболочки (ВСО)",
+      details: [
+        { key: "exam.mucosa.color", label: "Цвет", value: "Бледно-розовые" },
+        { key: "exam.mucosa.moisture", label: "Влажность", value: "Влажные" },
+      ],
+    }]);
   });
 });

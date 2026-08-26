@@ -427,6 +427,11 @@ test("fresh provisioning, Doctor approval, grant, draft, and confirmation", asyn
   await doctorPage.getByLabel("Проведение исследования", { exact: true }).check();
   await therapeuticCard.getByLabel("Как давно началось").selectOption("problem.onset.today");
   await expect(therapeuticCard.getByLabel("Как давно началось")).toHaveValue("problem.onset.today");
+  await therapeuticCard.getByRole("tab", { name: "Осмотр" }).click();
+  await therapeuticCard.getByRole("combobox", { name: "Цвет", exact: true })
+    .selectOption("exam.mucosa.color.pale-pink");
+  await therapeuticCard.getByRole("combobox", { name: "Влажность", exact: true })
+    .selectOption("exam.mucosa.moisture.moist");
   await therapeuticCard.getByRole("tab", { name: "Рекомендации" }).click();
   await therapeuticCard.getByLabel("Текст рекомендаций").fill("Повторный осмотр через неделю");
   await therapeuticCard.getByRole("tab", { name: "Назначения" }).click();
@@ -1059,6 +1064,7 @@ test("fresh provisioning, Doctor approval, grant, draft, and confirmation", asyn
   await expect(ownerTherapeutic.getByRole("tablist")).toHaveCount(0);
   await expect(ownerTherapeutic.locator(".therapeutic-history-block > h4")).toHaveText([
     "Анамнез болезни",
+    "Осмотр",
     "Рекомендации",
     "Назначения",
   ]);
@@ -1066,6 +1072,13 @@ test("fresh provisioning, Doctor approval, grant, draft, and confirmation", asyn
   const ownerProblem = ownerTherapeutic.locator(".therapeutic-history-problems article").filter({ hasText: "Контрольный осмотр" });
   await expect(ownerProblem.getByText("Как давно началось", { exact: true })).toBeVisible();
   await expect(ownerProblem.getByText("Сегодня", { exact: true })).toBeVisible();
+  const ownerMucosa = ownerTherapeutic.locator(".therapeutic-history-finding-group").filter({
+    has: ownerPage.getByText("Видимые слизистые оболочки (ВСО)", { exact: true }),
+  });
+  await expect(ownerMucosa.locator(".therapeutic-history-finding-detail > span")).toHaveText([
+    "Цвет: Бледно-розовые",
+    "Влажность: Влажные",
+  ]);
   const ownerWhatHappened = ownerRecord.locator(".encounter-history-section").filter({
     has: ownerPage.getByRole("heading", { name: "Что случилось", exact: true }),
   });

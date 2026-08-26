@@ -9,21 +9,33 @@ import {
   EXAMINATION_CATEGORIES,
   LIFE_ANAMNESIS_CATEGORIES,
   therapeuticOptionLabel,
-  therapeuticSelectionDetails,
+  therapeuticSelectionGroups,
 } from "../therapeuticAppointment";
 import type { TherapeuticAppointmentSectionValue, TherapeuticProblemValue } from "../repositories/types";
+import TherapeuticSelectionView from "./TherapeuticSelectionView.vue";
 
 const props = defineProps<{ value: TherapeuticAppointmentSectionValue }>();
-const diseaseDetails = computed(() => therapeuticSelectionDetails(props.value.diseaseAnamnesis.selectedIds, DISEASE_ANAMNESIS_CATEGORIES));
-const lifeDetails = computed(() => therapeuticSelectionDetails(props.value.lifeAnamnesis.selectedIds, LIFE_ANAMNESIS_CATEGORIES));
-const examinationDetails = computed(() => therapeuticSelectionDetails(props.value.examination.selectedIds, EXAMINATION_CATEGORIES));
-const hasLife = computed(() => Boolean(props.value.lifeAnamnesis.text || lifeDetails.value.length
+const diseaseSelectionGroups = computed(() => therapeuticSelectionGroups(
+  props.value.diseaseAnamnesis.selectedIds,
+  DISEASE_ANAMNESIS_CATEGORIES,
+));
+const lifeSelectionGroups = computed(() => therapeuticSelectionGroups(
+  props.value.lifeAnamnesis.selectedIds,
+  LIFE_ANAMNESIS_CATEGORIES,
+));
+const examinationSelectionGroups = computed(() => therapeuticSelectionGroups(
+  props.value.examination.selectedIds,
+  EXAMINATION_CATEGORIES,
+));
+const hasLife = computed(() => Boolean(props.value.lifeAnamnesis.text || lifeSelectionGroups.value.length
   || props.value.lifeAnamnesis.currentMedications || props.value.lifeAnamnesis.allergies));
 const populatedProblems = computed(() => props.value.diseaseAnamnesis.problems
   .map((problem) => ({ problem, details: problemDetails(problem) }))
   .filter(({ problem, details }) => Boolean(problem.title || details.length)));
-const hasDisease = computed(() => Boolean(props.value.diseaseAnamnesis.text || populatedProblems.value.length || diseaseDetails.value.length));
-const hasExamination = computed(() => Boolean(props.value.examination.text || examinationDetails.value.length));
+const hasDisease = computed(() => Boolean(
+  props.value.diseaseAnamnesis.text || populatedProblems.value.length || diseaseSelectionGroups.value.length,
+));
+const hasExamination = computed(() => Boolean(props.value.examination.text || examinationSelectionGroups.value.length));
 
 function problemDetails(problem: TherapeuticProblemValue): Array<{ label: string; value: string }> {
   return [
@@ -56,18 +68,21 @@ function problemDetails(problem: TherapeuticProblemValue): Array<{ label: string
           </dl>
         </article>
       </div>
-      <dl v-if="diseaseDetails.length" class="therapeutic-history-values">
-        <div v-for="detail in diseaseDetails" :key="detail.key"><dt>{{ detail.label }}</dt><dd>{{ detail.value }}</dd></div>
-      </dl>
+      <TherapeuticSelectionView v-if="diseaseSelectionGroups.length" :groups="diseaseSelectionGroups" />
     </section>
     <section
       v-if="hasLife"
       class="therapeutic-history-block"
     >
       <h4>Анамнез жизни</h4>
-      <dl class="therapeutic-history-values">
-        <div v-if="value.lifeAnamnesis.text"><dt>Комментарий</dt><dd class="therapeutic-history-text">{{ value.lifeAnamnesis.text }}</dd></div>
-        <div v-for="detail in lifeDetails" :key="detail.key"><dt>{{ detail.label }}</dt><dd>{{ detail.value }}</dd></div>
+      <dl v-if="value.lifeAnamnesis.text" class="therapeutic-history-values">
+        <div><dt>Комментарий</dt><dd class="therapeutic-history-text">{{ value.lifeAnamnesis.text }}</dd></div>
+      </dl>
+      <TherapeuticSelectionView v-if="lifeSelectionGroups.length" :groups="lifeSelectionGroups" />
+      <dl
+        v-if="value.lifeAnamnesis.currentMedications || value.lifeAnamnesis.allergies"
+        class="therapeutic-history-values"
+      >
         <div v-if="value.lifeAnamnesis.currentMedications"><dt>Получаемые препараты</dt><dd class="therapeutic-history-text">{{ value.lifeAnamnesis.currentMedications }}</dd></div>
         <div v-if="value.lifeAnamnesis.allergies"><dt>Аллергии</dt><dd class="therapeutic-history-text">{{ value.lifeAnamnesis.allergies }}</dd></div>
       </dl>
@@ -80,9 +95,7 @@ function problemDetails(problem: TherapeuticProblemValue): Array<{ label: string
       <dl v-if="value.examination.text" class="therapeutic-history-values">
         <div><dt>Комментарий</dt><dd class="therapeutic-history-text">{{ value.examination.text }}</dd></div>
       </dl>
-      <dl v-if="examinationDetails.length" class="therapeutic-history-values">
-        <div v-for="detail in examinationDetails" :key="detail.key"><dt>{{ detail.label }}</dt><dd>{{ detail.value }}</dd></div>
-      </dl>
+      <TherapeuticSelectionView v-if="examinationSelectionGroups.length" :groups="examinationSelectionGroups" />
     </section>
     <section
       v-if="value.recommendations"
