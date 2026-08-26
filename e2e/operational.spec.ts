@@ -76,6 +76,53 @@ async function expectSameHorizontalBounds(first: Locator, second: Locator): Prom
   expect(Math.abs(firstBox!.x + firstBox!.width - secondBox!.x - secondBox!.width)).toBeLessThanOrEqual(1);
 }
 
+async function expectStickyEncounterHeading(
+  page: Page,
+  heading: Locator,
+  targets: Locator[],
+  actions: Locator[],
+): Promise<void> {
+  const topbar = page.locator(".workspace-topbar");
+  await page.evaluate(() => window.scrollTo(0, 0));
+  const [initialHeadingBox, initialTopbarBox] = await Promise.all([
+    heading.boundingBox(),
+    topbar.boundingBox(),
+  ]);
+  expect(initialHeadingBox).not.toBeNull();
+  expect(initialTopbarBox).not.toBeNull();
+  expect(initialHeadingBox!.y).toBeGreaterThanOrEqual(initialTopbarBox!.y + initialTopbarBox!.height - 1);
+
+  for (const target of targets) {
+    await target.evaluate((element) => element.scrollIntoView({ block: "start" }));
+    await expect.poll(async () => {
+      const [headingBox, topbarBox] = await Promise.all([heading.boundingBox(), topbar.boundingBox()]);
+      if (!headingBox || !topbarBox) return Number.POSITIVE_INFINITY;
+      return Math.abs(headingBox.y - topbarBox.y - topbarBox.height);
+    }).toBeLessThanOrEqual(2);
+
+    const [headingBox, targetBox, layout] = await Promise.all([
+      heading.boundingBox(),
+      target.boundingBox(),
+      heading.evaluate((element) => ({
+        fits: element.scrollWidth <= element.clientWidth + 1,
+        position: getComputedStyle(element).position,
+        viewportWidth: window.visualViewport?.width ?? window.innerWidth,
+      })),
+    ]);
+    expect(headingBox).not.toBeNull();
+    expect(targetBox).not.toBeNull();
+    expect(layout.position).toBe("sticky");
+    expect(layout.fits).toBe(true);
+    expect(targetBox!.y).toBeGreaterThanOrEqual(headingBox!.y + headingBox!.height - 1);
+    for (const action of actions) {
+      const actionBox = await action.boundingBox();
+      expect(actionBox).not.toBeNull();
+      expect(actionBox!.x).toBeGreaterThanOrEqual(headingBox!.x - 1);
+      expect(actionBox!.x + actionBox!.width).toBeLessThanOrEqual(layout.viewportWidth + 1);
+    }
+  }
+}
+
 async function expectWrappedValue(value: Locator, text: string): Promise<void> {
   await expect(value).toHaveText(text);
   const measurement = await value.evaluate((element) => {
@@ -758,6 +805,19 @@ test("fresh provisioning, Doctor approval, grant, draft, and confirmation", asyn
   expect(allMedicalActionSizes.every(([width, height]) => Math.abs(width! - 34) <= 0.5 && Math.abs(height! - 34) <= 0.5))
     .toBe(true);
 
+  const createEditorHeading = doctorPage.locator(".doctor-pet-detail > .encounter-editor .encounter-editor-heading");
+  const createStickyTargets = [
+    therapeuticDelete,
+    hemoglobinInput,
+    instrumentalCard.getByLabel("Заключение", { exact: true }),
+  ];
+  await expectStickyEncounterHeading(doctorPage, createEditorHeading, createStickyTargets, [editorSave]);
+  await doctorPage.evaluate(() => { document.documentElement.style.zoom = "1.5"; });
+  await expectStickyEncounterHeading(doctorPage, createEditorHeading, createStickyTargets, [editorSave]);
+  await doctorPage.evaluate(() => { document.documentElement.style.removeProperty("zoom"); });
+  await doctorPage.setViewportSize({ width: 390, height: 844 });
+  await expectStickyEncounterHeading(doctorPage, createEditorHeading, createStickyTargets, [editorSave]);
+
   await doctorPage.setViewportSize({ width: 752, height: 1200 });
   await expectMedicalActionRail(medicalRailActions);
   await differentialDiagnosis.getByRole("button", { name: "Назначить «Отёк Квинке» подтверждённым диагнозом" }).click();
@@ -780,6 +840,7 @@ test("fresh provisioning, Doctor approval, grant, draft, and confirmation", asyn
   expect(await vaccinationCard.evaluate((card) => card.scrollWidth <= card.clientWidth + 1)).toBe(true);
   expect(await laboratoryCard.evaluate((card) => card.scrollWidth <= card.clientWidth + 1)).toBe(true);
   expect(await instrumentalCard.evaluate((card) => card.scrollWidth <= card.clientWidth + 1)).toBe(true);
+  await doctorPage.evaluate(() => window.scrollTo(0, 0));
   const [encounterHeadingBox, whatHappenedBox] = await Promise.all([
     doctorPage.locator(".doctor-pet-detail > .encounter-editor .encounter-editor-heading").boundingBox(),
     doctorPage.locator(".doctor-pet-detail > .encounter-editor .encounter-what-happened").boundingBox(),
@@ -849,6 +910,11 @@ test("fresh provisioning, Doctor approval, grant, draft, and confirmation", asyn
   const inlineEditorHeading = inlineEditor.locator(".encounter-editor-heading");
   const editCancel = inlineEditorHeading.getByRole("button", { name: "Отменить редактирование" });
   const editSave = inlineEditorHeading.getByRole("button", { name: "Сохранить запись" });
+  const inlineStickyTargets = [
+    inlineEditor.getByRole("tab", { name: "Рекомендации" }),
+    inlineEditor.getByLabel("Гемоглобин (Hgb), результат", { exact: true }),
+    inlineEditor.getByLabel("Заключение", { exact: true }),
+  ];
   for (const viewport of [
     { width: 1280, height: 720 },
     { width: 752, height: 1200 },
@@ -858,6 +924,7 @@ test("fresh provisioning, Doctor approval, grant, draft, and confirmation", asyn
     await expectMedicalActionRail([editSave]);
     await expectHorizontalGap(editCancel, editSave);
     await expectTopAligned(editSave, inlineEditorHeading.getByRole("heading"));
+    await expectStickyEncounterHeading(doctorPage, inlineEditorHeading, inlineStickyTargets, [editCancel, editSave]);
   }
   await doctorPage.setViewportSize({ width: 1280, height: 720 });
   await editCancel.click();
