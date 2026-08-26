@@ -10,6 +10,8 @@ withDefaults(defineProps<{
   label: string;
   multiple?: boolean;
   placeholder?: string;
+  invalid?: boolean;
+  describedBy?: string;
 }>(), {
   multiple: false,
   placeholder: "Начните вводить диагноз",
@@ -28,6 +30,8 @@ const customTexts = defineModel<string[]>("customTexts", { default: () => [] });
     :label="label"
     :groups="DIAGNOSIS_CATALOG"
     :multiple="multiple"
+    :invalid="invalid"
+    :described-by="describedBy"
     two-level
     :placeholder="placeholder"
     empty-text="Нет подходящих диагнозов"

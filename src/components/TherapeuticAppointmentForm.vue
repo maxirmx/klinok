@@ -38,6 +38,7 @@ const activeTab = ref<TherapeuticTab>("disease");
 const tabButtons = ref<HTMLButtonElement[]>([]);
 const formRoot = ref<HTMLElement | null>(null);
 const baseId = useId();
+const errorBaseId = useId();
 const onsetOptions = selectOptions(PROBLEM_ONSET_OPTIONS);
 const frequencyOptions = selectOptions(PROBLEM_FREQUENCY_OPTIONS);
 const priorTherapyOptions = selectOptions(PROBLEM_THERAPY_OPTIONS);
@@ -95,8 +96,8 @@ const prescriptions = computed({
   set: (value: string) => updateTherapeutic({ ...therapeutic.value, prescriptions: value }),
 });
 
-watch(() => props.errors.tab, (tab) => {
-  if (tab) activeTab.value = tab;
+watch(() => props.errors, (errors) => {
+  if (errors.tab) activeTab.value = errors.tab;
 });
 
 function activateTab(tab: TherapeuticTab, focus = false) {
@@ -228,11 +229,15 @@ function tabId(tab: TherapeuticTab) {
 function panelId(tab: TherapeuticTab) {
   return `${baseId}-${tab}-panel`;
 }
+
+function errorId(field: string) {
+  return `${errorBaseId}-${field.replace(/[^a-zA-Z0-9_-]/g, "-")}-error`;
+}
 </script>
 
 <template>
   <div ref="formRoot" class="therapeutic-appointment-form">
-    <p v-if="errors.section" class="field-error" role="alert">{{ errors.section }}</p>
+    <p v-if="errors.section" :id="errorId('section')" class="field-error" role="alert" tabindex="-1" data-encounter-error-anchor="true">{{ errors.section }}</p>
     <div class="therapeutic-tabs" role="tablist" aria-label="Разделы терапевтического приёма">
       <button
         v-for="(tab, index) in THERAPEUTIC_TABS"
@@ -294,9 +299,11 @@ function panelId(tab: TherapeuticTab) {
             <input
               :value="problem.title"
               type="text"
+              :aria-invalid="errors.problems?.[problem.id] ? true : undefined"
+              :aria-describedby="errors.problems?.[problem.id] ? errorId(`problem-${problem.id}`) : undefined"
               @input="updateProblemTitle(problem.id, $event)"
             />
-            <small v-if="errors.problems?.[problem.id]" class="field-error">{{ errors.problems[problem.id] }}</small>
+            <small v-if="errors.problems?.[problem.id]" :id="errorId(`problem-${problem.id}`)" class="field-error" role="alert">{{ errors.problems[problem.id] }}</small>
           </label>
           <div class="therapeutic-problem-fields">
             <label><span>Как давно началось</span><AppSelect :model-value="problem.onsetId ?? ''" :options="onsetOptions" @update:model-value="updateProblemSelect(problem.id, 'onsetId', $event)" /></label>

@@ -241,8 +241,11 @@ describe("LaboratoryTestsEditor", () => {
       void wrapper.setProps({ modelValue: value });
     };
 
-    expect(wrapper.get('[role="alert"]').text()).toContain("Добавьте хотя бы одно");
-    expect(wrapper.get('input[aria-label="Тип исследования"]').attributes("aria-invalid")).toBe("true");
+    const sectionError = wrapper.get('[role="alert"]');
+    const typeInput = wrapper.get('input[aria-label="Тип исследования"]');
+    expect(sectionError.text()).toContain("Добавьте хотя бы одно");
+    expect(typeInput.attributes("aria-invalid")).toBe("true");
+    expect(typeInput.attributes("aria-describedby")).toBe(sectionError.attributes("id"));
     expect(wrapper.get(".laboratory-study-create + .laboratory-study-list").exists()).toBe(true);
     expect(wrapper.get('input[aria-label="Тип исследования"]').exists()).toBe(true);
     const addButton = () => wrapper.get('button[title="Добавить исследование"]');
@@ -297,6 +300,11 @@ describe("LaboratoryTestsEditor", () => {
       id: cbc.indicators[0]!.id,
       label: `${cbc.indicators[0]!.name} · ${cbc.indicators[0]!.unit}`,
     });
+    await wrapper.setProps({ errors: { studies: [{ section: "Добавьте хотя бы один показатель." }] } });
+    const studySectionError = wrapper.get('.laboratory-study-card [data-encounter-error-anchor="true"]');
+    expect(indicatorCombobox().get('input[role="combobox"]').attributes("aria-describedby"))
+      .toBe(studySectionError.attributes("id"));
+    await wrapper.setProps({ errors: { studies: [] } });
     expect(addIndicator().attributes("disabled")).toBeDefined();
 
     indicatorCombobox().vm.$emit("update:selectedIds", [cbc.indicators[0]!.id]);
@@ -362,11 +370,14 @@ describe("LaboratoryTestsEditor", () => {
     const invalidFields = wrapper.findAll('[aria-invalid="true"]');
     expect(invalidFields).toHaveLength(3);
     expect(invalidFields.map((field) => field.element.tagName)).toEqual(["INPUT", "INPUT", "INPUT"]);
-    expect(wrapper.findAll(".laboratory-study-card .field-error").map((error) => error.text())).toEqual([
+    const fieldErrors = wrapper.findAll(".laboratory-study-card .field-error");
+    expect(fieldErrors.map((error) => error.text())).toEqual([
       "Укажите корректную дату исследования.",
       "Укажите лабораторию.",
       "Укажите результат.",
     ]);
+    expect(invalidFields.map((field) => field.attributes("aria-describedby")))
+      .toEqual(fieldErrors.map((error) => error.attributes("id")));
     await wrapper.setProps({ errors: { studies: [] } });
 
     const laboratory = wrapper.findAll("label")
@@ -413,7 +424,13 @@ describe("LaboratoryTestsEditor", () => {
     await flushPromises();
     expect(current.studies[0]).toMatchObject({ typeId: narrative.id, mode: "narrative", result: "" });
     expect(wrapper.get(".laboratory-study-heading h4").text()).toBe(narrative.name);
-    await wrapper.get(".laboratory-study-card > label textarea").setValue("Описание результата");
+    await wrapper.setProps({ errors: { studies: [{ result: "Укажите результат исследования." }] } });
+    const narrativeResult = wrapper.get(".laboratory-study-card > label textarea");
+    const narrativeError = wrapper.get(".laboratory-study-card > label .field-error");
+    expect(narrativeResult.attributes("aria-invalid")).toBe("true");
+    expect(narrativeResult.attributes("aria-describedby")).toBe(narrativeError.attributes("id"));
+    await wrapper.setProps({ errors: { studies: [] } });
+    await narrativeResult.setValue("Описание результата");
     await wrapper.get('button[title="Удалить исследование"]').trigger("click");
     await flushPromises();
     await wrapper.get('[role="alertdialog"] .danger').trigger("click");
@@ -430,6 +447,17 @@ describe("LaboratoryTestsEditor", () => {
       result: "negative",
     });
     expect(wrapper.get(".laboratory-infection select").findAll("option")).toHaveLength(5);
+    await wrapper.setProps({ errors: { studies: [{
+      infection: "Укажите инфекцию.",
+      method: "Укажите метод.",
+      infectionResult: "Укажите результат.",
+    }] } });
+    const infectionFields = wrapper.findAll('.laboratory-infection [aria-invalid="true"]');
+    const infectionErrors = wrapper.findAll(".laboratory-infection .field-error");
+    expect(infectionFields.map((field) => field.element.tagName)).toEqual(["INPUT", "SELECT", "FIELDSET"]);
+    expect(infectionFields.map((field) => field.attributes("aria-describedby")))
+      .toEqual(infectionErrors.map((error) => error.attributes("id")));
+    await wrapper.setProps({ errors: { studies: [] } });
     await wrapper.get(".laboratory-infection input[required]").setValue("Чума плотоядных");
 
     await wrapper.get('button[title="Удалить исследование"]').trigger("click");

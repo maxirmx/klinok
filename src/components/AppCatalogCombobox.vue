@@ -42,6 +42,7 @@ const props = withDefaults(defineProps<{
   allCategoriesLabel?: string;
   allowCustom?: boolean;
   invalid?: boolean;
+  describedBy?: string;
 }>(), {
   options: () => [],
   groups: () => [],
@@ -349,6 +350,7 @@ onBeforeUnmount(() => {
           :aria-controls="listboxId"
           :aria-expanded="open"
           :aria-invalid="invalid || undefined"
+          :aria-describedby="describedBy"
           :aria-activedescendant="activeOptionId"
           :placeholder="placeholder"
           @pointerdown="beginEditing"

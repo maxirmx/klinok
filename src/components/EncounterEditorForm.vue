@@ -11,6 +11,7 @@ import TherapeuticAppointmentForm from "./TherapeuticAppointmentForm.vue";
 import LaboratoryTestsEditor from "./LaboratoryTestsEditor.vue";
 import InstrumentalTestsEditor from "./InstrumentalTestsEditor.vue";
 import WhatHappenedTree from "./WhatHappenedTree.vue";
+import { focusFirstEncounterError } from "../encounterErrorNavigation";
 import {
   ENCOUNTER_SECTION_LABELS,
   OPTIONAL_ENCOUNTER_SECTION_KINDS,
@@ -84,6 +85,7 @@ const laboratoryErrors = ref<LaboratoryTestsDraftErrors>({ studies: [] });
 const instrumentalErrors = ref<InstrumentalTestsDraftErrors>({ studies: [] });
 const revaccinationInterval = ref<RevaccinationInterval | "">("");
 const revaccinationChooserOpen = ref(false);
+const errorBaseId = useId();
 const revaccinationDateId = useId();
 const revaccinationMenuRoot = ref<HTMLElement | null>(null);
 const optionalAvailable = computed(() => OPTIONAL_ENCOUNTER_SECTION_KINDS.filter((kind) => !optionalKinds.value.includes(kind)));
@@ -98,6 +100,22 @@ const vaccinationComplicationOptions = [
 ];
 const revaccinationIntervalOptions = computed(() => REVACCINATION_INTERVAL_OPTIONS
   .filter((option) => option.value !== "next-birthday" || props.petBirthDate));
+const generalBloodPressureError = computed(() => generalDataErrors.value.bloodPressure
+  || generalDataErrors.value.systolicMmHg
+  || generalDataErrors.value.diastolicMmHg
+  || generalDataErrors.value.meanMmHg);
+
+function errorId(field: string) {
+  return `${errorBaseId}-${field}-error`;
+}
+
+function invalid(message?: string) {
+  return message ? true : undefined;
+}
+
+function describedBy(message: string | undefined, field: string) {
+  return message ? errorId(field) : undefined;
+}
 
 function handleDocumentPointerDown(event: PointerEvent) {
   if (revaccinationChooserOpen.value && !revaccinationMenuRoot.value?.contains(event.target as Node)) {
@@ -235,39 +253,46 @@ function closeRevaccinationChooser(restoreFocus = false) {
   }
 }
 
-function submit() {
+async function submit() {
   if (!selectedIds.value.length || !outcomeSelectedIds.value.length) return;
+  let structuredValid = true;
   if (optionalKinds.value.includes("general-data") && texts.value["general-data"] === undefined) {
     const parsed = parseGeneralDataDraft(generalData.value);
     generalDataErrors.value = parsed.errors;
-    if (!parsed.value) return;
-  }
+    if (!parsed.value) structuredValid = false;
+  } else generalDataErrors.value = {};
   if (optionalKinds.value.includes("vaccination") && texts.value.vaccination === undefined) {
     const parsed = parseVaccinationDraft(vaccination.value);
     vaccinationErrors.value = parsed.errors;
-    if (!parsed.value) return;
-  }
+    if (!parsed.value) structuredValid = false;
+  } else vaccinationErrors.value = {};
   if (optionalKinds.value.includes("therapeutic-appointment") && texts.value["therapeutic-appointment"] === undefined) {
     const parsed = parseTherapeuticAppointmentDraft(therapeuticAppointment.value);
     therapeuticErrors.value = parsed.errors;
-    if (!parsed.value) return;
-  }
+    if (!parsed.value) structuredValid = false;
+  } else therapeuticErrors.value = {};
   if (optionalKinds.value.includes("diagnosis")) {
     const parsed = parseDiagnosisDraft(diagnosis.value);
     diagnosisErrors.value = parsed.errors;
-    if (!parsed.value) return;
-  }
+    if (!parsed.value) structuredValid = false;
+  } else diagnosisErrors.value = {};
   if (optionalKinds.value.includes("laboratory-tests") && texts.value["laboratory-tests"] === undefined) {
     const parsed = parseLaboratoryTestsDraft(laboratoryTests.value);
     laboratoryErrors.value = parsed.errors;
-    if (!parsed.value) return;
-  }
+    if (!parsed.value) structuredValid = false;
+  } else laboratoryErrors.value = { studies: [] };
   if (optionalKinds.value.includes("instrumental-tests") && texts.value["instrumental-tests"] === undefined) {
     const parsed = parseInstrumentalTestsDraft(instrumentalTests.value);
     instrumentalErrors.value = parsed.errors;
-    if (!parsed.value) return;
+    if (!parsed.value) structuredValid = false;
+  } else instrumentalErrors.value = { studies: [] };
+  const nativeValid = form.value?.checkValidity() ?? true;
+  if (!structuredValid || !nativeValid) {
+    await nextTick();
+    await nextTick();
+    if (form.value) focusFirstEncounterError(form.value);
+    return;
   }
-  if (form.value?.reportValidity() === false) return;
   emit("save");
 }
 </script>
@@ -311,49 +336,49 @@ function submit() {
         <DiagnosisEditor v-model="diagnosis" :errors="diagnosisErrors" />
       </template>
       <template v-else-if="kind === 'general-data' && texts[kind] === undefined">
-        <p v-if="generalDataErrors.section" class="field-error" role="alert">{{ generalDataErrors.section }}</p>
+        <p v-if="generalDataErrors.section" :id="errorId('general-section')" class="field-error" role="alert" tabindex="-1" data-encounter-error-anchor="true">{{ generalDataErrors.section }}</p>
         <div class="general-data-fields" @input="updateGeneralData">
           <label>
             <span>Вес, кг</span>
-            <input v-model="generalData.weightKg" type="number" min="0.01" step="0.01" inputmode="decimal" />
-            <small v-if="generalDataErrors.weightKg" class="field-error">{{ generalDataErrors.weightKg }}</small>
+            <input v-model="generalData.weightKg" type="number" min="0.01" step="0.01" inputmode="decimal" :aria-invalid="invalid(generalDataErrors.weightKg)" :aria-describedby="describedBy(generalDataErrors.weightKg, 'general-weight')" />
+            <small v-if="generalDataErrors.weightKg" :id="errorId('general-weight')" class="field-error" role="alert">{{ generalDataErrors.weightKg }}</small>
           </label>
           <label>
             <span>Температура, °C</span>
-            <input v-model="generalData.temperatureC" type="number" min="0.1" step="0.1" inputmode="decimal" />
-            <small v-if="generalDataErrors.temperatureC" class="field-error">{{ generalDataErrors.temperatureC }}</small>
+            <input v-model="generalData.temperatureC" type="number" min="0.1" step="0.1" inputmode="decimal" :aria-invalid="invalid(generalDataErrors.temperatureC)" :aria-describedby="describedBy(generalDataErrors.temperatureC, 'general-temperature')" />
+            <small v-if="generalDataErrors.temperatureC" :id="errorId('general-temperature')" class="field-error" role="alert">{{ generalDataErrors.temperatureC }}</small>
           </label>
           <label>
             <span>ЧСС, уд/мин</span>
-            <input v-model="generalData.heartRateBpm" type="number" min="1" max="999" step="1" inputmode="numeric" />
-            <small v-if="generalDataErrors.heartRateBpm" class="field-error">{{ generalDataErrors.heartRateBpm }}</small>
+            <input v-model="generalData.heartRateBpm" type="number" min="1" max="999" step="1" inputmode="numeric" :aria-invalid="invalid(generalDataErrors.heartRateBpm)" :aria-describedby="describedBy(generalDataErrors.heartRateBpm, 'general-heart-rate')" />
+            <small v-if="generalDataErrors.heartRateBpm" :id="errorId('general-heart-rate')" class="field-error" role="alert">{{ generalDataErrors.heartRateBpm }}</small>
           </label>
           <label>
             <span>ЧДД, движ/мин</span>
-            <input v-model="generalData.respiratoryRatePerMinute" type="number" min="1" max="999" step="1" inputmode="numeric" />
-            <small v-if="generalDataErrors.respiratoryRatePerMinute" class="field-error">{{ generalDataErrors.respiratoryRatePerMinute }}</small>
+            <input v-model="generalData.respiratoryRatePerMinute" type="number" min="1" max="999" step="1" inputmode="numeric" :aria-invalid="invalid(generalDataErrors.respiratoryRatePerMinute)" :aria-describedby="describedBy(generalDataErrors.respiratoryRatePerMinute, 'general-respiratory-rate')" />
+            <small v-if="generalDataErrors.respiratoryRatePerMinute" :id="errorId('general-respiratory-rate')" class="field-error" role="alert">{{ generalDataErrors.respiratoryRatePerMinute }}</small>
           </label>
           <fieldset class="general-data-pressure">
             <legend>АД, мм рт. ст.</legend>
             <div class="general-data-pressure-inputs">
-              <label><span>Сист.</span><input v-model="generalData.systolicMmHg" type="number" min="1" max="999" step="1" inputmode="numeric" /></label>
+              <label><span>Сист.</span><input v-model="generalData.systolicMmHg" type="number" min="1" max="999" step="1" inputmode="numeric" :aria-invalid="invalid(generalBloodPressureError)" :aria-describedby="describedBy(generalBloodPressureError, 'general-blood-pressure')" /></label>
               <span class="general-data-pressure-separator" aria-hidden="true">/</span>
-              <label><span>Диаст.</span><input v-model="generalData.diastolicMmHg" type="number" min="1" max="999" step="1" inputmode="numeric" /></label>
-              <label><span>Сред.</span><input v-model="generalData.meanMmHg" type="number" min="1" max="999" step="1" inputmode="numeric" aria-label="Среднее артериальное давление" /></label>
+              <label><span>Диаст.</span><input v-model="generalData.diastolicMmHg" type="number" min="1" max="999" step="1" inputmode="numeric" :aria-invalid="invalid(generalBloodPressureError)" :aria-describedby="describedBy(generalBloodPressureError, 'general-blood-pressure')" /></label>
+              <label><span>Сред.</span><input v-model="generalData.meanMmHg" type="number" min="1" max="999" step="1" inputmode="numeric" aria-label="Среднее артериальное давление" :aria-invalid="invalid(generalBloodPressureError)" :aria-describedby="describedBy(generalBloodPressureError, 'general-blood-pressure')" /></label>
             </div>
-            <small v-if="generalDataErrors.bloodPressure || generalDataErrors.systolicMmHg || generalDataErrors.diastolicMmHg || generalDataErrors.meanMmHg" class="field-error">
-              {{ generalDataErrors.bloodPressure || generalDataErrors.systolicMmHg || generalDataErrors.diastolicMmHg || generalDataErrors.meanMmHg }}
+            <small v-if="generalBloodPressureError" :id="errorId('general-blood-pressure')" class="field-error" role="alert">
+              {{ generalBloodPressureError }}
             </small>
           </fieldset>
         </div>
       </template>
       <template v-else-if="kind === 'vaccination' && texts[kind] === undefined">
-        <p v-if="vaccinationErrors.section" class="field-error" role="alert">{{ vaccinationErrors.section }}</p>
+        <p v-if="vaccinationErrors.section" :id="errorId('vaccination-section')" class="field-error" role="alert" tabindex="-1" data-encounter-error-anchor="true">{{ vaccinationErrors.section }}</p>
         <div class="vaccination-fields" @input="updateVaccination" @change="updateVaccination">
           <label>
             <span title="Дата предыдущей вакцинации">Дата предыдущей вакцинации</span>
-            <input v-model="vaccination.previousVaccinationDate" type="date" />
-            <small v-if="vaccinationErrors.previousVaccinationDate" class="field-error">{{ vaccinationErrors.previousVaccinationDate }}</small>
+            <input v-model="vaccination.previousVaccinationDate" type="date" :aria-invalid="invalid(vaccinationErrors.previousVaccinationDate)" :aria-describedby="describedBy(vaccinationErrors.previousVaccinationDate, 'vaccination-previous-date')" />
+            <small v-if="vaccinationErrors.previousVaccinationDate" :id="errorId('vaccination-previous-date')" class="field-error" role="alert">{{ vaccinationErrors.previousVaccinationDate }}</small>
           </label>
           <label>
             <span title="Название предыдущей вакцины">Название предыдущей вакцины</span>
@@ -369,18 +394,18 @@ function submit() {
           </label>
           <label>
             <span title="Название нынешней вакцины">Название нынешней вакцины</span>
-            <input v-model="vaccination.currentVaccineName" type="text" />
-            <small v-if="vaccinationErrors.currentVaccineName" class="field-error">{{ vaccinationErrors.currentVaccineName }}</small>
+            <input v-model="vaccination.currentVaccineName" type="text" :aria-invalid="invalid(vaccinationErrors.currentVaccineName)" :aria-describedby="describedBy(vaccinationErrors.currentVaccineName, 'vaccination-current-name')" />
+            <small v-if="vaccinationErrors.currentVaccineName" :id="errorId('vaccination-current-name')" class="field-error" role="alert">{{ vaccinationErrors.currentVaccineName }}</small>
           </label>
           <label>
             <span title="Серия и/или номер вакцины">Серия и/или номер вакцины</span>
-            <input v-model="vaccination.currentVaccineBatch" type="text" />
-            <small v-if="vaccinationErrors.currentVaccineBatch" class="field-error">{{ vaccinationErrors.currentVaccineBatch }}</small>
+            <input v-model="vaccination.currentVaccineBatch" type="text" :aria-invalid="invalid(vaccinationErrors.currentVaccineBatch)" :aria-describedby="describedBy(vaccinationErrors.currentVaccineBatch, 'vaccination-current-batch')" />
+            <small v-if="vaccinationErrors.currentVaccineBatch" :id="errorId('vaccination-current-batch')" class="field-error" role="alert">{{ vaccinationErrors.currentVaccineBatch }}</small>
           </label>
           <label>
             <span title="Срок годности препарата/вакцины">Срок годности препарата/вакцины</span>
-            <input v-model="vaccination.currentVaccineExpiresOn" type="date" />
-            <small v-if="vaccinationErrors.currentVaccineExpiresOn" class="field-error">{{ vaccinationErrors.currentVaccineExpiresOn }}</small>
+            <input v-model="vaccination.currentVaccineExpiresOn" type="date" :aria-invalid="invalid(vaccinationErrors.currentVaccineExpiresOn)" :aria-describedby="describedBy(vaccinationErrors.currentVaccineExpiresOn, 'vaccination-current-expires')" />
+            <small v-if="vaccinationErrors.currentVaccineExpiresOn" :id="errorId('vaccination-current-expires')" class="field-error" role="alert">{{ vaccinationErrors.currentVaccineExpiresOn }}</small>
           </label>
           <label>
             <span title="Номер чипа">Номер чипа</span>
@@ -394,7 +419,7 @@ function submit() {
             <label :for="revaccinationDateId">
               <span title="Дата следующей ревакцинации">Дата следующей ревакцинации</span>
             </label>
-            <input :id="revaccinationDateId" v-model="vaccination.nextRevaccinationDate" type="date" @input="useManualRevaccinationDate" />
+            <input :id="revaccinationDateId" v-model="vaccination.nextRevaccinationDate" type="date" :aria-invalid="invalid(vaccinationErrors.nextRevaccinationDate)" :aria-describedby="describedBy(vaccinationErrors.nextRevaccinationDate, 'vaccination-next-date')" @input="useManualRevaccinationDate" />
             <div
               class="vaccination-revaccination-menu"
               @keydown.esc.stop.prevent="closeRevaccinationChooser(true)"
@@ -419,7 +444,7 @@ function submit() {
                 >{{ option.label }}</button>
               </div>
             </div>
-            <small v-if="vaccinationErrors.nextRevaccinationDate" class="field-error">{{ vaccinationErrors.nextRevaccinationDate }}</small>
+            <small v-if="vaccinationErrors.nextRevaccinationDate" :id="errorId('vaccination-next-date')" class="field-error" role="alert">{{ vaccinationErrors.nextRevaccinationDate }}</small>
           </div>
         </div>
       </template>

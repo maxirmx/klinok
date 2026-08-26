@@ -3,7 +3,7 @@
 // All rights reserved.
 // This file is a part of Klinok application
 
-import { computed, nextTick, ref } from "vue";
+import { computed, nextTick, ref, useId } from "vue";
 import type {
   InstrumentalFindingCatalogItem,
   InstrumentalFindingValue,
@@ -29,6 +29,7 @@ const props = withDefaults(defineProps<{
 const model = defineModel<readonly InstrumentalFindingValue[]>({ required: true });
 const pendingIds = ref<string[]>([]);
 const levelElement = ref<HTMLElement | null>(null);
+const errorBaseId = useId();
 const pendingConfirmation = ref<{
   title: string;
   description: string;
@@ -164,12 +165,15 @@ function requestSelectionSetChoice(
     finding.children = orderedFor(item.children, next);
   });
 }
-function selectionSetErrorKey(item: InstrumentalFindingCatalogItem, set: InstrumentalSelectionSet) {
-  return `${item.id}:${set.key}`;
+function selectionSetErrorKey(item: InstrumentalFindingCatalogItem | undefined, set: InstrumentalSelectionSet) {
+  return item ? `${item.id}:${set.key}` : set.key;
 }
 function selectionSetError(item: InstrumentalFindingCatalogItem | undefined, set: InstrumentalSelectionSet) {
   if (!item) return undefined;
   return props.errors[selectionSetErrorKey(item, set)];
+}
+function errorId(...parts: string[]) {
+  return `${errorBaseId}-${parts.join("-").replace(/[^a-zA-Z0-9_-]/g, "-")}-error`;
 }
 function naturallyWideSelectionSet(item: InstrumentalFindingCatalogItem | undefined, set: InstrumentalSelectionSet) {
   return [set.name, ...selectionSetCatalog(item, set).map((choiceItem) => choiceItem.name)]
@@ -397,6 +401,8 @@ function updateIntegerValue(finding: InstrumentalFindingValue, event: Event) {
       class="instrumental-finding-row medical-card-action-subgrid"
       :data-finding-id="finding.findingId"
       tabindex="-1"
+      :aria-invalid="!isResultFinding(finding) && errors[finding.findingId] ? true : undefined"
+      :aria-describedby="!isResultFinding(finding) && errors[finding.findingId] ? errorId(finding.findingId) : undefined"
       :class="{
         'instrumental-result-row': isResultFinding(finding) && !isRootFreeText(finding),
         'instrumental-root-choice-row': isRootChoiceFinding(finding),
@@ -424,19 +430,20 @@ function updateIntegerValue(finding: InstrumentalFindingValue, event: Event) {
                 inputmode="numeric"
                 :aria-label="`${finding.findingName}, ${finding.unit}`"
                 :aria-invalid="errors[finding.findingId] ? true : undefined"
+                :aria-describedby="errors[finding.findingId] ? errorId(finding.findingId) : undefined"
                 @input="updateIntegerValue(finding, $event)"
               />
               <span class="instrumental-integer-unit" aria-hidden="true">{{ finding.unit }}</span>
             </span>
-            <small v-if="errors[finding.findingId]" class="field-error" role="alert">{{ errors[finding.findingId] }}</small>
+            <small v-if="errors[finding.findingId]" :id="errorId(finding.findingId)" class="field-error" role="alert">{{ errors[finding.findingId] }}</small>
           </label>
         </template>
         <template v-else-if="catalogItem(finding)?.kind === 'short-text'">
           <span class="instrumental-result-desktop-name">{{ finding.findingName }}</span>
           <label class="instrumental-result-control">
             <span class="instrumental-result-mobile-name">{{ finding.findingName }}</span>
-            <input v-model="finding.value" :aria-label="finding.findingName" :aria-invalid="errors[finding.findingId] ? true : undefined" />
-            <small v-if="errors[finding.findingId]" class="field-error" role="alert">{{ errors[finding.findingId] }}</small>
+            <input v-model="finding.value" :aria-label="finding.findingName" :aria-invalid="errors[finding.findingId] ? true : undefined" :aria-describedby="errors[finding.findingId] ? errorId(finding.findingId) : undefined" />
+            <small v-if="errors[finding.findingId]" :id="errorId(finding.findingId)" class="field-error" role="alert">{{ errors[finding.findingId] }}</small>
           </label>
         </template>
         <template v-else-if="catalogItem(finding)?.kind === 'long-text'">
@@ -444,8 +451,8 @@ function updateIntegerValue(finding: InstrumentalFindingValue, event: Event) {
           <span v-else class="instrumental-result-desktop-name">{{ finding.findingName }}</span>
           <label class="instrumental-result-control">
             <span v-if="!isRootFreeText(finding)" class="instrumental-result-mobile-name">{{ finding.findingName }}</span>
-            <textarea v-model="finding.value" :rows="isRootFreeText(finding) ? 4 : 2" :class="{ 'medical-card-comment': !isRootFreeText(finding) }" :aria-label="finding.findingName" :aria-invalid="errors[finding.findingId] ? true : undefined" />
-            <small v-if="errors[finding.findingId]" class="field-error" role="alert">{{ errors[finding.findingId] }}</small>
+            <textarea v-model="finding.value" :rows="isRootFreeText(finding) ? 4 : 2" :class="{ 'medical-card-comment': !isRootFreeText(finding) }" :aria-label="finding.findingName" :aria-invalid="errors[finding.findingId] ? true : undefined" :aria-describedby="errors[finding.findingId] ? errorId(finding.findingId) : undefined" />
+            <small v-if="errors[finding.findingId]" :id="errorId(finding.findingId)" class="field-error" role="alert">{{ errors[finding.findingId] }}</small>
           </label>
         </template>
         <template v-else-if="hasSelectionSets(catalogItem(finding))">
@@ -466,9 +473,10 @@ function updateIntegerValue(finding: InstrumentalFindingValue, event: Event) {
                   :options="selectOptions(selectionSetCatalog(catalogItem(finding), set))"
                   :aria-label="set.name"
                   :invalid="Boolean(selectionSetError(catalogItem(finding), set))"
+                  :aria-describedby="selectionSetError(catalogItem(finding), set) ? errorId(selectionSetErrorKey(catalogItem(finding), set)) : undefined"
                   @update:model-value="requestSelectionSetChoice(finding, catalogItem(finding), set, $event)"
                 />
-                <small v-if="selectionSetError(catalogItem(finding), set)" class="field-error" role="alert">{{ selectionSetError(catalogItem(finding), set) }}</small>
+                <small v-if="selectionSetError(catalogItem(finding), set)" :id="errorId(selectionSetErrorKey(catalogItem(finding), set))" class="field-error" role="alert">{{ selectionSetError(catalogItem(finding), set) }}</small>
               </label>
             </div>
           </div>
@@ -483,13 +491,14 @@ function updateIntegerValue(finding: InstrumentalFindingValue, event: Event) {
               :options="directChoiceOptions(catalogItem(finding))"
               :aria-label="`Значение показателя «${finding.findingName}»`"
               :invalid="Boolean(errors[finding.findingId])"
+              :aria-describedby="errors[finding.findingId] ? errorId(finding.findingId) : undefined"
               @update:model-value="requestFindingChoiceSelection(finding, catalogItem(finding), $event)"
             />
-            <small v-if="errors[finding.findingId]" class="field-error" role="alert">{{ errors[finding.findingId] }}</small>
+            <small v-if="errors[finding.findingId]" :id="errorId(finding.findingId)" class="field-error" role="alert">{{ errors[finding.findingId] }}</small>
           </label>
         </template>
         <strong v-else class="instrumental-finding-name">{{ finding.findingName }}</strong>
-        <small v-if="!isResultFinding(finding) && errors[finding.findingId]" class="field-error" role="alert">{{ errors[finding.findingId] }}</small>
+        <small v-if="!isResultFinding(finding) && errors[finding.findingId]" :id="errorId(finding.findingId)" class="field-error" role="alert">{{ errors[finding.findingId] }}</small>
       </div>
       <button
         type="button"
