@@ -29,6 +29,18 @@ export interface TherapeuticCategoryDefinition {
   questions: readonly TherapeuticQuestionDefinition[];
 }
 
+export interface TherapeuticSelectionDetail {
+  key: string;
+  label: string;
+  value: string;
+}
+
+export interface TherapeuticSelectionGroup {
+  key: string;
+  label: string;
+  details: readonly TherapeuticSelectionDetail[];
+}
+
 export interface TherapeuticProblemDraft extends Omit<TherapeuticProblemValue, "medicationIds"> {
   medicationIds: string[];
 }
@@ -693,15 +705,29 @@ export function normalizeTherapeuticAppointmentValue(value: TherapeuticAppointme
 export function therapeuticSelectionDetails(
   selectedIds: readonly string[],
   categories: readonly TherapeuticCategoryDefinition[],
-): Array<{ key: string; label: string; value: string }> {
-  return categories.flatMap((category) => category.questions.flatMap((item) => {
-    const selected = therapeuticQuestionSelections(item, selectedIds);
-    return selected.length ? [{
-      key: item.id,
-      label: `${category.label}: ${item.label}`,
-      value: selected.map(therapeuticOptionLabel).join(", "),
-    }] : [];
-  }));
+): TherapeuticSelectionDetail[] {
+  return therapeuticSelectionGroups(selectedIds, categories).flatMap((group) =>
+    group.details.map((detail) => ({
+      ...detail,
+      label: `${group.label}: ${detail.label}`,
+    })));
+}
+
+export function therapeuticSelectionGroups(
+  selectedIds: readonly string[],
+  categories: readonly TherapeuticCategoryDefinition[],
+): TherapeuticSelectionGroup[] {
+  return categories.flatMap((category) => {
+    const details = category.questions.flatMap((item) => {
+      const selected = therapeuticQuestionSelections(item, selectedIds);
+      return selected.length ? [{
+        key: item.id,
+        label: item.label,
+        value: selected.map(therapeuticOptionLabel).join(", "),
+      }] : [];
+    });
+    return details.length ? [{ key: category.id, label: category.label, details }] : [];
+  });
 }
 
 export function therapeuticAppointmentSearchText(value: TherapeuticAppointmentSectionValue): string {
