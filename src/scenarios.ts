@@ -3,12 +3,14 @@
 // This file is a part of Klinok application
 
 export type ScenarioRole = "auth" | "owner" | "doctor" | "administrator" | "shared";
-export type ScenarioComponentName = "AuthScreen" | "RoleStatusScreen" | "OwnerScreen" | "DoctorScreen" | "AdministratorScreen";
+export type ScenarioAccess = "public" | "authenticated";
+export type ScenarioComponentName = "AuthScreen" | "AboutScreen" | "RoleStatusScreen" | "OwnerScreen" | "DoctorScreen" | "AdministratorScreen";
 
 export interface ScenarioRegistryEntry {
   id: string;
   title: string;
   role: ScenarioRole;
+  access: ScenarioAccess;
   path: string;
   figmaNodeId: string;
   exportName?: string;
@@ -25,29 +27,34 @@ export interface FigmaCoverageEntry {
 }
 
 export const scenarioRegistry: ScenarioRegistryEntry[] = [
-  { id: "auth-login", title: "Вход", role: "auth", path: "/auth/login", figmaNodeId: "issue:25", component: "AuthScreen", implemented: true },
-  { id: "auth-register", title: "Регистрация", role: "auth", path: "/auth/register", figmaNodeId: "issue:25", component: "AuthScreen", implemented: true },
-  { id: "auth-consent", title: "Согласия", role: "auth", path: "/auth/register/consent", figmaNodeId: "issue:25", component: "AuthScreen", implemented: true },
-  { id: "auth-verify", title: "Подтверждение почты", role: "auth", path: "/auth/verify-email", figmaNodeId: "issue:25", component: "AuthScreen", implemented: true },
-  { id: "auth-forgot", title: "Восстановление пароля", role: "auth", path: "/auth/forgot-password", figmaNodeId: "issue:25", component: "AuthScreen", implemented: true },
-  { id: "auth-reset", title: "Новый пароль", role: "auth", path: "/auth/reset-password", figmaNodeId: "issue:25", component: "AuthScreen", implemented: true },
-  { id: "user-profile", title: "Настройки", role: "shared", path: "/profile", figmaNodeId: "issue:25", component: "RoleStatusScreen", implemented: true },
-  { id: "owner-home", title: "Кабинет владельца", role: "owner", path: "/owner/home", figmaNodeId: "issue:25", component: "OwnerScreen", implemented: true },
-  { id: "owner-pet-create", title: "Кабинет владельца", role: "owner", path: "/owner/pets/new", figmaNodeId: "owner-pages", component: "OwnerScreen", implemented: true },
-  { id: "owner-pet-detail", title: "Кабинет владельца", role: "owner", path: "/owner/pets/:petId", figmaNodeId: "owner-pages", component: "OwnerScreen", implemented: true },
-  { id: "owner-pet-edit", title: "Редактировать питомца", role: "owner", path: "/owner/pets/:petId/edit", figmaNodeId: "owner-pages", component: "OwnerScreen", implemented: true },
-  { id: "owner-pet-access", title: "Доступ врачей", role: "owner", path: "/owner/pets/:petId/access", figmaNodeId: "owner-pages", component: "OwnerScreen", implemented: true },
-  { id: "doctor-home", title: "Кабинет врача", role: "doctor", path: "/doctor/home", figmaNodeId: "issue:34", component: "DoctorScreen", implemented: true },
-  { id: "doctor-pet-request-access", title: "Запросить доступ", role: "doctor", path: "/doctor/pets/request-access", figmaNodeId: "issue:34", component: "DoctorScreen", implemented: true },
-  { id: "doctor-pet-detail", title: "Медицинская карта", role: "doctor", path: "/doctor/pets/:petId", figmaNodeId: "issue:34", component: "DoctorScreen", implemented: true },
-  { id: "doctor-pet-delegate", title: "Делегировать доступ", role: "doctor", path: "/doctor/pets/:petId/delegate", figmaNodeId: "issue:34", component: "DoctorScreen", implemented: true },
-  { id: "administrator-home", title: "Кабинет администратора", role: "administrator", path: "/admin/home", figmaNodeId: "issue:25", component: "AdministratorScreen", implemented: true },
-  { id: "administrator-audit", title: "Кабинет администратора", role: "administrator", path: "/admin/audit", figmaNodeId: "issue:25", component: "AdministratorScreen", implemented: true },
+  { id: "auth-login", title: "Вход", role: "auth", access: "public", path: "/auth/login", figmaNodeId: "issue:25", component: "AuthScreen", implemented: true },
+  { id: "auth-register", title: "Регистрация", role: "auth", access: "public", path: "/auth/register", figmaNodeId: "issue:25", component: "AuthScreen", implemented: true },
+  { id: "auth-consent", title: "Согласия", role: "auth", access: "public", path: "/auth/register/consent", figmaNodeId: "issue:25", component: "AuthScreen", implemented: true },
+  { id: "auth-verify", title: "Подтверждение почты", role: "auth", access: "public", path: "/auth/verify-email", figmaNodeId: "issue:25", component: "AuthScreen", implemented: true },
+  { id: "auth-forgot", title: "Восстановление пароля", role: "auth", access: "public", path: "/auth/forgot-password", figmaNodeId: "issue:25", component: "AuthScreen", implemented: true },
+  { id: "auth-reset", title: "Новый пароль", role: "auth", access: "public", path: "/auth/reset-password", figmaNodeId: "issue:25", component: "AuthScreen", implemented: true },
+  { id: "about", title: "О программе", role: "shared", access: "public", path: "/about", figmaNodeId: "issue:96", component: "AboutScreen", implemented: true },
+  { id: "user-profile", title: "Настройки", role: "shared", access: "authenticated", path: "/profile", figmaNodeId: "issue:25", component: "RoleStatusScreen", implemented: true },
+  { id: "owner-home", title: "Кабинет владельца", role: "owner", access: "authenticated", path: "/owner/home", figmaNodeId: "issue:25", component: "OwnerScreen", implemented: true },
+  { id: "owner-pet-create", title: "Кабинет владельца", role: "owner", access: "authenticated", path: "/owner/pets/new", figmaNodeId: "owner-pages", component: "OwnerScreen", implemented: true },
+  { id: "owner-pet-detail", title: "Кабинет владельца", role: "owner", access: "authenticated", path: "/owner/pets/:petId", figmaNodeId: "owner-pages", component: "OwnerScreen", implemented: true },
+  { id: "owner-pet-edit", title: "Редактировать питомца", role: "owner", access: "authenticated", path: "/owner/pets/:petId/edit", figmaNodeId: "owner-pages", component: "OwnerScreen", implemented: true },
+  { id: "owner-pet-access", title: "Доступ врачей", role: "owner", access: "authenticated", path: "/owner/pets/:petId/access", figmaNodeId: "owner-pages", component: "OwnerScreen", implemented: true },
+  { id: "doctor-home", title: "Кабинет врача", role: "doctor", access: "authenticated", path: "/doctor/home", figmaNodeId: "issue:34", component: "DoctorScreen", implemented: true },
+  { id: "doctor-pet-request-access", title: "Запросить доступ", role: "doctor", access: "authenticated", path: "/doctor/pets/request-access", figmaNodeId: "issue:34", component: "DoctorScreen", implemented: true },
+  { id: "doctor-pet-detail", title: "Медицинская карта", role: "doctor", access: "authenticated", path: "/doctor/pets/:petId", figmaNodeId: "issue:34", component: "DoctorScreen", implemented: true },
+  { id: "doctor-pet-delegate", title: "Делегировать доступ", role: "doctor", access: "authenticated", path: "/doctor/pets/:petId/delegate", figmaNodeId: "issue:34", component: "DoctorScreen", implemented: true },
+  { id: "administrator-home", title: "Кабинет администратора", role: "administrator", access: "authenticated", path: "/admin/home", figmaNodeId: "issue:25", component: "AdministratorScreen", implemented: true },
+  { id: "administrator-audit", title: "Кабинет администратора", role: "administrator", access: "authenticated", path: "/admin/audit", figmaNodeId: "issue:25", component: "AdministratorScreen", implemented: true },
 ];
 
 export const figmaCoverage: FigmaCoverageEntry[] = scenarioRegistry.map((scenario) => ({
   id: `${scenario.figmaNodeId.replace(":", "-")}-${scenario.id}`,
-  source: scenario.figmaNodeId === "issue:34" ? "GitHub issue #34" : "GitHub issue #25 design comment",
+  source: scenario.figmaNodeId === "issue:34"
+    ? "GitHub issue #34"
+    : scenario.figmaNodeId === "issue:96"
+      ? "GitHub issue #96"
+      : "GitHub issue #25 design comment",
   status: "implemented",
   scenarioId: scenario.id,
   notes: "Operational registration and role-system cutover.",

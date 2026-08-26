@@ -308,6 +308,15 @@ test("fresh provisioning, Doctor approval, grant, draft, and confirmation", asyn
   const doctorEmail = `doctor-${suffix}@example.ru`;
   const ownerEmail = `owner-${suffix}@example.ru`;
   const doctorPage = await newPage(await browser.newContext(), "doctor");
+  await doctorPage.setViewportSize({ width: 390, height: 844 });
+  await doctorPage.goto("/auth/login");
+  await doctorPage.getByRole("link", { name: /О программе · Версия/ }).click();
+  await expect(doctorPage).toHaveURL(/\/about$/);
+  await expect(doctorPage.getByRole("heading", { name: "О программе", level: 1 })).toBeVisible();
+  await expect(doctorPage.getByText("Самсонов Максим Станиславович", { exact: true })).toBeVisible();
+  expect(await doctorPage.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBe(true);
+  await doctorPage.getByRole("link", { name: "Ко входу" }).click();
+  await doctorPage.setViewportSize({ width: 1280, height: 720 });
   await register(doctorPage, request, { firstName: "Алёна", lastName: "Врач", email: doctorEmail, role: "doctor" });
   await login(doctorPage, doctorEmail);
   await expect(doctorPage).toHaveURL(/\/profile/, { timeout: replicationTimeout });

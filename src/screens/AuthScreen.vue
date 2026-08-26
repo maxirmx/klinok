@@ -105,7 +105,7 @@ onMounted(async () => {
         <h2>Здоровье питомца под контролем</h2>
         <p>Защищённый доступ для владельцев животных и врачей.</p>
       </div>
-      <span class="version-info">Версия {{ APP_VERSION }}</span>
+      <RouterLink class="version-info auth-about-link" to="/about">О программе · Версия {{ APP_VERSION }}</RouterLink>
     </aside>
 
     <section class="auth-panel">

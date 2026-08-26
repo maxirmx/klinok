@@ -6,7 +6,6 @@
 import { computed, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import type { Role } from "@klinok/contracts";
-import packageJson from "../../package.json";
 import AppIcon from "./AppIcon.vue";
 import AppAlert from "./AppAlert.vue";
 import BrandLogo from "./BrandLogo.vue";
@@ -14,6 +13,7 @@ import PendingCountBadge from "./PendingCountBadge.vue";
 import { appState } from "../appStore";
 import { administratorPendingRequestCount, ownerPendingApprovals } from "../pendingApprovals";
 import { roleHomePath } from "../roleNavigation";
+import { APP_VERSION } from "../version";
 
 type WorkspaceIcon = "home" | "pets" | "plus" | "user" | "book" | "bell" | "eye" | "medical-tools";
 type WorkspaceNavItem = { id: string; label: string; icon: WorkspaceIcon };
@@ -25,6 +25,7 @@ const props = defineProps<{
   title: string;
   profileName: string;
   settings?: boolean;
+  about?: boolean;
   administratorPendingCount?: number;
 }>();
 
@@ -87,10 +88,14 @@ const doctorNavigation: WorkspacePathNavItem[] = [
   { id: "doctor-request-access", label: "Запросить доступ", icon: "plus", path: "/doctor/pets/request-access", exact: true },
 ];
 const effectiveRole = computed<Role | null>(() => props.role
-  ?? (props.settings
+  ?? (props.settings || props.about
     ? appState.activeRole ?? appState.control.roles.find((request) => request.status === "approved")?.role ?? null
     : null));
 const navigation = computed(() => effectiveRole.value ? navigationByRole[effectiveRole.value] : []);
+const brandHref = computed(() => effectiveRole.value
+  && (props.settings || props.about || effectiveRole.value === "administrator")
+  ? roleHomePath(effectiveRole.value)
+  : "#workspace-top");
 
 watch(
   [effectiveRole, () => route.hash],
@@ -106,8 +111,13 @@ function selectSection(id: string) {
 }
 
 function pathActive(path: string, exact = false) {
-  if (props.settings) return false;
+  if (props.settings || props.about) return false;
   return exact ? route.path === path : route.path === path || route.path.startsWith(`${path}/`);
+}
+
+function selectBrand() {
+  if (brandHref.value === "#workspace-top") selectSection("workspace-top");
+  else selectPath(brandHref.value);
 }
 
 function selectPath(path: string) {
@@ -131,8 +141,8 @@ function administratorItemPendingCount(item: WorkspacePathNavItem): number {
     <aside class="workspace-sidebar" aria-label="Основная навигация">
       <a
         class="workspace-brand"
-        :href="effectiveRole === 'administrator' ? '/admin/home' : settings && effectiveRole ? roleHomePath(effectiveRole) : '#workspace-top'"
-        @click.prevent="effectiveRole === 'administrator' ? selectPath('/admin/home') : selectSection('workspace-top')"
+        :href="brandHref"
+        @click.prevent="selectBrand"
       >
         <BrandLogo variant="full" size="compact" />
         <span>Здоровье питомца под контролем</span>
@@ -212,11 +222,15 @@ function administratorItemPendingCount(item: WorkspacePathNavItem): number {
           <AppIcon name="settings" />
           <span>Настройки</span>
         </button>
+        <button class="workspace-nav-item workspace-about-nav-item" :class="{ active: about }" type="button" @click="router.push('/about')">
+          <AppIcon name="info" />
+          <span>О программе</span>
+        </button>
         <button class="workspace-nav-item danger-link" type="button" @click="emit('signOut')">
           <AppIcon name="close" />
           <span>Выйти</span>
         </button>
-        <span class="workspace-version">Версия {{ packageJson.version }}</span>
+        <span class="workspace-version">Версия {{ APP_VERSION }}</span>
       </div>
     </aside>
 
@@ -309,6 +323,17 @@ function administratorItemPendingCount(item: WorkspacePathNavItem): number {
         >
           <AppIcon name="settings" />
           <span>Настройки</span>
+        </button>
+        <button
+          class="workspace-about-nav-item"
+          :class="{ active: about }"
+          type="button"
+          title="О программе"
+          aria-label="О программе"
+          @click="router.push('/about')"
+        >
+          <AppIcon name="info" />
+          <span>О программе</span>
         </button>
         <button
           class="danger-link"

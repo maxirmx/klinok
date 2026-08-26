@@ -242,16 +242,19 @@ describe("Owner pages", () => {
     expect(bottomNavigationItems.map((item) => item.get("span").text())).toEqual([
       "Питомцы",
       "Настройки",
+      "О программе",
       "Выйти",
     ]);
     expect(bottomNavigationItems.map((item) => item.attributes("title"))).toEqual([
       "Питомцы",
       "Настройки",
+      "О программе",
       "Выйти",
     ]);
     expect(bottomNavigationItems.map((item) => item.attributes("aria-label"))).toEqual([
       "Питомцы",
       "Настройки",
+      "О программе",
       "Выйти",
     ]);
     expect(bottomNavigationItems.every((item) => item.element.tagName === "BUTTON")).toBe(true);

@@ -37,6 +37,8 @@ describe("operational Russian UI", () => {
     expect(wrapper.find(".auth-device-name").exists()).toBe(false);
     expect(wrapper.text()).not.toContain("номер телефона");
     expect(wrapper.text()).not.toContain("код из СМС");
+    expect(wrapper.get(".auth-about-link").attributes("href")).toBe("/about");
+    expect(wrapper.get(".auth-about-link").text()).toContain("Версия");
   });
 
   it("keeps the saved device name editable for an existing device", async () => {
@@ -166,7 +168,7 @@ describe("operational Russian UI", () => {
       .toBe("settings");
     expect(workspace.findAll(".workspace-bottom-nav :is(a, button)")[0]!.getComponent(AppIcon).props("name")).toBe("user");
     expect(workspace.findAll(".workspace-bottom-nav :is(a, button)")[2]!.getComponent(AppIcon).props("name")).toBe("settings");
-    expect(bottomLabels).toEqual(["Пользователи", "Журнал", "Настройки", "Выйти"]);
+    expect(bottomLabels).toEqual(["Пользователи", "Журнал", "Настройки", "О программе", "Выйти"]);
     expect(workspace.find(".workspace-sidebar").attributes("aria-label")).toBe("Основная навигация");
     expect(workspace.find(".workspace-bottom-nav").attributes("aria-label")).toBe("Нижняя навигация");
     expect(workspace.text()).toContain("Настройки");
@@ -189,7 +191,7 @@ describe("operational Russian UI", () => {
       .toBe("settings");
     expect(owner.findAll(".workspace-bottom-nav :is(a, button)")[0]!.getComponent(AppIcon).props("name")).toBe("pets");
     expect(owner.findAll(".workspace-bottom-nav :is(a, button) span").map((node) => node.text())).toEqual([
-      "Питомцы", "Настройки", "Выйти",
+      "Питомцы", "Настройки", "О программе", "Выйти",
     ]);
     expect(owner.text()).toContain("Мои питомцы");
   });
