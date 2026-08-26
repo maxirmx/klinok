@@ -124,7 +124,7 @@ describe("command boundary", () => {
           date: "2026-08-10",
           typeId: "instrumental.study.ultrasound-abdomen",
           typeName: "forged",
-          mode: "narrative",
+          mode: "tree",
           findings: [{
             findingId: "instrumental.finding.ultrasound-abdomen.19",
             findingName: "forged",
@@ -161,6 +161,35 @@ describe("command boundary", () => {
         }],
       }] } },
     })).toThrow("не более одного");
+    expect(() => validateMedicalEncounter({
+      ...base,
+      sections: { ...base.sections, "instrumental-tests": { studies: [{
+        id: "123e4567-e89b-12d3-a456-426614174000",
+        date: "2026-08-10",
+        typeId: "instrumental.study.xray-thorax-abdomen",
+        mode: "narrative",
+        result: "Без патологии",
+      }] } },
+    })).toThrow("справочника");
+    expect(() => validateMedicalEncounter({
+      ...base,
+      sections: { ...base.sections, "instrumental-tests": { studies: [{
+        id: "123e4567-e89b-12d3-a456-426614174000",
+        date: "2026-08-10",
+        typeId: "instrumental.study.xray-thorax",
+        mode: "tree",
+        findings: [{
+          findingId: "instrumental.finding.xray-thorax.12",
+          children: [{
+            findingId: "instrumental.finding.xray-thorax.12.2",
+            children: [
+              { findingId: "instrumental.finding.xray-thorax.12.2.1", children: [] },
+              { findingId: "instrumental.finding.xray-thorax.12.2.2", children: [] },
+            ],
+          }],
+        }],
+      }] } },
+    })).toThrow("несовместимые варианты");
   });
 
   it("validates structured diagnosis catalog and free-form representations", () => {

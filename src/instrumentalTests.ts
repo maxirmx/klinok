@@ -31,18 +31,28 @@ function validateFindings(
   errors: Record<string, string>,
 ) {
   const catalogById = new Map(catalog.map((item) => [item.id, item]));
+  const presentIds = new Set(values.map((value) => value.findingId));
   for (const value of values) {
     const item = catalogById.get(value.findingId);
     if (!item) continue;
     if (item.selectionSets?.length) {
       const selectedIds = new Set(value.children.map((child) => child.findingId));
       for (const set of item.selectionSets) {
-        if (set.required && !set.choiceIds.some((id) => selectedIds.has(id))) {
+        const selectedCount = set.choiceIds.filter((id) => selectedIds.has(id)).length;
+        if (selectedCount > 1) {
+          errors[`${item.id}:${set.key}`] = `Для характеристики «${set.name}» можно выбрать не более одного значения.`;
+        } else if (set.required && selectedCount === 0) {
           errors[`${item.id}:${set.key}`] = `Заполните характеристику «${set.name}».`;
         }
       }
     } else if (item.kind === "group" && !value.children.length && item.selectionMode !== "multiple") {
       errors[item.id] = `Заполните показатель «${item.name}».`;
+    }
+    if (item.selectionMode === "multiple") {
+      const selectedIds = new Set(value.children.map((child) => child.findingId));
+      if (item.conflictPairs?.some(([left, right]) => selectedIds.has(left) && selectedIds.has(right))) {
+        errors[item.id] = `Для показателя «${item.name}» выбраны несовместимые варианты.`;
+      }
     }
     if (item.kind === "integer" || item.kind === "short-text" || item.kind === "long-text") {
       const text = value.value?.trim() ?? "";
@@ -52,6 +62,9 @@ function validateFindings(
       }
     }
     validateFindings(value.children, item.children, errors);
+  }
+  for (const item of catalog) {
+    if (item.required && !presentIds.has(item.id)) errors[item.id] = `Заполните поле «${item.name}».`;
   }
 }
 

@@ -151,7 +151,7 @@ describe("MedicalRecordEntry", () => {
     expect(history.text()).toContain("Натощак");
   });
 
-  it("renders hierarchical and narrative instrumental studies", () => {
+  it("renders structured ultrasound and thoracic X-ray studies recursively", () => {
     const wrapper = mount(MedicalRecordEntry, {
       props: {
         record: {
@@ -201,10 +201,36 @@ describe("MedicalRecordEntry", () => {
               }, {
                 id: "223e4567-e89b-12d3-a456-426614174000",
                 date: "2026-07-21",
-                typeId: "instrumental.study.xray-thorax-abdomen",
-                typeName: "Рентген грудной и брюшной полости",
-                mode: "narrative",
-                result: "Очаговых изменений нет",
+                typeId: "instrumental.study.xray-thorax",
+                typeName: "Рентгенография грудной полости",
+                mode: "tree",
+                findings: [{
+                  findingId: "instrumental.finding.xray-thorax.10",
+                  findingName: "Купол диафрагмы",
+                  children: [{
+                    findingId: "instrumental.finding.xray-thorax.10.0",
+                    findingName: "Характеристики купола",
+                    children: [{
+                      findingId: "instrumental.finding.xray-thorax.10.0.3",
+                      findingName: "Чёткий",
+                      children: [],
+                    }, {
+                      findingId: "instrumental.finding.xray-thorax.10.0.5",
+                      findingName: "На LL-проекции в области межреберья",
+                      children: [{
+                        findingId: "instrumental.finding.xray-thorax.10.0.5.intercostal",
+                        findingName: "Межреберье на LL-проекции",
+                        value: "7",
+                        children: [],
+                      }],
+                    }],
+                  }],
+                }, {
+                  findingId: "instrumental.finding.xray-thorax.20",
+                  findingName: "Заключение",
+                  value: "Очаговых и диффузных изменений в лёгочных полях не выявлено",
+                  children: [],
+                }],
               }] },
               authorAccountId: "doctor-1",
               authorDisplayName: "Вера Врач",
@@ -219,12 +245,15 @@ describe("MedicalRecordEntry", () => {
     });
     const history = wrapper.get(".instrumental-history");
     expect(history.findAll(".instrumental-history-study")).toHaveLength(2);
-    expect(history.findAll(".instrumental-history-findings .instrumental-history-findings")).toHaveLength(3);
+    expect(history.findAll(".instrumental-history-findings .instrumental-history-findings")).toHaveLength(6);
     expect(history.text()).toContain("20.07.2026 · УЗИ органов брюшной полости");
     expect(history.text()).toContain("Взвесь/осадок: Незначительно");
     expect(history.text()).toContain("Размер: 12 мм");
     expect(history.text()).toContain("Размер образований: 7 мм");
-    expect(history.text()).toContain("Очаговых изменений нет");
+    expect(history.text()).toContain("21.07.2026 · Рентгенография грудной полости");
+    expect(history.text()).toContain("Чёткий");
+    expect(history.text()).toContain("Межреберье на LL-проекции: 7");
+    expect(history.text()).toContain("Заключение: Очаговых и диффузных изменений в лёгочных полях не выявлено");
     expect(history.text()).toContain("Контроль");
   });
 

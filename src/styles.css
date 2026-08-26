@@ -852,7 +852,6 @@ dd {
   flex: 0 0 34px;
   align-self: flex-start;
 }
-.temporary-note { margin: 0; color: var(--muted); font-size: .85rem; }
 .diagnosis-editor { display: grid; gap: 10px; }
 .diagnosis-field { display: grid; gap: 8px; }
 .diagnosis-field > legend { padding: 0 4px; font-weight: 600; }
@@ -3482,8 +3481,7 @@ dd {
 .instrumental-findings-grid { container-type: inline-size; }
 .instrumental-finding-level,
 .instrumental-finding-create,
-.instrumental-finding-row,
-.instrumental-result-headings { grid-column: 1 / -1; }
+.instrumental-finding-row { grid-column: 1 / -1; }
 .instrumental-finding-level { row-gap: 0; }
 .instrumental-finding-create,
 .instrumental-finding-row { padding-top: 8px; align-items: start; }
@@ -3503,8 +3501,6 @@ dd {
   min-width: 0;
   padding-inline-start: calc(var(--instrumental-depth, 0) * 22px);
 }
-.instrumental-result-headings { display: none; }
-.instrumental-result-heading-content,
 .instrumental-result-content {
   grid-column: 1;
   display: grid;
@@ -3517,6 +3513,16 @@ dd {
 .instrumental-result-control :is(input, .app-select, textarea) { width: 100%; min-width: 0; box-sizing: border-box; }
 .instrumental-multiple-choice-panel { min-width: 0; }
 .instrumental-multiple-choice-panel > .medical-card-options { margin-top: 3px; }
+.instrumental-multiple-choice-option { display: grid; min-width: 0; align-content: start; gap: 3px; }
+.instrumental-multiple-choice-option > .instrumental-finding-level {
+  grid-template-columns: minmax(0, 1fr);
+  min-width: 0;
+}
+.instrumental-multiple-choice-option .instrumental-finding-row { grid-column: 1; padding-top: 3px; border-top: 0; }
+.instrumental-multiple-choice-option .instrumental-finding-content { grid-column: 1; padding-inline-start: 0; }
+.instrumental-multiple-choice-option .instrumental-result-content { grid-template-columns: minmax(0, 1fr); padding-inline-start: 0; }
+.instrumental-multiple-choice-option .instrumental-result-desktop-name { display: none; }
+.instrumental-multiple-choice-option .instrumental-result-mobile-name { display: block; white-space: normal; }
 .instrumental-selection-set-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px 10px; }
 .instrumental-selection-set-field { display: grid; min-width: 0; align-content: start; gap: 2px; }
 .instrumental-integer-field { display: grid; grid-template-columns: minmax(0, 1fr) auto; min-width: 0; }
@@ -3554,8 +3560,6 @@ dd {
 .workspace-content .instrumental-findings-grid .instrumental-result-row .instrumental-finding-delete { margin-top: 16px; }
 .workspace-content .instrumental-findings-grid .instrumental-root-choice-row .instrumental-finding-delete { margin-top: 0; }
 @container (min-width: 38rem) {
-  .instrumental-result-headings { display: grid; padding: .5rem 0; font-weight: 700; }
-  .instrumental-result-heading-content,
   .instrumental-result-content {
     grid-template-columns: minmax(12rem, 1.5fr) minmax(8rem, 1fr);
     gap: .75rem;

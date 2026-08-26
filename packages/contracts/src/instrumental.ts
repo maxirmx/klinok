@@ -2,9 +2,12 @@
 // All rights reserved.
 // This file is a part of Klinok application
 
+import { XRAY_THORAX_FINDINGS } from "./xrayThorax.js";
+
 export type InstrumentalStudyMode = "tree" | "narrative";
 export type InstrumentalFindingKind = "group" | "choice" | "integer" | "short-text" | "long-text";
 export type InstrumentalSelectionMode = "single" | "multiple";
+export type InstrumentalConflictPair = readonly [string, string];
 
 export interface InstrumentalSelectionSet {
   readonly key: string;
@@ -20,6 +23,8 @@ export interface InstrumentalFindingCatalogItem {
   readonly unit?: string;
   readonly selectionMode?: InstrumentalSelectionMode;
   readonly selectionSets?: readonly InstrumentalSelectionSet[];
+  readonly conflictPairs?: readonly InstrumentalConflictPair[];
+  readonly required?: boolean;
   readonly children: readonly InstrumentalFindingCatalogItem[];
 }
 
@@ -292,7 +297,7 @@ const ultrasoundAbdomen: readonly InstrumentalFindingCatalogItem[] = [
 
 export const INSTRUMENTAL_STUDY_CATALOG: readonly InstrumentalStudyTypeCatalogItem[] = [
   { id: "instrumental.study.ultrasound-abdomen", name: "УЗИ органов брюшной полости", mode: "tree", findings: ultrasoundAbdomen },
-  { id: "instrumental.study.xray-thorax-abdomen", name: "Рентген грудной и брюшной полости", mode: "narrative", findings: [] },
+  { id: "instrumental.study.xray-thorax", name: "Рентгенография грудной полости", mode: "tree", findings: XRAY_THORAX_FINDINGS },
 ];
 
 export const INSTRUMENTAL_STUDY_OPTIONS = INSTRUMENTAL_STUDY_CATALOG.map(({ id, name }) => ({ id, label: name }));
@@ -305,6 +310,19 @@ for (const study of INSTRUMENTAL_STUDY_CATALOG) indexFindings(study.findings);
 
 export const instrumentalStudyTypeById = (id: string) => types.get(id);
 export const instrumentalFindingById = (id: string) => findings.get(id);
+
+export function replaceConflictingInstrumentalChoices(
+  selectedIds: readonly string[],
+  requestedId: string,
+  conflictPairs: readonly InstrumentalConflictPair[] = [],
+): string[] {
+  const conflicting = new Set<string>();
+  for (const [left, right] of conflictPairs) {
+    if (left === requestedId) conflicting.add(right);
+    if (right === requestedId) conflicting.add(left);
+  }
+  return [...selectedIds.filter((id) => id !== requestedId && !conflicting.has(id)), requestedId];
+}
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 function validDate(value: string): boolean {
@@ -432,6 +450,12 @@ function validateChoiceCardinality(
   if (parent?.selectionMode !== "multiple" && selectedIds.length > 1) {
     throw new Error("Для показателя можно выбрать не более одного значения.");
   }
+  if (parent?.selectionMode === "multiple") {
+    const selected = new Set(selectedIds);
+    if (parent.conflictPairs?.some(([left, right]) => selected.has(left) && selected.has(right))) {
+      throw new Error(`Для показателя «${parent.name}» выбраны несовместимые варианты.`);
+    }
+  }
 }
 
 function normalizeFindings(
@@ -476,6 +500,8 @@ function normalizeFindings(
       normalized.push({ findingId: item.id, findingName: item.name, children });
     }
   }
+  const missingRequired = catalog.find((item) => item.required && !seen.has(item.id));
+  if (missingRequired) throw new Error(`Заполните поле «${missingRequired.name}».`);
   validateChoiceCardinality(normalized, parent);
   return normalized.sort((left, right) => (catalogOrder.get(left.findingId) ?? 0) - (catalogOrder.get(right.findingId) ?? 0));
 }
@@ -496,6 +522,9 @@ export function normalizeInstrumentalTestsValue(
     seen.add(id);
     if (!validDate(date) || date > today) throw new Error("Укажите корректную дату исследования.");
     if (!type) throw new Error("Выберите инструментальное исследование из справочника.");
+    if (input.mode === "narrative" && type.mode !== "narrative") {
+      throw new Error("Повествовательный режим инструментального исследования не поддерживается.");
+    }
     const comment = String(input.comment ?? "").trim();
     const base = { id, date, typeId: type.id, typeName: type.name, ...(comment ? { comment } : {}) };
     if (type.mode === "narrative") {

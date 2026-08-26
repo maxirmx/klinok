@@ -108,7 +108,7 @@ describe("medical encounter templates", () => {
     expect(sections["what-happened"].value.selectedIds).toEqual(["well.8", "well.9"]);
   });
 
-  it("indexes hierarchical and narrative instrumental results", () => {
+  it("indexes structured ultrasound and thoracic X-ray results", () => {
     const tree = {
       studies: [{
         id: "123e4567-e89b-12d3-a456-426614174000",
@@ -128,11 +128,17 @@ describe("medical encounter templates", () => {
     expect(sectionSearchText(tree)).toContain("УЗИ органов брюшной полости Контроль Заключение Без патологии");
     expect(sectionSearchText({ studies: [{
       ...tree.studies[0],
-      typeId: "instrumental.study.xray-thorax-abdomen",
-      typeName: "Рентген грудной и брюшной полости",
-      mode: "narrative",
-      result: "Очаговых изменений нет",
-    }] })).toContain("Очаговых изменений нет");
+      typeId: "instrumental.study.xray-thorax",
+      typeName: "Рентгенография грудной полости",
+      mode: "tree",
+      comment: undefined,
+      findings: [{
+        findingId: "instrumental.finding.xray-thorax.20",
+        findingName: "Заключение",
+        value: "Очаговых изменений нет",
+        children: [],
+      }],
+    }] })).toContain("Рентгенография грудной полости Заключение Очаговых изменений нет");
   });
 
   it("defines, validates, and indexes the structured outcome template", () => {
