@@ -13,7 +13,7 @@ describe("operational routes", () => {
   it("exposes auth, profile, and final role workspaces", () => {
     const paths = scenarioRegistry.map((scenario) => scenario.path);
     expect(paths).toEqual(expect.arrayContaining([
-      "/auth/login", "/auth/register", "/auth/register/consent", "/auth/verify-email",
+      "/auth/login", "/auth/register", "/auth/register/consent", "/auth/verify-email", "/about",
       "/profile", "/owner/home", "/owner/pets/new", "/owner/pets/:petId", "/owner/pets/:petId/edit",
       "/owner/pets/:petId/access",
       "/doctor/home", "/admin/home", "/admin/audit",
@@ -27,11 +27,22 @@ describe("operational routes", () => {
     expect(text).not.toContain("/company/");
     expect(text).not.toContain("/vet/");
     expect(text).not.toContain("/cancel-access");
-    expect(scenarioRegistry.every((scenario) => ["issue:25", "issue:34", "owner-pages"].includes(scenario.figmaNodeId))).toBe(true);
+    expect(scenarioRegistry.every((scenario) => ["issue:25", "issue:34", "issue:96", "owner-pages"].includes(scenario.figmaNodeId))).toBe(true);
   });
 
   it("keeps the prototype pet-list URL as a compatibility redirect", () => {
     expect(routes.find((route) => route.path === "/owner/pets")?.redirect).toBe("/owner/home");
+  });
+
+  it("derives public route metadata from the scenario access policy", () => {
+    expect(scenarioRegistry.filter((scenario) => scenario.access === "public").map((scenario) => scenario.path)).toEqual([
+      "/auth/login", "/auth/register", "/auth/register/consent", "/auth/verify-email",
+      "/auth/forgot-password", "/auth/reset-password", "/about",
+    ]);
+    scenarioRegistry.forEach((scenario) => {
+      expect(routes.find((route) => route.path === scenario.path)?.meta?.public)
+        .toBe(scenario.access === "public");
+    });
   });
 
   it("renders and filters the QA scenario menu", async () => {

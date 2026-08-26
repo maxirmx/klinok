@@ -7,6 +7,7 @@ import type { Pinia } from "pinia";
 import { createRouter, createWebHistory, type RouteRecordRaw, type Router } from "vue-router";
 import type { Role } from "@klinok/contracts";
 import AuthScreen from "./screens/AuthScreen.vue";
+import AboutScreen from "./screens/AboutScreen.vue";
 import RoleStatusScreen from "./screens/RoleStatusScreen.vue";
 import OwnerScreen from "./screens/OwnerScreen.vue";
 import DoctorScreen from "./screens/DoctorScreen.vue";
@@ -18,6 +19,7 @@ import { useAlertStore } from "./stores/alert";
 
 const components: Record<ScenarioComponentName, Component> = {
   AuthScreen,
+  AboutScreen,
   RoleStatusScreen,
   OwnerScreen,
   DoctorScreen,
@@ -47,7 +49,7 @@ export const routes: RouteRecordRaw[] = [
     component: components[scenario.component],
     props: { scenarioId: scenario.id, role: roleByScenario[scenario.id] },
     meta: {
-      public: scenario.role === "auth",
+      public: scenario.access === "public",
       role: roleByScenario[scenario.id],
       title: scenario.title,
     },
