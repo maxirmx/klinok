@@ -966,6 +966,79 @@ describe("Doctor pages", () => {
     }));
   });
 
+  it("reveals, describes, and focuses the first save error in visual order", async () => {
+    const wrapper = await mountAt("/doctor/pets/pet-1", "doctor-pet-detail");
+    document.body.append(wrapper.element);
+    try {
+      await flushPromises();
+      await wrapper.findAll(".encounter-taxonomy label").find((label) => label.text() === "Не ест")!
+        .get("input").trigger("change");
+      await wrapper.findAll(".encounter-outcome .check-row")
+        .find((option) => option.text() === "В стадии наблюдения")!
+        .get("input").trigger("change");
+
+      for (const kind of [
+        "diagnosis",
+        "therapeutic-appointment",
+        "laboratory-tests",
+        "instrumental-tests",
+        "general-data",
+        "vaccination",
+      ]) {
+        await wrapper.get<HTMLSelectElement>(".encounter-add-section select").setValue(kind);
+        await flushPromises();
+      }
+
+      const therapeutic = wrapper.findAll(".encounter-section-card")
+        .find((card) => card.find("h3").exists() && card.get("h3").text() === "Терапевтический приём")!;
+      await therapeutic.get('button[aria-label="Добавить проблему"]').trigger("click");
+      await therapeutic.get<HTMLSelectElement>(".therapeutic-problem-fields select")
+        .setValue("problem.onset.today");
+      await therapeutic.findAll('[role="tab"]')[3]!.trigger("click");
+
+      const date = wrapper.get<HTMLInputElement>('.encounter-date-field input[type="date"]');
+      await date.setValue("");
+      await wrapper.get('button[title="Сохранить запись"]').trigger("click");
+      await flushPromises();
+
+      expect(repositoryMocks.saveEncounter).not.toHaveBeenCalled();
+      expect(document.activeElement).toBe(date.element);
+      expect(wrapper.get(".encounter-diagnosis .field-error").text()).toContain("хотя бы один диагноз");
+      expect(therapeutic.get(".therapeutic-problem-title .field-error").text()).toContain("название проблемы");
+      expect(wrapper.get(".encounter-laboratory-tests .field-error").text()).toContain("хотя бы одно лабораторное");
+      expect(wrapper.get(".encounter-instrumental-tests .field-error").text()).toContain("хотя бы одно инструментальное");
+      expect(wrapper.get(".general-data-fields").element.previousElementSibling?.textContent)
+        .toContain("хотя бы один показатель");
+      expect(wrapper.get(".vaccination-fields").element.previousElementSibling?.textContent)
+        .toContain("нынешней вакцинации или номер чипа");
+
+      await date.setValue("2026-07-21");
+      await wrapper.get('button[title="Сохранить запись"]').trigger("click");
+      await flushPromises();
+      const diagnosisError = wrapper.get<HTMLElement>('.encounter-diagnosis [data-encounter-error-anchor="true"]');
+      expect(document.activeElement).toBe(diagnosisError.element);
+
+      await therapeutic.findAll('[role="tab"]')[3]!.trigger("click");
+      await wrapper.get<HTMLInputElement>('.encounter-diagnosis input[role="combobox"]').setValue("Гастрит");
+      await wrapper.get('button[title="Сохранить запись"]').trigger("click");
+      await flushPromises();
+      const problemTitle = therapeutic.get<HTMLInputElement>(".therapeutic-problem-title input");
+      const problemError = therapeutic.get(".therapeutic-problem-title .field-error");
+      expect(therapeutic.findAll('[role="tab"]')[0]!.attributes("aria-selected")).toBe("true");
+      expect(document.activeElement).toBe(problemTitle.element);
+      expect(problemTitle.attributes("aria-describedby")).toBe(problemError.attributes("id"));
+
+      await problemTitle.setValue("Кашель");
+      await wrapper.get('button[title="Сохранить запись"]').trigger("click");
+      await flushPromises();
+      const laboratoryType = wrapper.get<HTMLInputElement>('.encounter-laboratory-tests input[aria-label="Тип исследования"]');
+      expect(document.activeElement).toBe(laboratoryType.element);
+      expect(therapeutic.find(".therapeutic-problem-title .field-error").exists()).toBe(false);
+    } finally {
+      wrapper.unmount();
+    }
+  });
+
   it("validates and saves the structured general-data template", async () => {
     const wrapper = await mountAt("/doctor/pets/pet-1", "doctor-pet-detail");
     await flushPromises();
@@ -980,6 +1053,17 @@ describe("Doctor pages", () => {
       .toEqual(["Сист.", "Диаст.", "Сред."]);
     const inputs = wrapper.findAll<HTMLInputElement>(".general-data-fields input");
     expect(inputs).toHaveLength(7);
+    for (const [input, value] of inputs.slice(0, 5).map((item, index) => [item, ["-1", "0", "1000", "1000", "120"][index]!] as const)) {
+      await input.setValue(value);
+    }
+    await wrapper.get('button[title="Сохранить запись"]').trigger("click");
+    await flushPromises();
+    const invalidMeasurements = inputs.slice(0, 4);
+    const measurementErrors = wrapper.findAll(".general-data-fields > label .field-error");
+    expect(invalidMeasurements.map((input) => input.attributes("aria-describedby")))
+      .toEqual(measurementErrors.map((error) => error.attributes("id")));
+    expect(invalidMeasurements.every((input) => input.attributes("aria-invalid") === "true")).toBe(true);
+
     await inputs[0]!.setValue("13.75");
     await inputs[1]!.setValue("38.6");
     await inputs[2]!.setValue("112");
@@ -987,7 +1071,12 @@ describe("Doctor pages", () => {
     await inputs[4]!.setValue("120");
     await wrapper.get('button[title="Сохранить запись"]').trigger("click");
     expect(repositoryMocks.saveEncounter).not.toHaveBeenCalled();
-    expect(wrapper.get(".general-data-pressure .field-error").text()).toContain("все три");
+    const pressureError = wrapper.get(".general-data-pressure .field-error");
+    expect(pressureError.text()).toContain("все три");
+    expect(wrapper.findAll(".general-data-pressure input").map((input) => input.attributes("aria-invalid")))
+      .toEqual(["true", "true", "true"]);
+    expect(wrapper.findAll(".general-data-pressure input").map((input) => input.attributes("aria-describedby")))
+      .toEqual(Array(3).fill(pressureError.attributes("id")));
 
     await inputs[5]!.setValue("80");
     await inputs[6]!.setValue("93");
@@ -1389,6 +1478,24 @@ describe("Doctor pages", () => {
     expect(card.get(".vaccination-revaccination-options").find("button.active").exists()).toBe(false);
     await revaccinationToggle.trigger("click");
 
+    await field("Дата предыдущей вакцинации").get("input").setValue("0001-01-01");
+    await wrapper.get('button[title="Сохранить запись"]').trigger("click");
+    await flushPromises();
+    for (const label of [
+      "Дата предыдущей вакцинации",
+      "Название нынешней вакцины",
+      "Серия и/или номер вакцины",
+      "Срок годности препарата/вакцины",
+    ]) {
+      const input = field(label).get("input");
+      const error = field(label).get(".field-error");
+      expect(input.attributes("aria-invalid")).toBe("true");
+      expect(input.attributes("aria-describedby")).toBe(error.attributes("id"));
+    }
+    const initialRevaccinationError = card.get(".vaccination-revaccination-field .field-error");
+    expect(revaccinationDate.attributes("aria-invalid")).toBe("true");
+    expect(revaccinationDate.attributes("aria-describedby")).toBe(initialRevaccinationError.attributes("id"));
+
     await field("Дата предыдущей вакцинации").get("input").setValue("2026-04-14");
     await field("Название предыдущей вакцины").get("input").setValue("Биокан");
     await field("Название нынешней вакцины").get("input").setValue("Мультикан-8");
@@ -1398,6 +1505,18 @@ describe("Doctor pages", () => {
     expect(card.text()).toContain("Укажите корректную дату следующей ревакцинации");
     expect(card.text()).toContain("Укажите серию и/или номер вакцины");
     expect(card.text()).toContain("Укажите срок годности вакцины");
+    for (const label of [
+      "Серия и/или номер вакцины",
+      "Срок годности препарата/вакцины",
+    ]) {
+      const input = field(label).get("input");
+      const error = field(label).get(".field-error");
+      expect(input.attributes("aria-invalid")).toBe("true");
+      expect(input.attributes("aria-describedby")).toBe(error.attributes("id"));
+    }
+    const revaccinationError = card.get(".vaccination-revaccination-field .field-error");
+    expect(revaccinationDate.attributes("aria-invalid")).toBe("true");
+    expect(revaccinationDate.attributes("aria-describedby")).toBe(revaccinationError.attributes("id"));
 
     await revaccinationToggle.trigger("click");
     revaccinationOptions = card.get(".vaccination-revaccination-options");

@@ -72,6 +72,46 @@ async function selectChoice(wrapper: VueWrapper, id: string) {
 }
 
 describe("InstrumentalTestsEditor", () => {
+  it("describes errors for every finding render mode", () => {
+    const catalog: readonly InstrumentalFindingCatalogItem[] = [
+      { id: "group", name: "Раздел", kind: "group", children: [] },
+      { id: "integer", name: "Количество", kind: "integer", unit: "мм", children: [] },
+      { id: "short", name: "Краткое значение", kind: "short-text", children: [] },
+      { id: "long", name: "Подробное значение", kind: "long-text", children: [] },
+      {
+        id: "choice-group",
+        name: "Выбор",
+        kind: "group",
+        children: [{ id: "choice", name: "Вариант", kind: "choice", children: [] }],
+      },
+    ];
+    const values: readonly InstrumentalFindingValue[] = catalog.map((item) => ({
+      findingId: item.id,
+      findingName: item.name,
+      ...(["integer", "short-text", "long-text"].includes(item.kind) ? { value: "" } : {}),
+      ...(item.unit ? { unit: item.unit } : {}),
+      children: [],
+    }));
+    const errors = Object.fromEntries(catalog.map((item) => [item.id, `Ошибка: ${item.name}`]));
+    const wrapper = mount(InstrumentalFindingEditor, {
+      props: { catalog, modelValue: values, errors },
+    });
+    const fields = [
+      wrapper.get('[data-finding-id="group"]'),
+      wrapper.get('input[aria-label="Количество, мм"]'),
+      wrapper.get('input[aria-label="Краткое значение"]'),
+      wrapper.get('textarea[aria-label="Подробное значение"]'),
+      wrapper.get('select[aria-label="Значение показателя «Выбор»"]'),
+    ];
+
+    for (const field of fields) {
+      const errorId = field.attributes("aria-describedby");
+      expect(field.attributes("aria-invalid")).toBe("true");
+      expect(errorId).toBeTruthy();
+      expect(wrapper.findAll(".field-error").some((error) => error.attributes("id") === errorId)).toBe(true);
+    }
+  });
+
   it("places level creation after values, preserves data, and focuses an added finding", async () => {
     const catalog: readonly InstrumentalFindingCatalogItem[] = [
       { id: "first", name: "Первый", kind: "short-text", children: [] },
@@ -415,12 +455,15 @@ describe("InstrumentalTestsEditor", () => {
       [`${id("10.1")}:regularity`]: "Заполните характеристику «Ровность контуров».",
       [`${id("10.1")}:definition`]: "Заполните характеристику «Чёткость контуров».",
     } }] } });
-    expect(wrapper.findAll(".instrumental-selection-set-field .field-error").map((error) => error.text())).toEqual([
+    const selectionErrors = wrapper.findAll(".instrumental-selection-set-field .field-error");
+    expect(selectionErrors.map((error) => error.text())).toEqual([
       "Заполните характеристику «Ровность контуров».",
       "Заполните характеристику «Чёткость контуров».",
     ]);
     expect(regularity.attributes("aria-invalid")).toBe("true");
     expect(definition.attributes("aria-invalid")).toBe("true");
+    expect([regularity, definition].map((field) => field.attributes("aria-describedby")))
+      .toEqual(selectionErrors.map((error) => error.attributes("id")));
     await definition.setValue(id("10.1.4"));
     await regularity.setValue(id("10.1.1"));
     expect(definition.element.value).toBe(id("10.1.4"));
@@ -519,15 +562,25 @@ describe("InstrumentalTestsEditor", () => {
     const { wrapper, current } = mountEditor({ studies: [] }, {
       section: "Добавьте хотя бы одно инструментальное исследование.", studies: [],
     });
-    expect(wrapper.get('[role="alert"]').text()).toContain("Добавьте хотя бы одно");
-    expect(wrapper.get('input[aria-label="Тип исследования"]').attributes("aria-invalid")).toBe("true");
+    const sectionError = wrapper.get('[role="alert"]');
+    const typeInput = wrapper.get('input[aria-label="Тип исследования"]');
+    expect(sectionError.text()).toContain("Добавьте хотя бы одно");
+    expect(typeInput.attributes("aria-invalid")).toBe("true");
+    expect(typeInput.attributes("aria-describedby")).toBe(sectionError.attributes("id"));
     await chooseType(wrapper, "instrumental.study.xray-thorax-abdomen");
     expect(current().studies[0]).toMatchObject({ mode: "narrative", result: "" });
+    await wrapper.setProps({ errors: { studies: [{ section: "Добавьте результат исследования." }] } });
+    const studySectionError = wrapper.get('.instrumental-study-card [data-encounter-error-anchor="true"]');
+    expect(studySectionError.attributes("tabindex")).toBe("-1");
     await wrapper.setProps({ errors: { studies: [{ date: "Укажите корректную дату исследования.", result: "Укажите результат исследования." }] } });
-    expect(wrapper.findAll('[aria-invalid="true"]')).toHaveLength(2);
-    expect(wrapper.findAll(".instrumental-study-card .field-error").map((error) => error.text())).toEqual([
+    const invalidFields = wrapper.findAll('[aria-invalid="true"]');
+    const fieldErrors = wrapper.findAll(".instrumental-study-card .field-error");
+    expect(invalidFields).toHaveLength(2);
+    expect(fieldErrors.map((error) => error.text())).toEqual([
       "Укажите корректную дату исследования.", "Укажите результат исследования.",
     ]);
+    expect(invalidFields.map((field) => field.attributes("aria-describedby")))
+      .toEqual(fieldErrors.map((error) => error.attributes("id")));
     await wrapper.get(".instrumental-study-card > label textarea").setValue("Очаговых изменений нет");
     const comment = wrapper.get(".instrumental-study-comment");
     expect(comment.get("textarea").attributes("rows")).toBe("2");

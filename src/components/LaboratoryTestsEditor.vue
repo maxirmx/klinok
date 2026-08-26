@@ -3,7 +3,7 @@
 // All rights reserved.
 // This file is a part of Klinok application
 
-import { computed, nextTick, ref } from "vue";
+import { computed, nextTick, ref, useId } from "vue";
 import { LABORATORY_STUDY_OPTIONS, laboratoryStudyTypeById, type LaboratoryStudyValue, type LaboratoryTestsSectionValue } from "@klinok/contracts";
 import AppCatalogCombobox from "./AppCatalogCombobox.vue";
 import AppIcon from "./AppIcon.vue";
@@ -19,6 +19,7 @@ const pending = ref<{ action: () => void; title: string; description: string } |
 const pendingTypeIds = ref<string[]>([]);
 const pendingIndicatorIds = ref<Record<string, string[]>>({});
 const resultFields = new Map<string, HTMLInputElement>();
+const errorBaseId = useId();
 const pendingType = computed(() => laboratoryStudyTypeById(pendingTypeIds.value[0] ?? ""));
 const confirmOpen = computed({ get: () => Boolean(pending.value), set: (value) => { if (!value) pending.value = null; } });
 const confirmTitle = computed(() => pending.value?.title ?? "Удалить заполненное исследование?");
@@ -112,6 +113,12 @@ function removeIndicator(studyId: string, indicatorId: string) {
 }
 function confirm() { const action = pending.value?.action; pending.value = null; action?.(); }
 function invalid(message?: string) { return message ? true : undefined; }
+function errorId(...parts: string[]) {
+  return `${errorBaseId}-${parts.join("-").replace(/[^a-zA-Z0-9_-]/g, "-")}-error`;
+}
+function describedBy(message: string | undefined, ...parts: string[]) {
+  return message ? errorId(...parts) : undefined;
+}
 function updateInfectionMethod(study: Extract<LaboratoryStudyValue, { mode: "infection" }>, value: string) {
   study.method = value as Extract<LaboratoryStudyValue, { mode: "infection" }>["method"];
 }
@@ -121,18 +128,18 @@ function updateInfectionMethod(study: Extract<LaboratoryStudyValue, { mode: "inf
   <div class="laboratory-study-create">
     <span class="field-label">Тип исследования</span>
     <div class="laboratory-study-create-control medical-card-action-grid">
-      <AppCatalogCombobox v-model:selected-ids="pendingTypeIds" label="Тип исследования" :options="LABORATORY_STUDY_OPTIONS" custom-text="" :allow-custom="false" :invalid="Boolean(errors.section)" />
+      <AppCatalogCombobox v-model:selected-ids="pendingTypeIds" label="Тип исследования" :options="LABORATORY_STUDY_OPTIONS" custom-text="" :allow-custom="false" :invalid="Boolean(errors.section)" :described-by="describedBy(errors.section, 'section')" />
       <button type="button" class="outline-action inline medical-card-action laboratory-study-add" :disabled="!pendingType" title="Добавить исследование" aria-label="Добавить исследование" @click="addStudy"><AppIcon name="plus" /></button>
     </div>
-    <small v-if="errors.section" class="field-error" role="alert">{{ errors.section }}</small>
+    <small v-if="errors.section" :id="errorId('section')" class="field-error" role="alert">{{ errors.section }}</small>
   </div>
   <div class="laboratory-study-list">
     <section v-for="(study, index) in model.studies" :key="study.id" class="laboratory-study-card">
       <div class="doctor-heading laboratory-study-heading"><h4 :title="study.typeName">{{ study.typeName }}</h4><button type="button" class="outline-action inline danger-outline medical-card-action laboratory-study-delete" title="Удалить исследование" aria-label="Удалить исследование" @click="removeStudy(study.id)"><AppIcon name="trash" /></button></div>
-      <small v-if="errors.studies[index]?.section" class="field-error" role="alert">{{ errors.studies[index]?.section }}</small>
+      <small v-if="errors.studies[index]?.section" :id="errorId(study.id, 'section')" class="field-error" role="alert" tabindex="-1" data-encounter-error-anchor="true">{{ errors.studies[index]?.section }}</small>
       <div class="laboratory-metadata">
-        <label><span>Дата исследования</span><input v-model="study.date" type="date" :max="new Date().toISOString().slice(0, 10)" required :aria-invalid="invalid(errors.studies[index]?.date)" /><small v-if="errors.studies[index]?.date" class="field-error" role="alert">{{ errors.studies[index]?.date }}</small></label>
-        <label><span>Лаборатория</span><input v-model="study.laboratory" required :aria-invalid="invalid(errors.studies[index]?.laboratory)" /><small v-if="errors.studies[index]?.laboratory" class="field-error" role="alert">{{ errors.studies[index]?.laboratory }}</small></label>
+        <label><span>Дата исследования</span><input v-model="study.date" type="date" :max="new Date().toISOString().slice(0, 10)" required :aria-invalid="invalid(errors.studies[index]?.date)" :aria-describedby="describedBy(errors.studies[index]?.date, study.id, 'date')" /><small v-if="errors.studies[index]?.date" :id="errorId(study.id, 'date')" class="field-error" role="alert">{{ errors.studies[index]?.date }}</small></label>
+        <label><span>Лаборатория</span><input v-model="study.laboratory" required :aria-invalid="invalid(errors.studies[index]?.laboratory)" :aria-describedby="describedBy(errors.studies[index]?.laboratory, study.id, 'laboratory')" /><small v-if="errors.studies[index]?.laboratory" :id="errorId(study.id, 'laboratory')" class="field-error" role="alert">{{ errors.studies[index]?.laboratory }}</small></label>
         <label><span>ФИО лаборанта</span><input v-model="study.technician" /></label>
         <label><span>Оборудование</span><input v-model="study.equipment" /></label>
       </div>
@@ -152,8 +159,8 @@ function updateInfectionMethod(study: Extract<LaboratoryStudyValue, { mode: "inf
               </div>
               <label>
                 <span class="laboratory-result-mobile-name" :title="`${result.indicatorName} · ${result.unit || '—'}`">{{ result.indicatorName }} · {{ result.unit || '—' }}</span>
-                <input :ref="(element) => setResultField(study.id, result.indicatorId, element)" v-model="result.result" required :aria-label="`${result.indicatorName}, результат`" :aria-invalid="invalid(errors.studies[index]?.indicators?.[result.indicatorId])" />
-                <small v-if="errors.studies[index]?.indicators?.[result.indicatorId]" class="field-error" role="alert">{{ errors.studies[index]?.indicators?.[result.indicatorId] }}</small>
+                <input :ref="(element) => setResultField(study.id, result.indicatorId, element)" v-model="result.result" required :aria-label="`${result.indicatorName}, результат`" :aria-invalid="invalid(errors.studies[index]?.indicators?.[result.indicatorId])" :aria-describedby="describedBy(errors.studies[index]?.indicators?.[result.indicatorId], study.id, result.indicatorId)" />
+                <small v-if="errors.studies[index]?.indicators?.[result.indicatorId]" :id="errorId(study.id, result.indicatorId)" class="field-error" role="alert">{{ errors.studies[index]?.indicators?.[result.indicatorId] }}</small>
               </label>
               <label><span class="laboratory-result-label">Референсные значения</span><input v-model="result.reference" /></label>
               <button type="button" class="outline-action inline danger-outline medical-card-action laboratory-result-delete" title="Удалить показатель" :aria-label="`Удалить показатель «${result.indicatorName}»`" @click="removeIndicator(study.id, result.indicatorId)"><AppIcon name="trash" /></button>
@@ -170,6 +177,7 @@ function updateInfectionMethod(study: Extract<LaboratoryStudyValue, { mode: "inf
               custom-text=""
               :allow-custom="false"
               :invalid="Boolean(errors.studies[index]?.section)"
+              :described-by="describedBy(errors.studies[index]?.section, study.id, 'section')"
               placeholder="Выберите показатель"
               disabled-title="Все показатели добавлены"
               @update:selected-ids="selectIndicator(study.id, $event)"
@@ -185,8 +193,12 @@ function updateInfectionMethod(study: Extract<LaboratoryStudyValue, { mode: "inf
           </div>
         </div>
       </template>
-      <label v-else-if="study.mode === 'narrative'"><span>Результат</span><textarea v-model="study.result" rows="4" required :aria-invalid="invalid(errors.studies[index]?.result)" /><small v-if="errors.studies[index]?.result" class="field-error" role="alert">{{ errors.studies[index]?.result }}</small></label>
-      <div v-else-if="study.mode === 'infection'" class="laboratory-infection"><label><span>Инфекция</span><input v-model="study.infection" required :aria-invalid="invalid(errors.studies[index]?.infection)" /><small v-if="errors.studies[index]?.infection" class="field-error" role="alert">{{ errors.studies[index]?.infection }}</small></label><label><span>Метод</span><AppSelect :model-value="study.method" :options="infectionMethodOptions" :invalid="Boolean(errors.studies[index]?.method)" @update:model-value="updateInfectionMethod(study, $event)" /><small v-if="errors.studies[index]?.method" class="field-error" role="alert">{{ errors.studies[index]?.method }}</small></label><fieldset class="medical-card-option-panel" :aria-invalid="invalid(errors.studies[index]?.infectionResult)"><legend>Результат</legend><div class="medical-card-options"><label><input v-model="study.result" type="radio" value="positive" /> Положительно</label><label><input v-model="study.result" type="radio" value="negative" /> Отрицательно</label></div><small v-if="errors.studies[index]?.infectionResult" class="field-error" role="alert">{{ errors.studies[index]?.infectionResult }}</small></fieldset></div>
+      <label v-else-if="study.mode === 'narrative'"><span>Результат</span><textarea v-model="study.result" rows="4" required :aria-invalid="invalid(errors.studies[index]?.result)" :aria-describedby="describedBy(errors.studies[index]?.result, study.id, 'result')" /><small v-if="errors.studies[index]?.result" :id="errorId(study.id, 'result')" class="field-error" role="alert">{{ errors.studies[index]?.result }}</small></label>
+      <div v-else-if="study.mode === 'infection'" class="laboratory-infection">
+        <label><span>Инфекция</span><input v-model="study.infection" required :aria-invalid="invalid(errors.studies[index]?.infection)" :aria-describedby="describedBy(errors.studies[index]?.infection, study.id, 'infection')" /><small v-if="errors.studies[index]?.infection" :id="errorId(study.id, 'infection')" class="field-error" role="alert">{{ errors.studies[index]?.infection }}</small></label>
+        <label><span>Метод</span><AppSelect :model-value="study.method" :options="infectionMethodOptions" :invalid="Boolean(errors.studies[index]?.method)" :aria-describedby="describedBy(errors.studies[index]?.method, study.id, 'method')" @update:model-value="updateInfectionMethod(study, $event)" /><small v-if="errors.studies[index]?.method" :id="errorId(study.id, 'method')" class="field-error" role="alert">{{ errors.studies[index]?.method }}</small></label>
+        <fieldset class="medical-card-option-panel" :aria-invalid="invalid(errors.studies[index]?.infectionResult)" :aria-describedby="describedBy(errors.studies[index]?.infectionResult, study.id, 'infection-result')"><legend>Результат</legend><div class="medical-card-options"><label><input v-model="study.result" type="radio" value="positive" /> Положительно</label><label><input v-model="study.result" type="radio" value="negative" /> Отрицательно</label></div><small v-if="errors.studies[index]?.infectionResult" :id="errorId(study.id, 'infection-result')" class="field-error" role="alert">{{ errors.studies[index]?.infectionResult }}</small></fieldset>
+      </div>
       <section class="medical-card-comment-section laboratory-study-comment"><h4>Комментарий</h4><textarea v-model="study.comment" class="medical-card-comment" rows="2" aria-label="Комментарий" /></section>
     </section>
   </div>

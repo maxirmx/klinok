@@ -95,7 +95,10 @@ describe("DiagnosisEditor", () => {
     expect(wrapper.findAll('input[type="radio"]')).toHaveLength(0);
     expect(wrapper.text()).not.toContain("Из справочника");
     expect(wrapper.text()).not.toContain("Свободная форма");
-    expect(wrapper.get('[role="alert"]').text()).toBe("Укажите хотя бы один диагноз");
+    const sectionError = wrapper.get('[role="alert"]');
+    expect(sectionError.text()).toBe("Укажите хотя бы один диагноз");
+    expect(sectionError.attributes("data-encounter-error-anchor")).toBe("true");
+    expect(sectionError.attributes("tabindex")).toBe("-1");
   });
 
   it("infers single-value modes and retains mixed differential diagnoses", async () => {
@@ -113,6 +116,13 @@ describe("DiagnosisEditor", () => {
     });
 
     const fields = wrapper.findAll("fieldset.diagnosis-field");
+    for (const field of fields) {
+      const input = field.get('input[role="combobox"]');
+      const error = field.get(".field-error");
+      expect(input.attributes("aria-invalid")).toBe("true");
+      expect(input.attributes("aria-describedby")).toBe(error.attributes("id"));
+      expect(error.attributes("role")).toBe("alert");
+    }
     const preliminaryInput = fields[0]!.get<HTMLInputElement>('input[role="combobox"]');
     await preliminaryInput.setValue("Свободный предварительный диагноз");
     expect(wrapper.emitted("update:modelValue")?.at(-1)?.[0]).toMatchObject({

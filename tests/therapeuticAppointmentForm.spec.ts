@@ -57,6 +57,26 @@ describe("TherapeuticAppointmentForm", () => {
 
     await wrapper.setProps({ errors: { section: "Заполните назначения", tab: "prescriptions" } });
     expect(tabs[4]!.attributes("aria-selected")).toBe("true");
+    const sectionError = wrapper.get('[data-encounter-error-anchor="true"]');
+    expect(sectionError.attributes("tabindex")).toBe("-1");
+    expect(sectionError.attributes("role")).toBe("alert");
+  });
+
+  it("reveals and describes an invalid problem title", async () => {
+    const { wrapper, draft } = mountForm();
+    await wrapper.get('button[aria-label="Добавить проблему"]').trigger("click");
+    const problemId = draft.diseaseAnamnesis.problems[0]!.id;
+    await wrapper.findAll('[role="tab"]')[4]!.trigger("click");
+    await wrapper.setProps({
+      errors: { tab: "disease", problems: { [problemId]: "Укажите название проблемы." } },
+    });
+
+    expect(wrapper.findAll('[role="tab"]')[0]!.attributes("aria-selected")).toBe("true");
+    const title = wrapper.get<HTMLInputElement>(".therapeutic-problem-title input");
+    const error = wrapper.get(".therapeutic-problem-title .field-error");
+    expect(title.attributes("aria-invalid")).toBe("true");
+    expect(title.attributes("aria-describedby")).toBe(error.attributes("id"));
+    expect(error.attributes("role")).toBe("alert");
   });
 
   it("imports each what-happened choice once and does not overwrite narrative text", async () => {

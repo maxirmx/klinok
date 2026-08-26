@@ -888,6 +888,53 @@ test("fresh provisioning, Doctor approval, grant, draft, and confirmation", asyn
     return rows;
   }, []));
   expect(wideTabRows).toHaveLength(1);
+
+  await therapeuticAdd.click();
+  const invalidProblem = therapeuticCard.locator(".therapeutic-problem-card").nth(1);
+  await invalidProblem.getByLabel("Как давно началось").selectOption("problem.onset.today");
+  await therapeuticCard.getByRole("tab", { name: "Рекомендации" }).click();
+  await hemoglobinInput.fill("");
+  await instrumentalCard.getByLabel("Заключение", { exact: true })
+    .evaluate((element) => element.scrollIntoView({ block: "end" }));
+  await editorSave.click();
+
+  const invalidProblemTitle = invalidProblem.locator(".therapeutic-problem-title input");
+  await expect(therapeuticCard.getByRole("tab", { name: "Анамнез болезни" }))
+    .toHaveAttribute("aria-selected", "true");
+  await expect(invalidProblemTitle).toBeFocused();
+  await expect(invalidProblemTitle).toHaveAttribute("aria-invalid", "true");
+  const problemErrorId = await invalidProblemTitle.getAttribute("aria-describedby");
+  expect(problemErrorId).not.toBeNull();
+  await expect(doctorPage.locator(`[id="${problemErrorId}"]`)).toBeVisible();
+  await expect.poll(async () => {
+    const [heading, target] = await Promise.all([
+      createEditorHeading.boundingBox(),
+      invalidProblemTitle.boundingBox(),
+    ]);
+    return Boolean(heading && target
+      && target.y >= heading.y + heading.height - 1
+      && target.y + target.height <= 720);
+  }).toBe(true);
+
+  await invalidProblem.getByRole("button", { name: "Удалить проблему 2" }).click();
+  await doctorPage.evaluate(() => window.scrollTo(0, 0));
+  await editorSave.click();
+  await expect(hemoglobinInput).toBeFocused();
+  await expect(hemoglobinInput).toHaveAttribute("aria-invalid", "true");
+  const hemoglobinErrorId = await hemoglobinInput.getAttribute("aria-describedby");
+  expect(hemoglobinErrorId).not.toBeNull();
+  await expect(doctorPage.locator(`[id="${hemoglobinErrorId}"]`)).toBeVisible();
+  await expect.poll(async () => {
+    const [heading, target] = await Promise.all([
+      createEditorHeading.boundingBox(),
+      hemoglobinInput.boundingBox(),
+    ]);
+    return Boolean(heading && target
+      && target.y >= heading.y + heading.height - 1
+      && target.y + target.height <= 720);
+  }).toBe(true);
+  await hemoglobinInput.fill("145");
+
   await doctorPage.context().setOffline(true);
   await doctorPage.getByRole("button", { name: "Сохранить запись" }).click();
   const doctorRecord = doctorPage.locator(".medical-record-entry-details").filter({ hasText: "Всё хорошо" });

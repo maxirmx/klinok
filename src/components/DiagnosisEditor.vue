@@ -3,7 +3,7 @@
 // All rights reserved.
 // This file is a part of Klinok application
 
-import { computed, ref } from "vue";
+import { computed, ref, useId } from "vue";
 import type { DiagnosisDraft, DiagnosisDraftErrors } from "../medicalEncounter";
 import { diagnosisLabel } from "../medicalEncounter";
 import AppIcon from "./AppIcon.vue";
@@ -14,6 +14,11 @@ const props = defineProps<{ errors: DiagnosisDraftErrors }>();
 const diagnosis = defineModel<DiagnosisDraft>({ required: true });
 const replacementOpen = ref(false);
 const pendingPromotion = ref<{ selectedId?: string; customText: string } | null>(null);
+const errorBaseId = useId();
+
+function errorId(field: string) {
+  return `${errorBaseId}-${field}-error`;
+}
 
 const preliminaryIds = computed({
   get: () => diagnosis.value.preliminarySelectedId ? [diagnosis.value.preliminarySelectedId] : [],
@@ -106,7 +111,7 @@ function removeCustomDifferential(index: number) {
 
 <template>
   <div class="diagnosis-editor">
-    <small v-if="props.errors.section" class="field-error" role="alert">{{ props.errors.section }}</small>
+    <small v-if="props.errors.section" :id="errorId('section')" class="field-error" role="alert" tabindex="-1" data-encounter-error-anchor="true">{{ props.errors.section }}</small>
     <fieldset class="medical-card-option-panel diagnosis-field">
       <legend>Предварительный диагноз</legend>
       <div class="diagnosis-value-control medical-card-action-grid">
@@ -114,6 +119,8 @@ function removeCustomDifferential(index: number) {
           v-model:selected-ids="preliminaryIds"
           v-model:custom-text="preliminaryCustomText"
           label="Предварительный диагноз"
+          :invalid="Boolean(props.errors.preliminary)"
+          :described-by="props.errors.preliminary ? errorId('preliminary') : undefined"
         />
         <button
           type="button"
@@ -124,7 +131,7 @@ function removeCustomDifferential(index: number) {
           @click="requestPromotion(preliminaryPromotion)"
         ><AppIcon name="input" /></button>
       </div>
-      <small v-if="props.errors.preliminary" class="field-error">{{ props.errors.preliminary }}</small>
+      <small v-if="props.errors.preliminary" :id="errorId('preliminary')" class="field-error" role="alert">{{ props.errors.preliminary }}</small>
     </fieldset>
 
     <fieldset class="medical-card-option-panel diagnosis-field">
@@ -134,6 +141,8 @@ function removeCustomDifferential(index: number) {
         v-model:custom-texts="differentialCustomTexts"
         label="Добавить дифференциальный диагноз"
         multiple
+        :invalid="Boolean(props.errors.differential)"
+        :described-by="props.errors.differential ? errorId('differential') : undefined"
       />
       <div v-if="diagnosis.differentialSelectedIds.length || diagnosis.differentialCustomTexts.length" class="diagnosis-selected-chips medical-card-action-grid medical-card-action-grid-pair">
         <span v-for="id in diagnosis.differentialSelectedIds" :key="id" class="diagnosis-selected-chip medical-card-action-subgrid">
@@ -173,7 +182,7 @@ function removeCustomDifferential(index: number) {
           ><AppIcon name="close" /></button>
         </span>
       </div>
-      <small v-if="props.errors.differential" class="field-error">{{ props.errors.differential }}</small>
+      <small v-if="props.errors.differential" :id="errorId('differential')" class="field-error" role="alert">{{ props.errors.differential }}</small>
     </fieldset>
 
     <fieldset class="medical-card-option-panel diagnosis-field">
@@ -182,8 +191,10 @@ function removeCustomDifferential(index: number) {
         v-model:selected-ids="confirmedIds"
         v-model:custom-text="confirmedCustomText"
         label="Подтверждённый диагноз"
+        :invalid="Boolean(props.errors.confirmed)"
+        :described-by="props.errors.confirmed ? errorId('confirmed') : undefined"
       />
-      <small v-if="props.errors.confirmed" class="field-error">{{ props.errors.confirmed }}</small>
+      <small v-if="props.errors.confirmed" :id="errorId('confirmed')" class="field-error" role="alert">{{ props.errors.confirmed }}</small>
     </fieldset>
 
     <ConfirmationDialog
