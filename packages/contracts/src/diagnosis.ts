@@ -67,6 +67,7 @@ export const DIAGNOSIS_CATALOG: readonly DiagnosisCatalogGroup[] = [
       "Кровопотеря",
       "Гиперэстезия",
       "Гипералгезия",
+      "Клинически здорово",
     ]),
   },
   {
