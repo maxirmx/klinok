@@ -485,7 +485,7 @@ describe("MedicalRecordEntry", () => {
     expect(section.text()).toContain("04.08.2028");
   });
 
-  it("renders therapeutic history in the same accessible tabs as the editor", async () => {
+  it("renders every populated therapeutic history section as structured text", () => {
     const wrapper = mount(MedicalRecordEntry, {
       props: {
         record: {
@@ -497,7 +497,7 @@ describe("MedicalRecordEntry", () => {
               templateVersion: "therapeutic-appointment-v1",
               value: {
                 diseaseAnamnesis: {
-                  text: "Снижение аппетита со вчерашнего дня",
+                  text: "Снижение аппетита\nсо вчерашнего дня",
                   problems: [{
                     id: "problem-1",
                     title: "Не ест",
@@ -507,6 +507,11 @@ describe("MedicalRecordEntry", () => {
                     medicationIds: ["problem.medication.type.nsaid"],
                     medicationName: "Мелоксикам",
                     medicationDynamicsId: "problem.dynamics.positive",
+                  }, {
+                    id: "problem-2",
+                    title: "Вялость",
+                    onsetId: "problem.onset.today",
+                    medicationIds: [],
                   }],
                   selectedIds: ["disease.appetite.state.changed", "disease.appetite.change.absent"],
                 },
@@ -516,10 +521,7 @@ describe("MedicalRecordEntry", () => {
                   currentMedications: "Не получает",
                   allergies: "Не выявлены",
                 },
-                examination: {
-                  text: "Контактен",
-                  selectedIds: ["exam.general.state.good"],
-                },
+                examination: { text: "Контактен", selectedIds: ["exam.general.state.good"] },
                 recommendations: "Контроль через неделю",
                 prescriptions: "Диетический корм",
               },
@@ -537,51 +539,21 @@ describe("MedicalRecordEntry", () => {
 
     const section = wrapper.findAll(".encounter-history-section")
       .find((candidate) => candidate.get("h3").text() === "Терапевтический приём")!;
-    const tabs = section.findAll<HTMLButtonElement>('[role="tab"]');
-    const panels = section.findAll('[role="tabpanel"]');
-    expect(tabs.map((tab) => tab.text())).toEqual([
-      "Анамнез болезни",
-      "Анамнез жизни",
-      "Осмотр",
-      "Рекомендации",
-      "Назначения",
+    expect(section.find('[role="tablist"]').exists()).toBe(false);
+    expect(section.find('button').exists()).toBe(false);
+    expect(section.findAll(".therapeutic-history-block > h4").map((heading) => heading.text())).toEqual([
+      "Анамнез болезни", "Анамнез жизни", "Осмотр", "Рекомендации", "Назначения",
     ]);
-    expect(section.findAll('[role="tablist"]')).toHaveLength(1);
-    expect(panels).toHaveLength(5);
-    expect(tabs[0]!.attributes("aria-selected")).toBe("true");
-    expect(panels[0]!.attributes("hidden")).toBeUndefined();
-    expect(panels.slice(1).every((panel) => panel.attributes("hidden") !== undefined)).toBe(true);
-    expect(panels[0]!.text()).toContain("Проблема 1: Не ест");
-    expect(panels[0]!.text()).toContain("Вчера");
-    expect(panels[0]!.text()).toContain("Название препарата");
-    expect(panels[0]!.text()).toContain("Мелоксикам");
-
-    await tabs[0]!.trigger("keydown", { key: "ArrowRight" });
-    expect(tabs[1]!.attributes("aria-selected")).toBe("true");
-    expect(panels[0]!.attributes("hidden")).toBeDefined();
-    expect(panels[1]!.attributes("hidden")).toBeUndefined();
-    expect(panels[1]!.text()).toContain("Содержится в квартире");
-
-    await tabs[1]!.trigger("keydown", { key: "End" });
-    expect(tabs[4]!.attributes("aria-selected")).toBe("true");
-    expect(panels[4]!.text()).toContain("Диетический корм");
-    await tabs[3]!.trigger("click");
-    expect(tabs[3]!.attributes("aria-selected")).toBe("true");
-    expect(panels[3]!.text()).toContain("Контроль через неделю");
+    expect(section.text()).toContain("Проблема 1: Не ест");
+    expect(section.text()).toContain("Проблема 2: Вялость");
+    expect(section.text()).toContain("Мелоксикам");
+    expect(section.text()).toContain("Содержится в квартире");
+    expect(section.text()).toContain("Контроль через неделю");
+    expect(section.text()).toContain("Диетический корм");
+    expect(section.get(".therapeutic-history-text").text()).toBe("Снижение аппетита\nсо вчерашнего дня");
   });
 
-  it.each([
-    { field: "recommendations", text: "Только рекомендации", selectedTab: "Рекомендации" },
-    { field: "prescriptions", text: "Только назначения", selectedTab: "Назначения" },
-  ] as const)("opens the first populated therapeutic tab for a sparse $field record", ({ field, text, selectedTab }) => {
-    const value = {
-      diseaseAnamnesis: { text: "", problems: [], selectedIds: [] },
-      lifeAnamnesis: { text: "", selectedIds: [], currentMedications: "", allergies: "" },
-      examination: { text: "", selectedIds: [] },
-      recommendations: "",
-      prescriptions: "",
-      [field]: text,
-    };
+  it("omits empty therapeutic history blocks", () => {
     const wrapper = mount(MedicalRecordEntry, {
       props: {
         record: {
@@ -591,7 +563,13 @@ describe("MedicalRecordEntry", () => {
             "therapeutic-appointment": {
               kind: "therapeutic-appointment",
               templateVersion: "therapeutic-appointment-v1",
-              value,
+              value: {
+                diseaseAnamnesis: { text: "", problems: [], selectedIds: [] },
+                lifeAnamnesis: { text: "", selectedIds: [], currentMedications: "", allergies: "" },
+                examination: { text: "", selectedIds: [] },
+                recommendations: "Только рекомендации",
+                prescriptions: "",
+              },
               authorAccountId: "doctor-1",
               authorDisplayName: "Вера Врач",
               updatedAt: "2026-07-21T12:00:00.000Z",
@@ -606,8 +584,7 @@ describe("MedicalRecordEntry", () => {
 
     const section = wrapper.findAll(".encounter-history-section")
       .find((candidate) => candidate.get("h3").text() === "Терапевтический приём")!;
-    const selected = section.get<HTMLButtonElement>('[role="tab"][aria-selected="true"]');
-    expect(selected.text()).toBe(selectedTab);
-    expect(section.get('[role="tabpanel"]:not([hidden])').text()).toContain(text);
+    expect(section.findAll(".therapeutic-history-block > h4").map((heading) => heading.text())).toEqual(["Рекомендации"]);
+    expect(section.text()).toContain("Только рекомендации");
   });
 });
