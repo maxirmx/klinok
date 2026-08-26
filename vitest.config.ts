@@ -20,7 +20,7 @@ export default mergeConfig(
       coverage: {
         provider: 'v8',
         reporter: ['text', 'html', 'lcov', 'json'],
-        include: ['src/**/*.{ts,vue}', 'packages/contracts/src/{index,instrumental}.ts'],
+        include: ['src/**/*.{ts,vue}', 'packages/contracts/src/{index,instrumental,xrayThorax}.ts'],
         exclude: ['src/env.d.ts', '**/node_modules/**', '**/dist/**', '**/tests/**', '**/*.spec.ts']
       }
     },

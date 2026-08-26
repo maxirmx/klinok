@@ -8,6 +8,7 @@ import {
   canonicalizeInstrumentalFindingValues,
   instrumentalFindingById,
   normalizeInstrumentalTestsValue,
+  replaceConflictingInstrumentalChoices,
   type InstrumentalFindingCatalogItem,
   type InstrumentalFindingValue,
 } from "../packages/contracts/src/instrumental";
@@ -15,6 +16,8 @@ import {
 const base = { id: "123e4567-e89b-12d3-a456-426614174000", date: "2026-08-15" };
 const prefix = "instrumental.finding.ultrasound-abdomen";
 const id = (code: string) => `${prefix}.${code}`;
+const xrayPrefix = "instrumental.finding.xray-thorax";
+const xrayId = (code: string) => `${xrayPrefix}.${code}`;
 const value = (id: string, children: InstrumentalFindingValue[] = [], text?: string): InstrumentalFindingValue => ({
   findingId: id,
   findingName: "forged",
@@ -23,10 +26,10 @@ const value = (id: string, children: InstrumentalFindingValue[] = [], text?: str
 });
 
 describe("instrumental study contracts", () => {
-  it("contains both study modes and the complete numbered ultrasound root catalog", () => {
+  it("contains the structured study catalogs and globally unique finding IDs", () => {
     expect(INSTRUMENTAL_STUDY_CATALOG.map((study) => [study.name, study.mode])).toEqual([
       ["УЗИ органов брюшной полости", "tree"],
-      ["Рентген грудной и брюшной полости", "narrative"],
+      ["Рентгенография грудной полости", "tree"],
     ]);
     const roots = INSTRUMENTAL_STUDY_CATALOG[0]!.findings;
     expect(roots).toHaveLength(19);
@@ -42,13 +45,76 @@ describe("instrumental study contracts", () => {
       if (item.kind === "integer") integers.push(item);
       visit(item.children);
     });
-    visit(roots);
+    INSTRUMENTAL_STUDY_CATALOG.forEach((study) => visit(study.findings));
     expect(new Set(ids).size).toBe(ids.length);
     expect(integers.map((item) => item.id.replace("instrumental.finding.ultrasound-abdomen.", ""))).toEqual([
       "1.12", "2.8", "3.1", "4.5", "5.2", "5.3", "5.4", "5.8.4", "6.2", "6.3", "6.4", "6.8.4",
       "9.2.1", "9.3.5.2.3", "10.0", "10.5", "11.3.7", "11.4", "16.1.3", "16.2.3", "16.3.3",
     ]);
     expect(integers.every((item) => item.unit === "мм" && !item.name.includes("мм"))).toBe(true);
+  });
+
+  it("defines the complete thoracic X-ray hierarchy, selection modes, conflicts, and required continuations", () => {
+    const xray = INSTRUMENTAL_STUDY_CATALOG.find((study) => study.id === "instrumental.study.xray-thorax")!;
+    expect(xray.findings).toHaveLength(20);
+    expect(xray.findings.map((item) => item.id.replace(`${xrayPrefix}.`, ""))).toEqual([
+      "1", "2", "3", "4", "5", "6", "7", "8", "9", "10",
+      "11", "12", "13", "14", "15", "16", "17", "18", "19", "20",
+    ]);
+    expect(["3.0.1", "3.0.2", "3.0.3"].map((code) => instrumentalFindingById(xrayId(code))?.name)).toEqual([
+      "Удовлетворительный", "Недостаточный (засветка)", "Избыточный (затемнено)",
+    ]);
+    const multiple: InstrumentalFindingCatalogItem[] = [];
+    const visit = (items: readonly InstrumentalFindingCatalogItem[]) => items.forEach((item) => {
+      if (item.selectionMode === "multiple") multiple.push(item);
+      visit(item.children);
+    });
+    visit(xray.findings);
+    expect(multiple.map((item) => item.id)).toEqual([
+      xrayId("1.0"), xrayId("12.2"), xrayId("17.3"),
+    ]);
+    expect(instrumentalFindingById(xrayId("10.0"))).toMatchObject({ required: true });
+    expect(instrumentalFindingById(xrayId("10.0"))?.selectionSets).toEqual([{
+      key: "regularity",
+      name: "Ровность купола",
+      choiceIds: [xrayId("10.0.1"), xrayId("10.0.2")],
+      required: true,
+    }, {
+      key: "definition",
+      name: "Чёткость купола",
+      choiceIds: [xrayId("10.0.3"), xrayId("10.0.4")],
+      required: true,
+    }, {
+      key: "projection",
+      name: "Проекция",
+      choiceIds: [xrayId("10.0.5"), xrayId("10.0.6")],
+      required: true,
+    }]);
+    expect(instrumentalFindingById(xrayId("10.0"))?.conflictPairs).toBeUndefined();
+    expect(instrumentalFindingById(xrayId("12.2"))?.conflictPairs).toHaveLength(2);
+    expect(instrumentalFindingById(xrayId("17.3"))?.conflictPairs).toHaveLength(9);
+    for (const item of multiple) {
+      const choiceIds = new Set(item.children.filter((child) => child.kind === "choice").map((child) => child.id));
+      expect(item.conflictPairs?.every(([left, right]) => left !== right && choiceIds.has(left) && choiceIds.has(right)) ?? true)
+        .toBe(true);
+    }
+    expect(instrumentalFindingById(xrayId("10.0.5.intercostal"))).toMatchObject({ kind: "short-text", required: true });
+    expect(instrumentalFindingById(xrayId("18.3.1.3"))?.name).toBe("Значительное");
+    expect(instrumentalFindingById(xrayId("12.5"))?.kind).toBe("short-text");
+  });
+
+  it("replaces only conflicting instrumental checkbox choices", () => {
+    const conflicts = instrumentalFindingById(xrayId("17.3"))!.conflictPairs!;
+    expect(replaceConflictingInstrumentalChoices(
+      [xrayId("17.3.1"), xrayId("17.3.2"), xrayId("17.3.3")],
+      xrayId("17.3.5"),
+      conflicts,
+    )).toEqual([xrayId("17.3.2"), xrayId("17.3.3"), xrayId("17.3.5")]);
+    expect(replaceConflictingInstrumentalChoices(
+      [xrayId("17.3.5"), xrayId("17.3.6"), xrayId("17.3.10")],
+      xrayId("17.3.4"),
+      conflicts,
+    )).toEqual([xrayId("17.3.10"), xrayId("17.3.4")]);
   });
 
   it("nests conditional liver, gallbladder, and spleen findings while preserving stable IDs", () => {
@@ -92,7 +158,7 @@ describe("instrumental study contracts", () => {
       ...base,
       typeId: "instrumental.study.ultrasound-abdomen",
       typeName: "forged",
-      mode: "narrative",
+      mode: "tree",
       comment: "  контроль  ",
       findings: [
         value("instrumental.finding.ultrasound-abdomen.19", [], "  Без патологии  "),
@@ -116,21 +182,28 @@ describe("instrumental study contracts", () => {
     expect(study.findings[1]).toMatchObject({ findingName: "Заключение", value: "Без патологии" });
   });
 
-  it("normalizes the narrative X-ray result", () => {
-    expect(normalizeInstrumentalTestsValue({ studies: [{
+  it("normalizes structured X-ray choices, required conditional text, and catalog order", () => {
+    const study = normalizeInstrumentalTestsValue({ studies: [{
       ...base,
-      typeId: "instrumental.study.xray-thorax-abdomen",
+      typeId: "instrumental.study.xray-thorax",
       typeName: "old",
       mode: "tree",
-      result: "  Очаговых изменений нет  ",
+      findings: [value(xrayId("10"), [value(xrayId("10.0"), [
+        value(xrayId("10.0.5"), [value(xrayId("10.0.5.intercostal"), [], " 7 ")]),
+        value(xrayId("10.0.1")),
+        value(xrayId("10.0.3")),
+      ])]), value(xrayId("20"), [], "  Без патологии  ")],
       comment: " ",
-    }] }).studies[0]).toEqual({
-      ...base,
-      typeId: "instrumental.study.xray-thorax-abdomen",
-      typeName: "Рентген грудной и брюшной полости",
-      mode: "narrative",
-      result: "Очаговых изменений нет",
+    }] }).studies[0]!;
+    expect(study).toMatchObject({ typeId: "instrumental.study.xray-thorax", typeName: "Рентгенография грудной полости", mode: "tree" });
+    if (study.mode !== "tree") throw new Error("Expected tree study");
+    expect(study.findings[0]?.children[0]?.children.map((item) => item.findingId)).toEqual([
+      xrayId("10.0.1"), xrayId("10.0.3"), xrayId("10.0.5"),
+    ]);
+    expect(study.findings[0]?.children[0]?.children[2]?.children[0]).toMatchObject({
+      findingName: "Межреберье на LL-проекции", value: "7",
     });
+    expect(study.findings[1]).toMatchObject({ findingName: "Заключение", value: "Без патологии" });
   });
 
   it("normalizes whole-number measurements and preserves their unit snapshot", () => {
@@ -234,11 +307,12 @@ describe("instrumental study contracts", () => {
 
   it.each([
     ["empty section", { studies: [] }, "Добавьте хотя бы одно"],
-    ["bad UUID", { studies: [{ ...base, id: "bad", typeId: "instrumental.study.xray-thorax-abdomen", result: "ok" }] }, "идентификатор"],
-    ["future date", { studies: [{ ...base, date: "2026-08-16", typeId: "instrumental.study.xray-thorax-abdomen", result: "ok" }] }, "дату"],
-    ["invalid calendar date", { studies: [{ ...base, date: "2026-02-31", typeId: "instrumental.study.xray-thorax-abdomen", result: "ok" }] }, "дату"],
-    ["unknown type", { studies: [{ ...base, typeId: "unknown", result: "ok" }] }, "справочника"],
-    ["empty narrative", { studies: [{ ...base, typeId: "instrumental.study.xray-thorax-abdomen", result: " " }] }, "результат"],
+    ["bad UUID", { studies: [{ ...base, id: "bad", typeId: "instrumental.study.xray-thorax", findings: [value(xrayId("20"), [], "ok")] }] }, "идентификатор"],
+    ["future date", { studies: [{ ...base, date: "2026-08-16", typeId: "instrumental.study.xray-thorax", findings: [value(xrayId("20"), [], "ok")] }] }, "дату"],
+    ["invalid calendar date", { studies: [{ ...base, date: "2026-02-31", typeId: "instrumental.study.xray-thorax", findings: [value(xrayId("20"), [], "ok")] }] }, "дату"],
+    ["unknown type", { studies: [{ ...base, typeId: "unknown", findings: [] }] }, "справочника"],
+    ["old narrative type", { studies: [{ ...base, typeId: "instrumental.study.xray-thorax-abdomen", mode: "narrative", result: "ok" }] }, "справочника"],
+    ["narrative mode", { studies: [{ ...base, typeId: "instrumental.study.xray-thorax", mode: "narrative", result: "ok" }] }, "не поддерживается"],
     ["empty tree", { studies: [{ ...base, typeId: "instrumental.study.ultrasound-abdomen", findings: [] }] }, "Добавьте результаты"],
     ["empty group", { studies: [{ ...base, typeId: "instrumental.study.ultrasound-abdomen", findings: [value("instrumental.finding.ultrasound-abdomen.1")] }] }, "Печень"],
     ["empty text", { studies: [{ ...base, typeId: "instrumental.study.ultrasound-abdomen", findings: [value("instrumental.finding.ultrasound-abdomen.19", [], " ")] }] }, "Заключение"],
@@ -248,16 +322,23 @@ describe("instrumental study contracts", () => {
     ["multiple values", { studies: [{ ...base, typeId: "instrumental.study.ultrasound-abdomen", findings: [value("instrumental.finding.ultrasound-abdomen.1", [value("instrumental.finding.ultrasound-abdomen.1.3", [value("instrumental.finding.ultrasound-abdomen.1.3.1"), value("instrumental.finding.ultrasound-abdomen.1.3.2")])])] }] }, "не более одного"],
     ["incomplete contour sets", { studies: [{ ...base, typeId: "instrumental.study.ultrasound-abdomen", findings: [value(id("10"), [value(id("10.1"), [value(id("10.1.1"))])])] }] }, "Чёткость контуров"],
     ["conflicting contour values", { studies: [{ ...base, typeId: "instrumental.study.ultrasound-abdomen", findings: [value(id("10"), [value(id("10.1"), [value(id("10.1.1")), value(id("10.1.2")), value(id("10.1.3"))])])] }] }, "Ровность контуров"],
+    ["conflicting diaphragm projection values", { studies: [{ ...base, typeId: "instrumental.study.xray-thorax", findings: [value(xrayId("10"), [value(xrayId("10.0"), [
+      value(xrayId("10.0.1")), value(xrayId("10.0.3")),
+      value(xrayId("10.0.5"), [value(xrayId("10.0.5.intercostal"), [], "7")]),
+      value(xrayId("10.0.6"), [value(xrayId("10.0.6.intercostal"), [], "8")]),
+    ])])] }] }, "Проекция"],
     ["duplicate multi-select value", { studies: [{ ...base, typeId: "instrumental.study.ultrasound-abdomen", findings: [value(id("2"), [value(id("2.5"), [value(id("2.5.2"), [value(id("2.6"), [value(id("2.6.1")), value(id("2.6.1"))])])])])] }] }, "структура"],
     ["unknown multi-select value", { studies: [{ ...base, typeId: "instrumental.study.ultrasound-abdomen", findings: [value(id("2"), [value(id("2.5"), [value(id("2.5.2"), [value(id("2.6"), [value(id("2.6.99"))])])])])] }] }, "структура"],
+    ["conflicting X-ray values", { studies: [{ ...base, typeId: "instrumental.study.xray-thorax", findings: [value(xrayId("12"), [value(xrayId("12.2"), [value(xrayId("12.2.1")), value(xrayId("12.2.2"))])])] }] }, "несовместимые варианты"],
+    ["missing required X-ray continuation", { studies: [{ ...base, typeId: "instrumental.study.xray-thorax", findings: [value(xrayId("10"), [value(xrayId("10.0"), [value(xrayId("10.0.5"))])])] }] }, "Межреберье"],
     ["text children", { studies: [{ ...base, typeId: "instrumental.study.ultrasound-abdomen", findings: [value("instrumental.finding.ultrasound-abdomen.19", [value("instrumental.finding.ultrasound-abdomen.1")], "text")] }] }, "вложенные"],
   ])("rejects %s", (_name, input, message) => {
     expect(() => normalizeInstrumentalTestsValue(input, "2026-08-15")).toThrow(message as string);
   });
 
   it("rejects duplicate study and finding IDs", () => {
-    const narrative = { ...base, typeId: "instrumental.study.xray-thorax-abdomen", result: "ok" };
-    expect(() => normalizeInstrumentalTestsValue({ studies: [narrative, narrative] })).toThrow("идентификатор");
+    const xray = { ...base, typeId: "instrumental.study.xray-thorax", findings: [value(xrayId("20"), [], "ok")] };
+    expect(() => normalizeInstrumentalTestsValue({ studies: [xray, xray] })).toThrow("идентификатор");
     const duplicate = value("instrumental.finding.ultrasound-abdomen.19", [], "ok");
     expect(() => normalizeInstrumentalTestsValue({ studies: [{ ...base, typeId: "instrumental.study.ultrasound-abdomen", findings: [duplicate, duplicate] }] })).toThrow("структура");
   });

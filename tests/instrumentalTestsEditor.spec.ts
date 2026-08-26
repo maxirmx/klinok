@@ -2,7 +2,7 @@
 // All rights reserved.
 // This file is a part of Klinok application
 
-import { flushPromises, mount, type VueWrapper } from "@vue/test-utils";
+import { flushPromises, mount, type DOMWrapper, type VueWrapper } from "@vue/test-utils";
 import { describe, expect, it } from "vitest";
 import type {
   InstrumentalFindingCatalogItem,
@@ -16,6 +16,8 @@ import InstrumentalTestsEditor from "../src/components/InstrumentalTestsEditor.v
 
 const prefix = "instrumental.finding.ultrasound-abdomen";
 const id = (code: string) => `${prefix}.${code}`;
+const xrayPrefix = "instrumental.finding.xray-thorax";
+const xrayId = (code: string) => `${xrayPrefix}.${code}`;
 
 function mountEditor(initial: InstrumentalTestsSectionValue = { studies: [] }, errors?: object) {
   let current = initial;
@@ -32,7 +34,14 @@ function mountEditor(initial: InstrumentalTestsSectionValue = { studies: [] }, e
     },
   });
   if (current !== initial) void wrapper.setProps({ modelValue: current });
-  return { wrapper, current: () => current };
+  return {
+    wrapper,
+    current: () => current,
+    replace: async (value: InstrumentalTestsSectionValue) => {
+      current = value;
+      await wrapper.setProps({ modelValue: value });
+    },
+  };
 }
 
 async function chooseType(wrapper: VueWrapper, id: string) {
@@ -72,6 +81,16 @@ async function selectChoice(wrapper: VueWrapper, id: string) {
 }
 
 describe("InstrumentalTestsEditor", () => {
+  it("places the study type selector below existing studies", async () => {
+    const { wrapper } = mountEditor();
+    await chooseType(wrapper, "instrumental.study.ultrasound-abdomen");
+
+    expect(wrapper.get(".instrumental-study-card").exists()).toBe(true);
+    const children = Array.from(wrapper.get(".instrumental-study-list").element.parentElement!.children);
+    expect(children.indexOf(wrapper.get(".instrumental-study-list").element))
+      .toBeLessThan(children.indexOf(wrapper.get(".instrumental-study-create").element));
+  });
+
   it("describes errors for every finding render mode", () => {
     const catalog: readonly InstrumentalFindingCatalogItem[] = [
       { id: "group", name: "Раздел", kind: "group", children: [] },
@@ -304,7 +323,7 @@ describe("InstrumentalTestsEditor", () => {
     expect(valueField.element.closest<HTMLElement>(".instrumental-result-content")!.dataset.hierarchyDepth).toBe("2");
     expect(valueField.get("select").attributes("multiple")).toBeUndefined();
     expect((valueField.get("select").element as HTMLSelectElement).value).toBe("instrumental.finding.ultrasound-abdomen.9.3.5.2.2");
-    expect(wrapper.findAll(".instrumental-result-headings")[0]!.text()).toBe("ПоказательРезультат");
+    expect(wrapper.find(".instrumental-result-headings").exists()).toBe(false);
     const bladder = current().studies[0]?.mode === "tree" ? current().studies[0].findings.find((item) => item.findingName === "Мочевой пузырь") : undefined;
     expect(bladder?.children[0]?.children[0]?.children[0]?.children.map((item) => item.findingName)).toEqual(["Множественные", "Размер"]);
 
@@ -532,6 +551,43 @@ describe("InstrumentalTestsEditor", () => {
     expect(wrapper.text()).toContain("Подвижный");
   });
 
+  it("restores a missing required selector continuation on opening and model replacement", async () => {
+    const initial: InstrumentalTestsSectionValue = { studies: [{
+      id: "123e4567-e89b-12d3-a456-426614174000",
+      date: "2026-08-15",
+      typeId: "instrumental.study.xray-thorax",
+      typeName: "Рентгенография грудной полости",
+      mode: "tree",
+      findings: [{
+        findingId: xrayId("10"), findingName: "Купол диафрагмы", children: [{
+          findingId: xrayId("10.0"), findingName: "Характеристики купола", children: [{
+            findingId: xrayId("10.0.5"), findingName: "На LL-проекции в области межреберья", children: [],
+          }],
+        }],
+      }],
+    }] };
+    const { wrapper, current, replace } = mountEditor(initial);
+    await flushPromises();
+    expect(current().studies[0]?.mode === "tree"
+      ? current().studies[0].findings[0]?.children[0]?.children[0]?.children
+      : []).toEqual([expect.objectContaining({ findingId: xrayId("10.0.5.intercostal"), value: "" })]);
+    const field = wrapper.get<HTMLInputElement>('input[aria-label="Межреберье на LL-проекции"]');
+    expect(field.element.value).toBe("");
+    expect(wrapper.find(`button[aria-label="Удалить показатель «Межреберье на LL-проекции»"]`).exists()).toBe(false);
+
+    await replace({
+      studies: [{
+        ...initial.studies[0]!,
+        id: "223e4567-e89b-12d3-a456-426614174000",
+      }],
+    });
+    await flushPromises();
+    expect(current().studies[0]?.id).toBe("223e4567-e89b-12d3-a456-426614174000");
+    expect(current().studies[0]?.mode === "tree"
+      ? current().studies[0].findings[0]?.children[0]?.children[0]?.children
+      : []).toEqual([expect.objectContaining({ findingId: xrayId("10.0.5.intercostal"), value: "" })]);
+  });
+
   it("formats root free-text findings like narrative laboratory results", async () => {
     const { wrapper } = mountEditor();
     await chooseType(wrapper, "instrumental.study.ultrasound-abdomen");
@@ -558,7 +614,7 @@ describe("InstrumentalTestsEditor", () => {
     expect(nestedContent.get("textarea").classes()).toContain("medical-card-comment");
   });
 
-  it("supports narrative X-ray, inline errors, comments, and safe study deletion", async () => {
+  it("edits structured X-ray choices, shows required text, and deletes safely", async () => {
     const { wrapper, current } = mountEditor({ studies: [] }, {
       section: "Добавьте хотя бы одно инструментальное исследование.", studies: [],
     });
@@ -567,29 +623,60 @@ describe("InstrumentalTestsEditor", () => {
     expect(sectionError.text()).toContain("Добавьте хотя бы одно");
     expect(typeInput.attributes("aria-invalid")).toBe("true");
     expect(typeInput.attributes("aria-describedby")).toBe(sectionError.attributes("id"));
-    await chooseType(wrapper, "instrumental.study.xray-thorax-abdomen");
-    expect(current().studies[0]).toMatchObject({ mode: "narrative", result: "" });
+    await chooseType(wrapper, "instrumental.study.xray-thorax");
+    expect(current().studies[0]).toMatchObject({ mode: "tree", findings: [] });
     await wrapper.setProps({ errors: { studies: [{ section: "Добавьте результат исследования." }] } });
     const studySectionError = wrapper.get('.instrumental-study-card [data-encounter-error-anchor="true"]');
     expect(studySectionError.attributes("tabindex")).toBe("-1");
-    await wrapper.setProps({ errors: { studies: [{ date: "Укажите корректную дату исследования.", result: "Укажите результат исследования." }] } });
-    const invalidFields = wrapper.findAll('[aria-invalid="true"]');
-    const fieldErrors = wrapper.findAll(".instrumental-study-card .field-error");
-    expect(invalidFields).toHaveLength(2);
-    expect(fieldErrors.map((error) => error.text())).toEqual([
-      "Укажите корректную дату исследования.", "Укажите результат исследования.",
+
+    await addFinding(wrapper, xrayId("1"));
+    const projections = wrapper.findAll("fieldset").find((panel) => panel.get("legend").text() === "Проекции")!;
+    expect(projections.get("legend").text()).toBe("Проекции");
+    expect(projections.findAll('input[type="checkbox"]')).toHaveLength(4);
+    const checkbox = (panel: DOMWrapper<Element>, name: string) => panel.findAll("label.check-row")
+      .find((label) => label.text() === name)!.get<HTMLInputElement>('input[type="checkbox"]');
+    await checkbox(projections, "Левая латеролатеральная").setValue(true);
+    await checkbox(projections, "Правая латеролатеральная").setValue(true);
+    expect(current().studies[0]?.mode === "tree"
+      ? current().studies[0].findings[0]?.children[0]?.children.map((item) => item.findingId)
+      : []).toEqual([xrayId("1.0.1"), xrayId("1.0.2")]);
+
+    await addFinding(wrapper, xrayId("10"));
+    const diaphragm = wrapper.get(`[data-finding-id="${xrayId("10.0")}"]`);
+    const regularity = diaphragm.get<HTMLSelectElement>('select[aria-label="Ровность купола"]');
+    const definition = diaphragm.get<HTMLSelectElement>('select[aria-label="Чёткость купола"]');
+    const projection = diaphragm.get<HTMLSelectElement>('select[aria-label="Проекция"]');
+    const fields = diaphragm.findAll(".instrumental-selection-set-field");
+    expect(fields).toHaveLength(3);
+    expect(fields.slice(0, 2).every((field) => !field.classes().includes("instrumental-selection-set-field-wide"))).toBe(true);
+    expect(fields[2]!.classes()).toContain("instrumental-selection-set-field-wide");
+    expect(regularity.findAll("option").map((option) => option.text())).toEqual(["Не указано", "Ровный", "Неровный"]);
+    expect(definition.findAll("option").map((option) => option.text())).toEqual(["Не указано", "Чёткий", "Нечёткий"]);
+    expect(projection.findAll("option").map((option) => option.text())).toEqual([
+      "Не указано", "На LL-проекции в области межреберья", "На VD-проекции в области межреберья",
     ]);
-    expect(invalidFields.map((field) => field.attributes("aria-describedby")))
-      .toEqual(fieldErrors.map((error) => error.attributes("id")));
-    await wrapper.get(".instrumental-study-card > label textarea").setValue("Очаговых изменений нет");
-    const comment = wrapper.get(".instrumental-study-comment");
-    expect(comment.get("textarea").attributes("rows")).toBe("2");
-    await comment.get("textarea").setValue("Контроль через месяц");
+    await projection.setValue(xrayId("10.0.5"));
+    const intercostal = diaphragm.get<HTMLInputElement>('input[aria-label="Межреберье на LL-проекции"]');
+    await intercostal.setValue("7");
+    await regularity.setValue(xrayId("10.0.1"));
+    await definition.setValue(xrayId("10.0.3"));
+    await regularity.setValue(xrayId("10.0.2"));
+    expect(regularity.element.value).toBe(xrayId("10.0.2"));
+    expect(definition.element.value).toBe(xrayId("10.0.3"));
+    expect(projection.element.value).toBe(xrayId("10.0.5"));
+    expect(intercostal.element.value).toBe("7");
+
+    await wrapper.setProps({ errors: { studies: [{ findings: {
+      [`${xrayId("10.0")}:regularity`]: "Для характеристики «Ровность купола» можно выбрать не более одного значения.",
+    } }] } });
+    const conflictError = regularity.element.closest("label")!.querySelector<HTMLElement>(".field-error")!;
+    expect(regularity.attributes("aria-invalid")).toBe("true");
+    expect(regularity.attributes("aria-describedby")).toBe(conflictError.id);
 
     await wrapper.get(".instrumental-study-delete").trigger("click");
     await flushPromises();
     expect(wrapper.get('[role="alertdialog"]').text()).toContain("Удалить заполненное исследование?");
-    expect(wrapper.get('[role="alertdialog"]').text()).toContain("Исследование «Рентген грудной и брюшной полости»");
+    expect(wrapper.get('[role="alertdialog"]').text()).toContain("Исследование «Рентгенография грудной полости»");
     await wrapper.get('[role="alertdialog"] .danger').trigger("click");
     await flushPromises();
     expect(current().studies).toHaveLength(0);

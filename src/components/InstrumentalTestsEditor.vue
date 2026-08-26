@@ -78,14 +78,6 @@ function describedBy(message: string | undefined, ...parts: string[]) {
 </script>
 
 <template>
-  <div class="instrumental-study-create">
-    <span class="field-label">Тип исследования</span>
-    <div class="instrumental-study-create-control medical-card-action-grid">
-      <AppCatalogCombobox v-model:selected-ids="pendingTypeIds" label="Тип исследования" :options="INSTRUMENTAL_STUDY_OPTIONS" custom-text="" :allow-custom="false" :invalid="Boolean(errors.section)" :described-by="describedBy(errors.section, 'section')" />
-      <button type="button" class="outline-action inline medical-card-action instrumental-study-add" :disabled="!pendingType" title="Добавить исследование" aria-label="Добавить исследование" @click="addStudy"><AppIcon name="plus" /></button>
-    </div>
-    <small v-if="errors.section" :id="errorId('section')" class="field-error" role="alert">{{ errors.section }}</small>
-  </div>
   <div class="instrumental-study-list">
     <section v-for="(study, index) in model.studies" :key="study.id" class="instrumental-study-card">
       <div class="doctor-heading instrumental-study-heading"><h4 :title="study.typeName">{{ study.typeName }}</h4><button type="button" class="outline-action inline danger-outline medical-card-action instrumental-study-delete" title="Удалить исследование" aria-label="Удалить исследование" @click="removeStudy(study)"><AppIcon name="trash" /></button></div>
@@ -97,6 +89,14 @@ function describedBy(message: string | undefined, ...parts: string[]) {
       <label v-else><span>Результат</span><textarea v-model="study.result" rows="4" required :aria-invalid="invalid(errors.studies[index]?.result)" :aria-describedby="describedBy(errors.studies[index]?.result, study.id, 'result')" /><small v-if="errors.studies[index]?.result" :id="errorId(study.id, 'result')" class="field-error" role="alert">{{ errors.studies[index]?.result }}</small></label>
       <section v-if="study.mode === 'narrative'" class="medical-card-comment-section instrumental-study-comment"><h4>Комментарий</h4><textarea v-model="study.comment" class="medical-card-comment" rows="2" aria-label="Комментарий" /></section>
     </section>
+  </div>
+  <div class="instrumental-study-create">
+    <span class="field-label">Тип исследования</span>
+    <div class="instrumental-study-create-control medical-card-action-grid">
+      <AppCatalogCombobox v-model:selected-ids="pendingTypeIds" label="Тип исследования" :options="INSTRUMENTAL_STUDY_OPTIONS" custom-text="" :allow-custom="false" :invalid="Boolean(errors.section)" :described-by="describedBy(errors.section, 'section')" />
+      <button type="button" class="outline-action inline medical-card-action instrumental-study-add" :disabled="!pendingType" title="Добавить исследование" aria-label="Добавить исследование" @click="addStudy"><AppIcon name="plus" /></button>
+    </div>
+    <small v-if="errors.section" :id="errorId('section')" class="field-error" role="alert">{{ errors.section }}</small>
   </div>
   <ConfirmationDialog v-model="confirmOpen" title="Удалить заполненное исследование?" :description="confirmDescription" confirm-label="Удалить" @confirm="confirmRemove" />
 </template>

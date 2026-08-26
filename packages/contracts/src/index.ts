@@ -13,6 +13,8 @@ export {
   instrumentalFindingById,
   instrumentalStudyTypeById,
   normalizeInstrumentalTestsValue,
+  replaceConflictingInstrumentalChoices,
+  type InstrumentalConflictPair,
   type InstrumentalFindingCatalogItem,
   type InstrumentalFindingKind,
   type InstrumentalFindingValue,

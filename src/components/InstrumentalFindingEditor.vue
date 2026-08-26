@@ -3,12 +3,13 @@
 // All rights reserved.
 // This file is a part of Klinok application
 
-import { computed, nextTick, ref, useId } from "vue";
+import { computed, nextTick, ref, useId, watch } from "vue";
 import type {
   InstrumentalFindingCatalogItem,
   InstrumentalFindingValue,
   InstrumentalSelectionSet,
 } from "@klinok/contracts";
+import { replaceConflictingInstrumentalChoices } from "@klinok/contracts";
 import AppCatalogCombobox from "./AppCatalogCombobox.vue";
 import AppIcon from "./AppIcon.vue";
 import AppSelect from "./AppSelect.vue";
@@ -62,11 +63,19 @@ const options = computed(() => {
 });
 const pendingFinding = computed(() => indicatorCatalog.value.find((item) => item.id === pendingIds.value[0]
   && !model.value.some((value) => value.findingId === item.id)));
-const hasResultRows = computed(() => !props.choiceContinuation && props.depth > 0
-  && (choiceCatalog.value.length > 0 || multipleChoiceCatalog.value.length > 0 || indicatorValues.value.some(isResultFinding)));
 const hasRenderedValues = computed(() => choiceCatalog.value.length > 0
   || multipleChoiceCatalog.value.length > 0 || model.value.length > 0);
 const choiceRowDepth = computed(() => Math.max(0, props.depth - (props.choiceContinuation ? 1 : 0)));
+
+watch(
+  [() => props.catalog, () => model.value],
+  ([catalog, values]) => {
+    const selected = new Set(values.map((item) => item.findingId));
+    const required = catalog.filter((item) => item.required && !selected.has(item.id)).map(catalogValue);
+    if (required.length) model.value = ordered([...values, ...required]);
+  },
+  { immediate: true },
+);
 
 function selectPending(ids: string[]) { pendingIds.value = ids.slice(0, 1); }
 function catalogItem(value: InstrumentalFindingValue) { return props.catalog.find((item) => item.id === value.findingId); }
@@ -76,7 +85,7 @@ function catalogValue(item: InstrumentalFindingCatalogItem): InstrumentalFinding
     findingName: item.name,
     ...((item.kind === "integer" || item.kind === "short-text" || item.kind === "long-text") ? { value: "" } : {}),
     ...(item.unit ? { unit: item.unit } : {}),
-    children: [],
+    children: item.children.filter((child) => child.required).map(catalogValue),
   };
 }
 function orderedFor(
@@ -210,6 +219,20 @@ function multipleFinding(item: InstrumentalFindingCatalogItem) {
 function multipleChoiceSelected(item: InstrumentalFindingCatalogItem, choiceItem: InstrumentalFindingCatalogItem) {
   return multipleFinding(item)?.children.some((child) => child.findingId === choiceItem.id) ?? false;
 }
+function multipleChoiceValue(item: InstrumentalFindingCatalogItem, choiceItem: InstrumentalFindingCatalogItem) {
+  return multipleFinding(item)?.children.find((child) => child.findingId === choiceItem.id);
+}
+function multipleChoiceChildren(item: InstrumentalFindingCatalogItem, choiceItem: InstrumentalFindingCatalogItem) {
+  return multipleChoiceValue(item, choiceItem)?.children ?? [];
+}
+function updateMultipleChoiceChildren(
+  item: InstrumentalFindingCatalogItem,
+  choiceItem: InstrumentalFindingCatalogItem,
+  children: readonly InstrumentalFindingValue[],
+) {
+  const value = multipleChoiceValue(item, choiceItem);
+  if (value) value.children = children;
+}
 function toggleMultipleChoice(item: InstrumentalFindingCatalogItem, choiceItem: InstrumentalFindingCatalogItem) {
   const finding = multipleFinding(item);
   if (!finding) {
@@ -217,9 +240,19 @@ function toggleMultipleChoice(item: InstrumentalFindingCatalogItem, choiceItem: 
     return;
   }
   const selected = finding.children.some((child) => child.findingId === choiceItem.id);
-  const children = selected
-    ? finding.children.filter((child) => child.findingId !== choiceItem.id)
-    : orderedFor(item.children, [...finding.children, catalogValue(choiceItem)]);
+  let children: readonly InstrumentalFindingValue[];
+  if (selected) children = finding.children.filter((child) => child.findingId !== choiceItem.id);
+  else {
+    const nextIds = new Set(replaceConflictingInstrumentalChoices(
+      finding.children.map((child) => child.findingId),
+      choiceItem.id,
+      item.conflictPairs,
+    ));
+    children = orderedFor(item.children, [
+      ...finding.children.filter((child) => nextIds.has(child.findingId)),
+      catalogValue(choiceItem),
+    ]);
+  }
   if (!children.length) model.value = model.value.filter((value) => value.findingId !== item.id);
   else finding.children = children;
 }
@@ -325,12 +358,6 @@ function updateIntegerValue(finding: InstrumentalFindingValue, event: Event) {
 
 <template>
   <div ref="levelElement" class="instrumental-finding-level medical-card-action-subgrid">
-    <div v-if="hasResultRows" class="instrumental-result-headings medical-card-action-subgrid" aria-hidden="true">
-      <div class="instrumental-result-heading-content" :style="{ '--instrumental-depth': depth }" :data-hierarchy-depth="depth">
-        <span>Показатель</span><span>Результат</span>
-      </div>
-    </div>
-
     <div
       v-if="choiceCatalog.length"
       class="instrumental-finding-row instrumental-result-row medical-card-action-subgrid"
@@ -366,19 +393,36 @@ function updateIntegerValue(finding: InstrumentalFindingValue, event: Event) {
         :data-hierarchy-depth="depth"
       >
         <span class="instrumental-result-desktop-name">{{ multipleItem.name }}</span>
-        <fieldset class="medical-card-option-panel instrumental-multiple-choice-panel">
+        <fieldset
+          class="medical-card-option-panel instrumental-multiple-choice-panel"
+          :aria-invalid="errors[multipleItem.id] ? true : undefined"
+          :aria-describedby="errors[multipleItem.id] ? errorId(multipleItem.id) : undefined"
+        >
           <legend class="visually-hidden">{{ multipleItem.name }}</legend>
           <span class="instrumental-result-mobile-name" aria-hidden="true">{{ multipleItem.name }}</span>
           <div class="medical-card-options">
-            <label v-for="choiceItem in directChoiceCatalog(multipleItem)" :key="choiceItem.id" class="check-row">
-              <input
-                type="checkbox"
-                :checked="multipleChoiceSelected(multipleItem, choiceItem)"
-                @change="toggleMultipleChoice(multipleItem, choiceItem)"
+            <div v-for="choiceItem in directChoiceCatalog(multipleItem)" :key="choiceItem.id" class="instrumental-multiple-choice-option">
+              <label class="check-row">
+                <input
+                  type="checkbox"
+                  :checked="multipleChoiceSelected(multipleItem, choiceItem)"
+                  @change="toggleMultipleChoice(multipleItem, choiceItem)"
+                />
+                <span>{{ choiceItem.name }}</span>
+              </label>
+              <InstrumentalFindingEditor
+                v-if="multipleChoiceSelected(multipleItem, choiceItem) && choiceItem.children.length"
+                :model-value="multipleChoiceChildren(multipleItem, choiceItem)"
+                :catalog="choiceItem.children"
+                :errors="errors"
+                :depth="depth + 1"
+                :parent-name="choiceItem.name"
+                :choice-continuation="isChoiceContinuation(choiceItem.children)"
+                @update:model-value="updateMultipleChoiceChildren(multipleItem, choiceItem, $event)"
               />
-              <span>{{ choiceItem.name }}</span>
-            </label>
+            </div>
           </div>
+          <small v-if="errors[multipleItem.id]" :id="errorId(multipleItem.id)" class="field-error" role="alert">{{ errors[multipleItem.id] }}</small>
         </fieldset>
       </div>
     </div>
@@ -501,6 +545,7 @@ function updateIntegerValue(finding: InstrumentalFindingValue, event: Event) {
         <small v-if="!isResultFinding(finding) && errors[finding.findingId]" :id="errorId(finding.findingId)" class="field-error" role="alert">{{ errors[finding.findingId] }}</small>
       </div>
       <button
+        v-if="!catalogItem(finding)?.required"
         type="button"
         class="outline-action inline danger-outline medical-card-action instrumental-finding-delete"
         :title="depth ? 'Удалить показатель' : 'Удалить раздел'"

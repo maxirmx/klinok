@@ -9,6 +9,8 @@ import { parseInstrumentalTestsDraft } from "../src/instrumentalTests";
 const base = { id: "123e4567-e89b-12d3-a456-426614174000", date: "2026-08-15" };
 const prefix = "instrumental.finding.ultrasound-abdomen";
 const id = (code: string) => `${prefix}.${code}`;
+const xrayPrefix = "instrumental.finding.xray-thorax";
+const xrayId = (code: string) => `${xrayPrefix}.${code}`;
 const finding = (code: string, children: InstrumentalFindingValue[] = [], value?: string): InstrumentalFindingValue => ({
   findingId: id(code),
   findingName: "forged",
@@ -17,15 +19,15 @@ const finding = (code: string, children: InstrumentalFindingValue[] = [], value?
 });
 
 describe("instrumental draft validation", () => {
-  it("places section, date, narrative, group, and text errors beside their fields", () => {
+  it("places section, date, group, and text errors beside their fields", () => {
     expect(parseInstrumentalTestsDraft({ studies: [] }).errors.section).toContain("Добавьте");
     const draft: InstrumentalTestsSectionValue = { studies: [{
       ...base,
       date: "2026-08-16",
-      typeId: "instrumental.study.xray-thorax-abdomen",
-      typeName: "Рентген грудной и брюшной полости",
-      mode: "narrative",
-      result: "",
+      typeId: "instrumental.study.xray-thorax",
+      typeName: "Рентгенография грудной полости",
+      mode: "tree",
+      findings: [{ findingId: xrayId("20"), findingName: "Заключение", value: "", children: [] }],
     }, {
       ...base,
       id: "223e4567-e89b-12d3-a456-426614174000",
@@ -54,7 +56,10 @@ describe("instrumental draft validation", () => {
       }],
     }] };
     const parsed = parseInstrumentalTestsDraft(draft, "2026-08-15");
-    expect(parsed.errors.studies[0]).toMatchObject({ date: "Укажите корректную дату исследования.", result: "Укажите результат исследования." });
+    expect(parsed.errors.studies[0]).toMatchObject({
+      date: "Укажите корректную дату исследования.",
+      findings: { [xrayId("20")]: "Заполните поле «Заключение»." },
+    });
     expect(parsed.errors.studies[1]?.findings).toEqual({
       "instrumental.finding.ultrasound-abdomen.1": "Заполните показатель «Печень».",
       "instrumental.finding.ultrasound-abdomen.2.8": "Укажите целое число для поля «Размер».",
@@ -65,13 +70,39 @@ describe("instrumental draft validation", () => {
   it("returns the normalized value and surfaces structural normalizer failures", () => {
     const draft: InstrumentalTestsSectionValue = { studies: [{
       ...base,
-      typeId: "instrumental.study.xray-thorax-abdomen",
+      typeId: "instrumental.study.xray-thorax",
       typeName: "forged",
-      mode: "narrative",
-      result: " result ",
+      mode: "tree",
+      findings: [{ findingId: xrayId("20"), findingName: "forged", value: " result ", children: [] }],
     }] };
-    expect(parseInstrumentalTestsDraft(draft).value?.studies[0]).toMatchObject({ typeName: "Рентген грудной и брюшной полости", result: "result" });
+    expect(parseInstrumentalTestsDraft(draft).value?.studies[0]).toMatchObject({
+      typeName: "Рентгенография грудной полости",
+      findings: [{ findingName: "Заключение", value: "result" }],
+    });
     expect(parseInstrumentalTestsDraft({ studies: [{ ...draft.studies[0]!, id: "bad" }] }).errors.section).toContain("идентификатор");
+  });
+
+  it("places X-ray selection-set and required continuation errors beside their controls", () => {
+    const draft: InstrumentalTestsSectionValue = { studies: [{
+      ...base,
+      typeId: "instrumental.study.xray-thorax",
+      typeName: "Рентгенография грудной полости",
+      mode: "tree",
+      findings: [{
+        findingId: xrayId("10"), findingName: "Купол диафрагмы", children: [{
+          findingId: xrayId("10.0"), findingName: "Характеристики купола", children: [
+            { findingId: xrayId("10.0.1"), findingName: "Ровный", children: [] },
+            { findingId: xrayId("10.0.2"), findingName: "Неровный", children: [] },
+            { findingId: xrayId("10.0.5"), findingName: "LL", children: [] },
+          ],
+        }],
+      }],
+    }] };
+    expect(parseInstrumentalTestsDraft(draft, "2026-08-15").errors.studies[0]?.findings).toEqual({
+      [`${xrayId("10.0")}:regularity`]: "Для характеристики «Ровность купола» можно выбрать не более одного значения.",
+      [`${xrayId("10.0")}:definition`]: "Заполните характеристику «Чёткость купола».",
+      [xrayId("10.0.5.intercostal")]: "Заполните поле «Межреберье на LL-проекции».",
+    });
   });
 
   it("places a separate inline error beside each missing prostate contour characteristic", () => {

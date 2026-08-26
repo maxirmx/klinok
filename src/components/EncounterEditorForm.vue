@@ -464,8 +464,7 @@ async function submit() {
         <InstrumentalTestsEditor v-model="instrumentalTests" :encounter-date="date" :errors="instrumentalErrors" />
       </template>
       <template v-else>
-        <p class="temporary-note">{{ kind === 'general-data' ? 'Сохранён старый шаблон free-text-v0.' : 'Временный универсальный шаблон free-text-v0.' }}</p>
-        <textarea :value="texts[kind] ?? ''" rows="4" required @input="updateText(kind, $event)" />
+        <textarea :value="texts[kind] ?? ''" rows="4" required :aria-label="ENCOUNTER_SECTION_LABELS[kind]" @input="updateText(kind, $event)" />
       </template>
     </article>
     <section v-if="optionalAvailable.length" class="encounter-section-card encounter-add-section">

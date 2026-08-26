@@ -1238,10 +1238,15 @@ describe("Doctor pages", () => {
           value: { studies: [{
             id: "223e4567-e89b-12d3-a456-426614174000",
             date: "2026-07-21",
-            typeId: "instrumental.study.xray-thorax-abdomen",
-            typeName: "Рентген грудной и брюшной полости",
-            mode: "narrative",
-            result: "Без патологии",
+            typeId: "instrumental.study.xray-thorax",
+            typeName: "Рентгенография грудной полости",
+            mode: "tree",
+            findings: [{
+              findingId: "instrumental.finding.xray-thorax.20",
+              findingName: "Заключение",
+              value: "Без патологии",
+              children: [],
+            }],
           }] },
           authorAccountId: "doctor-1",
           authorDisplayName: "Вера Врач",
@@ -1258,8 +1263,8 @@ describe("Doctor pages", () => {
 
     expect(editor.findAll(".laboratory-study-card")).toHaveLength(1);
     expect(editor.get<HTMLInputElement>(".laboratory-metadata label:nth-child(2) input").element.value).toBe("Ветлаб");
-    expect(instrumentalEditor.get(".instrumental-study-heading h4").text()).toBe("Рентген грудной и брюшной полости");
-    expect(instrumentalEditor.get<HTMLTextAreaElement>(".instrumental-study-card > label textarea").element.value).toBe("Без патологии");
+    expect(instrumentalEditor.get(".instrumental-study-heading h4").text()).toBe("Рентгенография грудной полости");
+    expect(instrumentalEditor.get<HTMLTextAreaElement>('textarea[aria-label="Заключение"]').element.value).toBe("Без патологии");
     editor.findAllComponents(AppCatalogCombobox)[0]!.vm.$emit("update:selectedIds", ["lab.study.cbc"]);
     await flushPromises();
     await editor.get('button[title="Добавить исследование"]').trigger("click");
@@ -1307,10 +1312,15 @@ describe("Doctor pages", () => {
                 studies: [{
                   id: "223e4567-e89b-12d3-a456-426614174000",
                   date: "2026-08-15",
-                  typeId: "instrumental.study.xray-thorax-abdomen",
-                  typeName: "Рентген грудной и брюшной полости",
-                  mode: "narrative",
-                  result: "Очаговых изменений нет",
+                  typeId: "instrumental.study.xray-thorax",
+                  typeName: "Рентгенография грудной полости",
+                  mode: "tree",
+                  findings: [{
+                    findingId: "instrumental.finding.xray-thorax.20",
+                    findingName: "Заключение",
+                    value: "Очаговых изменений нет",
+                    children: [],
+                  }],
                 }],
               },
               outcome: { selectedIds: ["outcome.observation"], comment: "" },
@@ -1330,7 +1340,7 @@ describe("Doctor pages", () => {
     const instrumentalEditor = wrapper.get(".doctor-pet-detail > .encounter-editor").getComponent(InstrumentalTestsEditor);
     expect(editor.findAll(".laboratory-study-card")).toHaveLength(1);
     expect(editor.get(".laboratory-study-heading h4").text()).toBe("Общеклинический анализ крови");
-    expect(instrumentalEditor.get(".instrumental-study-heading h4").text()).toBe("Рентген грудной и брюшной полости");
+    expect(instrumentalEditor.get(".instrumental-study-heading h4").text()).toBe("Рентгенография грудной полости");
     expect(wrapper.text()).toContain("Черновик восстановлен");
   });
 
@@ -1405,6 +1415,22 @@ describe("Doctor pages", () => {
         }),
       }),
     }));
+  });
+
+  it("renders recommendations and procedures as permanent free-form sections", async () => {
+    const wrapper = await mountAt("/doctor/pets/pet-1", "doctor-pet-detail");
+    await flushPromises();
+    const addSection = wrapper.get<HTMLSelectElement>(".encounter-add-section select");
+
+    await addSection.setValue("recommendations");
+    await addSection.setValue("procedures");
+
+    const section = (heading: string) => wrapper.findAll(".encounter-section-card")
+      .find((candidate) => candidate.find("h3").exists() && candidate.get("h3").text() === heading)!;
+    expect(section("Рекомендации").get("textarea").attributes("aria-label")).toBe("Рекомендации");
+    expect(section("Манипуляции").get("textarea").attributes("aria-label")).toBe("Манипуляции");
+    expect(wrapper.text()).not.toContain("Временный универсальный шаблон");
+    expect(wrapper.text()).not.toContain("free-text-v0");
   });
 
   it("prefills, validates, and saves the structured vaccination and chipping template", async () => {
@@ -1744,7 +1770,7 @@ describe("Doctor pages", () => {
     await flushPromises();
     await wrapper.get(".medical-record-edit").trigger("click");
     const editor = wrapper.get(".encounter-editor-inline");
-    expect(editor.get(".temporary-note").text()).toContain("старый шаблон");
+    expect(editor.text()).not.toContain("free-text-v0");
     expect(editor.get<HTMLTextAreaElement>(".encounter-section-card:not(.encounter-what-happened):not(.encounter-outcome) textarea").element.value)
       .toBe("Вес 11,8 кг; температура 38,4");
     await editor.get('button[title="Сохранить запись"]').trigger("click");

@@ -547,10 +547,14 @@ test("fresh provisioning, Doctor approval, grant, draft, and confirmation", asyn
   await instrumentalCard.getByRole("option", { name: "УЗИ органов брюшной полости", exact: true }).click();
   const addInstrumentalStudy = instrumentalCard.getByRole("button", { name: "Добавить исследование" });
   await addInstrumentalStudy.click();
+  await expect(instrumentalCard.locator(".instrumental-study-list + .instrumental-study-create")).toHaveCount(1);
+  const ultrasoundStudy = instrumentalCard.locator(".instrumental-study-card").filter({
+    has: doctorPage.getByRole("heading", { name: "УЗИ органов брюшной полости", exact: true }),
+  });
   const addInstrumentalFinding = async (comboboxName: string, findingName: string) => {
-    const combobox = instrumentalCard.getByRole("combobox", { name: comboboxName, exact: true });
+    const combobox = ultrasoundStudy.getByRole("combobox", { name: comboboxName, exact: true });
     await combobox.fill(findingName);
-    await instrumentalCard.getByRole("option", { name: findingName, exact: true }).click();
+    await ultrasoundStudy.getByRole("option", { name: findingName, exact: true }).click();
     const createRow = combobox.locator("xpath=ancestor::div[contains(concat(' ', normalize-space(@class), ' '), ' instrumental-finding-create ')][1]");
     const actionName = comboboxName === "Добавить раздел исследования" ? "Добавить раздел" : "Добавить показатель";
     const add = createRow.getByRole("button", { name: actionName });
@@ -571,7 +575,7 @@ test("fresh provisioning, Doctor approval, grant, draft, and confirmation", asyn
     return add;
   };
   const selectInstrumentalValue = async (indicatorName: string, valueName: string) => {
-    const selector = instrumentalCard.getByRole("combobox", {
+    const selector = ultrasoundStudy.getByRole("combobox", {
       name: `Значение показателя «${indicatorName}»`,
       exact: true,
     }).filter({ hasText: valueName });
@@ -749,17 +753,106 @@ test("fresh provisioning, Doctor approval, grant, draft, and confirmation", asyn
   const uterusContentsSelector = await selectInstrumentalValue("Содержимое", longInstrumentalValue);
   const addConclusion = await addInstrumentalFinding("Добавить раздел исследования", "Заключение");
   await instrumentalCard.getByLabel("Заключение", { exact: true }).fill("Без патологии");
-  const deleteInstrumentalStudy = instrumentalCard.getByRole("button", { name: "Удалить исследование" });
+  const deleteInstrumentalStudy = ultrasoundStudy.getByRole("button", { name: "Удалить исследование" });
   const deleteSediment = instrumentalCard.getByRole("button", { name: "Удалить показатель «Взвесь/осадок»" });
   const deleteConcrementSize = concrementSizeInput
     .locator("xpath=ancestor::div[contains(concat(' ', normalize-space(@class), ' '), ' instrumental-finding-row ')][1]")
     .getByRole("button", { name: "Удалить показатель «Размер»", exact: true });
-  const instrumentalResultHeadings = instrumentalCard.locator(".instrumental-result-headings")
-    .filter({ hasText: "ПоказательРезультат" });
   await expectTopAligned(addInstrumentalStudy, instrumentalType);
-  await expect(instrumentalResultHeadings.first()).toBeVisible();
+  await expect(instrumentalCard.locator(".instrumental-result-headings")).toHaveCount(0);
   await expectTopAligned(deleteSediment, sedimentInput);
   await expectTopAligned(deleteConcrementSize, concrementSizeInput);
+
+  await instrumentalType.fill("Рентгенография грудной полости");
+  await instrumentalCard.getByRole("option", { name: "Рентгенография грудной полости", exact: true }).click();
+  await addInstrumentalStudy.click();
+  const xrayStudy = instrumentalCard.locator(".instrumental-study-card").filter({
+    has: doctorPage.getByRole("heading", { name: "Рентгенография грудной полости", exact: true }),
+  });
+  const deleteXrayStudy = xrayStudy.getByRole("button", { name: "Удалить исследование" });
+  const addXrayFinding = async (findingName: string) => {
+    const combobox = xrayStudy.getByRole("combobox", { name: "Добавить раздел исследования", exact: true });
+    await combobox.fill(findingName);
+    await xrayStudy.getByRole("option", { name: findingName, exact: true }).click();
+    const add = combobox.locator("xpath=ancestor::div[contains(concat(' ', normalize-space(@class), ' '), ' instrumental-finding-create ')][1]")
+      .getByRole("button", { name: "Добавить раздел" });
+    await add.click();
+    return add;
+  };
+  const addXrayProjections = await addXrayFinding("Выполненные проекции");
+  const projectionsPanel = xrayStudy.getByRole("group", { name: "Проекции", exact: true });
+  await projectionsPanel.getByRole("checkbox", { name: "Левая латеролатеральная", exact: true }).check();
+  await projectionsPanel.getByRole("checkbox", { name: "Правая латеролатеральная", exact: true }).check();
+  const lateralProjections = projectionsPanel.getByRole("checkbox", { name: /латеролатеральная/ });
+  await expect(lateralProjections).toHaveCount(2);
+  await expect(lateralProjections.nth(0)).toBeChecked();
+  await expect(lateralProjections.nth(1)).toBeChecked();
+
+  const addXrayDiaphragm = await addXrayFinding("Купол диафрагмы");
+  const diaphragmCharacteristics = xrayStudy.locator(`[data-finding-id="instrumental.finding.xray-thorax.10.0"]`);
+  const diaphragmRegularity = diaphragmCharacteristics.getByRole("combobox", { name: "Ровность купола", exact: true });
+  const diaphragmDefinition = diaphragmCharacteristics.getByRole("combobox", { name: "Чёткость купола", exact: true });
+  const diaphragmProjection = diaphragmCharacteristics.getByRole("combobox", { name: "Проекция", exact: true });
+  await expect(diaphragmCharacteristics.getByRole("combobox")).toHaveCount(3);
+  await diaphragmRegularity.selectOption({ label: "Неровный" });
+  await diaphragmDefinition.selectOption({ label: "Чёткий" });
+  await diaphragmProjection.selectOption({ label: "На LL-проекции в области межреберья" });
+  const xrayIntercostal = diaphragmCharacteristics.getByLabel("Межреберье на LL-проекции", { exact: true });
+  await expect(xrayIntercostal).toBeVisible();
+  await xrayIntercostal.fill("7");
+  const verifyCheckboxConflict = async (panel: Locator, left: string, right: string) => {
+    const leftChoice = panel.getByRole("checkbox", { name: left, exact: true });
+    const rightChoice = panel.getByRole("checkbox", { name: right, exact: true });
+    await leftChoice.check();
+    await rightChoice.check();
+    await expect(leftChoice).not.toBeChecked();
+    await expect(rightChoice).toBeChecked();
+    await rightChoice.uncheck();
+  };
+  const addXrayHeart = await addXrayFinding("Сердечный силуэт");
+  const heartBordersPanel = xrayStudy.getByRole("group", { name: "Границы", exact: true });
+  await verifyCheckboxConflict(heartBordersPanel, "Чёткие", "Нечёткие");
+  await verifyCheckboxConflict(heartBordersPanel, "Ровные", "Неровные");
+  await heartBordersPanel.getByRole("checkbox", { name: "Чёткие", exact: true }).check();
+  await heartBordersPanel.getByRole("checkbox", { name: "Ровные", exact: true }).check();
+
+  const addXrayLungs = await addXrayFinding("Лёгочные поля");
+  const lungPatternPanel = xrayStudy.getByRole("group", { name: "Лёгочный рисунок", exact: true });
+  for (const positive of [
+    "Имеет усиление бронхиального рисунка",
+    "Имеет усиление интерстициального неструктурированного рисунка",
+    "Имеет усиление интерстициального структурированного рисунка",
+    "Имеет усиление альвеолярного рисунка",
+  ]) {
+    await verifyCheckboxConflict(lungPatternPanel, "Без признаков усиления", positive);
+    await verifyCheckboxConflict(lungPatternPanel, "Без признаков диффузных изменений", positive);
+  }
+  await verifyCheckboxConflict(
+    lungPatternPanel,
+    "Без признаков очаговых изменений",
+    "Имеет картину очаговых единичных поражений",
+  );
+  await lungPatternPanel.getByRole("checkbox", { name: "Без признаков усиления", exact: true }).check();
+  await lungPatternPanel.getByRole("checkbox", { name: "Без признаков деформации", exact: true }).check();
+
+  const addXrayConclusion = await addXrayFinding("Заключение");
+  const xrayConclusion = xrayStudy.getByLabel("Заключение", { exact: true });
+  await xrayConclusion.fill("Очаговых и диффузных изменений в лёгочных полях не выявлено");
+
+  await addSectionSelect.selectOption("recommendations");
+  const recommendationsCard = doctorPage.locator(".encounter-section-card").filter({
+    has: doctorPage.getByRole("heading", { name: "Рекомендации", exact: true, level: 3 }),
+  });
+  await recommendationsCard.getByRole("textbox", { name: "Рекомендации", exact: true })
+    .fill("Повторный приём через семь дней");
+  await expect(recommendationsCard).not.toContainText("Временный универсальный шаблон");
+  await addSectionSelect.selectOption("procedures");
+  const proceduresCard = doctorPage.locator(".encounter-section-card").filter({
+    has: doctorPage.getByRole("heading", { name: "Манипуляции", exact: true, level: 3 }),
+  });
+  await proceduresCard.getByRole("textbox", { name: "Манипуляции", exact: true })
+    .fill("Обработка послеоперационной раны");
+  await expect(proceduresCard).not.toContainText("Временный универсальный шаблон");
 
   await therapeuticCard.getByRole("tab", { name: "Анамнез болезни" }).click();
   const therapeuticImport = therapeuticCard.getByRole("button", { name: "Импортировать из «Что случилось»" });
@@ -804,9 +897,17 @@ test("fresh provisioning, Doctor approval, grant, draft, and confirmation", asyn
     deleteUterus,
     addUterusContents,
     addConclusion,
+    addXrayProjections,
+    addXrayDiaphragm,
+    addXrayHeart,
+    addXrayLungs,
+    addXrayConclusion,
+    deleteXrayStudy,
     deleteSediment,
     deleteConcrementSize,
     therapeuticCard.getByRole("button", { name: "Удалить раздел", exact: true }),
+    recommendationsCard.getByRole("button", { name: "Удалить раздел", exact: true }),
+    proceduresCard.getByRole("button", { name: "Удалить раздел", exact: true }),
     therapeuticAdd,
     therapeuticDelete,
   ];
@@ -823,7 +924,7 @@ test("fresh provisioning, Doctor approval, grant, draft, and confirmation", asyn
   const createStickyTargets = [
     therapeuticDelete,
     hemoglobinInput,
-    instrumentalCard.getByLabel("Заключение", { exact: true }),
+    ultrasoundStudy.getByLabel("Заключение", { exact: true }),
   ];
   await expectStickyEncounterHeading(doctorPage, createEditorHeading, createStickyTargets, [editorSave]);
   await doctorPage.evaluate(() => { document.documentElement.style.zoom = "1.5"; });
@@ -884,7 +985,6 @@ test("fresh provisioning, Doctor approval, grant, draft, and confirmation", asyn
   expect(narrowRegularityBox).not.toBeNull();
   expect(narrowDefinitionBox).not.toBeNull();
   expect(narrowDefinitionBox!.y).toBeGreaterThan(narrowRegularityBox!.y + narrowRegularityBox!.height - 1);
-  await expect(instrumentalResultHeadings.first()).toBeHidden();
   await expect(contentsValueControl.locator(".instrumental-result-mobile-name")).toBeVisible();
   await expectWrappedValue(uterusContentsSelector.locator("..").locator(".app-select-value"), longInstrumentalValue);
   await expectWrappedValue(preliminaryDiagnosis.locator(".app-catalog-selected-value"), longDiagnosisValue);
@@ -908,7 +1008,7 @@ test("fresh provisioning, Doctor approval, grant, draft, and confirmation", asyn
   await invalidProblem.getByLabel("Как давно началось").selectOption("problem.onset.today");
   await therapeuticCard.getByRole("tab", { name: "Рекомендации" }).click();
   await hemoglobinInput.fill("");
-  await instrumentalCard.getByLabel("Заключение", { exact: true })
+  await ultrasoundStudy.getByLabel("Заключение", { exact: true })
     .evaluate((element) => element.scrollIntoView({ block: "end" }));
   await editorSave.click();
 
@@ -964,6 +1064,9 @@ test("fresh provisioning, Doctor approval, grant, draft, and confirmation", asyn
   await expect(doctorRecord).toContainText("Размер образований: 11 мм");
   await expect(doctorRecord).toContainText("Ровные");
   await expect(doctorRecord).toContainText("Нечёткие");
+  await expect(doctorRecord).toContainText("Рентгенография грудной полости");
+  await expect(doctorRecord).toContainText("Межреберье на LL-проекции: 7");
+  await expect(doctorRecord).toContainText("Очаговых и диффузных изменений в лёгочных полях не выявлено");
   await doctorRecord.getByRole("button", { name: "Редактировать запись" }).click();
   const inlineEditor = doctorRecord.locator(".encounter-editor-inline");
   await expect(inlineEditor.getByLabel("Взятие анализов", { exact: true })).toBeChecked();
@@ -974,7 +1077,7 @@ test("fresh provisioning, Doctor approval, grant, draft, and confirmation", asyn
   const inlineStickyTargets = [
     inlineEditor.getByRole("tab", { name: "Рекомендации" }),
     inlineEditor.getByLabel("Гемоглобин (Hgb), результат", { exact: true }),
-    inlineEditor.getByLabel("Заключение", { exact: true }),
+    inlineEditor.getByLabel("Заключение", { exact: true }).first(),
   ];
   for (const viewport of [
     { width: 1280, height: 720 },
@@ -988,6 +1091,12 @@ test("fresh provisioning, Doctor approval, grant, draft, and confirmation", asyn
     await expectStickyEncounterHeading(doctorPage, inlineEditorHeading, inlineStickyTargets, [editCancel, editSave]);
   }
   await doctorPage.setViewportSize({ width: 1280, height: 720 });
+  const inlineXrayStudy = inlineEditor.locator(".instrumental-study-card").filter({
+    has: doctorPage.getByRole("heading", { name: "Рентгенография грудной полости", exact: true }),
+  });
+  await expect(inlineXrayStudy.getByLabel("Межреберье на LL-проекции", { exact: true })).toHaveValue("7");
+  await expect(inlineXrayStudy.getByLabel("Заключение", { exact: true }))
+    .toHaveValue("Очаговых и диффузных изменений в лёгочных полях не выявлено");
   await editCancel.click();
   await expect(inlineEditor).toHaveCount(0);
   await doctorPage.context().setOffline(false);
@@ -999,6 +1108,8 @@ test("fresh provisioning, Doctor approval, grant, draft, and confirmation", asyn
   await ownerHistorySearch.fill("Взятие анализов");
   await expect(ownerRecord).toBeVisible({ timeout: replicationTimeout });
   await ownerHistorySearch.fill("Проведение исследования");
+  await expect(ownerRecord).toBeVisible({ timeout: replicationTimeout });
+  await ownerHistorySearch.fill("диффузных изменений");
   await expect(ownerRecord).toBeVisible({ timeout: replicationTimeout });
   await ownerHistorySearch.fill("");
   const laboratoryComparison = ownerPage.locator(".laboratory-comparison");
@@ -1046,18 +1157,32 @@ test("fresh provisioning, Doctor approval, grant, draft, and confirmation", asyn
   await expect(ownerRecord.locator(".encounter-history-comment").getByText("Состояние стабильное", { exact: true })).toBeVisible();
   await expect(ownerRecord.getByText("В стадии наблюдения", { exact: true })).toBeVisible();
   await expect(ownerRecord.getByText("Контроль через неделю", { exact: true })).toBeVisible();
+  const ownerRecommendations = ownerRecord.locator(".encounter-history-section").filter({
+    has: ownerPage.getByRole("heading", { name: "Рекомендации", exact: true, level: 3 }),
+  });
+  await expect(ownerRecommendations.getByText("Повторный приём через семь дней", { exact: true })).toBeVisible();
+  const ownerProcedures = ownerRecord.locator(".encounter-history-section").filter({
+    has: ownerPage.getByRole("heading", { name: "Манипуляции", exact: true, level: 3 }),
+  });
+  await expect(ownerProcedures.getByText("Обработка послеоперационной раны", { exact: true })).toBeVisible();
   const ownerInstrumental = ownerRecord.locator(".encounter-history-section").filter({
     has: ownerPage.getByRole("heading", { name: "Инструментальные исследования", exact: true }),
   });
-  await expect(ownerInstrumental.getByText("Взвесь/осадок: Незначительно", { exact: true })).toBeVisible();
-  await expect(ownerInstrumental.getByText("Заключение: Без патологии", { exact: true })).toBeVisible();
-  await expect(ownerInstrumental.getByText("Гипоэхогенные", { exact: true })).toBeVisible();
-  await expect(ownerInstrumental.getByText("Размер: 9 мм", { exact: true })).toBeVisible();
-  await expect(ownerInstrumental.getByText("Смешанный", { exact: true })).toBeVisible();
-  await expect(ownerInstrumental.getByText("Подвижный", { exact: true })).toBeVisible();
-  await expect(ownerInstrumental.getByText("Размер образований: 11 мм", { exact: true })).toBeVisible();
-  await expect(ownerInstrumental.getByText("Ровные", { exact: true })).toBeVisible();
-  await expect(ownerInstrumental.getByText("Нечёткие", { exact: true })).toBeVisible();
+  const ownerUltrasoundStudy = ownerInstrumental.locator(".instrumental-history-study")
+    .filter({ hasText: "УЗИ органов брюшной полости" });
+  await expect(ownerUltrasoundStudy.getByText("Взвесь/осадок: Незначительно", { exact: true })).toBeVisible();
+  await expect(ownerUltrasoundStudy.getByText("Заключение: Без патологии", { exact: true })).toBeVisible();
+  await expect(ownerUltrasoundStudy.getByText("Гипоэхогенные", { exact: true })).toBeVisible();
+  await expect(ownerUltrasoundStudy.getByText("Размер: 9 мм", { exact: true })).toBeVisible();
+  await expect(ownerUltrasoundStudy.getByText("Смешанный", { exact: true })).toBeVisible();
+  await expect(ownerUltrasoundStudy.getByText("Подвижный", { exact: true })).toBeVisible();
+  await expect(ownerUltrasoundStudy.getByText("Размер образований: 11 мм", { exact: true })).toBeVisible();
+  await expect(ownerUltrasoundStudy.getByText("Ровные", { exact: true })).toBeVisible();
+  await expect(ownerUltrasoundStudy.getByText("Нечёткие", { exact: true })).toBeVisible();
+  const ownerXrayStudy = ownerInstrumental.locator(".instrumental-history-study")
+    .filter({ hasText: "Рентгенография грудной полости" });
+  await expect(ownerXrayStudy.getByText("Межреберье на LL-проекции: 7", { exact: true })).toBeVisible();
+  await expect(ownerXrayStudy.getByText("Заключение: Очаговых и диффузных изменений в лёгочных полях не выявлено", { exact: true })).toBeVisible();
   await expect(ownerRecord.locator("summary")).not.toContainText("Диагноз:");
   const ownerDiagnosis = ownerRecord.locator(".encounter-history-section").filter({
     has: ownerPage.getByRole("heading", { name: "Диагноз", exact: true }),
