@@ -1015,11 +1015,11 @@ describe("Doctor pages", () => {
       await date.setValue("2026-07-21");
       await wrapper.get('button[title="Сохранить запись"]').trigger("click");
       await flushPromises();
-      const diagnosisError = wrapper.get<HTMLElement>('.encounter-diagnosis [data-encounter-error-anchor="true"]');
-      expect(document.activeElement).toBe(diagnosisError.element);
+      const generalError = wrapper.get(".general-data-fields").element.previousElementSibling as HTMLElement;
+      expect(document.activeElement).toBe(generalError);
 
+      await wrapper.get<HTMLInputElement>('.general-data-fields input[type="number"]').setValue("12");
       await therapeutic.findAll('[role="tab"]')[3]!.trigger("click");
-      await wrapper.get<HTMLInputElement>('.encounter-diagnosis input[role="combobox"]').setValue("Гастрит");
       await wrapper.get('button[title="Сохранить запись"]').trigger("click");
       await flushPromises();
       const problemTitle = therapeutic.get<HTMLInputElement>(".therapeutic-problem-title input");
@@ -1029,6 +1029,14 @@ describe("Doctor pages", () => {
       expect(problemTitle.attributes("aria-describedby")).toBe(problemError.attributes("id"));
 
       await problemTitle.setValue("Кашель");
+      await wrapper.get('button[title="Сохранить запись"]').trigger("click");
+      await flushPromises();
+      const vaccinationError = wrapper.get(".vaccination-fields").element.previousElementSibling as HTMLElement;
+      expect(document.activeElement).toBe(vaccinationError);
+      const chipNumber = wrapper.findAll(".vaccination-fields label")
+        .find((label) => label.text().includes("Номер чипа"))!
+        .get<HTMLInputElement>("input");
+      await chipNumber.setValue("643094100000001");
       await wrapper.get('button[title="Сохранить запись"]').trigger("click");
       await flushPromises();
       const laboratoryType = wrapper.get<HTMLInputElement>('.encounter-laboratory-tests input[aria-label="Тип исследования"]');
@@ -1706,7 +1714,41 @@ describe("Doctor pages", () => {
   });
 
   it("edits an unconfirmed medical record in place", async () => {
-    await setMedical(snapshot(undefined, { records: [medicalRecord] }));
+    const editableMedicalRecord: MedicalRecordDraft = {
+      ...medicalRecord,
+      sections: {
+        ...medicalRecord.sections,
+        diagnosis: {
+          kind: "diagnosis",
+          templateVersion: "diagnosis-v2",
+          value: {
+            preliminary: { customText: "Подозрение на гастрит" },
+            differential: { selectedIds: [], customTexts: [] },
+            confirmed: { customText: "" },
+          },
+          authorAccountId: "doctor-1",
+          authorDisplayName: "Вера Врач",
+          updatedAt: "2026-07-21T10:00:00.000Z",
+        },
+        recommendations: {
+          kind: "recommendations",
+          templateVersion: "free-text-v1",
+          value: { text: "Контроль через неделю" },
+          authorAccountId: "doctor-1",
+          authorDisplayName: "Вера Врач",
+          updatedAt: "2026-07-21T10:00:00.000Z",
+        },
+        procedures: {
+          kind: "procedures",
+          templateVersion: "free-text-v1",
+          value: { text: "Обработка" },
+          authorAccountId: "doctor-1",
+          authorDisplayName: "Вера Врач",
+          updatedAt: "2026-07-21T10:00:00.000Z",
+        },
+      },
+    };
+    await setMedical(snapshot(undefined, { records: [editableMedicalRecord] }));
     const wrapper = await mountAt("/doctor/pets/pet-1", "doctor-pet-detail");
     await flushPromises();
     const record = wrapper.get(".medical-record-entry-details");
@@ -1717,6 +1759,14 @@ describe("Doctor pages", () => {
     expect(wrapper.find(".doctor-history-filters").exists()).toBe(false);
     expect(record.attributes()).toHaveProperty("open");
     expect(inlineEditor.get("h2").text()).toBe("Редактирование записи");
+    expect(inlineEditor.findAll(".encounter-section-card h3").map((heading) => heading.text())
+      .filter((heading) => heading !== "Добавить раздел")).toEqual([
+      "Что случилось",
+      "Манипуляции",
+      "Рекомендации",
+      "Диагноз",
+      "Итог",
+    ]);
     const editorActions = inlineEditor.findAll(".encounter-editor-heading button");
     expect(editorActions.map((button) => button.attributes("title"))).toEqual([
       "Отменить редактирование",
@@ -1875,6 +1925,17 @@ describe("Doctor pages", () => {
     expect(addSection.classes()).toContain("encounter-section-card");
     expect(addSection.get("h3").text()).toBe("Добавить раздел");
     expect(addSection.get("select").attributes("aria-label")).toBe("Добавить раздел");
+    expect(addSection.findAll("option").map((option) => option.text())).toEqual([
+      "Выберите раздел",
+      "Общие данные/Габитус",
+      "Терапевтический приём",
+      "Вакцинация/чипирование",
+      "Лабораторные исследования",
+      "Инструментальные исследования",
+      "Манипуляции",
+      "Рекомендации",
+      "Диагноз",
+    ]);
     const checkbox = (label: string) => wrapper.findAll(".encounter-taxonomy label")
       .find((candidate) => candidate.text() === label)!
       .get<HTMLInputElement>('input[type="checkbox"]');
@@ -2010,7 +2071,19 @@ describe("Doctor pages", () => {
     expect(saveEncounterButton.attributes("aria-label")).toBe("Сохранить запись");
     expect(saveEncounterButton.getComponent(AppIcon).props("name")).toBe("check");
     expect(wrapper.findAll('.doctor-history-filters select[aria-label="Раздел"] option').map((option) => option.text()))
-      .toContain("Итог");
+      .toEqual([
+        "Все разделы",
+        "Что случилось",
+        "Общие данные/Габитус",
+        "Терапевтический приём",
+        "Вакцинация/чипирование",
+        "Лабораторные исследования",
+        "Инструментальные исследования",
+        "Манипуляции",
+        "Рекомендации",
+        "Диагноз",
+        "Итог",
+      ]);
 
     await wrapper.get('.doctor-history-filters input[type="search"]').setValue("Вёра");
     expect(wrapper.findAll(".medical-record-entry-details")).toHaveLength(1);

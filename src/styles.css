@@ -995,6 +995,7 @@ dd {
 .app-catalog-category:hover,
 .app-catalog-category:focus-visible,
 .app-catalog-category.active { background: var(--brand-sky-soft); }
+.app-catalog-root-option.selected strong { color: var(--accent-strong); }
 .app-catalog-level-heading { display: grid; gap: 2px; padding: 2px 4px 8px; border-bottom: 1px solid var(--line); margin-bottom: 5px; }
 .app-catalog-level-heading > strong { padding: 2px 6px 0; font-size: .86rem; }
 .app-catalog-level-heading > small { padding: 0 6px; color: var(--text-muted); font-size: .72rem; }
@@ -1046,11 +1047,6 @@ dd {
   box-shadow: inset 0 0 0 1px var(--accent);
 }
 .diagnosis-selected-chip > span { align-self: center; min-width: 0; overflow-wrap: anywhere; }
-.diagnosis-history-values { display: grid; gap: 8px; margin: 0; }
-.diagnosis-history-values > div { display: grid; gap: 2px; align-content: start; }
-.diagnosis-history-values dt { color: var(--text-muted); font-size: 11px; font-weight: 600; }
-.diagnosis-history-values dd { margin: 0; }
-.diagnosis-history-values ul { margin: 0; }
 .general-data-fields {
   display: grid;
   grid-template-columns: repeat(4, minmax(120px, 1fr));

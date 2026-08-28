@@ -555,7 +555,19 @@ describe("Owner pages", () => {
     expect(medicalPagination.text()).toContain("Показаны 11–11 из 11");
 
     const filters = detail.get(".medical-record-filters");
-    expect(filters.findAll('select[aria-label="Раздел"] option').map((option) => option.text())).toContain("Итог");
+    expect(filters.findAll('select[aria-label="Раздел"] option').map((option) => option.text())).toEqual([
+      "Все разделы",
+      "Что случилось",
+      "Общие данные/Габитус",
+      "Терапевтический приём",
+      "Вакцинация/чипирование",
+      "Лабораторные исследования",
+      "Инструментальные исследования",
+      "Манипуляции",
+      "Рекомендации",
+      "Диагноз",
+      "Итог",
+    ]);
     await filters.get('input[type="search"]').setValue("Семен");
     expect(detail.findAll("details.owner-encounter-record")).toHaveLength(10);
     await filters.get('input[type="search"]').setValue("Итог");

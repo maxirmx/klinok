@@ -37,6 +37,10 @@ export interface DiagnosisCatalogGroup {
   groups?: readonly DiagnosisCatalogGroup[];
 }
 
+export const DIAGNOSIS_TOP_LEVEL_OPTIONS: readonly DiagnosisCatalogOption[] = [
+  { id: "diagnosis.general.019", label: "Клинически здорово" },
+];
+
 function options(prefix: string, labels: readonly string[]): DiagnosisCatalogOption[] {
   return labels.map((label, index) => ({
     id: `${prefix}.${String(index + 1).padStart(3, "0")}` as DiagnosisTaxonomyId,
@@ -67,7 +71,6 @@ export const DIAGNOSIS_CATALOG: readonly DiagnosisCatalogGroup[] = [
       "Кровопотеря",
       "Гиперэстезия",
       "Гипералгезия",
-      "Клинически здорово",
     ]),
   },
   {
@@ -555,7 +558,10 @@ function flattenGroups(groups: readonly DiagnosisCatalogGroup[]): DiagnosisCatal
   ]);
 }
 
-export const DIAGNOSIS_CATALOG_OPTIONS = flattenGroups(DIAGNOSIS_CATALOG);
+export const DIAGNOSIS_CATALOG_OPTIONS = [
+  ...DIAGNOSIS_TOP_LEVEL_OPTIONS,
+  ...flattenGroups(DIAGNOSIS_CATALOG),
+];
 const diagnosisTaxonomyIds = new Set(DIAGNOSIS_CATALOG_OPTIONS.map((option) => option.id));
 
 export function isDiagnosisTaxonomyId(value: string): value is DiagnosisTaxonomyId {

@@ -146,8 +146,13 @@ const visibleOptionIndexes = computed(() => new Map<string, number>(
   visibleOptions.value.map((option, index) => [option.id, index]),
 ));
 const activeOptionId = computed(() => showingCategories.value
-  ? activeCategoryIndex.value >= 0 ? `${listboxId}-category-${activeCategoryIndex.value}` : undefined
+  ? activeCategoryIndex.value < 0
+    ? undefined
+    : activeCategoryIndex.value < filteredOptions.value.length
+      ? `${listboxId}-${optionIndex(filteredOptions.value[activeCategoryIndex.value]!.id)}`
+      : `${listboxId}-category-${activeCategoryIndex.value - filteredOptions.value.length}`
   : activeIndex.value >= 0 ? `${listboxId}-${activeIndex.value}` : undefined);
+const rootItemCount = computed(() => filteredOptions.value.length + categories.value.length);
 const toggleTitle = computed(() => {
   if (!allOptions.value.length) return props.disabledTitle;
   return open.value ? props.hideOptionsTitle : props.showOptionsTitle;
@@ -188,7 +193,7 @@ function openOptions() {
   if (!allOptions.value.length) return;
   open.value = true;
   if (showingCategories.value) {
-    activeCategoryIndex.value = categories.value.length ? 0 : -1;
+    activeCategoryIndex.value = rootItemCount.value ? 0 : -1;
     activeIndex.value = -1;
     ensureActiveVisible();
     return;
@@ -209,7 +214,7 @@ function selectCategory(category: CatalogCategory) {
 function showCategories() {
   activeCategoryId.value = "";
   activeIndex.value = -1;
-  activeCategoryIndex.value = categories.value.length ? 0 : -1;
+  activeCategoryIndex.value = rootItemCount.value ? 0 : -1;
   ensureActiveVisible();
 }
 
@@ -254,7 +259,7 @@ function handleInput(event: Event) {
   searching.value = true;
   editing.value = true;
   activeCategoryId.value = "";
-  activeCategoryIndex.value = !normalizeSearch(value) && props.twoLevel && categories.value.length ? 0 : -1;
+  activeCategoryIndex.value = !normalizeSearch(value) && props.twoLevel && rootItemCount.value ? 0 : -1;
   if (!props.multiple) {
     selectedIds.value = [];
     customText.value = value;
@@ -279,10 +284,10 @@ function moveActive(delta: 1 | -1) {
     return;
   }
   if (showingCategories.value) {
-    if (!categories.value.length) return;
+    if (!rootItemCount.value) return;
     activeCategoryIndex.value = activeCategoryIndex.value < 0
-      ? delta > 0 ? 0 : categories.value.length - 1
-      : (activeCategoryIndex.value + delta + categories.value.length) % categories.value.length;
+      ? delta > 0 ? 0 : rootItemCount.value - 1
+      : (activeCategoryIndex.value + delta + rootItemCount.value) % rootItemCount.value;
     ensureActiveVisible();
     return;
   }
@@ -294,9 +299,14 @@ function moveActive(delta: 1 | -1) {
 }
 
 function selectActive() {
-  const category = categories.value[activeCategoryIndex.value];
-  if (showingCategories.value && category) {
-    selectCategory(category);
+  if (showingCategories.value) {
+    const option = filteredOptions.value[activeCategoryIndex.value];
+    if (option) {
+      selectOption(option);
+      return;
+    }
+    const category = categories.value[activeCategoryIndex.value - filteredOptions.value.length];
+    if (category) selectCategory(category);
     return;
   }
   const option = visibleOptions.value[activeIndex.value];
@@ -395,12 +405,24 @@ onBeforeUnmount(() => {
       <template v-if="showingCategories">
         <p class="app-catalog-level-prompt">{{ categoryPrompt }}</p>
         <button
+          v-for="(option, index) in filteredOptions"
+          :id="`${listboxId}-${optionIndex(option.id)}`"
+          :key="option.id"
+          type="button"
+          class="app-catalog-category app-catalog-root-option"
+          :class="{ active: activeCategoryIndex === index, selected: selectedIds.includes(option.id) }"
+          role="option"
+          :aria-selected="selectedIds.includes(option.id)"
+          @mousedown.prevent
+          @click="selectOption(option)"
+        ><span><strong>{{ option.label }}</strong></span></button>
+        <button
           v-for="(category, index) in categories"
           :id="`${listboxId}-category-${index}`"
           :key="category.id"
           type="button"
           class="app-catalog-category"
-          :class="{ active: activeCategoryIndex === index }"
+          :class="{ active: activeCategoryIndex === index + filteredOptions.length }"
           role="option"
           :aria-selected="false"
           @mousedown.prevent

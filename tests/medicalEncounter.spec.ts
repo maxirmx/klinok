@@ -6,6 +6,7 @@ import { describe, expect, it } from "vitest";
 import { isWhatHappenedTaxonomyId } from "../packages/contracts/src/index";
 import {
   ENCOUNTER_SECTION_LABELS,
+  ENCOUNTER_SECTION_ORDER,
   WHAT_HAPPENED_TREE,
   OUTCOME_OPTIONS,
   calculateNextRevaccinationDate,
@@ -30,9 +31,28 @@ import {
   vaccinationDetails,
   whatHappenedPath,
 } from "../src/medicalEncounter";
-import { DIAGNOSIS_CATALOG, DIAGNOSIS_CATALOG_OPTIONS } from "../src/repositories/types";
+import {
+  DIAGNOSIS_CATALOG,
+  DIAGNOSIS_CATALOG_OPTIONS,
+  DIAGNOSIS_TOP_LEVEL_OPTIONS,
+} from "../src/repositories/types";
 
 describe("medical encounter templates", () => {
+  it("keeps one canonical section order with recommendations, diagnosis, and outcome last", () => {
+    expect(ENCOUNTER_SECTION_ORDER.map((kind) => ENCOUNTER_SECTION_LABELS[kind])).toEqual([
+      "Что случилось",
+      "Общие данные/Габитус",
+      "Терапевтический приём",
+      "Вакцинация/чипирование",
+      "Лабораторные исследования",
+      "Инструментальные исследования",
+      "Манипуляции",
+      "Рекомендации",
+      "Диагноз",
+      "Итог",
+    ]);
+  });
+
   it("contains stable, arbitrary-depth taxonomy identifiers including laboratory groups", () => {
     expect(WHAT_HAPPENED_TREE.label).toBe("Что случилось");
     const well = WHAT_HAPPENED_TREE.children?.find((node) => node.id === "well");
@@ -221,6 +241,11 @@ describe("medical encounter templates", () => {
       .toEqual(["Ротовая полость", "Глаза", "Ушные проходы", "Нос"]);
     expect(DIAGNOSIS_CATALOG.find((group) => group.id === "infectious")?.groups?.map((group) => group.label))
       .toEqual(["Вирусные", "Бактериальные", "Паразитарные"]);
+    expect(DIAGNOSIS_TOP_LEVEL_OPTIONS).toEqual([
+      { id: "diagnosis.general.019", label: "Клинически здорово" },
+    ]);
+    expect(DIAGNOSIS_CATALOG.find((group) => group.id === "general")?.options)
+      .not.toContainEqual(expect.objectContaining({ label: "Клинически здорово" }));
     expect(DIAGNOSIS_CATALOG_OPTIONS).toHaveLength(393);
     expect(new Set(DIAGNOSIS_CATALOG_OPTIONS.map((option) => option.id)).size).toBe(393);
     expect(DIAGNOSIS_CATALOG_OPTIONS).toEqual(expect.arrayContaining([

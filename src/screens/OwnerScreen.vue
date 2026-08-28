@@ -27,6 +27,7 @@ import WorkspaceShell from "../components/WorkspaceShell.vue";
 import { appState, logout, requireRepository, searchDoctorDirectory } from "../appStore";
 import {
   ENCOUNTER_SECTION_LABELS,
+  ENCOUNTER_SECTION_ORDER,
   medicalRecordSearchText,
 } from "../medicalEncounter";
 import {
@@ -48,7 +49,7 @@ const petSexOptions = [
 ];
 const medicalSectionOptions = [
   { value: "", label: "Все разделы" },
-  ...Object.entries(ENCOUNTER_SECTION_LABELS).map(([value, label]) => ({ value, label })),
+  ...ENCOUNTER_SECTION_ORDER.map((value) => ({ value, label: ENCOUNTER_SECTION_LABELS[value] })),
 ];
 const medicalStatusOptions = [
   { value: "", label: "Все статусы" },

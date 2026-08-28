@@ -3,7 +3,7 @@
 // All rights reserved.
 // This file is a part of Klinok application
 
-import { DIAGNOSIS_CATALOG } from "../repositories/types";
+import { DIAGNOSIS_CATALOG, DIAGNOSIS_TOP_LEVEL_OPTIONS } from "../repositories/types";
 import AppCatalogCombobox from "./AppCatalogCombobox.vue";
 
 withDefaults(defineProps<{
@@ -28,11 +28,13 @@ const customTexts = defineModel<string[]>("customTexts", { default: () => [] });
     v-model:custom-texts="customTexts"
     class="diagnosis-combobox"
     :label="label"
+    :options="DIAGNOSIS_TOP_LEVEL_OPTIONS"
     :groups="DIAGNOSIS_CATALOG"
     :multiple="multiple"
     :invalid="invalid"
     :described-by="describedBy"
     two-level
+    category-prompt="Выберите диагноз или категорию"
     :placeholder="placeholder"
     empty-text="Нет подходящих диагнозов"
     show-options-title="Показать варианты диагнозов"

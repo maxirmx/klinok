@@ -334,7 +334,20 @@ describe("MedicalRecordEntry", () => {
   it("renders populated sections in canonical order and hides editing for confirmed records", async () => {
     const wrapper = mount(MedicalRecordEntry, {
       props: {
-        record,
+        record: {
+          ...record,
+          sections: {
+            ...record.sections,
+            recommendations: {
+              kind: "recommendations",
+              templateVersion: "free-text-v1",
+              value: { text: "Контроль через неделю" },
+              authorAccountId: "doctor-1",
+              authorDisplayName: "Вера Врач",
+              updatedAt: "2026-07-21T11:30:00.000Z",
+            },
+          },
+        },
         mode: "details",
         confirmed: true,
         action: "edit",
@@ -348,15 +361,17 @@ describe("MedicalRecordEntry", () => {
     expect(wrapper.find(".medical-record-chevron-collapsed").exists()).toBe(true);
     expect(wrapper.find(".medical-record-chevron-expanded").exists()).toBe(true);
     expect(wrapper.findAll(".encounter-history-section h3").map((node) => node.text()))
-      .toEqual(["Что случилось", "Общие данные/Габитус", "Диагноз", "Итог"]);
-    expect(wrapper.get(".owner-encounter-sections").findAll(":scope > .encounter-history-section")).toHaveLength(4);
+      .toEqual(["Что случилось", "Общие данные/Габитус", "Рекомендации", "Диагноз", "Итог"]);
+    expect(wrapper.findAll(".encounter-history-section h3").slice(-3).map((node) => node.text()))
+      .toEqual(["Рекомендации", "Диагноз", "Итог"]);
+    expect(wrapper.get(".owner-encounter-sections").findAll(":scope > .encounter-history-section")).toHaveLength(5);
     expect(wrapper.get(".owner-encounter-sections").classes()).not.toContain("owner-encounter-sections-editing");
     const summary = wrapper.get(".owner-encounter-summary");
     expect(summary.text()).toContain("21.07.2026 · Не всё хорошо");
     expect(summary.text()).not.toContain("Пищеварением");
     expect(summary.get(".medical-record-condition-problem").text()).toBe("Не всё хорошо");
     expect(wrapper.get(".encounter-history-comment").text()).toBe("Не ест со вчерашнего дня");
-    expect(wrapper.text()).not.toContain("Рекомендации");
+    expect(wrapper.text()).toContain("Контроль через неделю");
     const authorIdentity = wrapper.findAll(".person-identity")
       .find((identity) => identity.text().includes("Анна Врач"))!;
     expect(authorIdentity.get(".person-identity-name").text()).toBe("Анна Врач");
@@ -366,11 +381,12 @@ describe("MedicalRecordEntry", () => {
     expect(wrapper.text()).toContain("120/80 сред. 93 мм рт. ст.");
     const diagnosis = wrapper.findAll(".encounter-history-section")
       .find((section) => section.get("h3").text() === "Диагноз")!;
-    expect(diagnosis.findAll("dt").map((label) => label.text())).toEqual([
+    expect(diagnosis.findAll(".diagnosis-history-values > li > span").map((label) => label.text())).toEqual([
       "Предварительный диагноз",
       "Дифференциальные диагнозы",
       "Подтверждённый диагноз",
     ]);
+    expect(diagnosis.findAll(".diagnosis-history-values > li > ul")).toHaveLength(3);
     expect(diagnosis.text()).toContain("Подозрение на гастрит");
     expect(diagnosis.text()).toContain("Стоматит");
     expect(diagnosis.text()).toContain("Гингивит острый");
@@ -389,13 +405,13 @@ describe("MedicalRecordEntry", () => {
     expect(edit.attributes("aria-label")).toBe("Редактировать запись");
     expect(edit.getComponent(AppIcon).props("name")).toBe("edit");
     await edit.trigger("click");
-    expect(wrapper.emitted("edit")?.[0]).toEqual([record]);
+    expect(wrapper.emitted("edit")?.[0]).toEqual([wrapper.props("record")]);
     const remove = wrapper.get(".medical-record-delete");
     expect(remove.attributes("title")).toBe("Удалить запись");
     expect(remove.attributes("aria-label")).toBe("Удалить запись");
     expect(remove.getComponent(AppIcon).props("name")).toBe("trash");
     await remove.trigger("click");
-    expect(wrapper.emitted("delete")?.[0]).toEqual([record]);
+    expect(wrapper.emitted("delete")?.[0]).toEqual([wrapper.props("record")]);
   });
 
   it("renders diagnosis v2 without an absent confirmed diagnosis", () => {
@@ -427,15 +443,17 @@ describe("MedicalRecordEntry", () => {
     });
 
     const diagnosisHistory = wrapper.get(".diagnosis-history-values");
-    expect(diagnosisHistory.findAll("li").map((item) => item.text())).toEqual([
+    expect(diagnosisHistory.findAll(":scope > li > ul > li").map((item) => item.text())).toEqual([
+      "Не указано",
       "Стоматит",
       "Реакция на корм",
       "Непереносимость препарата",
     ]);
-    expect(diagnosisHistory.findAll("dt").map((item) => item.text())).toEqual([
+    expect(diagnosisHistory.findAll(":scope > li > span").map((item) => item.text())).toEqual([
       "Предварительный диагноз",
       "Дифференциальные диагнозы",
     ]);
+    expect(diagnosisHistory.findAll(":scope > li > ul")).toHaveLength(2);
     expect(wrapper.get("summary").text()).not.toContain("Диагноз:");
   });
 

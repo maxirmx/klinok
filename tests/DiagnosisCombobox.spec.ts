@@ -24,16 +24,30 @@ describe("DiagnosisCombobox", () => {
     expect(wrapper.emitted("update:selectedIds")?.at(-1)).toEqual([["diagnosis.general.012"]]);
   });
 
-  it("offers the clinically healthy diagnosis from the general catalog", async () => {
+  it("offers the clinically healthy diagnosis as a standalone top-level option", async () => {
     const wrapper = mount(DiagnosisCombobox, {
       props: { label: "Диагноз", selectedIds: [], customText: "" },
     });
+    await wrapper.get(".app-catalog-toggle").trigger("click");
+    const topLevelOption = wrapper.get('[role="listbox"] > [role="option"]');
+    expect(topLevelOption.text()).toBe("Клинически здорово");
+    expect(topLevelOption.classes()).toEqual(expect.arrayContaining([
+      "app-catalog-category",
+      "app-catalog-root-option",
+    ]));
+    expect(wrapper.get(".app-catalog-level-prompt").text()).toBe("Выберите диагноз или категорию");
+    expect(wrapper.findAll(".app-catalog-category:not(.app-catalog-root-option)")[0]!.text())
+      .toBe("Патологии общего состояния");
+    await wrapper.get<HTMLInputElement>('input[role="combobox"]').trigger("keydown", { key: "Enter" });
+    expect(wrapper.emitted("update:selectedIds")?.at(-1)).toEqual([["diagnosis.general.019"]]);
+
+    await wrapper.setProps({ selectedIds: [] });
     const input = wrapper.get<HTMLInputElement>('input[role="combobox"]');
     await input.setValue("клинически здорово");
 
-    const group = wrapper.get('[role="group"][aria-label="Патологии общего состояния"]');
-    expect(group.get('[role="option"]').text()).toBe("Клинически здорово");
-    await group.get('[role="option"]').trigger("click");
+    expect(wrapper.find('[role="group"][aria-label="Патологии общего состояния"]').exists()).toBe(false);
+    expect(wrapper.get('[role="option"]').text()).toBe("Клинически здорово");
+    await wrapper.get('[role="option"]').trigger("click");
 
     expect(wrapper.emitted("update:selectedIds")?.at(-1)).toEqual([["diagnosis.general.019"]]);
   });
@@ -87,26 +101,28 @@ describe("DiagnosisCombobox", () => {
     expect(input.element.value).toBe("Конъюнктивит острый");
 
     await wrapper.get(".app-catalog-toggle").trigger("click");
-    expect(wrapper.get(".app-catalog-level-prompt").text()).toBe("Выберите категорию");
-    expect(wrapper.findAll(".app-catalog-category")).toHaveLength(16);
+    expect(wrapper.get(".app-catalog-level-prompt").text()).toBe("Выберите диагноз или категорию");
+    expect(wrapper.findAll(".app-catalog-category:not(.app-catalog-root-option)")).toHaveLength(16);
     expect(wrapper.text()).not.toContain("Конъюнктивит острый");
     expect(wrapper.find('[role="option"][aria-selected="true"]').exists()).toBe(false);
-    const firstCategoryId = wrapper.findAll(".app-catalog-category")[0]!.attributes("id");
+    const topLevelOptionId = wrapper.get(".app-catalog-root-option").attributes("id");
+    const firstCategoryId = wrapper.findAll(".app-catalog-category:not(.app-catalog-root-option)")[0]!.attributes("id");
     await input.trigger("keydown", { key: "ArrowDown" });
-    expect(input.attributes("aria-activedescendant")).toBe(wrapper.findAll(".app-catalog-category")[1]!.attributes("id"));
-    await input.trigger("keydown", { key: "ArrowUp" });
     expect(input.attributes("aria-activedescendant")).toBe(firstCategoryId);
+    await input.trigger("keydown", { key: "ArrowUp" });
+    expect(input.attributes("aria-activedescendant")).toBe(topLevelOptionId);
+    await input.trigger("keydown", { key: "ArrowDown" });
     await input.trigger("keydown", { key: "Enter" });
     expect(wrapper.get(".app-catalog-level-heading > strong").text()).toBe("Патологии общего состояния");
     await wrapper.get(".app-catalog-back").trigger("click");
-    const eyes = wrapper.findAll(".app-catalog-category")
+    const eyes = wrapper.findAll(".app-catalog-category:not(.app-catalog-root-option)")
       .find((category) => category.get("strong").text() === "Глаза")!;
     expect(eyes.get("small").text()).toBe("Патологии головы (ротовая полость, глаза, уши)");
     await eyes.trigger("click");
     expect(wrapper.get(".app-catalog-level-heading > strong").text()).toBe("Глаза");
     await input.trigger("keydown", { key: "Escape" });
     expect(wrapper.get(".app-catalog-level-prompt").exists()).toBe(true);
-    await wrapper.findAll(".app-catalog-category")
+    await wrapper.findAll(".app-catalog-category:not(.app-catalog-root-option)")
       .find((category) => category.get("strong").text() === "Глаза")!.trigger("click");
     const selected = wrapper.get('[role="option"][aria-selected="true"]');
     expect(input.attributes("aria-activedescendant")).toBe(selected.attributes("id"));

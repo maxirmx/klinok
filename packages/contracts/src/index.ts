@@ -30,6 +30,7 @@ export {
 export {
   DIAGNOSIS_CATALOG,
   DIAGNOSIS_CATALOG_OPTIONS,
+  DIAGNOSIS_TOP_LEVEL_OPTIONS,
   isDiagnosisTaxonomyId,
   type DiagnosisCatalogGroup,
   type DiagnosisCatalogOption,
@@ -252,12 +253,12 @@ export const MEDICAL_ENCOUNTER_SECTION_KINDS = [
   "what-happened",
   "general-data",
   "therapeutic-appointment",
-  "diagnosis",
   "vaccination",
-  "recommendations",
   "laboratory-tests",
   "instrumental-tests",
   "procedures",
+  "recommendations",
+  "diagnosis",
   "outcome",
 ] as const;
 export type MedicalEncounterSectionKind = (typeof MEDICAL_ENCOUNTER_SECTION_KINDS)[number];

@@ -14,6 +14,7 @@ import WhatHappenedTree from "./WhatHappenedTree.vue";
 import { focusFirstEncounterError } from "../encounterErrorNavigation";
 import {
   ENCOUNTER_SECTION_LABELS,
+  ENCOUNTER_SECTION_ORDER,
   OPTIONAL_ENCOUNTER_SECTION_KINDS,
   OUTCOME_OPTIONS,
   REVACCINATION_INTERVAL_OPTIONS,
@@ -89,6 +90,7 @@ const errorBaseId = useId();
 const revaccinationDateId = useId();
 const revaccinationMenuRoot = ref<HTMLElement | null>(null);
 const optionalAvailable = computed(() => OPTIONAL_ENCOUNTER_SECTION_KINDS.filter((kind) => !optionalKinds.value.includes(kind)));
+const orderedOptionalKinds = computed(() => ENCOUNTER_SECTION_ORDER.filter((kind) => optionalKinds.value.includes(kind)));
 const optionalSectionOptions = computed(() => [
   { value: "", label: "Выберите раздел" },
   ...optionalAvailable.value.map((kind) => ({ value: kind, label: ENCOUNTER_SECTION_LABELS[kind] })),
@@ -319,7 +321,7 @@ async function submit() {
       </section>
     </article>
     <article
-      v-for="kind in optionalKinds"
+      v-for="kind in orderedOptionalKinds"
       :key="kind"
       class="encounter-section-card"
       :class="{
