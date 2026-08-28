@@ -371,6 +371,10 @@ dd {
   accent-color: var(--blue);
 }
 
+label > input[type="checkbox"] {
+  align-self: flex-start;
+}
+
 .qa-panel {
   position: fixed;
   top: 16px;
@@ -827,7 +831,7 @@ dd {
 .encounter-outcome-option-panel { display: block; }
 .workspace-content .encounter-editor textarea.medical-card-comment { min-height: 0; }
 .encounter-editor .check-row {
-  align-items: center;
+  align-items: flex-start;
   gap: 8px;
   padding: 0;
 }
@@ -3506,7 +3510,11 @@ dd {
 }
 .instrumental-result-content { align-content: start; gap: 2px; }
 .instrumental-result-control { display: grid; min-width: 0; align-content: start; gap: 2px; }
-.instrumental-result-control :is(input, .app-select, textarea) { width: 100%; min-width: 0; box-sizing: border-box; }
+.instrumental-result-control :is(input:not([type="checkbox"]):not([type="radio"]), .app-select, textarea) {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
 .instrumental-multiple-choice-panel { min-width: 0; }
 .instrumental-multiple-choice-panel > .medical-card-options { margin-top: 3px; }
 .instrumental-multiple-choice-option { display: grid; min-width: 0; align-content: start; gap: 3px; }
@@ -3520,7 +3528,19 @@ dd {
 .instrumental-multiple-choice-option .instrumental-result-desktop-name { display: none; }
 .instrumental-multiple-choice-option .instrumental-result-mobile-name { display: block; white-space: normal; }
 .instrumental-selection-set-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px 10px; }
-.instrumental-selection-set-field { display: grid; min-width: 0; align-content: start; gap: 2px; }
+.instrumental-selection-set-field {
+  display: grid;
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+  align-content: start;
+  gap: 2px;
+}
+.instrumental-selection-set-field > .medical-card-options {
+  grid-template-columns: repeat(auto-fill, minmax(min(180px, 100%), 1fr));
+}
+.instrumental-selection-set-field :is(legend, .check-row, .check-row > span) { min-width: 0; max-width: 100%; }
+.instrumental-selection-set-field :is(legend, .check-row > span) { overflow-wrap: anywhere; }
 .instrumental-integer-field { display: grid; grid-template-columns: minmax(0, 1fr) auto; min-width: 0; }
 .workspace-content .instrumental-integer-field > input {
   border-start-end-radius: 0;
@@ -3562,6 +3582,7 @@ dd {
     padding-inline-start: 0;
   }
   .instrumental-choice-continuation-content > .instrumental-result-control { grid-column: 2; }
+  .instrumental-result-content > .instrumental-panel-label { grid-column: 2; }
   .instrumental-selection-set-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .instrumental-selection-set-field-wide { grid-column: 1 / -1; }
   .instrumental-result-desktop-name {

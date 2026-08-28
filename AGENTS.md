@@ -23,6 +23,7 @@
 - Differential diagnoses must support zero or more catalog selections together with zero or more independently added free-form diagnoses. Persist both collections without making them mutually exclusive.
 - Prefer small icon-only action buttons. Every icon-only button must provide a concise tooltip with `title` and an equivalent accessible name with `aria-label`.
 - In tables and table-like row layouts, align cell contents to the top on both wide and narrow screens. Mixed-height content such as status badges, identities, and action buttons must share the same top alignment rather than being vertically centered.
+- Align every checkbox to the top of its label. When a label wraps to multiple lines, keep the checkbox aligned with the first line instead of vertically centering it against the full label height. Apply this consistently in all screens, dialogs, forms, and medical option panels.
 
 ## Medical cards
 

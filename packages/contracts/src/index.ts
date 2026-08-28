@@ -9,6 +9,7 @@ import type { LaboratoryTestsSectionValue } from "./laboratory.js";
 export {
   INSTRUMENTAL_STUDY_CATALOG,
   INSTRUMENTAL_STUDY_OPTIONS,
+  availableInstrumentalFindingCatalog,
   canonicalizeInstrumentalFindingValues,
   instrumentalFindingById,
   instrumentalStudyTypeById,

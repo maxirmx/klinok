@@ -779,6 +779,16 @@ test("fresh provisioning, Doctor approval, grant, draft, and confirmation", asyn
     await add.click();
     return add;
   };
+  const addXrayIndicator = async (parentName: string, findingName: string) => {
+    const combobox = xrayStudy.getByRole("combobox", {
+      name: `Добавить показатель для «${parentName}»`,
+      exact: true,
+    });
+    await combobox.fill(findingName);
+    await xrayStudy.getByRole("option", { name: findingName, exact: true }).click();
+    const createRow = combobox.locator("xpath=ancestor::div[contains(concat(' ', normalize-space(@class), ' '), ' instrumental-finding-create ')][1]");
+    await createRow.getByRole("button", { name: "Добавить показатель", exact: true }).click();
+  };
   const addXrayProjections = await addXrayFinding("Выполненные проекции");
   const projectionsPanel = xrayStudy.getByRole("group", { name: "Проекции", exact: true });
   await projectionsPanel.getByRole("checkbox", { name: "Левая латеролатеральная", exact: true }).check();
@@ -800,9 +810,9 @@ test("fresh provisioning, Doctor approval, grant, draft, and confirmation", asyn
   const xrayIntercostal = diaphragmCharacteristics.getByLabel("Межреберье на LL-проекции", { exact: true });
   await expect(xrayIntercostal).toBeVisible();
   await xrayIntercostal.fill("7");
-  const verifyCheckboxConflict = async (panel: Locator, left: string, right: string) => {
-    const leftChoice = panel.getByRole("checkbox", { name: left, exact: true });
-    const rightChoice = panel.getByRole("checkbox", { name: right, exact: true });
+  const verifyCheckboxConflict = async (leftPanel: Locator, left: string, rightPanel: Locator, right: string) => {
+    const leftChoice = leftPanel.getByRole("checkbox", { name: left, exact: true });
+    const rightChoice = rightPanel.getByRole("checkbox", { name: right, exact: true });
     await leftChoice.check();
     await rightChoice.check();
     await expect(leftChoice).not.toBeChecked();
@@ -810,30 +820,139 @@ test("fresh provisioning, Doctor approval, grant, draft, and confirmation", asyn
     await rightChoice.uncheck();
   };
   const addXrayHeart = await addXrayFinding("Сердечный силуэт");
-  const heartBordersPanel = xrayStudy.getByRole("group", { name: "Границы", exact: true });
-  await verifyCheckboxConflict(heartBordersPanel, "Чёткие", "Нечёткие");
-  await verifyCheckboxConflict(heartBordersPanel, "Ровные", "Неровные");
-  await heartBordersPanel.getByRole("checkbox", { name: "Чёткие", exact: true }).check();
-  await heartBordersPanel.getByRole("checkbox", { name: "Ровные", exact: true }).check();
+  const heartBorders = xrayStudy.locator(`[data-finding-id="instrumental.finding.xray-thorax.12.2"]`);
+  const heartBorderDefinition = heartBorders.getByRole("combobox", { name: "Чёткость границ", exact: true });
+  const heartBorderRegularity = heartBorders.getByRole("combobox", { name: "Ровность границ", exact: true });
+  await expect(heartBorders.getByRole("checkbox")).toHaveCount(0);
+  await expect(heartBorders.getByRole("combobox")).toHaveCount(2);
+  await heartBorderDefinition.selectOption({ label: "Чёткие" });
+  await heartBorderRegularity.selectOption({ label: "Ровные" });
+
+  const addXrayVenaCava = await addXrayFinding("Каудальная полая вена");
+  await addXrayIndicator("Каудальная полая вена", "Выявляется");
+  const venaCavaVisibility = xrayStudy.getByRole("combobox", {
+    name: "Значение показателя «Выявляется»",
+    exact: true,
+  });
+  await venaCavaVisibility.selectOption({ label: "Чётко" });
+  await addXrayIndicator("Каудальная полая вена", "Положение");
+  const venaCavaPosition = xrayStudy.getByRole("combobox", {
+    name: "Значение показателя «Положение»",
+    exact: true,
+  });
+  await venaCavaPosition.selectOption({ label: "Не изменено" });
+  await venaCavaVisibility.selectOption({ label: "Не визуализируется" });
+  await expect(venaCavaPosition).toHaveCount(0);
+  await expect(xrayStudy.getByRole("combobox", {
+    name: "Добавить показатель для «Каудальная полая вена»",
+    exact: true,
+  })).toHaveCount(0);
 
   const addXrayLungs = await addXrayFinding("Лёгочные поля");
   const lungPatternPanel = xrayStudy.getByRole("group", { name: "Лёгочный рисунок", exact: true });
+  const absentChanges = lungPatternPanel.getByRole("group", { name: "Отсутствие признаков", exact: true });
+  const detectedChanges = lungPatternPanel.getByRole("group", { name: "Выявленные изменения", exact: true });
+  const locations = lungPatternPanel.getByRole("group", { name: "Изменения отмечаются в", exact: true });
+  await expect(lungPatternPanel.getByRole("combobox")).toHaveCount(0);
+  await expect(absentChanges.getByRole("checkbox")).toHaveCount(4);
+  await expect(detectedChanges.getByRole("checkbox")).toHaveCount(8);
+  await expect(locations.getByRole("checkbox")).toHaveCount(2);
+  await expect(absentChanges.locator("legend")).toHaveClass(/visually-hidden/);
+  await expect(locations.locator("legend")).not.toHaveClass(/visually-hidden/);
+  const locationRow = lungPatternPanel.locator(`[data-finding-id="instrumental.finding.xray-thorax.17.3.13"]`);
+  await expect(locationRow.locator(".instrumental-result-desktop-name")).toHaveCount(0);
+  await expect(locationRow.locator("fieldset")).toHaveClass(/instrumental-panel-label/);
+  await expect(detectedChanges.getByRole("checkbox", { name: "Имеет усиление альвеолярного рисунка", exact: true })).toBeVisible();
+  await expect(detectedChanges.getByRole("checkbox", { name: "Имеет картину альвеолярных поражений", exact: true })).toBeVisible();
+  await expect(detectedChanges.getByRole("checkbox", { name: "Имеет картину заворота", exact: true })).toBeVisible();
+  await expect(lungPatternPanel.getByText("Очаговые множественные поражения", { exact: false })).toHaveCount(0);
+  const patternOptionMetrics = await detectedChanges.locator("label.check-row").evaluateAll((labels) => labels.map((label) => {
+    const checkbox = label.querySelector('input[type="checkbox"]')!.getBoundingClientRect();
+    const text = label.querySelector("span")!.getBoundingClientRect();
+    return {
+      checkboxWidth: checkbox.width,
+      checkboxHeight: checkbox.height,
+      checkboxTop: checkbox.top,
+      textTop: text.top,
+      textWidth: text.width,
+    };
+  }));
+  expect(patternOptionMetrics.every(({ checkboxWidth, checkboxHeight, checkboxTop, textTop, textWidth }) =>
+    Math.abs(checkboxWidth - 18) <= 0.5
+    && Math.abs(checkboxHeight - 18) <= 0.5
+    && Math.abs(checkboxTop - textTop) <= 1
+    && textWidth >= 40)).toBe(true);
   for (const positive of [
     "Имеет усиление бронхиального рисунка",
     "Имеет усиление интерстициального неструктурированного рисунка",
     "Имеет усиление интерстициального структурированного рисунка",
     "Имеет усиление альвеолярного рисунка",
   ]) {
-    await verifyCheckboxConflict(lungPatternPanel, "Без признаков усиления", positive);
-    await verifyCheckboxConflict(lungPatternPanel, "Без признаков диффузных изменений", positive);
+    await verifyCheckboxConflict(absentChanges, "Без признаков усиления", detectedChanges, positive);
   }
   await verifyCheckboxConflict(
-    lungPatternPanel,
+    absentChanges,
     "Без признаков очаговых изменений",
+    detectedChanges,
     "Имеет картину очаговых единичных поражений",
   );
-  await lungPatternPanel.getByRole("checkbox", { name: "Без признаков усиления", exact: true }).check();
-  await lungPatternPanel.getByRole("checkbox", { name: "Без признаков деформации", exact: true }).check();
+  const noDeformation = absentChanges.getByRole("checkbox", { name: "Без признаков деформации", exact: true });
+  const noDiffuse = absentChanges.getByRole("checkbox", { name: "Без признаков диффузных изменений", exact: true });
+  const alveolarLesions = detectedChanges.getByRole("checkbox", { name: "Имеет картину альвеолярных поражений", exact: true });
+  const torsion = detectedChanges.getByRole("checkbox", { name: "Имеет картину заворота", exact: true });
+  const atelectasis = detectedChanges.getByRole("checkbox", { name: "Имеет картину ателектаза", exact: true });
+  await noDeformation.check();
+  await noDiffuse.check();
+  await alveolarLesions.check();
+  await torsion.check();
+  await atelectasis.check();
+  await expect(noDeformation).toBeChecked();
+  await expect(noDiffuse).toBeChecked();
+  await expect(alveolarLesions).toBeChecked();
+  await expect(torsion).toBeChecked();
+  await expect(atelectasis).toBeChecked();
+
+  await locations.getByRole("checkbox", { name: "Краниальных долях лёгкого", exact: true }).check();
+  await locations.getByRole("checkbox", { name: "Каудальных долях лёгкого", exact: true }).check();
+  await absentChanges.getByRole("checkbox", { name: "Без признаков усиления", exact: true }).check();
+  await absentChanges.getByRole("checkbox", { name: "Без признаков очаговых изменений", exact: true }).check();
+  await expect(locations).toHaveCount(0);
+  await expect(alveolarLesions).toBeChecked();
+  await expect(torsion).toBeChecked();
+  await expect(atelectasis).toBeChecked();
+  await noDiffuse.uncheck();
+  await expect(locations).toBeVisible();
+  await expect(locations.getByRole("checkbox", { name: "Краниальных долях лёгкого", exact: true })).not.toBeChecked();
+  await expect(locations.getByRole("checkbox", { name: "Каудальных долях лёгкого", exact: true })).not.toBeChecked();
+
+  await addXrayIndicator("Лёгочные поля", "Крупные бронхи");
+  const largeBronchi = xrayStudy.locator(`[data-finding-id="instrumental.finding.xray-thorax.17.5"]`);
+  const largeBronchiState = largeBronchi.getByRole("combobox", {
+    name: "Значение показателя «Крупные бронхи»",
+    exact: true,
+  });
+  const addLargeBronchiDetail = largeBronchi.getByRole("combobox", {
+    name: "Добавить показатель для «Крупные бронхи»",
+    exact: true,
+  });
+  await expect(addLargeBronchiDetail).toBeVisible();
+  await largeBronchiState.selectOption({ label: "Не изменены" });
+  await expect(addLargeBronchiDetail).toBeVisible();
+  await addXrayIndicator("Крупные бронхи", "Просвет");
+  const largeBronchiLumen = largeBronchi.getByRole("combobox", {
+    name: "Значение показателя «Просвет»",
+    exact: true,
+  });
+  await largeBronchiLumen.selectOption({ label: "Сужен" });
+  await addXrayIndicator("Крупные бронхи", "Положение");
+  const largeBronchiPosition = largeBronchi.getByRole("combobox", {
+    name: "Значение показателя «Положение»",
+    exact: true,
+  });
+  await largeBronchiPosition.selectOption({ label: "Правильное" });
+  await largeBronchiState.selectOption({ label: "Изменены" });
+  await expect(largeBronchiLumen).toHaveValue("instrumental.finding.xray-thorax.17.5.1.2");
+  await expect(largeBronchiPosition).toHaveValue("instrumental.finding.xray-thorax.17.5.2.1");
 
   const addXrayConclusion = await addXrayFinding("Заключение");
   const xrayConclusion = xrayStudy.getByLabel("Заключение", { exact: true });
@@ -900,6 +1019,7 @@ test("fresh provisioning, Doctor approval, grant, draft, and confirmation", asyn
     addXrayProjections,
     addXrayDiaphragm,
     addXrayHeart,
+    addXrayVenaCava,
     addXrayLungs,
     addXrayConclusion,
     deleteXrayStudy,
