@@ -10,6 +10,7 @@ import PersonIdentity from "./PersonIdentity.vue";
 import TherapeuticAppointmentView from "./TherapeuticAppointmentView.vue";
 import {
   ENCOUNTER_SECTION_LABELS,
+  ENCOUNTER_SECTION_ORDER,
   diagnosisChoiceSummary,
   diagnosisConfirmedSummary,
   diagnosisDifferentialCustomTexts,
@@ -59,13 +60,16 @@ const emit = defineEmits<{
   delete: [record: MedicalRecordDraft];
 }>();
 
+const encounterSectionDisplayRanks = new Map(ENCOUNTER_SECTION_ORDER.map((kind, index) => [kind, index]));
+
 const populatedSections = computed(() =>
   (Object.entries(ENCOUNTER_SECTION_LABELS) as Array<[MedicalEncounterSectionKind, string]>)
     .flatMap(([kind, label]) => {
       const section = props.record.sections[kind];
       return section ? [{ kind, label, section }] : [];
     })
-    .sort((left, right) => left.kind === right.kind ? 0 : left.kind === "outcome" ? 1 : right.kind === "outcome" ? -1 : 0),
+    .sort((left, right) => (encounterSectionDisplayRanks.get(left.kind) ?? Number.MAX_SAFE_INTEGER)
+      - (encounterSectionDisplayRanks.get(right.kind) ?? Number.MAX_SAFE_INTEGER)),
 );
 
 const conditionHeadlines = computed(() => {
@@ -193,26 +197,30 @@ function formatLocalDateTime(value: string) {
           </ul>
           <p v-if="outcomeComment(item.section.value)" class="encounter-history-comment">{{ outcomeComment(item.section.value) }}</p>
         </template>
-        <dl v-else-if="item.kind === 'diagnosis' && isDiagnosisValue(item.section.value)" class="diagnosis-history-values">
-          <div>
-            <dt>Предварительный диагноз</dt>
-            <dd>{{ diagnosisChoiceSummary(item.section.value.preliminary) || 'Не указано' }}</dd>
-          </div>
-          <div>
-            <dt>Дифференциальные диагнозы</dt>
-            <dd v-if="item.section.value.differential.selectedIds.length || diagnosisDifferentialCustomTexts(item.section.value.differential).length">
-              <ul>
+        <ul v-else-if="item.kind === 'diagnosis' && isDiagnosisValue(item.section.value)" class="diagnosis-history-values instrumental-history-findings">
+          <li>
+            <span>Предварительный диагноз</span>
+            <ul class="instrumental-history-findings">
+              <li>{{ diagnosisChoiceSummary(item.section.value.preliminary) || 'Не указано' }}</li>
+            </ul>
+          </li>
+          <li>
+            <span>Дифференциальные диагнозы</span>
+            <ul class="instrumental-history-findings">
+              <template v-if="item.section.value.differential.selectedIds.length || diagnosisDifferentialCustomTexts(item.section.value.differential).length">
                 <li v-for="id in item.section.value.differential.selectedIds" :key="id">{{ diagnosisLabel(id) }}</li>
                 <li v-for="(text, index) in diagnosisDifferentialCustomTexts(item.section.value.differential)" :key="`custom:${index}:${text}`">{{ text }}</li>
-              </ul>
-            </dd>
-            <dd v-else>Не указано</dd>
-          </div>
-          <div v-if="diagnosisChoiceSummary(item.section.value.confirmed)">
-            <dt>Подтверждённый диагноз</dt>
-            <dd>{{ diagnosisChoiceSummary(item.section.value.confirmed) }}</dd>
-          </div>
-        </dl>
+              </template>
+              <li v-else>Не указано</li>
+            </ul>
+          </li>
+          <li v-if="diagnosisChoiceSummary(item.section.value.confirmed)">
+            <span>Подтверждённый диагноз</span>
+            <ul class="instrumental-history-findings">
+              <li>{{ diagnosisChoiceSummary(item.section.value.confirmed) }}</li>
+            </ul>
+          </li>
+        </ul>
         <TherapeuticAppointmentView
           v-else-if="item.kind === 'therapeutic-appointment' && isTherapeuticAppointmentValue(item.section.value)"
           :value="item.section.value"

@@ -40,6 +40,7 @@ import {
 } from "../appStore";
 import {
   ENCOUNTER_SECTION_LABELS,
+  ENCOUNTER_SECTION_ORDER,
   OPTIONAL_ENCOUNTER_SECTION_KINDS,
   diagnosisDraft,
   emptyDiagnosisDraft,
@@ -84,7 +85,7 @@ const homeFilterOptions = [
 ];
 const historySectionOptions = [
   { value: "", label: "Все разделы" },
-  ...Object.entries(ENCOUNTER_SECTION_LABELS).map(([value, label]) => ({ value, label })),
+  ...ENCOUNTER_SECTION_ORDER.map((value) => ({ value, label: ENCOUNTER_SECTION_LABELS[value] })),
 ];
 const historyStatusOptions = [
   { value: "", label: "Все статусы" },

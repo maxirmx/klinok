@@ -18,6 +18,7 @@ import type {
 } from "./repositories/types";
 import {
   DIAGNOSIS_CATALOG_OPTIONS,
+  MEDICAL_ENCOUNTER_SECTION_KINDS,
   isDiagnosisTaxonomyId,
 } from "./repositories/types";
 import {
@@ -135,16 +136,18 @@ export const ENCOUNTER_SECTION_LABELS: Record<MedicalEncounterSectionKind, strin
   "what-happened": "Что случилось",
   "general-data": "Общие данные/Габитус",
   "therapeutic-appointment": "Терапевтический приём",
-  diagnosis: "Диагноз",
   vaccination: "Вакцинация/чипирование",
-  recommendations: "Рекомендации",
   "laboratory-tests": "Лабораторные исследования",
   "instrumental-tests": "Инструментальные исследования",
   procedures: "Манипуляции",
+  recommendations: "Рекомендации",
+  diagnosis: "Диагноз",
   outcome: "Итог",
 };
 
-export const OPTIONAL_ENCOUNTER_SECTION_KINDS = (Object.keys(ENCOUNTER_SECTION_LABELS) as MedicalEncounterSectionKind[])
+export const ENCOUNTER_SECTION_ORDER: readonly MedicalEncounterSectionKind[] = MEDICAL_ENCOUNTER_SECTION_KINDS;
+
+export const OPTIONAL_ENCOUNTER_SECTION_KINDS = ENCOUNTER_SECTION_ORDER
   .filter((kind) => kind !== "what-happened" && kind !== "outcome");
 
 export const OUTCOME_OPTIONS = [

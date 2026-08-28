@@ -466,7 +466,7 @@ test("fresh provisioning, Doctor approval, grant, draft, and confirmation", asyn
   await preliminaryDiagnosis.getByRole("combobox", { name: "Предварительный диагноз" }).fill(longDiagnosisValue);
   await preliminaryDiagnosis.getByRole("button", { name: "Назначить предварительный диагноз подтверждённым" }).click();
   await differentialDiagnosis.getByRole("button", { name: "Показать варианты диагнозов" }).click();
-  await expect(differentialDiagnosis.getByText("Выберите категорию", { exact: true })).toBeVisible();
+  await expect(differentialDiagnosis.getByText("Выберите диагноз или категорию", { exact: true })).toBeVisible();
   await differentialDiagnosis.getByRole("option", { name: "Патологии общего состояния", exact: true }).click();
   await differentialDiagnosis.getByRole("option", { name: "Отёк Квинке", exact: true }).click();
   await differentialDiagnosis.getByRole("combobox", { name: "Добавить дифференциальный диагноз" }).fill("Реакция на корм");
