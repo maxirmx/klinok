@@ -189,7 +189,7 @@ describe("command boundary", () => {
           }],
         }],
       }] } },
-    })).toThrow("несовместимые варианты");
+    })).toThrow("Чёткость границ");
   });
 
   it("validates structured diagnosis catalog and free-form representations", () => {

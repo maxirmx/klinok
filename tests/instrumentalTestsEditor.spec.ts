@@ -532,7 +532,7 @@ describe("InstrumentalTestsEditor", () => {
     expect(wrapper.get<HTMLInputElement>('input[aria-label="Размер, мм"]').element.value).toBe("7");
   });
 
-  it("renders multiple and legacy single contour choices recursively in history", () => {
+  it("renders selected findings and pulmonary locations recursively in history without empty groups", () => {
     const wrapper = mount(InstrumentalFindingsView, { props: { findings: [{
       findingId: id("10.1"), findingName: "Контуры", children: [
         { findingId: id("10.1.1"), findingName: "Ровные", children: [] },
@@ -543,12 +543,30 @@ describe("InstrumentalTestsEditor", () => {
         { findingId: id("2.6.1"), findingName: "Смешанный", children: [] },
         { findingId: id("2.6.7"), findingName: "Подвижный", children: [] },
       ],
+    }, {
+      findingId: xrayId("17.3"), findingName: "Лёгочный рисунок", children: [
+        { findingId: xrayId("17.3.8"), findingName: "Имеет усиление альвеолярного рисунка", children: [] },
+        { findingId: xrayId("17.3.10"), findingName: "Имеет картину альвеолярных поражений", children: [] },
+        { findingId: xrayId("17.3.13"), findingName: "Изменения отмечаются в", children: [
+          { findingId: xrayId("17.3.13.1"), findingName: "Краниальных долях лёгкого", children: [] },
+          { findingId: xrayId("17.3.13.2"), findingName: "Каудальных долях лёгкого", children: [] },
+        ] },
+      ],
+    }, {
+      findingId: xrayId("17.3.13"), findingName: "Пустая локализация", children: [],
     }] } });
     expect(wrapper.text()).toContain("Контуры");
     expect(wrapper.text()).toContain("Ровные");
     expect(wrapper.text()).toContain("Нечёткие");
     expect(wrapper.text()).toContain("Смешанный");
     expect(wrapper.text()).toContain("Подвижный");
+    expect(wrapper.text()).toContain("Лёгочный рисунок");
+    expect(wrapper.text()).toContain("Имеет усиление альвеолярного рисунка");
+    expect(wrapper.text()).toContain("Имеет картину альвеолярных поражений");
+    expect(wrapper.text()).toContain("Изменения отмечаются в");
+    expect(wrapper.text()).toContain("Краниальных долях лёгкого");
+    expect(wrapper.text()).toContain("Каудальных долях лёгкого");
+    expect(wrapper.text()).not.toContain("Пустая локализация");
   });
 
   it("restores a missing required selector continuation on opening and model replacement", async () => {
@@ -586,6 +604,64 @@ describe("InstrumentalTestsEditor", () => {
     expect(current().studies[0]?.mode === "tree"
       ? current().studies[0].findings[0]?.children[0]?.children[0]?.children
       : []).toEqual([expect.objectContaining({ findingId: xrayId("10.0.5.intercostal"), value: "" })]);
+  });
+
+  it("hides and clears caudal vena cava details when it is not visualized", async () => {
+    const { wrapper, current } = mountEditor();
+    await chooseType(wrapper, "instrumental.study.xray-thorax");
+    await addFinding(wrapper, xrayId("14"));
+    await addFinding(wrapper, xrayId("14.1"));
+    await selectChoice(wrapper, xrayId("14.1.1"));
+    await addFinding(wrapper, xrayId("14.2"));
+    await selectChoice(wrapper, xrayId("14.2.1"));
+    await addFinding(wrapper, xrayId("14.4"));
+    await wrapper.get('textarea[aria-label="Выявлено"]').setValue("Смещена");
+
+    await selectChoice(wrapper, xrayId("14.1.3"));
+    expect(wrapper.find(`select[aria-label="Значение показателя «Положение»"]`).exists()).toBe(false);
+    expect(wrapper.find('textarea[aria-label="Выявлено"]').exists()).toBe(false);
+    const venaCavaLevel = levelFor(wrapper, xrayId("14.1"));
+    expect(venaCavaLevel.findComponent(AppCatalogCombobox).exists()).toBe(false);
+    const venaCava = current().studies[0]?.mode === "tree" ? current().studies[0].findings[0] : undefined;
+    expect(venaCava?.children).toEqual([expect.objectContaining({
+      findingId: xrayId("14.1"),
+      children: [expect.objectContaining({ findingId: xrayId("14.1.3") })],
+    })]);
+
+    await selectChoice(wrapper, xrayId("14.1.2"));
+    expect(venaCavaLevel.getComponent(AppCatalogCombobox).props("options")).toContainEqual({
+      id: xrayId("14.2"),
+      label: "Положение",
+    });
+    expect(wrapper.find(`select[aria-label="Значение показателя «Положение»"]`).exists()).toBe(false);
+  });
+
+  it("keeps large-bronchi lumen and position available for every overall state", async () => {
+    const { wrapper, current } = mountEditor();
+    await chooseType(wrapper, "instrumental.study.xray-thorax");
+    await addFinding(wrapper, xrayId("17"));
+    await addFinding(wrapper, xrayId("17.5"));
+    const largeBronchiLevel = levelFor(wrapper, xrayId("17.5.1"));
+    const availableIds = () => largeBronchiLevel.getComponent(AppCatalogCombobox)
+      .props("options").map((option: { id: string }) => option.id);
+    expect(availableIds()).toEqual([xrayId("17.5.1"), xrayId("17.5.2")]);
+
+    await selectChoice(wrapper, xrayId("17.5.0.1"));
+    expect(availableIds()).toEqual([xrayId("17.5.1"), xrayId("17.5.2")]);
+    await addFinding(wrapper, xrayId("17.5.1"));
+    await selectChoice(wrapper, xrayId("17.5.1.2"));
+    await addFinding(wrapper, xrayId("17.5.2"));
+    await selectChoice(wrapper, xrayId("17.5.2.1"));
+
+    await selectChoice(wrapper, xrayId("17.5.0.2"));
+    expect(wrapper.get<HTMLSelectElement>('select[aria-label="Значение показателя «Просвет»"]').element.value)
+      .toBe(xrayId("17.5.1.2"));
+    expect(wrapper.get<HTMLSelectElement>('select[aria-label="Значение показателя «Положение»"]').element.value)
+      .toBe(xrayId("17.5.2.1"));
+    const lungs = current().studies[0]?.mode === "tree" ? current().studies[0].findings[0] : undefined;
+    expect(lungs?.children[0]?.children.map((item) => item.findingId)).toEqual([
+      xrayId("17.5.0.2"), xrayId("17.5.1"), xrayId("17.5.2"),
+    ]);
   });
 
   it("formats root free-text findings like narrative laboratory results", async () => {
@@ -665,6 +741,132 @@ describe("InstrumentalTestsEditor", () => {
     expect(definition.element.value).toBe(xrayId("10.0.3"));
     expect(projection.element.value).toBe(xrayId("10.0.5"));
     expect(intercostal.element.value).toBe("7");
+
+    await addFinding(wrapper, xrayId("12"));
+    const heartBorders = wrapper.get(`[data-finding-id="${xrayId("12.2")}"]`);
+    const borderDefinition = heartBorders.get<HTMLSelectElement>('select[aria-label="Чёткость границ"]');
+    const borderRegularity = heartBorders.get<HTMLSelectElement>('select[aria-label="Ровность границ"]');
+    expect(heartBorders.find('input[type="checkbox"]').exists()).toBe(false);
+    expect(heartBorders.findAll("select")).toHaveLength(2);
+    expect(heartBorders.findAll(".instrumental-selection-set-field").map((field) => field.get(":scope > span").text()))
+      .toEqual(["Ровность границ", "Чёткость границ"]);
+    expect(borderDefinition.findAll("option").map((option) => option.text()))
+      .toEqual(["Не указано", "Чёткие", "Нечёткие"]);
+    expect(borderRegularity.findAll("option").map((option) => option.text()))
+      .toEqual(["Не указано", "Ровные", "Неровные"]);
+    await borderRegularity.setValue(xrayId("12.2.4"));
+    await borderDefinition.setValue(xrayId("12.2.1"));
+    await borderDefinition.setValue(xrayId("12.2.2"));
+    expect(borderRegularity.element.value).toBe(xrayId("12.2.4"));
+    const heart = current().studies[0]?.mode === "tree"
+      ? current().studies[0].findings.find((finding) => finding.findingId === xrayId("12"))
+      : undefined;
+    expect(heart?.children[0]?.children.map((child) => child.findingId))
+      .toEqual([xrayId("12.2.2"), xrayId("12.2.4")]);
+    await borderDefinition.setValue("");
+    expect(borderRegularity.element.value).toBe(xrayId("12.2.4"));
+    await borderRegularity.setValue("");
+    expect(heart?.children).toEqual([]);
+
+    await addFinding(wrapper, xrayId("17"));
+    const lungPattern = wrapper.get(`[data-finding-id="${xrayId("17.3")}"]`);
+    const panel = (name: string) => lungPattern.findAll("fieldset")
+      .find((candidate) => candidate.get("legend").text() === name)!;
+    const absentChanges = panel("Отсутствие признаков");
+    const detectedChanges = panel("Выявленные изменения");
+    const locations = panel("Изменения отмечаются в");
+    const lungCheckbox = (container: DOMWrapper<Element>, name: string) => container.findAll("label.check-row")
+      .find((label) => label.text() === name)!.get<HTMLInputElement>('input[type="checkbox"]');
+    expect(lungPattern.findAll("select")).toHaveLength(0);
+    expect(absentChanges.findAll('input[type="checkbox"]')).toHaveLength(4);
+    expect(detectedChanges.findAll('input[type="checkbox"]')).toHaveLength(8);
+    expect(locations.findAll('input[type="checkbox"]')).toHaveLength(2);
+    expect(absentChanges.get("legend").classes()).toContain("visually-hidden");
+    expect(detectedChanges.get("legend").classes()).not.toContain("visually-hidden");
+    expect(locations.get("legend").classes()).not.toContain("visually-hidden");
+    const locationRow = lungPattern.get(`[data-finding-id="${xrayId("17.3.13")}"]`);
+    expect(locationRow.find(".instrumental-result-desktop-name").exists()).toBe(false);
+    expect(locationRow.get("fieldset").classes()).toContain("instrumental-panel-label");
+    expect([absentChanges, detectedChanges].every((group) =>
+      group.classes().includes("instrumental-selection-set-field-wide"))).toBe(true);
+    expect(lungPattern.text()).not.toContain("Состояние лёгочного рисунка");
+    expect(lungPattern.text()).not.toContain("Очаговые множественные поражения");
+    expect(detectedChanges.text()).toContain("Имеет усиление альвеолярного рисунка");
+    expect(detectedChanges.text()).toContain("Имеет картину альвеолярных поражений");
+    expect(detectedChanges.text()).toContain("Имеет картину заворота");
+
+    await lungCheckbox(panel("Изменения отмечаются в"), "Краниальных долях лёгкого").setValue(true);
+    await lungCheckbox(panel("Изменения отмечаются в"), "Каудальных долях лёгкого").setValue(true);
+    let lungFieldsValue = current().studies[0]?.mode === "tree"
+      ? current().studies[0].findings.find((finding) => finding.findingId === xrayId("17"))
+      : undefined;
+    expect(lungFieldsValue?.children[0]?.children[0]?.children.map((finding) => finding.findingId))
+      .toEqual([xrayId("17.3.13.1"), xrayId("17.3.13.2")]);
+    await lungCheckbox(panel("Изменения отмечаются в"), "Краниальных долях лёгкого").setValue(false);
+    await lungCheckbox(panel("Изменения отмечаются в"), "Каудальных долях лёгкого").setValue(false);
+    lungFieldsValue = current().studies[0]?.mode === "tree"
+      ? current().studies[0].findings.find((finding) => finding.findingId === xrayId("17"))
+      : undefined;
+    expect(lungFieldsValue?.children).toEqual([]);
+
+    const noEnhancement = lungCheckbox(absentChanges, "Без признаков усиления");
+    const bronchial = lungCheckbox(detectedChanges, "Имеет усиление бронхиального рисунка");
+    await noEnhancement.setValue(true);
+    await bronchial.setValue(true);
+    expect(noEnhancement.element.checked).toBe(false);
+    expect(bronchial.element.checked).toBe(true);
+    await noEnhancement.setValue(true);
+    expect(noEnhancement.element.checked).toBe(true);
+    expect(bronchial.element.checked).toBe(false);
+
+    const noFocal = lungCheckbox(absentChanges, "Без признаков очаговых изменений");
+    const focal = lungCheckbox(detectedChanges, "Имеет картину очаговых единичных поражений");
+    await noFocal.setValue(true);
+    await focal.setValue(true);
+    expect(noFocal.element.checked).toBe(false);
+    expect(focal.element.checked).toBe(true);
+    await noFocal.setValue(true);
+    expect(noFocal.element.checked).toBe(true);
+    expect(focal.element.checked).toBe(false);
+
+    const noDeformation = lungCheckbox(absentChanges, "Без признаков деформации");
+    const noDiffuse = lungCheckbox(absentChanges, "Без признаков диффузных изменений");
+    const alveolarLesions = lungCheckbox(detectedChanges, "Имеет картину альвеолярных поражений");
+    const torsion = lungCheckbox(detectedChanges, "Имеет картину заворота");
+    const atelectasis = lungCheckbox(detectedChanges, "Имеет картину ателектаза");
+    await noDeformation.setValue(true);
+    await alveolarLesions.setValue(true);
+    await torsion.setValue(true);
+    await atelectasis.setValue(true);
+    expect([noDeformation, alveolarLesions, torsion, atelectasis]
+      .every((input) => input.element.checked)).toBe(true);
+
+    await lungCheckbox(panel("Изменения отмечаются в"), "Краниальных долях лёгкого").setValue(true);
+    await lungCheckbox(panel("Изменения отмечаются в"), "Каудальных долях лёгкого").setValue(true);
+    const selectedLungFields = current().studies[0]?.mode === "tree"
+      ? current().studies[0].findings.find((finding) => finding.findingId === xrayId("17"))
+      : undefined;
+    expect(selectedLungFields?.children.find((finding) => finding.findingId === xrayId("17.3"))
+      ?.children.find((finding) => finding.findingId === xrayId("17.3.13"))
+      ?.children.map((finding) => finding.findingId))
+      .toEqual([xrayId("17.3.13.1"), xrayId("17.3.13.2")]);
+    await noDiffuse.setValue(true);
+    expect(noDiffuse.element.checked).toBe(true);
+    expect(panel("Изменения отмечаются в")).toBeUndefined();
+    const lungFields = current().studies[0]?.mode === "tree"
+      ? current().studies[0].findings.find((finding) => finding.findingId === xrayId("17"))
+      : undefined;
+    const patternValue = lungFields?.children.find((finding) => finding.findingId === xrayId("17.3"));
+    expect(patternValue?.children.some((finding) => finding.findingId === xrayId("17.3.13"))).toBe(false);
+    expect([alveolarLesions, torsion, atelectasis].every((input) => input.element.checked)).toBe(true);
+
+    await noDiffuse.setValue(false);
+    const restoredLocations = panel("Изменения отмечаются в");
+    expect(restoredLocations).toBeDefined();
+    expect(restoredLocations.findAll<HTMLInputElement>('input[type="checkbox"]')
+      .every((input) => !input.element.checked)).toBe(true);
+    expect(restoredLocations.get(".medical-card-options").attributes("class")).toContain("medical-card-options");
+    expect(lungPattern.find('[data-hierarchy-depth="2"]').exists()).toBe(true);
 
     await wrapper.setProps({ errors: { studies: [{ findings: {
       [`${xrayId("10.0")}:regularity`]: "Для характеристики «Ровность купола» можно выбрать не более одного значения.",

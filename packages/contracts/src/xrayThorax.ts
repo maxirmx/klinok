@@ -53,11 +53,21 @@ const requiredSelectionSetGroup = (
   selectionSets,
   required: true,
 });
-
+const inlineSelectionSetGroup = (
+  code: string,
+  name: string,
+  children: readonly InstrumentalFindingCatalogItem[],
+  selectionSets: readonly InstrumentalSelectionSet[],
+  conflicts: readonly InstrumentalConflictPair[] = [],
+): InstrumentalFindingCatalogItem => ({
+  ...group(code, name, children),
+  selectionMode: "multiple",
+  selectionSets,
+  ...(conflicts.length ? { conflictPairs: conflicts } : {}),
+});
 const lungPatternConflictPairs = conflictPairs([
   ["17.3.1", "17.3.5"], ["17.3.1", "17.3.6"], ["17.3.1", "17.3.7"], ["17.3.1", "17.3.8"],
   ["17.3.3", "17.3.9"],
-  ["17.3.4", "17.3.5"], ["17.3.4", "17.3.6"], ["17.3.4", "17.3.7"], ["17.3.4", "17.3.8"],
 ]);
 
 export const XRAY_THORAX_FINDINGS: readonly InstrumentalFindingCatalogItem[] = [
@@ -162,10 +172,18 @@ export const XRAY_THORAX_FINDINGS: readonly InstrumentalFindingCatalogItem[] = [
   ]),
   group("12", "Сердечный силуэт", [
     group("12.1", "Форма", [choice("12.1.1", "Овальная"), choice("12.1.2", "Округлая")]),
-    multipleGroup("12.2", "Границы", [
+    inlineSelectionSetGroup("12.2", "Границы", [
       choice("12.2.1", "Чёткие"), choice("12.2.2", "Нечёткие"),
       choice("12.2.3", "Ровные"), choice("12.2.4", "Неровные"),
-    ], conflictPairs([["12.2.1", "12.2.2"], ["12.2.3", "12.2.4"]])),
+    ], [{
+      key: "regularity",
+      name: "Ровность границ",
+      choiceIds: [id("12.2.3"), id("12.2.4")],
+    }, {
+      key: "definition",
+      name: "Чёткость границ",
+      choiceIds: [id("12.2.1"), id("12.2.2")],
+    }]),
     group("12.3", "Ось", [
       choice("12.3.1", "Вертикальная"), choice("12.3.2", "Отклонена"), choice("12.3.3", "Завалена на грудину"),
     ]),
@@ -197,9 +215,12 @@ export const XRAY_THORAX_FINDINGS: readonly InstrumentalFindingCatalogItem[] = [
     longText("13.4", "Выявлено"),
   ]),
   group("14", "Каудальная полая вена", [
-    group("14.1", "Выявляется", [
-      choice("14.1.1", "Чётко"), choice("14.1.2", "Нечётко"), choice("14.1.3", "Не визуализируется"),
-    ]),
+    {
+      ...group("14.1", "Выявляется", [
+        choice("14.1.1", "Чётко"), choice("14.1.2", "Нечётко"), choice("14.1.3", "Не визуализируется"),
+      ]),
+      terminalChoiceIds: [id("14.1.3")],
+    },
     group("14.2", "Положение", [
       choice("14.2.1", "Не изменено"),
       choice("14.2.2", "Изменено", [
@@ -251,7 +272,7 @@ export const XRAY_THORAX_FINDINGS: readonly InstrumentalFindingCatalogItem[] = [
     group("17.2", "Размер", [
       choice("17.2.1", "Сохранён"), choice("17.2.2", "Увеличен"), choice("17.2.3", "Уменьшен"),
     ]),
-    multipleGroup("17.3", "Лёгочный рисунок", [
+    inlineSelectionSetGroup("17.3", "Лёгочный рисунок", [
       choice("17.3.1", "Без признаков усиления"),
       choice("17.3.2", "Без признаков деформации"),
       choice("17.3.3", "Без признаков очаговых изменений"),
@@ -264,25 +285,43 @@ export const XRAY_THORAX_FINDINGS: readonly InstrumentalFindingCatalogItem[] = [
       choice("17.3.10", "Имеет картину альвеолярных поражений"),
       choice("17.3.11", "Имеет картину заворота"),
       choice("17.3.12", "Имеет картину ателектаза"),
-    ], lungPatternConflictPairs),
-    group("17.3.13", "Локализация изменений", [
-      choice("17.3.13.1", "В краниальных долях лёгкого"),
-      choice("17.3.13.2", "В каудальных долях лёгкого"),
-    ]),
+      {
+        ...multipleGroup("17.3.13", "Изменения отмечаются в", [
+          choice("17.3.13.1", "Краниальных долях лёгкого"),
+          choice("17.3.13.2", "Каудальных долях лёгкого"),
+        ]),
+        hiddenWhenAllChoiceIdsSelected: [
+          id("17.3.1"), id("17.3.2"), id("17.3.3"), id("17.3.4"),
+        ],
+      },
+    ], [{
+      key: "negative",
+      name: "Отсутствие признаков",
+      choiceIds: [id("17.3.1"), id("17.3.2"), id("17.3.3"), id("17.3.4")],
+      selectionMode: "multiple",
+      showName: false,
+    }, {
+      key: "positive",
+      name: "Выявленные изменения",
+      choiceIds: [
+        id("17.3.5"), id("17.3.6"), id("17.3.7"), id("17.3.8"),
+        id("17.3.9"), id("17.3.10"), id("17.3.11"), id("17.3.12"),
+      ],
+      selectionMode: "multiple",
+    }], lungPatternConflictPairs),
     group("17.4", "Сосудистый рисунок", [
       choice("17.4.1", "Не изменён"), choice("17.4.2", "Изменён"), choice("17.4.3", "Оценка затруднена"),
     ]),
     group("17.5", "Крупные бронхи", [
       choice("17.5.0.1", "Не изменены"),
-      choice("17.5.0.2", "Изменены", [
-        group("17.5.1", "Просвет", [
-          choice("17.5.1.1", "Не изменён"), choice("17.5.1.2", "Сужен"), choice("17.5.1.3", "Расширен"),
-        ]),
-        group("17.5.2", "Положение", [
-          choice("17.5.2.1", "Правильное"), choice("17.5.2.2", "Неправильное"),
-          choice("17.5.2.3", "Имеется расхождение", [
-            choice("17.5.2.3.1", "Каудальных"), choice("17.5.2.3.2", "Краниальных"),
-          ]),
+      choice("17.5.0.2", "Изменены"),
+      group("17.5.1", "Просвет", [
+        choice("17.5.1.1", "Не изменён"), choice("17.5.1.2", "Сужен"), choice("17.5.1.3", "Расширен"),
+      ]),
+      group("17.5.2", "Положение", [
+        choice("17.5.2.1", "Правильное"), choice("17.5.2.2", "Неправильное"),
+        choice("17.5.2.3", "Имеется расхождение", [
+          choice("17.5.2.3.1", "Каудальных"), choice("17.5.2.3.2", "Краниальных"),
         ]),
       ]),
     ]),

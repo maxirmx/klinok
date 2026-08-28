@@ -13,6 +13,8 @@ export interface InstrumentalSelectionSet {
   readonly key: string;
   readonly name: string;
   readonly choiceIds: readonly string[];
+  readonly selectionMode?: InstrumentalSelectionMode;
+  readonly showName?: boolean;
   readonly required?: boolean;
 }
 
@@ -24,6 +26,8 @@ export interface InstrumentalFindingCatalogItem {
   readonly selectionMode?: InstrumentalSelectionMode;
   readonly selectionSets?: readonly InstrumentalSelectionSet[];
   readonly conflictPairs?: readonly InstrumentalConflictPair[];
+  readonly terminalChoiceIds?: readonly string[];
+  readonly hiddenWhenAllChoiceIdsSelected?: readonly string[];
   readonly required?: boolean;
   readonly children: readonly InstrumentalFindingCatalogItem[];
 }
@@ -324,6 +328,22 @@ export function replaceConflictingInstrumentalChoices(
   return [...selectedIds.filter((id) => id !== requestedId && !conflicting.has(id)), requestedId];
 }
 
+export function availableInstrumentalFindingCatalog(
+  catalog: readonly InstrumentalFindingCatalogItem[],
+  values: readonly InstrumentalFindingValue[],
+): readonly InstrumentalFindingCatalogItem[] {
+  const selectedIds = new Set(values.map((value) => value.findingId));
+  const visibleCatalog = catalog.filter((item) => !item.hiddenWhenAllChoiceIdsSelected?.length
+    || !item.hiddenWhenAllChoiceIdsSelected.every((choiceId) => selectedIds.has(choiceId)));
+  const terminalIndex = visibleCatalog.findIndex((item) => {
+    if (!item.terminalChoiceIds?.length) return false;
+    const value = values.find((candidate) => candidate?.findingId === item.id);
+    const children = Array.isArray(value?.children) ? value.children : [];
+    return children.some((child) => item.terminalChoiceIds?.includes(child?.findingId));
+  });
+  return terminalIndex < 0 ? visibleCatalog : visibleCatalog.slice(0, terminalIndex + 1);
+}
+
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 function validDate(value: string): boolean {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
@@ -339,6 +359,19 @@ interface LegacyConditionalFindingMove {
   readonly parentId: string;
   readonly selectorId: string;
   readonly activeChoiceId: string;
+  readonly childIds: readonly string[];
+}
+
+interface LegacyNestedFindingMove {
+  readonly parentId: string;
+  readonly containerId: string;
+  readonly childIds: readonly string[];
+}
+
+interface LegacySiblingFindingMove {
+  readonly parentId: string;
+  readonly targetId: string;
+  readonly targetName: string;
   readonly childIds: readonly string[];
 }
 
@@ -358,6 +391,38 @@ const legacyConditionalFindingMoves: readonly LegacyConditionalFindingMove[] = [
   activeChoiceId: `${prefix}.4.4.2`,
   childIds: [`${prefix}.4.5`],
 }];
+
+const xrayThoraxPrefix = "instrumental.finding.xray-thorax";
+const legacyNestedFindingMoves: readonly LegacyNestedFindingMove[] = [{
+  parentId: `${xrayThoraxPrefix}.17.5`,
+  containerId: `${xrayThoraxPrefix}.17.5.0.2`,
+  childIds: [`${xrayThoraxPrefix}.17.5.1`, `${xrayThoraxPrefix}.17.5.2`],
+}];
+const legacySiblingFindingMoves: readonly LegacySiblingFindingMove[] = [{
+  parentId: `${xrayThoraxPrefix}.17`,
+  targetId: `${xrayThoraxPrefix}.17.3`,
+  targetName: "Лёгочный рисунок",
+  childIds: [`${xrayThoraxPrefix}.17.3.13`],
+}];
+const legacyLungPatternIds = new Set([
+  `${xrayThoraxPrefix}.17.3.status.1`,
+  `${xrayThoraxPrefix}.17.3.status.2`,
+  `${xrayThoraxPrefix}.17.3.status.3`,
+  `${xrayThoraxPrefix}.17.3.9.multiple`,
+]);
+const legacyDistributedLungPatternIds = new Set([
+  `${xrayThoraxPrefix}.17.3.5`,
+  `${xrayThoraxPrefix}.17.3.6`,
+  `${xrayThoraxPrefix}.17.3.7`,
+  `${xrayThoraxPrefix}.17.3.8`,
+  `${xrayThoraxPrefix}.17.3.10`,
+]);
+const negativeLungPatternIds = [
+  `${xrayThoraxPrefix}.17.3.1`,
+  `${xrayThoraxPrefix}.17.3.2`,
+  `${xrayThoraxPrefix}.17.3.3`,
+  `${xrayThoraxPrefix}.17.3.4`,
+];
 
 function findingId(value: unknown): string {
   return value && typeof value === "object" && !Array.isArray(value)
@@ -401,6 +466,77 @@ function canonicalizeLegacyFinding(value: unknown): unknown {
       changed = true;
     }
   }
+  const nestedMove = legacyNestedFindingMoves.find((candidate) => candidate.parentId === findingId(input));
+  if (nestedMove && Array.isArray(children)) {
+    const containerIndex = children.findIndex((child) => findingId(child) === nestedMove.containerId);
+    const container = children[containerIndex];
+    if (container && typeof container === "object" && !Array.isArray(container)) {
+      const containerInput = container as Record<string, unknown>;
+      const containerChildren = containerInput.children;
+      if (Array.isArray(containerChildren)) {
+        const movedIds = new Set(nestedMove.childIds);
+        const movedChildren = containerChildren.filter((child) => movedIds.has(findingId(child)));
+        if (movedChildren.length) {
+          const existingIds = new Set(children.map(findingId));
+          const nextChildren = [...children];
+          nextChildren[containerIndex] = {
+            ...containerInput,
+            children: containerChildren.filter((child) => !movedIds.has(findingId(child))),
+          };
+          children = [...nextChildren, ...movedChildren.filter((child) => !existingIds.has(findingId(child)))];
+          changed = true;
+        }
+      }
+    }
+  }
+  const siblingMove = legacySiblingFindingMoves.find((candidate) => candidate.parentId === findingId(input));
+  if (siblingMove && Array.isArray(children)) {
+    const movedIds = new Set(siblingMove.childIds);
+    const movedChildren = children.filter((child) => movedIds.has(findingId(child)));
+    if (movedChildren.length) {
+      const nextChildren = children.filter((child) => !movedIds.has(findingId(child)));
+      const targetIndex = nextChildren.findIndex((child) => findingId(child) === siblingMove.targetId);
+      const target = nextChildren[targetIndex];
+      if (target && typeof target === "object" && !Array.isArray(target)) {
+        const targetInput = target as Record<string, unknown>;
+        const targetChildren = Array.isArray(targetInput.children) ? targetInput.children : [];
+        const existingIds = new Set(targetChildren.map(findingId));
+        nextChildren[targetIndex] = canonicalizeLegacyFinding({
+          ...targetInput,
+          children: [...targetChildren, ...movedChildren.filter((child) => !existingIds.has(findingId(child)))],
+        });
+      } else {
+        nextChildren.push(canonicalizeLegacyFinding({
+          findingId: siblingMove.targetId,
+          findingName: siblingMove.targetName,
+          children: movedChildren,
+        }));
+      }
+      children = nextChildren;
+      changed = true;
+    }
+  }
+  if (findingId(input) === `${xrayThoraxPrefix}.17.3` && Array.isArray(children)) {
+    const currentChildren = children;
+    const selectedIds = new Set(currentChildren.map(findingId));
+    const hideLocations = negativeLungPatternIds.every((choiceId) => selectedIds.has(choiceId));
+    const nextChildren = currentChildren
+      .filter((child) => !legacyLungPatternIds.has(findingId(child)))
+      .filter((child) => !hideLocations || findingId(child) !== `${xrayThoraxPrefix}.17.3.13`)
+      .map((child) => {
+        if (!legacyDistributedLungPatternIds.has(findingId(child))
+          || !child || typeof child !== "object" || Array.isArray(child)) return child;
+        const childInput = child as Record<string, unknown>;
+        return Array.isArray(childInput.children) && childInput.children.length
+          ? { ...childInput, children: [] }
+          : child;
+      });
+    if (nextChildren.length !== currentChildren.length
+      || nextChildren.some((child, index) => child !== currentChildren[index])) {
+      children = nextChildren;
+      changed = true;
+    }
+  }
   return changed ? { ...input, children } : value;
 }
 
@@ -439,11 +575,19 @@ function validateChoiceCardinality(
       const set = setByChoiceId.get(id);
       if (!set) throw new Error("Некорректная структура результатов инструментального исследования.");
       const count = (selectedBySet.get(set.key) ?? 0) + 1;
-      if (count > 1) throw new Error(`Для характеристики «${set.name}» можно выбрать не более одного значения.`);
+      if (set.selectionMode !== "multiple" && count > 1) {
+        throw new Error(`Для характеристики «${set.name}» можно выбрать не более одного значения.`);
+      }
       selectedBySet.set(set.key, count);
     }
     for (const set of parent.selectionSets) {
       if (set.required && !selectedBySet.get(set.key)) throw new Error(`Заполните характеристику «${set.name}».`);
+    }
+    if (parent.selectionMode === "multiple") {
+      const selected = new Set(selectedIds);
+      if (parent.conflictPairs?.some(([left, right]) => selected.has(left) && selected.has(right))) {
+        throw new Error(`Для показателя «${parent.name}» выбраны несовместимые варианты.`);
+      }
     }
     return;
   }
@@ -464,6 +608,11 @@ function normalizeFindings(
   parent?: InstrumentalFindingCatalogItem,
 ): InstrumentalFindingValue[] {
   if (!Array.isArray(value)) throw new Error("Некорректные результаты инструментального исследования.");
+  const availableCatalog = availableInstrumentalFindingCatalog(
+    catalog,
+    value as readonly InstrumentalFindingValue[],
+  );
+  const availableIds = new Set(availableCatalog.map((item) => item.id));
   const catalogById = new Map(catalog.map((item) => [item.id, item]));
   const catalogOrder = new Map(catalog.map((item, index) => [item.id, index]));
   const seen = new Set<string>();
@@ -472,6 +621,7 @@ function normalizeFindings(
     const input = object(raw);
     const item = catalogById.get(String(input.findingId ?? ""));
     if (!item || seen.has(item.id)) throw new Error("Некорректная структура результатов инструментального исследования.");
+    if (!availableIds.has(item.id)) continue;
     seen.add(item.id);
     const rawChildren = input.children ?? [];
     if (!Array.isArray(rawChildren)) throw new Error("Некорректная структура результатов инструментального исследования.");
@@ -500,7 +650,7 @@ function normalizeFindings(
       normalized.push({ findingId: item.id, findingName: item.name, children });
     }
   }
-  const missingRequired = catalog.find((item) => item.required && !seen.has(item.id));
+  const missingRequired = availableCatalog.find((item) => item.required && !seen.has(item.id));
   if (missingRequired) throw new Error(`Заполните поле «${missingRequired.name}».`);
   validateChoiceCardinality(normalized, parent);
   return normalized.sort((left, right) => (catalogOrder.get(left.findingId) ?? 0) - (catalogOrder.get(right.findingId) ?? 0));

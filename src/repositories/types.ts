@@ -41,6 +41,7 @@ export {
   DIAGNOSIS_TOP_LEVEL_OPTIONS,
   INSTRUMENTAL_STUDY_CATALOG,
   INSTRUMENTAL_STUDY_OPTIONS,
+  availableInstrumentalFindingCatalog,
   canonicalizeInstrumentalFindingValues,
   MEDICAL_ENCOUNTER_SECTION_KINDS,
   isDiagnosisTaxonomyId,

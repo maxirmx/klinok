@@ -105,6 +105,28 @@ describe("instrumental draft validation", () => {
     });
   });
 
+  it("accepts independent pulmonary findings and reports only explicit conflicts", () => {
+    const lungDraft = (children: InstrumentalFindingValue[]): InstrumentalTestsSectionValue => ({ studies: [{
+      ...base,
+      typeId: "instrumental.study.xray-thorax",
+      typeName: "Рентгенография грудной полости",
+      mode: "tree",
+      findings: [{ findingId: xrayId("17"), findingName: "Лёгочные поля", children: [{
+        findingId: xrayId("17.3"), findingName: "Лёгочный рисунок", children,
+      }] }],
+    }] });
+    const changedPatterns = ["17.3.2", "17.3.4", "17.3.5", "17.3.6", "17.3.10", "17.3.11"].map((code) => ({
+      findingId: xrayId(code), findingName: "forged", children: [],
+    }));
+    expect(parseInstrumentalTestsDraft(lungDraft(changedPatterns), "2026-08-15").errors.studies[0]?.findings)
+      .toEqual({});
+    const normalWithPattern = ["17.3.1", "17.3.5"].map((code) => ({
+      findingId: xrayId(code), findingName: "forged", children: [],
+    }));
+    expect(parseInstrumentalTestsDraft(lungDraft(normalWithPattern), "2026-08-15").errors.studies[0]?.findings)
+      .toEqual({ [xrayId("17.3")]: "Для показателя «Лёгочный рисунок» выбраны несовместимые варианты." });
+  });
+
   it("places a separate inline error beside each missing prostate contour characteristic", () => {
     const draft = (children: InstrumentalFindingValue[]): InstrumentalTestsSectionValue => ({ studies: [{
       ...base,

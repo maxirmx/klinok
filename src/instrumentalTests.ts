@@ -3,6 +3,7 @@
 // This file is a part of Klinok application
 
 import {
+  availableInstrumentalFindingCatalog,
   canonicalizeInstrumentalFindingValues,
   instrumentalStudyTypeById,
   normalizeInstrumentalTestsValue,
@@ -30,7 +31,8 @@ function validateFindings(
   catalog: readonly InstrumentalFindingCatalogItem[],
   errors: Record<string, string>,
 ) {
-  const catalogById = new Map(catalog.map((item) => [item.id, item]));
+  const availableCatalog = availableInstrumentalFindingCatalog(catalog, values);
+  const catalogById = new Map(availableCatalog.map((item) => [item.id, item]));
   const presentIds = new Set(values.map((value) => value.findingId));
   for (const value of values) {
     const item = catalogById.get(value.findingId);
@@ -39,7 +41,7 @@ function validateFindings(
       const selectedIds = new Set(value.children.map((child) => child.findingId));
       for (const set of item.selectionSets) {
         const selectedCount = set.choiceIds.filter((id) => selectedIds.has(id)).length;
-        if (selectedCount > 1) {
+        if (set.selectionMode !== "multiple" && selectedCount > 1) {
           errors[`${item.id}:${set.key}`] = `Для характеристики «${set.name}» можно выбрать не более одного значения.`;
         } else if (set.required && selectedCount === 0) {
           errors[`${item.id}:${set.key}`] = `Заполните характеристику «${set.name}».`;
@@ -63,7 +65,7 @@ function validateFindings(
     }
     validateFindings(value.children, item.children, errors);
   }
-  for (const item of catalog) {
+  for (const item of availableCatalog) {
     if (item.required && !presentIds.has(item.id)) errors[item.id] = `Заполните поле «${item.name}».`;
   }
 }

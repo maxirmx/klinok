@@ -9,7 +9,7 @@ import type {
   InstrumentalFindingValue,
   InstrumentalSelectionSet,
 } from "@klinok/contracts";
-import { replaceConflictingInstrumentalChoices } from "@klinok/contracts";
+import { availableInstrumentalFindingCatalog, replaceConflictingInstrumentalChoices } from "@klinok/contracts";
 import AppCatalogCombobox from "./AppCatalogCombobox.vue";
 import AppIcon from "./AppIcon.vue";
 import AppSelect from "./AppSelect.vue";
@@ -43,14 +43,18 @@ const confirmOpen = computed({
     if (!value) pendingConfirmation.value = null;
   },
 });
-const choiceCatalog = computed(() => props.catalog.filter((item) => item.kind === "choice"));
+const availableCatalog = computed(() => availableInstrumentalFindingCatalog(props.catalog, model.value));
+const choiceCatalog = computed(() => availableCatalog.value.filter((item) => item.kind === "choice"));
 const choiceOptions = computed(() => selectOptions(choiceCatalog.value));
-const multipleChoiceCatalog = computed(() => props.catalog.filter((item) => item.selectionMode === "multiple"));
-const indicatorCatalog = computed(() => props.catalog.filter((item) => item.kind !== "choice" && item.selectionMode !== "multiple"));
-const choiceValues = computed(() => model.value.filter((value) => catalogItem(value)?.kind === "choice"));
+const multipleChoiceCatalog = computed(() => availableCatalog.value.filter((item) =>
+  item.selectionMode === "multiple" && !item.selectionSets?.length));
+const inlineSelectionSetCatalog = computed(() => availableCatalog.value.filter((item) =>
+  item.selectionMode === "multiple" && Boolean(item.selectionSets?.length)));
+const indicatorCatalog = computed(() => availableCatalog.value.filter((item) => item.kind !== "choice" && item.selectionMode !== "multiple"));
+const choiceValues = computed(() => model.value.filter((value) => availableCatalogItem(value)?.kind === "choice"));
 const choiceId = computed(() => choiceValues.value[0]?.findingId ?? "");
 const indicatorValues = computed(() => model.value.filter((value) => {
-  const item = catalogItem(value);
+  const item = availableCatalogItem(value);
   return item?.kind !== "choice" && item?.selectionMode !== "multiple";
 }));
 const selectedChoicesWithChildren = computed(() => choiceValues.value.filter((value) => {
@@ -64,21 +68,29 @@ const options = computed(() => {
 const pendingFinding = computed(() => indicatorCatalog.value.find((item) => item.id === pendingIds.value[0]
   && !model.value.some((value) => value.findingId === item.id)));
 const hasRenderedValues = computed(() => choiceCatalog.value.length > 0
-  || multipleChoiceCatalog.value.length > 0 || model.value.length > 0);
+  || multipleChoiceCatalog.value.length > 0 || inlineSelectionSetCatalog.value.length > 0 || model.value.length > 0);
 const choiceRowDepth = computed(() => Math.max(0, props.depth - (props.choiceContinuation ? 1 : 0)));
 
 watch(
-  [() => props.catalog, () => model.value],
-  ([catalog, values]) => {
-    const selected = new Set(values.map((item) => item.findingId));
-    const required = catalog.filter((item) => item.required && !selected.has(item.id)).map(catalogValue);
-    if (required.length) model.value = ordered([...values, ...required]);
+  [() => props.catalog, () => model.value, () => availableCatalog.value],
+  ([catalog, values, available]) => {
+    const availableIds = new Set(available.map((item) => item.id));
+    const retained = values.filter((item) => availableIds.has(item.findingId));
+    const selected = new Set(retained.map((item) => item.findingId));
+    const required = available.filter((item) => item.required && !selected.has(item.id)).map(catalogValue);
+    if (pendingIds.value.some((id) => !availableIds.has(id))) pendingIds.value = [];
+    if (retained.length !== values.length || required.length) {
+      model.value = orderedFor(catalog, [...retained, ...required]);
+    }
   },
   { immediate: true },
 );
 
 function selectPending(ids: string[]) { pendingIds.value = ids.slice(0, 1); }
 function catalogItem(value: InstrumentalFindingValue) { return props.catalog.find((item) => item.id === value.findingId); }
+function availableCatalogItem(value: InstrumentalFindingValue) {
+  return availableCatalog.value.find((item) => item.id === value.findingId);
+}
 function catalogValue(item: InstrumentalFindingCatalogItem): InstrumentalFindingValue {
   return {
     findingId: item.id,
@@ -171,8 +183,45 @@ function requestSelectionSetChoice(
 ) {
   if (!item) return;
   requestChoiceChange(requestedId, selectionSetCatalog(item, set), finding.children, (next) => {
-    finding.children = orderedFor(item.children, next);
+    finding.children = orderedFor(item.children, removeRequestedChoiceConflicts(next, requestedId, item));
   });
+}
+function selectedInlineSelectionSetChoice(item: InstrumentalFindingCatalogItem, set: InstrumentalSelectionSet) {
+  const finding = multipleFinding(item);
+  return finding ? selectedSelectionSetChoice(finding, item, set) : "";
+}
+function requestInlineSelectionSetChoice(
+  item: InstrumentalFindingCatalogItem,
+  set: InstrumentalSelectionSet,
+  requestedId: string,
+) {
+  const finding = multipleFinding(item);
+  if (!finding) {
+    const choiceItem = selectionSetCatalog(item, set).find((choice) => choice.id === requestedId);
+    if (choiceItem) model.value = ordered([
+      ...model.value,
+      { ...catalogValue(item), children: [catalogValue(choiceItem)] },
+    ]);
+    return;
+  }
+  requestChoiceChange(requestedId, selectionSetCatalog(item, set), finding.children, (next) => {
+    const compatible = removeRequestedChoiceConflicts(next, requestedId, item);
+    if (!compatible.length) model.value = model.value.filter((value) => value.findingId !== item.id);
+    else finding.children = orderedFor(item.children, compatible);
+  });
+}
+function removeRequestedChoiceConflicts(
+  values: readonly InstrumentalFindingValue[],
+  requestedId: string,
+  item: InstrumentalFindingCatalogItem,
+) {
+  if (!requestedId) return values;
+  const compatibleIds = new Set(replaceConflictingInstrumentalChoices(
+    values.map((value) => value.findingId),
+    requestedId,
+    item.conflictPairs,
+  ));
+  return values.filter((value) => compatibleIds.has(value.findingId));
 }
 function selectionSetErrorKey(item: InstrumentalFindingCatalogItem | undefined, set: InstrumentalSelectionSet) {
   return item ? `${item.id}:${set.key}` : set.key;
@@ -193,16 +242,26 @@ function wideSelectionSet(item: InstrumentalFindingCatalogItem | undefined, inde
   const sets = item.selectionSets ?? [];
   const set = sets[index];
   if (!set) return false;
+  if (set.selectionMode === "multiple") return true;
   if (naturallyWideSelectionSet(item, set)) return true;
   const pairStart = index - (index % 2);
   const second = sets[pairStart + 1];
   return index === pairStart && (!second || naturallyWideSelectionSet(item, second));
+}
+function multipleSelectionSet(set: InstrumentalSelectionSet) {
+  return set.selectionMode === "multiple";
 }
 function directChoiceCatalog(item?: InstrumentalFindingCatalogItem) {
   return item?.children.filter((child) => child.kind === "choice") ?? [];
 }
 function directIndicatorCatalog(item?: InstrumentalFindingCatalogItem) {
   return item?.children.filter((child) => child.kind !== "choice") ?? [];
+}
+function availableDirectIndicatorCatalog(
+  item: InstrumentalFindingCatalogItem | undefined,
+  values: readonly InstrumentalFindingValue[],
+) {
+  return availableInstrumentalFindingCatalog(directIndicatorCatalog(item), values);
 }
 function selectOptions(items: readonly InstrumentalFindingCatalogItem[]) {
   return [
@@ -224,6 +283,13 @@ function multipleChoiceValue(item: InstrumentalFindingCatalogItem, choiceItem: I
 }
 function multipleChoiceChildren(item: InstrumentalFindingCatalogItem, choiceItem: InstrumentalFindingCatalogItem) {
   return multipleChoiceValue(item, choiceItem)?.children ?? [];
+}
+function availableChildren(
+  item: InstrumentalFindingCatalogItem,
+  children: readonly InstrumentalFindingValue[],
+) {
+  const availableIds = new Set(availableInstrumentalFindingCatalog(item.children, children).map((child) => child.id));
+  return children.filter((child) => availableIds.has(child.findingId));
 }
 function updateMultipleChoiceChildren(
   item: InstrumentalFindingCatalogItem,
@@ -253,11 +319,60 @@ function toggleMultipleChoice(item: InstrumentalFindingCatalogItem, choiceItem: 
       catalogValue(choiceItem),
     ]);
   }
+  children = availableChildren(item, children);
   if (!children.length) model.value = model.value.filter((value) => value.findingId !== item.id);
   else finding.children = children;
 }
+function inlineIndicatorCatalog(item: InstrumentalFindingCatalogItem) {
+  return availableDirectIndicatorCatalog(item, multipleFinding(item)?.children ?? []);
+}
+function inlineIndicatorFinding(
+  item: InstrumentalFindingCatalogItem,
+  indicatorItem: InstrumentalFindingCatalogItem,
+) {
+  return multipleFinding(item)?.children.find((child) => child.findingId === indicatorItem.id);
+}
+function inlineIndicatorChoiceSelected(
+  item: InstrumentalFindingCatalogItem,
+  indicatorItem: InstrumentalFindingCatalogItem,
+  choiceItem: InstrumentalFindingCatalogItem,
+) {
+  return inlineIndicatorFinding(item, indicatorItem)?.children
+    .some((child) => child.findingId === choiceItem.id) ?? false;
+}
+function toggleInlineIndicatorChoice(
+  item: InstrumentalFindingCatalogItem,
+  indicatorItem: InstrumentalFindingCatalogItem,
+  choiceItem: InstrumentalFindingCatalogItem,
+) {
+  const finding = multipleFinding(item);
+  if (!finding) {
+    model.value = ordered([
+      ...model.value,
+      { ...catalogValue(item), children: [{ ...catalogValue(indicatorItem), children: [catalogValue(choiceItem)] }] },
+    ]);
+    return;
+  }
+  const indicator = inlineIndicatorFinding(item, indicatorItem);
+  if (!indicator) {
+    finding.children = orderedFor(item.children, [
+      ...finding.children,
+      { ...catalogValue(indicatorItem), children: [catalogValue(choiceItem)] },
+    ]);
+    return;
+  }
+  const selected = indicator.children.some((child) => child.findingId === choiceItem.id);
+  if (!selected) {
+    indicator.children = orderedFor(indicatorItem.children, [...indicator.children, catalogValue(choiceItem)]);
+    return;
+  }
+  indicator.children = indicator.children.filter((child) => child.findingId !== choiceItem.id);
+  if (indicator.children.length) return;
+  finding.children = finding.children.filter((child) => child.findingId !== indicatorItem.id);
+  if (!finding.children.length) model.value = model.value.filter((value) => value.findingId !== item.id);
+}
 function directIndicatorValues(finding: InstrumentalFindingValue, item?: InstrumentalFindingCatalogItem) {
-  const ids = new Set(directIndicatorCatalog(item).map((child) => child.id));
+  const ids = new Set(availableDirectIndicatorCatalog(item, finding.children).map((child) => child.id));
   return finding.children.filter((child) => ids.has(child.findingId));
 }
 function selectedChoiceId(finding: InstrumentalFindingValue, item?: InstrumentalFindingCatalogItem) {
@@ -303,7 +418,7 @@ function isRootFreeText(finding: InstrumentalFindingValue) {
 }
 function nestedCatalog(finding: InstrumentalFindingValue) {
   const item = catalogItem(finding);
-  return isResultFinding(finding) ? directIndicatorCatalog(item) : item?.children ?? [];
+  return isResultFinding(finding) ? availableDirectIndicatorCatalog(item, finding.children) : item?.children ?? [];
 }
 function nestedValues(finding: InstrumentalFindingValue) {
   const item = catalogItem(finding);
@@ -424,6 +539,117 @@ function updateIntegerValue(finding: InstrumentalFindingValue, event: Event) {
           </div>
           <small v-if="errors[multipleItem.id]" :id="errorId(multipleItem.id)" class="field-error" role="alert">{{ errors[multipleItem.id] }}</small>
         </fieldset>
+      </div>
+    </div>
+
+    <div
+      v-for="selectionItem in inlineSelectionSetCatalog"
+      :key="selectionItem.id"
+      class="instrumental-finding-row instrumental-result-row medical-card-action-subgrid instrumental-inline-selection-set-row"
+      :data-finding-id="selectionItem.id"
+      role="group"
+      :aria-label="selectionItem.name"
+    >
+      <div
+        class="instrumental-finding-content instrumental-result-content"
+        :style="{ '--instrumental-depth': depth }"
+        :data-hierarchy-depth="depth"
+      >
+        <span class="instrumental-result-desktop-name">{{ selectionItem.name }}</span>
+        <div class="instrumental-result-control">
+          <span class="instrumental-result-mobile-name">{{ selectionItem.name }}</span>
+          <div class="instrumental-selection-set-grid">
+            <template
+              v-for="(set, setIndex) in selectionItem.selectionSets ?? []"
+              :key="set.key"
+            >
+              <label
+                v-if="!multipleSelectionSet(set)"
+                class="instrumental-selection-set-field"
+                :class="{ 'instrumental-selection-set-field-wide': wideSelectionSet(selectionItem, setIndex) }"
+              >
+                <span>{{ set.name }}</span>
+                <AppSelect
+                  :model-value="selectedInlineSelectionSetChoice(selectionItem, set)"
+                  :options="selectOptions(selectionSetCatalog(selectionItem, set))"
+                  :aria-label="set.name"
+                  :invalid="Boolean(selectionSetError(selectionItem, set))"
+                  :aria-describedby="selectionSetError(selectionItem, set) ? errorId(selectionSetErrorKey(selectionItem, set)) : undefined"
+                  @update:model-value="requestInlineSelectionSetChoice(selectionItem, set, $event)"
+                />
+                <small v-if="selectionSetError(selectionItem, set)" :id="errorId(selectionSetErrorKey(selectionItem, set))" class="field-error" role="alert">{{ selectionSetError(selectionItem, set) }}</small>
+              </label>
+              <fieldset
+                v-else
+                class="medical-card-option-panel instrumental-multiple-choice-panel instrumental-selection-set-field instrumental-selection-set-field-wide"
+                :aria-invalid="selectionSetError(selectionItem, set) ? true : undefined"
+                :aria-describedby="selectionSetError(selectionItem, set) ? errorId(selectionSetErrorKey(selectionItem, set)) : undefined"
+              >
+                <legend :class="{ 'visually-hidden': set.showName === false }">{{ set.name }}</legend>
+                <div class="medical-card-options">
+                  <div v-for="choiceItem in selectionSetCatalog(selectionItem, set)" :key="choiceItem.id" class="instrumental-multiple-choice-option">
+                    <label class="check-row">
+                      <input
+                        type="checkbox"
+                        :checked="multipleChoiceSelected(selectionItem, choiceItem)"
+                        @change="toggleMultipleChoice(selectionItem, choiceItem)"
+                      />
+                      <span>{{ choiceItem.name }}</span>
+                    </label>
+                    <InstrumentalFindingEditor
+                      v-if="multipleChoiceSelected(selectionItem, choiceItem) && choiceItem.children.length"
+                      :model-value="multipleChoiceChildren(selectionItem, choiceItem)"
+                      :catalog="choiceItem.children"
+                      :errors="errors"
+                      :depth="depth + 1"
+                      :parent-name="choiceItem.name"
+                      :choice-continuation="isChoiceContinuation(choiceItem.children)"
+                      @update:model-value="updateMultipleChoiceChildren(selectionItem, choiceItem, $event)"
+                    />
+                  </div>
+                </div>
+                <small v-if="selectionSetError(selectionItem, set)" :id="errorId(selectionSetErrorKey(selectionItem, set))" class="field-error" role="alert">{{ selectionSetError(selectionItem, set) }}</small>
+              </fieldset>
+            </template>
+          </div>
+        </div>
+      </div>
+      <div
+        v-for="indicatorItem in inlineIndicatorCatalog(selectionItem)"
+        :key="indicatorItem.id"
+        class="instrumental-finding-row instrumental-result-row medical-card-action-subgrid instrumental-multiple-choice-row"
+        :data-finding-id="indicatorItem.id"
+      >
+        <div
+          class="instrumental-finding-content instrumental-result-content"
+          :style="{ '--instrumental-depth': depth + 1 }"
+          :data-hierarchy-depth="depth + 1"
+        >
+          <fieldset
+            class="medical-card-option-panel instrumental-multiple-choice-panel instrumental-panel-label"
+            :aria-invalid="errors[indicatorItem.id] ? true : undefined"
+            :aria-describedby="errors[indicatorItem.id] ? errorId(indicatorItem.id) : undefined"
+          >
+            <legend>{{ indicatorItem.name }}</legend>
+            <div class="medical-card-options">
+              <div
+                v-for="choiceItem in directChoiceCatalog(indicatorItem)"
+                :key="choiceItem.id"
+                class="instrumental-multiple-choice-option"
+              >
+                <label class="check-row">
+                  <input
+                    type="checkbox"
+                    :checked="inlineIndicatorChoiceSelected(selectionItem, indicatorItem, choiceItem)"
+                    @change="toggleInlineIndicatorChoice(selectionItem, indicatorItem, choiceItem)"
+                  />
+                  <span>{{ choiceItem.name }}</span>
+                </label>
+              </div>
+            </div>
+            <small v-if="errors[indicatorItem.id]" :id="errorId(indicatorItem.id)" class="field-error" role="alert">{{ errors[indicatorItem.id] }}</small>
+          </fieldset>
+        </div>
       </div>
     </div>
 
