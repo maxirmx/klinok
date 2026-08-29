@@ -1358,6 +1358,16 @@ test("fresh provisioning, Doctor approval, grant, draft, and confirmation", asyn
   const recordId = recordElementId.slice("encounter-".length);
   expect(recordId).toMatch(/^[0-9a-f-]{36}$/i);
   await ownerRecord.getByRole("button", { name: "Подтвердить запись" }).click();
+  const recordConfirmationDialog = ownerPage.getByRole("dialog", { name: "Подтвердить медицинскую запись?" });
+  await expect(recordConfirmationDialog).toContainText("Подтверждаю правильность внесения данных. Вопросов к заполнению документа не имею.");
+  await recordConfirmationDialog.getByRole("button", { name: "Отмена" }).click();
+  await expect(recordConfirmationDialog).toBeHidden();
+  await expect(ownerRecord.getByText("Ожидает подтверждения", { exact: true })).toBeVisible();
+  expect(await queryPostgres(`SELECT count(*) FROM audit_blocks
+    WHERE aggregate_type='medicalRecord' AND aggregate_id='${recordId}' AND action='record.confirmed'`)).toBe("0");
+  await ownerRecord.getByRole("button", { name: "Подтвердить запись" }).click();
+  await ownerPage.getByRole("dialog", { name: "Подтвердить медицинскую запись?" })
+    .getByRole("button", { name: "Подтвердить запись" }).click();
   await expect(ownerRecord.getByText("Подтверждена", { exact: true })).toBeVisible();
   await expectEmailText(request, doctorEmail, "Медицинская запись о питомце «Ёжик» подтверждена владельцем.");
   await expect(profileWeight).toContainText("14.3 кг");

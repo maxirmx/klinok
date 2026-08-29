@@ -60,6 +60,7 @@ const medicalSortOptions = [
   { value: "desc", label: "Сначала новые" },
   { value: "asc", label: "Сначала старые" },
 ];
+type MedicalRecordConfirmationTarget = Pick<MedicalRecordDraft, "petId" | "recordId" | "revision">;
 
 const props = defineProps<{ role: "owner"; scenarioId: string }>();
 const route = useRoute();
@@ -69,6 +70,8 @@ const formError = ref("");
 const photoBusy = ref(false);
 const petSaveBusy = ref(false);
 const deleteConfirmation = ref(false);
+const medicalRecordConfirmationTarget = ref<MedicalRecordConfirmationTarget | null>(null);
+const medicalRecordConfirmationBusy = ref(false);
 const grantDialogOpen = ref(false);
 const grantBusy = ref(false);
 const grantError = ref("");
@@ -123,6 +126,12 @@ const medicalStatus = ref<"" | "confirmed" | "unconfirmed">("");
 const medicalSort = ref<"desc" | "asc">("desc");
 const accessPage = ref(1);
 const accessPageSize = ref<(typeof pageSizes)[number]>(10);
+const medicalRecordConfirmationOpen = computed({
+  get: () => medicalRecordConfirmationTarget.value !== null,
+  set: (open: boolean) => {
+    if (!open && !medicalRecordConfirmationBusy.value) medicalRecordConfirmationTarget.value = null;
+  },
+});
 
 function updatePetSpecies(value: string) { draft.species = value as PetSpecies; }
 function updatePetSex(value: string) { draft.sex = value as PetSex | ""; }
@@ -540,11 +549,62 @@ async function deletePet() {
   });
 }
 
-function confirmMedicalRecord(record: MedicalRecordDraft) {
-  void action(
-    () => requireRepository().medical.confirmRecord(record.petId, record.recordId, record.revision),
-    "Запись подтверждена.",
-  );
+function openMedicalRecordConfirmation(record: MedicalRecordDraft) {
+  medicalRecordConfirmationTarget.value = {
+    petId: record.petId,
+    recordId: record.recordId,
+    revision: record.revision,
+  };
+}
+
+function currentMedicalRecordForConfirmation(
+  target: MedicalRecordConfirmationTarget,
+): MedicalRecordDraft | string {
+  if (selectedPet.value?.petId !== target.petId) return "Профиль питомца изменился. Выберите запись повторно.";
+  const current = appState.medical.records.find((record) =>
+    record.recordId === target.recordId && record.petId === target.petId);
+  if (!current) return "Медицинская запись больше недоступна.";
+  if (confirmedIds.value.has(target.recordId)) return "Медицинская запись уже подтверждена.";
+  if (current.revision !== target.revision) {
+    return "Медицинская запись была изменена. Проверьте актуальные данные и повторите подтверждение.";
+  }
+  return current;
+}
+
+async function confirmMedicalRecord() {
+  const target = medicalRecordConfirmationTarget.value;
+  if (!target || medicalRecordConfirmationBusy.value) return;
+  medicalRecordConfirmationBusy.value = true;
+  alertStore.clear();
+  const medical = requireRepository().medical;
+  try {
+    const current = currentMedicalRecordForConfirmation(target);
+    if (typeof current === "string") {
+      medicalRecordConfirmationTarget.value = null;
+      alertStore.error(new Error(current));
+      return;
+    }
+    await medical.confirmRecord(current.petId, current.recordId, current.revision);
+    medicalRecordConfirmationTarget.value = null;
+    alertStore.success("Запись подтверждена.");
+  } catch (reason) {
+    try {
+      await medical.refresh();
+    } catch {
+      // Preserve the original operation error when refreshing the authoritative snapshot also fails.
+    }
+    if (confirmedIds.value.has(target.recordId)) {
+      medicalRecordConfirmationTarget.value = null;
+      alertStore.success("Запись подтверждена.");
+      return;
+    }
+    if (typeof currentMedicalRecordForConfirmation(target) === "string") {
+      medicalRecordConfirmationTarget.value = null;
+    }
+    alertStore.error(reason, "Не удалось подтвердить медицинскую запись.");
+  } finally {
+    medicalRecordConfirmationBusy.value = false;
+  }
 }
 </script>
 
@@ -856,7 +916,7 @@ function confirmMedicalRecord(record: MedicalRecordDraft) {
           mode="details"
           :confirmed="confirmedIds.has(record.recordId)"
           action="confirm"
-          @confirm="confirmMedicalRecord"
+          @confirm="openMedicalRecordConfirmation"
         />
         <AppPaginator
           v-if="filteredPetRecords.length"
@@ -869,6 +929,16 @@ function confirmMedicalRecord(record: MedicalRecordDraft) {
           aria-label="Навигация по медицинским записям"
         />
       </article>
+
+      <ConfirmationDialog
+        v-model="medicalRecordConfirmationOpen"
+        title="Подтвердить медицинскую запись?"
+        description="Подтверждаю правильность внесения данных. Вопросов к заполнению документа не имею."
+        confirm-label="Подтвердить запись"
+        :busy="medicalRecordConfirmationBusy"
+        tone="primary"
+        @confirm="confirmMedicalRecord"
+      />
 
       <ConfirmationDialog
         v-model="deleteConfirmation"

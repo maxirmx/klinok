@@ -20,6 +20,7 @@ const repositoryMocks = vi.hoisted(() => ({
   enableGrantDelegation: vi.fn().mockResolvedValue(undefined),
   approveAccessRequest: vi.fn().mockResolvedValue("grant-approved"),
   rejectAccessRequest: vi.fn().mockResolvedValue(undefined),
+  refresh: vi.fn().mockResolvedValue(undefined),
   confirmRecord: vi.fn().mockResolvedValue(undefined),
 }));
 const clipboardWriteText = vi.fn().mockResolvedValue(undefined);
@@ -177,6 +178,8 @@ beforeEach(async () => {
   repositoryMocks.createPet.mockResolvedValue("pet-new");
   repositoryMocks.grantDoctor.mockResolvedValue("grant-new");
   repositoryMocks.approveAccessRequest.mockResolvedValue("grant-approved");
+  repositoryMocks.refresh.mockResolvedValue(undefined);
+  repositoryMocks.confirmRecord.mockResolvedValue(undefined);
   searchDoctorDirectory.mockResolvedValue({ items: [], page: 1, pageSize: 50, total: 0, pageCount: 1 });
   await setMedical(snapshot());
 });
@@ -267,7 +270,7 @@ describe("Owner pages", () => {
     expect(wrapper.text()).not.toContain("Любит длительные прогулки");
   });
 
-  it("shows one medical card and refreshes confirmation status from the current snapshot", async () => {
+  it("asks for owner attestation before confirming a medical record", async () => {
     await setMedical(snapshot({ pets: [pet], records: [medicalRecord] }));
     const wrapper = await mountAt("/owner/pets/pet-1", "owner-pet-detail");
 
@@ -284,8 +287,23 @@ describe("Owner pages", () => {
     expect(confirm.getComponent(AppIcon).props("name")).toBe("check");
     expect(confirm.element.closest(".encounter-history-heading")).not.toBeNull();
     await confirm.trigger("click");
+    const dialog = wrapper.get('[role="dialog"]');
+    expect(dialog.get("h2").text()).toBe("Подтвердить медицинскую запись?");
+    expect(dialog.text()).toContain("Подтверждаю правильность внесения данных. Вопросов к заполнению документа не имею.");
+    expect(repositoryMocks.refresh).not.toHaveBeenCalled();
+    expect(repositoryMocks.confirmRecord).not.toHaveBeenCalled();
+    await dialog.get("button.outline-action").trigger("click");
     await flushPromises();
+    expect(wrapper.find('[role="dialog"]').exists()).toBe(false);
+    expect(repositoryMocks.confirmRecord).not.toHaveBeenCalled();
+
+    await confirm.trigger("click");
+    await wrapper.get('[role="dialog"] button.primary-action').trigger("click");
+    await flushPromises();
+    expect(repositoryMocks.refresh).not.toHaveBeenCalled();
     expect(repositoryMocks.confirmRecord).toHaveBeenCalledWith("pet-1", "record-1", 1);
+    expect(wrapper.find('[role="dialog"]').exists()).toBe(false);
+    expect(wrapper.get(".app-alert").text()).toContain("Запись подтверждена.");
 
     await setMedical(snapshot({
       pets: [pet],
@@ -295,6 +313,112 @@ describe("Owner pages", () => {
     await flushPromises();
     expect(wrapper.get(".medical-record-entry-details").text()).toContain("Подтверждена");
     expect(wrapper.find(".owner-encounter-confirm").exists()).toBe(false);
+  });
+
+  it("blocks closing and duplicate submission while medical record confirmation is running", async () => {
+    let resolveConfirmation: (() => void) | undefined;
+    repositoryMocks.confirmRecord.mockReturnValueOnce(new Promise<void>((resolve) => { resolveConfirmation = resolve; }));
+    await setMedical(snapshot({ pets: [pet], records: [medicalRecord] }));
+    const wrapper = await mountAt("/owner/pets/pet-1", "owner-pet-detail");
+
+    await wrapper.get(".owner-encounter-confirm").trigger("click");
+    const dialog = wrapper.get('[role="dialog"]');
+    await dialog.get("button.primary-action").trigger("click");
+    await flushPromises();
+
+    expect(dialog.findAll("button").every((button) => button.attributes("disabled") !== undefined)).toBe(true);
+    await dialog.trigger("keydown", { key: "Escape" });
+    await dialog.get("button.primary-action").trigger("click");
+    expect(wrapper.find('[role="dialog"]').exists()).toBe(true);
+    expect(repositoryMocks.confirmRecord).toHaveBeenCalledTimes(1);
+
+    resolveConfirmation?.();
+    await flushPromises();
+    expect(wrapper.find('[role="dialog"]').exists()).toBe(false);
+  });
+
+  it.each([
+    [
+      "changed revision",
+      snapshot({ pets: [pet], records: [{ ...medicalRecord, revision: 2 }] }),
+      "Медицинская запись была изменена. Проверьте актуальные данные и повторите подтверждение.",
+    ],
+    [
+      "existing confirmation",
+      snapshot({ pets: [pet], records: [medicalRecord], confirmedRecordIds: [medicalRecord.recordId] }),
+      "Медицинская запись уже подтверждена.",
+    ],
+    [
+      "deleted record",
+      snapshot({ pets: [pet] }),
+      "Медицинская запись больше недоступна.",
+    ],
+  ])("does not confirm a stale target with %s", async (_description, current, message) => {
+    await setMedical(snapshot({ pets: [pet], records: [medicalRecord] }));
+    const wrapper = await mountAt("/owner/pets/pet-1", "owner-pet-detail");
+    await wrapper.get(".owner-encounter-confirm").trigger("click");
+    await setMedical(current);
+    await flushPromises();
+
+    await wrapper.get('[role="dialog"] button.primary-action').trigger("click");
+    await flushPromises();
+
+    expect(repositoryMocks.refresh).not.toHaveBeenCalled();
+    expect(repositoryMocks.confirmRecord).not.toHaveBeenCalled();
+    expect(wrapper.find('[role="dialog"]').exists()).toBe(false);
+    expect(wrapper.get(".app-alert").text()).toContain(message);
+  });
+
+  it("keeps a current confirmation available after an operation error and preserves that error if refresh fails", async () => {
+    repositoryMocks.refresh.mockRejectedValueOnce(new Error("Не удалось обновить данные."));
+    repositoryMocks.confirmRecord.mockRejectedValueOnce(new Error("Не удалось подтвердить запись."));
+    await setMedical(snapshot({ pets: [pet], records: [medicalRecord] }));
+    const wrapper = await mountAt("/owner/pets/pet-1", "owner-pet-detail");
+
+    await wrapper.get(".owner-encounter-confirm").trigger("click");
+    await wrapper.get('[role="dialog"] button.primary-action').trigger("click");
+    await flushPromises();
+
+    expect(repositoryMocks.refresh).toHaveBeenCalledTimes(1);
+    expect(wrapper.get('[role="dialog"]').exists()).toBe(true);
+    expect(wrapper.get(".app-alert").text()).toContain("Не удалось подтвердить запись.");
+  });
+
+  it("closes an operation that became stale when the authoritative refresh completes", async () => {
+    repositoryMocks.refresh.mockImplementationOnce(async () => setMedical(snapshot({
+        pets: [pet],
+        records: [{ ...medicalRecord, revision: 2 }],
+      })));
+    repositoryMocks.confirmRecord.mockRejectedValueOnce(new Error("Данные изменились на другом устройстве."));
+    await setMedical(snapshot({ pets: [pet], records: [medicalRecord] }));
+    const wrapper = await mountAt("/owner/pets/pet-1", "owner-pet-detail");
+
+    await wrapper.get(".owner-encounter-confirm").trigger("click");
+    await wrapper.get('[role="dialog"] button.primary-action').trigger("click");
+    await flushPromises();
+
+    expect(repositoryMocks.refresh).toHaveBeenCalledTimes(1);
+    expect(wrapper.find('[role="dialog"]').exists()).toBe(false);
+    expect(wrapper.get(".app-alert").text()).toContain("Данные изменились на другом устройстве.");
+  });
+
+  it("reports success when a rejected command refresh reveals that confirmation was applied", async () => {
+    repositoryMocks.refresh.mockImplementationOnce(async () => setMedical(snapshot({
+      pets: [pet],
+      records: [medicalRecord],
+      confirmedRecordIds: [medicalRecord.recordId],
+    })));
+    repositoryMocks.confirmRecord.mockRejectedValueOnce(new Error("Не удалось получить ответ сервера."));
+    await setMedical(snapshot({ pets: [pet], records: [medicalRecord] }));
+    const wrapper = await mountAt("/owner/pets/pet-1", "owner-pet-detail");
+
+    await wrapper.get(".owner-encounter-confirm").trigger("click");
+    await wrapper.get('[role="dialog"] button.primary-action').trigger("click");
+    await flushPromises();
+
+    expect(repositoryMocks.refresh).toHaveBeenCalledTimes(1);
+    expect(wrapper.find('[role="dialog"]').exists()).toBe(false);
+    expect(wrapper.get(".app-alert").text()).toContain("Запись подтверждена.");
   });
 
   it("renders laboratory history as a bordered panel outside the medical card", async () => {
