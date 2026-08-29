@@ -2064,6 +2064,11 @@ describe("Doctor pages", () => {
     expect(wrapper.find(".medical-record-entry-epicrisis").exists()).toBe(false);
     expect(details.text()).toContain("Подтверждена");
     expect(details.find(".medical-record-edit").exists()).toBe(false);
+    const collapsedSummary = details.get("summary");
+    expect(collapsedSummary.text()).toContain("Вера Врач");
+    expect(collapsedSummary.text()).not.toContain("Не ест");
+    expect(collapsedSummary.text()).not.toContain("Итог");
+    expect(collapsedSummary.text()).not.toContain("Редакция");
 
     expect(wrapper.get(".encounter-editor h2").text()).toBe("Сегодняшний приём");
     const saveEncounterButton = wrapper.get('.encounter-editor-heading button[title="Сохранить запись"]');

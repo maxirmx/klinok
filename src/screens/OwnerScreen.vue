@@ -3,7 +3,7 @@
 // All rights reserved.
 // This file is a part of Klinok application
 
-import { computed, reactive, ref, watch } from "vue";
+import { computed, nextTick, reactive, ref, watch } from "vue";
 import { RouterLink, useRoute, useRouter } from "vue-router";
 import {
   PET_SEXES,
@@ -116,6 +116,9 @@ const selectedPetPending = computed(() => selectedPet.value
   ? pendingApprovals.value.byPet[selectedPet.value.petId]
   : undefined);
 const pageSizes = [10, 20, 50] as const;
+const epicrisisPage = ref(1);
+const epicrisisPageSize = ref<(typeof pageSizes)[number]>(10);
+const expandedRecordId = ref<string | null>(null);
 const medicalPage = ref(1);
 const medicalPageSize = ref<(typeof pageSizes)[number]>(10);
 const medicalQuery = ref("");
@@ -154,6 +157,23 @@ const petRecords = computed(() =>
     : [],
 );
 const confirmedIds = computed(() => new Set(appState.medical.confirmedRecordIds));
+function compareMedicalRecords(
+  left: MedicalRecordDraft,
+  right: MedicalRecordDraft,
+  direction: "desc" | "asc",
+): number {
+  const dateOrder = left.encounterDate.localeCompare(right.encounterDate)
+    || left.createdAt.localeCompare(right.createdAt);
+  return dateOrder ? (direction === "desc" ? -dateOrder : dateOrder) : left.recordId.localeCompare(right.recordId);
+}
+
+const epicrisisRecords = computed(() => [...petRecords.value]
+  .sort((left, right) => compareMedicalRecords(left, right, "desc")));
+const epicrisisPageCount = computed(() => Math.max(1, Math.ceil(epicrisisRecords.value.length / epicrisisPageSize.value)));
+const pagedEpicrisisRecords = computed(() => epicrisisRecords.value.slice(
+  (epicrisisPage.value - 1) * epicrisisPageSize.value,
+  epicrisisPage.value * epicrisisPageSize.value,
+));
 const filteredPetRecords = computed(() => petRecords.value.filter((record) => {
   const confirmed = confirmedIds.value.has(record.recordId);
   if (medicalStatus.value === "confirmed" && !confirmed) return false;
@@ -165,8 +185,7 @@ const filteredPetRecords = computed(() => petRecords.value.filter((record) => {
   if (!query) return true;
   const content = normalizeRussianSearchText(medicalRecordSearchText(record));
   return content.includes(query);
-}).sort((left, right) => (medicalSort.value === "desc" ? -1 : 1)
-  * (left.encounterDate.localeCompare(right.encounterDate) || left.createdAt.localeCompare(right.createdAt))));
+}).sort((left, right) => compareMedicalRecords(left, right, medicalSort.value)));
 const medicalPageCount = computed(() => Math.max(1, Math.ceil(filteredPetRecords.value.length / medicalPageSize.value)));
 const pagedPetRecords = computed(() => filteredPetRecords.value.slice(
   (medicalPage.value - 1) * medicalPageSize.value,
@@ -186,6 +205,46 @@ watch([
 watch(medicalPageCount, (pageCount) => {
   if (medicalPage.value > pageCount) medicalPage.value = pageCount;
 });
+watch([() => selectedPet.value?.petId, epicrisisPageSize], () => {
+  epicrisisPage.value = 1;
+  expandedRecordId.value = null;
+});
+watch(epicrisisPageCount, (pageCount) => {
+  if (epicrisisPage.value > pageCount) epicrisisPage.value = pageCount;
+});
+watch(petRecords, (records) => {
+  if (expandedRecordId.value && !records.some((record) => record.recordId === expandedRecordId.value)) {
+    expandedRecordId.value = null;
+  }
+});
+
+async function openMedicalRecord(recordId: string) {
+  if (!petRecords.value.some((record) => record.recordId === recordId)) {
+    expandedRecordId.value = null;
+    return;
+  }
+
+  medicalQuery.value = "";
+  medicalFrom.value = "";
+  medicalTo.value = "";
+  medicalSection.value = "";
+  medicalStatus.value = "";
+  medicalPage.value = 1;
+  await nextTick();
+
+  const targetIndex = filteredPetRecords.value.findIndex((record) => record.recordId === recordId);
+  if (targetIndex < 0) {
+    expandedRecordId.value = null;
+    return;
+  }
+  medicalPage.value = Math.floor(targetIndex / medicalPageSize.value) + 1;
+  expandedRecordId.value = recordId;
+  await nextTick();
+
+  const target = document.getElementById(`encounter-${recordId}`);
+  target?.scrollIntoView?.({ block: "start" });
+  target?.querySelector<HTMLElement>("summary")?.focus();
+}
 
 function latest<T>(items: T[], timestamp: (item: T) => string): T | undefined {
   return [...items].sort((left, right) => timestamp(right).localeCompare(timestamp(left)))[0];
@@ -890,6 +949,31 @@ async function confirmMedicalRecord() {
         </template>
       </PetProfileView>
 
+      <article class="panel owner-epicrisis" aria-labelledby="owner-epicrisis-heading">
+        <h2 id="owner-epicrisis-heading">Эпикриз</h2>
+        <p v-if="!epicrisisRecords.length" class="owner-epicrisis-empty">Записей для эпикриза пока нет.</p>
+        <div v-else class="owner-epicrisis-list">
+          <MedicalRecordEntry
+            v-for="record in pagedEpicrisisRecords"
+            :key="record.recordId"
+            :record="record"
+            mode="epicrisis"
+            :confirmed="confirmedIds.has(record.recordId)"
+            @activate="openMedicalRecord"
+          />
+        </div>
+        <AppPaginator
+          v-if="epicrisisRecords.length"
+          v-model:page="epicrisisPage"
+          v-model:page-size="epicrisisPageSize"
+          class="owner-epicrisis-pagination"
+          :total-items="epicrisisRecords.length"
+          :page-sizes="pageSizes"
+          page-size-label="Записей на странице"
+          aria-label="Навигация по эпикризу"
+        />
+      </article>
+
       <LaboratoryComparison :records="petRecords" :confirmed-ids="confirmedIds" />
 
       <article id="medical-records" class="panel owner-medical-placeholder owner-medical-record">
@@ -916,6 +1000,7 @@ async function confirmMedicalRecord() {
           mode="details"
           :confirmed="confirmedIds.has(record.recordId)"
           action="confirm"
+          :open="expandedRecordId === record.recordId"
           @confirm="openMedicalRecordConfirmation"
         />
         <AppPaginator

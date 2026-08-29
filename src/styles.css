@@ -327,24 +327,6 @@ dd {
   min-height: 58px;
 }
 
-.epicrisis-row {
-  display: grid;
-  grid-template-columns: 120px minmax(0, 1fr) minmax(150px, 0.55fr);
-  gap: 12px;
-  align-items: start;
-  padding: 12px 0;
-  border-bottom: 1px solid var(--line);
-}
-
-.epicrisis-row:last-child {
-  border-bottom: 0;
-}
-
-.epicrisis-row span,
-.epicrisis-row small {
-  color: var(--muted);
-}
-
 .version-info {
   color: var(--text);
   font-size: 12px;
@@ -1309,8 +1291,20 @@ label > input[type="checkbox"] {
 .vaccination-values dt { color: var(--text-muted); font-size: 11px; font-weight: 600; }
 .general-data-values dd,
 .vaccination-values dd { margin: 0; }
-.epicrisis-row { width: 100%; display: grid; grid-template-columns: 110px minmax(220px, 1fr) minmax(180px, .7fr) minmax(160px, .6fr) 150px; gap: 12px; align-items: start; padding: 12px; border: 0; border-bottom: 1px solid var(--line); background: transparent; text-align: left; }
+.owner-epicrisis { min-width: 0; }
+.owner-epicrisis > h2 { margin: 0; }
+.owner-epicrisis-list { margin-top: 12px; border-top: 1px solid var(--line); }
+.owner-epicrisis-empty { margin: 12px 0 0; color: var(--text-muted); }
+.epicrisis-row { width: 100%; display: grid; grid-template-columns: 110px minmax(0, 1.4fr) minmax(0, .8fr) minmax(0, .7fr); gap: 12px; align-items: start; padding: 12px; border: 0; border-bottom: 1px solid var(--line); background: transparent; color: var(--text); font: inherit; text-align: left; cursor: pointer; }
+.epicrisis-row:last-child { border-bottom: 0; }
 .epicrisis-row:hover { background: var(--brand-sky-soft); }
+.epicrisis-row:focus-visible { outline: 2px solid var(--brand-sky); outline-offset: -2px; }
+.epicrisis-cell { display: grid; min-width: 0; align-content: start; gap: 4px; overflow-wrap: anywhere; }
+.epicrisis-cell-label { color: var(--text-muted); font-size: 11px; font-weight: 600; }
+.epicrisis-date { grid-column: 1; }
+.epicrisis-what-happened { grid-column: 2; }
+.epicrisis-diagnosis { grid-column: 3; }
+.epicrisis-outcome { grid-column: 4; }
 .owner-encounter-record {
   width: 100%;
   padding: 12px 0;
@@ -1319,7 +1313,7 @@ label > input[type="checkbox"] {
 .owner-encounter-record > .owner-encounter-summary {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
-  align-items: center;
+  align-items: start;
   gap: 10px;
   cursor: pointer;
   list-style: none;
@@ -1336,12 +1330,8 @@ label > input[type="checkbox"] {
 .medical-record-chevron-expanded { display: none; }
 .owner-encounter-record[open] > .owner-encounter-summary .medical-record-chevron-collapsed { display: none; }
 .owner-encounter-record[open] > .owner-encounter-summary .medical-record-chevron-expanded { display: block; }
-.owner-encounter-record[open] > .owner-encounter-summary .medical-record-collapsed-outcome { display: none; }
 .owner-encounter-summary-copy { display: grid; min-width: 0; gap: 4px; }
 .owner-encounter-summary-copy :is(strong, small) { overflow-wrap: anywhere; }
-.medical-record-condition-well { color: #067647; }
-.medical-record-condition-problem { color: #b54708; }
-.medical-record-condition-critical { color: var(--danger); }
 .owner-encounter-sections {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
@@ -1381,7 +1371,8 @@ label > input[type="checkbox"] {
 .encounter-history-meta .person-identity-id { font-size: inherit; }
 .encounter-history-meta .person-identity-name { font-weight: inherit; }
 .medical-record-actions { justify-self: end; }
-.owner-medical-pagination { margin-top: 16px; }
+.owner-medical-pagination,
+.owner-epicrisis-pagination { margin-top: 16px; }
 
 @media (max-width: 1650px) {
   .vaccination-fields { grid-template-columns: repeat(4, minmax(200px, 1fr)); }
@@ -1449,7 +1440,8 @@ label > input[type="checkbox"] {
   .owner-encounter-summary > .status-badge { grid-column: 2; justify-self: start; }
   .doctor-history-filters,
   .medical-record-filters { grid-template-columns: 1fr; }
-  .epicrisis-row { grid-template-columns: 1fr; }
+  .epicrisis-row { grid-template-columns: minmax(0, 1fr); }
+  .epicrisis-row > .epicrisis-cell { grid-column: 1; }
   .general-data-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .vaccination-fields { grid-template-columns: 1fr; }
   .therapeutic-tabs { grid-template-columns: repeat(2, minmax(0, 1fr)); }
