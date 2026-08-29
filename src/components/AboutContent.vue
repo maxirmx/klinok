@@ -47,7 +47,11 @@ const sponsors = [
 
       <section class="about-card">
         <h3>Дизайн логотипа</h3>
-        <p class="about-person">Королевич Мария Кирилловна</p>
+        <p class="about-person">
+          <a href="https://www.behance.net/korolevichmaria" target="_blank" rel="noopener noreferrer">
+            Королевич Мария Кирилловна
+          </a>
+        </p>
       </section>
 
       <section class="about-card">

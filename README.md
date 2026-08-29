@@ -1,59 +1,13 @@
-# Klinok
+<p>
+  <img src="src/assets/brand/klinok-logo-full-ru.svg" alt="Клинок" width="320">
+</p>
 
-Klinok is a veterinary record application.
+[![CI](https://github.com/maxirmx/klinok/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/maxirmx/klinok/actions/workflows/ci.yml)
+[![Codecov](https://codecov.io/gh/maxirmx/klinok/branch/main/graph/badge.svg)](https://codecov.io/gh/maxirmx/klinok)
+[![Лицензия: MIT](https://img.shields.io/badge/лицензия-MIT-blue.svg)](LICENSE)
 
-## Architecture
+<img src="src/assets/brand/klinok-logo-full-ru.svg" alt="Клинок" height="18" > — Приложение для управления электронными медицинскими картами домашних животных, которое помогает владельцам и ветеринарным врачам вместе следить за здоровьем питомцев. Владелец хранит сведения о питомце и управляет доступом к его истории, а врач ведёт записи о приёмах, диагнозах, назначениях, лабораторных и инструментальных исследованиях.
 
-- `src/` — Vue UI, API repository, and the seven-day IndexedDB offline cache.
-- `packages/contracts/` — shared domain DTOs and command contracts.
-- `api-node/` — Fastify API, handwritten PostgreSQL migration, authentication, authorization, email outbox, and audit ledger.
-- `docker-compose.yml` — local UI, API, PostgreSQL, and Mailpit.
+Система собирает медицинскую историю и сохраняет последовательность её изменений, чтобы важная информация была доступна во время следующего обращения.
 
-PostgreSQL is authoritative. Every successful user or domain mutation is committed atomically with an operation receipt and a SHA-256 hash-chained audit block. Audit blocks retain their complete before/after JSON snapshots, and every medical-record revision, deletion, and confirmation stores a complete record state. The chain is tamper-evident relative to trusted backups or checkpoints; it is not independently immutable and has no cryptocurrency, mining, smart contracts, P2P replication, or public-chain anchoring.
-
-The browser may show cached data for seven days. Only pet creates/edits and unconfirmed medical-record creates/edits are queued offline. Authentication, role, grant, confirmation, session, and destructive operations require the API.
-
-## Local development
-
-Requirements: Node.js 24+, Docker with Compose, and Chromium for the E2E suite.
-
-```sh
-npm ci
-npm run build
-npm test
-npm run lint:check
-```
-
-Run the complete local stack:
-
-```sh
-docker compose up -d postgres mail
-KLINOK_BOOTSTRAP_EMAIL=administrator@example.ru \
-KLINOK_BOOTSTRAP_PASSWORD=bootstrap-password-2026 \
-docker compose run --rm -T api node api-node/dist/provision.js
-docker compose up -d api ui
-```
-
-The UI is at `http://localhost:8080`; Mailpit is at `http://localhost:8025`. The bootstrap command is idempotent and creates the undeletable Administrator plus the genesis audit block.
-
-For UI development against the Compose API:
-
-```sh
-docker compose -f docker-compose.yml -f docker-compose.mixed-dev.yml up -d postgres mail api
-npm run dev
-```
-
-## Required validation
-
-```sh
-npm test
-npm run build
-npm run lint:check
-npm run test:e2e:compose
-```
-
-The Compose E2E suite starts with an empty v3 database and removes its test volume afterward.
-
-## Production
-
-See [README.cloud.md](README.cloud.md).
+Документация для разработчиков и администраторов: [разработка](docs/development.md), [развёртывание](docs/deployment.md).
