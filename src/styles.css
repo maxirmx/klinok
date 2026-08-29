@@ -1330,8 +1330,9 @@ label > input[type="checkbox"] {
 .medical-record-chevron-expanded { display: none; }
 .owner-encounter-record[open] > .owner-encounter-summary .medical-record-chevron-collapsed { display: none; }
 .owner-encounter-record[open] > .owner-encounter-summary .medical-record-chevron-expanded { display: block; }
-.owner-encounter-summary-copy { display: grid; min-width: 0; gap: 4px; }
-.owner-encounter-summary-copy :is(strong, small) { overflow-wrap: anywhere; }
+.owner-encounter-summary-copy { display: flex; min-width: 0; align-items: baseline; gap: 10px; }
+.owner-encounter-summary-copy > strong { flex: 0 0 auto; }
+.owner-encounter-summary-copy > small { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .owner-encounter-sections {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
