@@ -3299,6 +3299,43 @@ label > input[type="checkbox"] {
   border-radius: 12px;
 }
 .laboratory-comparison > h2 { margin: 0; }
+.laboratory-comparison-selections {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.laboratory-comparison-selection {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 34px;
+  width: min(100%, 24rem);
+  min-width: 0;
+  align-items: start;
+  gap: 8px;
+  padding: 7px 8px 7px 10px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: #fbfcfd;
+}
+.laboratory-comparison-selection > span {
+  min-width: 0;
+  align-self: start;
+  overflow-wrap: anywhere;
+  line-height: 1.35;
+}
+.workspace-content .laboratory-comparison-remove {
+  width: 34px;
+  min-width: 34px;
+  height: 34px;
+  min-height: 34px;
+  align-self: start;
+  padding: 0;
+}
+.laboratory-comparison-remove .app-icon { width: 18px; height: 18px; }
 .laboratory-comparison-desktop { display: grid; gap: 12px; min-width: 0; }
 .laboratory-comparison-mobile { display: none; }
 @container (max-width: 48rem) {

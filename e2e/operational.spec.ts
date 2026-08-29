@@ -1237,9 +1237,28 @@ test("fresh provisioning, Doctor approval, grant, draft, and confirmation", asyn
   await ownerPage.setViewportSize({ width: 1280, height: 720 });
   await laboratoryComparison.locator(".app-catalog-toggle").click();
   await laboratoryComparison.getByRole("option", { name: /Лейкоциты \(WBC\)/ }).click();
+  await laboratoryComparison.locator(".app-catalog-toggle").click();
+  await laboratoryComparison.getByRole("option", { name: /Гематокрит \(Hct, PCV\)/ }).click();
+  await expect(laboratoryComparison.locator(".laboratory-comparison-selection")).toHaveCount(2);
   await expect(laboratoryComparison.locator(".laboratory-comparison-desktop")).toBeVisible();
   await expect(laboratoryComparison.locator(".laboratory-comparison-mobile")).toBeHidden();
   await expect(laboratoryComparison.locator(".laboratory-results")).toBeVisible();
+  await ownerPage.reload();
+  await expect(laboratoryComparison).toBeVisible({ timeout: replicationTimeout });
+  await expect(laboratoryComparison.locator(".laboratory-comparison-selection")).toHaveCount(2);
+  const removeLeukocytes = laboratoryComparison.getByRole("button", { name: /Удалить показатель «Лейкоциты \(WBC\),/ });
+  const removeHematocrit = laboratoryComparison.getByRole("button", { name: /Удалить показатель «Гематокрит \(Hct, PCV\), %»/ });
+  await expect(removeLeukocytes).toBeVisible();
+  await expect(removeHematocrit).toBeVisible();
+  await removeLeukocytes.click();
+  await expect(removeLeukocytes).toHaveCount(0);
+  await expect(removeHematocrit).toBeVisible();
+  await expect(laboratoryComparison.getByRole("columnheader", { name: /Лейкоциты \(WBC\)/ })).toHaveCount(0);
+  await expect(laboratoryComparison.getByRole("columnheader", { name: /Гематокрит \(Hct, PCV\)/ })).toBeVisible();
+  await ownerPage.reload();
+  await expect(laboratoryComparison).toBeVisible({ timeout: replicationTimeout });
+  await expect(laboratoryComparison.getByRole("button", { name: /Удалить показатель «Лейкоциты \(WBC\),/ })).toHaveCount(0);
+  await expect(laboratoryComparison.getByRole("button", { name: /Удалить показатель «Гематокрит \(Hct, PCV\), %»/ })).toBeVisible();
 
   await ownerPage.setViewportSize({ width: 752, height: 1200 });
   const mobileLaboratoryHistory = laboratoryComparison.locator(".laboratory-comparison-mobile");

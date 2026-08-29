@@ -9,6 +9,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { DoctorPetAccessDto, PetAccessRequest } from "@klinok/contracts";
 import AppCatalogCombobox from "../src/components/AppCatalogCombobox.vue";
 import AppIcon from "../src/components/AppIcon.vue";
+import LaboratoryComparison from "../src/components/LaboratoryComparison.vue";
 import LaboratoryTestsEditor from "../src/components/LaboratoryTestsEditor.vue";
 import InstrumentalFindingEditor from "../src/components/InstrumentalFindingEditor.vue";
 import InstrumentalTestsEditor from "../src/components/InstrumentalTestsEditor.vue";
@@ -38,7 +39,7 @@ vi.mock("../src/appStore", async () => {
     activeRole: "doctor" as const,
     feedback: null,
     syncNotifications: [] as SyncNotification[],
-    session: { authenticated: true, accountId: "doctor-1" },
+    session: { authenticated: true, accountId: "doctor-1" as string | undefined },
     control: {
       profile: { firstName: "Вера", lastName: "Врач" },
       profiles: [], roles: [], allRoles: [], devices: [], pendingQueue: [], notifications: [], roleAudit: [],
@@ -56,6 +57,7 @@ vi.mock("../src/appStore", async () => {
     searchPetDirectory: directoryMocks.searchPetDirectory,
     setDoctorMedicalState: (medical: MedicalSnapshot) => { state.medical = medical; },
     setDoctorSyncNotifications: (notifications: SyncNotification[]) => { state.syncNotifications = notifications; },
+    setDoctorSessionAccountId: (accountId: string | undefined) => { state.session.accountId = accountId; },
   };
 });
 
@@ -194,6 +196,13 @@ async function setSyncNotifications(notifications: SyncNotification[]) {
   store.setDoctorSyncNotifications(notifications);
 }
 
+async function setSessionAccountId(accountId: string | undefined) {
+  const store = await import("../src/appStore") as typeof import("../src/appStore") & {
+    setDoctorSessionAccountId: (value: string | undefined) => void;
+  };
+  store.setDoctorSessionAccountId(accountId);
+}
+
 async function mountAt(path: string, scenarioId: string, attachToDocument = false) {
   const router = createRouter({
     history: createMemoryHistory(),
@@ -218,6 +227,7 @@ async function mountAt(path: string, scenarioId: string, attachToDocument = fals
 beforeEach(async () => {
   vi.clearAllMocks();
   localStorage.clear();
+  await setSessionAccountId("doctor-1");
   await setMedical(snapshot());
   await setSyncNotifications([]);
   directoryMocks.loadDoctorPetAccesses.mockResolvedValue(accessPage([doctorAccess()]));
@@ -2155,6 +2165,16 @@ describe("Doctor pages", () => {
     expect(history.get("h2").text()).toBe("История лабораторных показателей");
     expect(history.classes()).toContain("panel");
     expect(wrapper.get(".doctor-medical-record").find(".laboratory-comparison").exists()).toBe(false);
+    expect(wrapper.getComponent(LaboratoryComparison).props()).toMatchObject({
+      accountId: "doctor-1",
+      role: "doctor",
+      petId: "pet-1",
+    });
+    await setSessionAccountId(undefined);
+    await wrapper.vm.$nextTick();
+    expect(wrapper.findComponent(LaboratoryComparison).exists()).toBe(false);
+    expect([...Array.from({ length: localStorage.length }, (_, index) => localStorage.key(index))])
+      .not.toContain("klinok:v3:undefined:doctor:pet-1:laboratory-comparison");
   });
 
   it("deletes an unconfirmed encounter after confirmation", async () => {
