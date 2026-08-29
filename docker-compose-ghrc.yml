@@ -42,6 +42,7 @@ services:
       interval: 15s
       timeout: 5s
       retries: 5
+      start_period: 30s
     networks:
       default:
         aliases:
@@ -53,14 +54,17 @@ services:
     depends_on:
       api-blue:
         condition: service_healthy
-    ports:
-      - "80:80"
-      - "443:443"
+    expose:
+      - "8080"
     environment:
       KLINOK_BOOTSTRAP_ACCOUNT_ID: ${KLINOK_BOOTSTRAP_ACCOUNT_ID:-bootstrap-administrator}
       KLINOK_OFFLINE_LEASE_DAYS: ${KLINOK_OFFLINE_LEASE_DAYS:-7}
-    volumes:
-      - ${KLINOK_CERTIFICATE_DIR:-/srv/klinok/certificate}:/etc/nginx/certificate:ro
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:8080/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
     networks:
       default:
         aliases:

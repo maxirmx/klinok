@@ -25,7 +25,6 @@ COPY config/update-config.sh /docker-entrypoint.d/40-update-config.sh
 RUN sed -i 's/\r$//' /docker-entrypoint.d/40-update-config.sh \
     && chmod +x /docker-entrypoint.d/40-update-config.sh
 
-EXPOSE 80
-EXPOSE 443
+EXPOSE 8080
 
 CMD ["nginx", "-g", "daemon off;"]

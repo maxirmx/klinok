@@ -1,0 +1,15 @@
+# Copyright (C) 2026 Maxim [maxirmx] Samsonov (www.sw.consulting)
+# All rights reserved.
+# This file is a part of Klinok application
+
+services:
+  ui-blue:
+    networks:
+      edge:
+        aliases:
+          - klinok-ui
+
+networks:
+  edge:
+    name: ${SW_CONSULTING_EDGE_NETWORK:-sw-consulting-edge}
+    external: true
