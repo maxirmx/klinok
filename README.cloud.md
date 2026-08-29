@@ -1,15 +1,20 @@
 # Klinok v3 deployment
 
-The supported production layout is a single API instance backed by PostgreSQL, with nginx serving the static Vue application and proxying `/api/` to the API. TLS terminates at nginx. There is no public P2P port or trust-key configuration.
+The cloud layout is a single API instance backed by PostgreSQL, with an internal nginx UI serving the Vue application and proxying `/api/` to the API. Choose one public-edge overlay: the shared `sw-consulting-edge` network or a dedicated production nginx service. There is no public P2P port or trust-key configuration.
 
 ## Host preparation
 
 Install Docker with Compose and prepare:
 
 ```text
+/srv/klinok/postgres.v3/data
+```
+
+For dedicated production, prepare the existing certificate files:
+
+```text
 /srv/klinok/certificate/s.crt
 /srv/klinok/certificate/s.key
-/srv/klinok/postgres.v3/data
 ```
 
 Create `klinok.env` with at least:
@@ -31,21 +36,23 @@ Protect this file with mode `0600`. The database password is used only between t
 
 ## Initial provisioning
 
-From the repository root:
+From the repository root, select the shared edge or dedicated production target:
 
 ```sh
 chmod +x scripts/bootstrap-cloud.sh
-scripts/bootstrap-cloud.sh
+scripts/bootstrap-cloud.sh edge
+scripts/bootstrap-cloud.sh production
 ```
 
-The script validates Compose, starts PostgreSQL, runs the idempotent bootstrap Administrator CLI, then starts the API and UI. Provisioning records the genesis audit block. The bootstrap account and its Administrator role cannot be deleted or revoked.
+The `edge` target requires the external `sw-consulting-edge` network and publishes no host ports. The `production` target starts a dedicated nginx service on ports 80 and 443 and requires the certificate files above. Both targets start PostgreSQL, run the idempotent bootstrap Administrator CLI, and then start the private API and UI. Provisioning records the genesis audit block. The bootstrap account and its Administrator role cannot be deleted or revoked.
 
 After the first successful start, remove `KLINOK_BOOTSTRAP_PASSWORD` from persistent shell history and keep it in an approved password manager. It is needed only to sign in, not to start containers.
 
 ## Updates
 
 ```sh
-scripts/update-cloud.sh
+scripts/update-cloud.sh edge
+scripts/update-cloud.sh production
 ```
 
 The API runs SQL migrations before accepting traffic and verifies the complete audit chain at startup. If verification fails, `/readyz` remains unhealthy and mutations return `LEDGER_INVALID`; diagnostic health and database reads remain available for investigation.
@@ -58,11 +65,19 @@ An existing v2 deployment may be kept separately as a read-only archive. Version
 
 ## Operations
 
-Useful checks:
+Shared-edge checks:
 
 ```sh
-docker compose --env-file klinok.env -f docker-compose-ghrc.yml ps
-docker compose --env-file klinok.env -f docker-compose-ghrc.yml logs --tail=200 api-blue ui-blue postgres-blue
+docker compose --env-file klinok.env -f docker-compose-ghrc.yml -f docker-compose.edge.yml ps
+docker compose --env-file klinok.env -f docker-compose-ghrc.yml -f docker-compose.edge.yml logs --tail=200 api-blue ui-blue postgres-blue
+curl --fail https://klinok.sw.consulting/api/auth/session
+```
+
+Dedicated-production checks:
+
+```sh
+docker compose --env-file klinok.env -f docker-compose-ghrc.yml -f docker-compose.production.yml ps
+docker compose --env-file klinok.env -f docker-compose-ghrc.yml -f docker-compose.production.yml logs --tail=200 api-blue ui-blue postgres-blue production-edge
 curl --fail https://klinok.sw.consulting/api/auth/session
 ```
 

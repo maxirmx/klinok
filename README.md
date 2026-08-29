@@ -1,6 +1,6 @@
 # Klinok
 
-Klinok is a Russian-language veterinary record application. Version 3 keeps the existing Vue workflows while using a deliberately small backend: one Fastify API and one PostgreSQL database.
+Klinok is a veterinary record application.
 
 ## Architecture
 
@@ -56,4 +56,4 @@ The Compose E2E suite starts with an empty v3 database and removes its test volu
 
 ## Production
 
-See [README.cloud.md](README.cloud.md). The v2 authentication, OrbitDB, and P2P services are not part of v3. An old deployment can remain separately available as a read-only archive, but its data is not migrated into the v3 database.
+See [README.cloud.md](README.cloud.md).

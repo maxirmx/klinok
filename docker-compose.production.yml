@@ -1,0 +1,23 @@
+# Copyright (C) 2026 Maxim [maxirmx] Samsonov (www.sw.consulting)
+# All rights reserved.
+# This file is a part of Klinok application
+
+services:
+  production-edge:
+    image: nginx:1.31.1-alpine
+    restart: always
+    depends_on:
+      ui-blue:
+        condition: service_healthy
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./config/nginx.production.conf:/etc/nginx/conf.d/default.conf:ro
+      - ${KLINOK_CERTIFICATE_DIR:-/srv/klinok/certificate}:/etc/nginx/certificate:ro
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 5s

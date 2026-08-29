@@ -372,7 +372,7 @@ test("fresh provisioning, Doctor approval, grant, draft, and confirmation", asyn
   await openProfileAndWaitForSync(ownerPage);
   const currentDeviceRow = ownerPage.locator(".device-security .device-row").filter({ hasText: "Текущий сеанс" });
   const currentDeviceName = currentDeviceRow.getByRole("textbox", { name: "Название устройства", exact: true });
-  await expect(currentDeviceName).toHaveValue(/^(macOS|Linux) · Chrome$/);
+  await expect(currentDeviceName).toHaveValue(/^(macOS|Linux|Windows) · Chrome$/);
   await currentDeviceName.fill("Основной браузер");
   await currentDeviceRow.getByRole("button", { name: "Сохранить название устройства" }).click();
   await expect(ownerPage.getByText("Название устройства сохранено.")).toBeVisible();
