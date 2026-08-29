@@ -246,6 +246,10 @@ async function openMedicalRecord(recordId: string) {
   target?.querySelector<HTMLElement>("summary")?.focus();
 }
 
+function syncExpandedMedicalRecord(recordId: string, open: boolean) {
+  if (!open && expandedRecordId.value === recordId) expandedRecordId.value = null;
+}
+
 function latest<T>(items: T[], timestamp: (item: T) => string): T | undefined {
   return [...items].sort((left, right) => timestamp(right).localeCompare(timestamp(left)))[0];
 }
@@ -1002,6 +1006,7 @@ async function confirmMedicalRecord() {
           action="confirm"
           :open="expandedRecordId === record.recordId"
           @confirm="openMedicalRecordConfirmation"
+          @toggle="syncExpandedMedicalRecord"
         />
         <AppPaginator
           v-if="filteredPetRecords.length"

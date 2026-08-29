@@ -57,6 +57,7 @@ const emit = defineEmits<{
   confirm: [record: MedicalRecordDraft];
   edit: [record: MedicalRecordDraft];
   delete: [record: MedicalRecordDraft];
+  toggle: [recordId: string, open: boolean];
 }>();
 
 const encounterSectionDisplayRanks = new Map(ENCOUNTER_SECTION_ORDER.map((kind, index) => [kind, index]));
@@ -97,6 +98,11 @@ function formatLocalDateTime(value: string) {
     timeStyle: "medium",
   }).format(date);
 }
+
+function emitToggle(event: Event) {
+  const details = event.currentTarget as HTMLDetailsElement;
+  emit("toggle", props.record.recordId, details.open);
+}
 </script>
 
 <template>
@@ -133,6 +139,7 @@ function formatLocalDateTime(value: string) {
     :id="`encounter-${record.recordId}`"
     class="owner-encounter-record medical-record-entry medical-record-entry-details"
     :open="open || editing || undefined"
+    @toggle="emitToggle"
   >
     <summary class="owner-encounter-summary">
       <span class="medical-record-chevron" aria-hidden="true">

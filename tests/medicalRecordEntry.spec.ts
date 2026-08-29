@@ -276,6 +276,23 @@ describe("MedicalRecordEntry", () => {
     expect(summary.text()).not.toContain("Редакция");
   });
 
+  it("reports native details toggles", async () => {
+    const wrapper = mount(MedicalRecordEntry, {
+      props: {
+        record,
+        mode: "details",
+        confirmed: false,
+        open: true,
+      },
+    });
+
+    const details = wrapper.get("details");
+    (details.element as HTMLDetailsElement).open = false;
+    await details.trigger("toggle");
+
+    expect(wrapper.emitted("toggle")?.at(-1)).toEqual([record.recordId, false]);
+  });
+
   it("renders and activates the compact epicrisis mode", async () => {
     const wrapper = mount(MedicalRecordEntry, {
       props: { record, mode: "epicrisis", confirmed: false },

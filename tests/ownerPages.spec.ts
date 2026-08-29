@@ -744,6 +744,12 @@ describe("Owner pages", () => {
     focus.mockRestore();
     expect(scrollIntoView).toHaveBeenCalledWith({ block: "start" });
 
+    (targetRecord.element as HTMLDetailsElement).open = false;
+    await targetRecord.trigger("toggle");
+    await medicalPagination.get('button[title="Предыдущая страница"]').trigger("click");
+    await medicalPagination.get('button[title="Следующая страница"]').trigger("click");
+    expect(detail.get("#encounter-record-11").attributes()).not.toHaveProperty("open");
+
     await detail.get('.owner-epicrisis-pagination button[title="Следующая страница"]').trigger("click");
     expect(detail.findAll(".medical-record-entry-epicrisis")).toHaveLength(1);
     expect(detail.get(".owner-epicrisis-pagination").text()).toContain("Показаны 11–11 из 11");
