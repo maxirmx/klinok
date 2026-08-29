@@ -1,6 +1,6 @@
 # Klinok
 
-Klinok is a veterinary record application. 
+Klinok is a veterinary record application.
 
 ## Architecture
 
