@@ -12,9 +12,11 @@ const props = withDefaults(defineProps<{
   confirmLabel: string;
   cancelLabel?: string;
   busy?: boolean;
+  tone?: "danger" | "primary";
 }>(), {
   cancelLabel: "Отмена",
   busy: false,
+  tone: "danger",
 });
 
 const emit = defineEmits<{
@@ -40,14 +42,20 @@ function confirm() {
     :title="title"
     :description="description"
     :busy="busy"
-    role="alertdialog"
+    :role="tone === 'danger' ? 'alertdialog' : 'dialog'"
     @update:model-value="emit('update:modelValue', $event)"
   >
     <div class="confirmation-dialog-actions">
       <button class="outline-action inline" type="button" :disabled="busy" @click="cancel">
         {{ cancelLabel }}
       </button>
-      <button class="primary-action inline danger" type="button" :disabled="busy" @click="confirm">
+      <button
+        class="primary-action inline"
+        :class="{ danger: tone === 'danger' }"
+        type="button"
+        :disabled="busy"
+        @click="confirm"
+      >
         {{ confirmLabel }}
       </button>
     </div>

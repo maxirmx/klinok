@@ -40,4 +40,31 @@ describe("ConfirmationDialog", () => {
     expect(document.activeElement).toBe(opener.element);
     wrapper.unmount();
   });
+
+  it("renders a non-destructive confirmation as a regular dialog and blocks actions while busy", async () => {
+    const wrapper = mount(defineComponent({
+      components: { ConfirmationDialog },
+      setup() {
+        return { open: ref(true), busy: ref(true) };
+      },
+      template: `
+        <ConfirmationDialog
+          v-model="open"
+          title="Подтвердить запись?"
+          description="Проверьте данные."
+          confirm-label="Подтвердить"
+          :busy="busy"
+          tone="primary"
+        />
+      `,
+    }));
+
+    const dialog = wrapper.get('[role="dialog"]');
+    expect(wrapper.find('[role="alertdialog"]').exists()).toBe(false);
+    const buttons = dialog.findAll("button");
+    expect(buttons.every((button) => button.attributes("disabled") !== undefined)).toBe(true);
+    expect(buttons[1]!.classes()).not.toContain("danger");
+    await dialog.trigger("keydown", { key: "Escape" });
+    expect(wrapper.get('[role="dialog"]').exists()).toBe(true);
+  });
 });
