@@ -7,8 +7,6 @@ The cloud layout is a single API instance backed by PostgreSQL, with an internal
 Install Docker with Compose and prepare:
 
 ```text
-/srv/klinok/certificate/s.crt
-/srv/klinok/certificate/s.key
 /srv/klinok/postgres.v3/data
 ```
 
@@ -67,11 +65,19 @@ An existing v2 deployment may be kept separately as a read-only archive. Version
 
 ## Operations
 
-Useful checks:
+Shared-edge checks:
 
 ```sh
 docker compose --env-file klinok.env -f docker-compose-ghrc.yml -f docker-compose.edge.yml ps
 docker compose --env-file klinok.env -f docker-compose-ghrc.yml -f docker-compose.edge.yml logs --tail=200 api-blue ui-blue postgres-blue
+curl --fail https://klinok.sw.consulting/api/auth/session
+```
+
+Dedicated-production checks:
+
+```sh
+docker compose --env-file klinok.env -f docker-compose-ghrc.yml -f docker-compose.production.yml ps
+docker compose --env-file klinok.env -f docker-compose-ghrc.yml -f docker-compose.production.yml logs --tail=200 api-blue ui-blue postgres-blue production-edge
 curl --fail https://klinok.sw.consulting/api/auth/session
 ```
 
