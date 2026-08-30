@@ -139,7 +139,7 @@ function emitToggle(event: Event) {
     v-else
     :id="`encounter-${record.recordId}`"
     class="owner-encounter-record medical-record-entry medical-record-entry-details"
-    :open="open || editing || undefined"
+    v-bind="open || editing ? { open: true } : {}"
     @toggle="emitToggle"
   >
     <summary class="owner-encounter-summary">

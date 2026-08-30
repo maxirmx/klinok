@@ -293,6 +293,24 @@ describe("MedicalRecordEntry", () => {
     expect(wrapper.emitted("toggle")?.at(-1)).toEqual([record.recordId, false]);
   });
 
+  it("preserves a native open state across unrelated rerenders", async () => {
+    const wrapper = mount(MedicalRecordEntry, {
+      props: {
+        record,
+        mode: "details",
+        confirmed: false,
+      },
+    });
+
+    const details = wrapper.get("details");
+    (details.element as HTMLDetailsElement).open = true;
+    await details.trigger("toggle");
+    await wrapper.setProps({ confirmed: true });
+
+    expect((details.element as HTMLDetailsElement).open).toBe(true);
+    expect(details.attributes()).toHaveProperty("open");
+  });
+
   it("renders and activates the compact epicrisis mode", async () => {
     const wrapper = mount(MedicalRecordEntry, {
       props: { record, mode: "epicrisis", confirmed: false },
