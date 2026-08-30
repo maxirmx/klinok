@@ -25,9 +25,11 @@ const emit = defineEmits<{
   activate: [recordId: string];
 }>();
 
+const pageCount = computed(() => Math.max(1, Math.ceil(props.records.length / props.pageSize)));
+const currentPage = computed(() => Math.min(Math.max(1, props.page), pageCount.value));
 const pagedRecords = computed(() => props.records.slice(
-  (props.page - 1) * props.pageSize,
-  props.page * props.pageSize,
+  (currentPage.value - 1) * props.pageSize,
+  currentPage.value * props.pageSize,
 ));
 </script>
 
@@ -56,7 +58,7 @@ const pagedRecords = computed(() => props.records.slice(
     <AppPaginator
       v-if="records.length"
       class="owner-epicrisis-pagination"
-      :page="page"
+      :page="currentPage"
       :page-size="pageSize"
       :total-items="records.length"
       :page-sizes="pageSizes"

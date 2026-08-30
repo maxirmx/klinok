@@ -5,7 +5,7 @@
 import { flushPromises, mount, type VueWrapper } from "@vue/test-utils";
 import { createMemoryHistory, createRouter } from "vue-router";
 import { createPinia } from "pinia";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import AppIcon from "../src/components/AppIcon.vue";
 import OwnerScreen from "../src/screens/OwnerScreen.vue";
 import type { MedicalRecordDraft, MedicalSnapshot, PetProfile } from "../src/repositories/types";
@@ -26,6 +26,8 @@ const repositoryMocks = vi.hoisted(() => ({
 const clipboardWriteText = vi.fn().mockResolvedValue(undefined);
 const scrollIntoView = vi.fn();
 const searchDoctorDirectory = vi.hoisted(() => vi.fn());
+const originalScrollIntoViewDescriptor = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "scrollIntoView");
+const originalClipboardDescriptor = Object.getOwnPropertyDescriptor(navigator, "clipboard");
 
 vi.mock("../src/appStore", async () => {
   const { reactive, readonly } = await import("vue");
@@ -188,6 +190,19 @@ beforeEach(async () => {
   repositoryMocks.confirmRecord.mockResolvedValue(undefined);
   searchDoctorDirectory.mockResolvedValue({ items: [], page: 1, pageSize: 50, total: 0, pageCount: 1 });
   await setMedical(snapshot());
+});
+
+afterEach(() => {
+  if (originalScrollIntoViewDescriptor) {
+    Object.defineProperty(HTMLElement.prototype, "scrollIntoView", originalScrollIntoViewDescriptor);
+  } else {
+    Reflect.deleteProperty(HTMLElement.prototype, "scrollIntoView");
+  }
+  if (originalClipboardDescriptor) {
+    Object.defineProperty(navigator, "clipboard", originalClipboardDescriptor);
+  } else {
+    Reflect.deleteProperty(navigator, "clipboard");
+  }
 });
 
 describe("Owner pages", () => {
