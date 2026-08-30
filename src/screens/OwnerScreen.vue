@@ -959,7 +959,14 @@ async function confirmMedicalRecord() {
         @activate="openMedicalRecord"
       />
 
-      <LaboratoryComparison :records="petRecords" :confirmed-ids="confirmedIds" />
+      <LaboratoryComparison
+        v-if="appState.session.accountId"
+        :records="petRecords"
+        :confirmed-ids="confirmedIds"
+        :account-id="appState.session.accountId"
+        :role="props.role"
+        :pet-id="selectedPet.petId"
+      />
 
       <article id="medical-records" class="panel owner-medical-placeholder owner-medical-record">
         <div class="owner-medical-heading">
