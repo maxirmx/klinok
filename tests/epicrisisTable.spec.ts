@@ -26,6 +26,24 @@ function medicalRecord(index: number): MedicalRecordDraft {
 }
 
 describe("EpicrisisTable", () => {
+  it("sorts records by date before pagination and resets the page when direction changes", async () => {
+    const wrapper = mount(EpicrisisTable, {
+      props: { records: [medicalRecord(3), medicalRecord(1), medicalRecord(2)], page: 1, pageSize: 10 },
+    });
+    const dateHeader = wrapper.get('[role="columnheader"]');
+
+    expect(dateHeader.attributes("aria-sort")).toBe("ascending");
+    expect(wrapper.findAll(".epicrisis-row").map((row) => row.text().match(/Запись \d/)?.[0]))
+      .toEqual(["Запись 1", "Запись 2", "Запись 3"]);
+
+    await dateHeader.get("button").trigger("click");
+
+    expect(dateHeader.attributes("aria-sort")).toBe("descending");
+    expect(wrapper.findAll(".epicrisis-row").map((row) => row.text().match(/Запись \d/)?.[0]))
+      .toEqual(["Запись 3", "Запись 2", "Запись 1"]);
+    expect(wrapper.emitted("update:page")).toEqual([[1]]);
+  });
+
   it("renders the last valid page when the current page becomes out of range", async () => {
     const records = Array.from({ length: 11 }, (_, index) => medicalRecord(index + 1));
     const wrapper = mount(EpicrisisTable, {

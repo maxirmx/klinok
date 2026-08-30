@@ -53,7 +53,7 @@ const navigationByRole: Record<Role, WorkspaceNavItem[]> = {
     { id: "workspace-top", label: "Главная страница", icon: "medical-tools" },
     { id: "doctor-request-access", label: "Запросить доступ", icon: "plus" },
     { id: "doctor-pets", label: "Мед. карты", icon: "pets" },
-    { id: "doctor-new-record", label: "Новая запись", icon: "plus" },
+    { id: "doctor-new-record", label: "Сегодняшний приём", icon: "plus" },
     { id: "doctor-delegation", label: "Делегирование", icon: "user" },
     { id: "doctor-records", label: "Медкарта", icon: "medical-tools" },
   ],
@@ -91,6 +91,13 @@ const effectiveRole = computed<Role | null>(() => props.role
   ?? (props.settings || props.about
     ? appState.activeRole ?? appState.control.roles.find((request) => request.status === "approved")?.role ?? null
     : null));
+const petDetailView = computed(() => {
+  const segments = route.path.split("/").filter(Boolean);
+  return segments.length === 3
+    && (segments[0] === "owner" || segments[0] === "doctor")
+    && segments[1] === "pets"
+    && typeof route.params.petId === "string";
+});
 const navigation = computed(() => effectiveRole.value ? navigationByRole[effectiveRole.value] : []);
 const brandHref = computed(() => effectiveRole.value
   && (props.settings || props.about || effectiveRole.value === "administrator")
@@ -136,7 +143,10 @@ function administratorItemPendingCount(item: WorkspacePathNavItem): number {
 <template>
   <section
     class="workspace-shell"
-    :class="effectiveRole ? `role-${effectiveRole}` : ''"
+    :class="[
+      effectiveRole ? `role-${effectiveRole}` : '',
+      { 'pet-detail-view': petDetailView },
+    ]"
   >
     <aside class="workspace-sidebar" aria-label="Основная навигация">
       <a
