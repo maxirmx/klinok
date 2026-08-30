@@ -1,0 +1,86 @@
+<script setup lang="ts">
+// Copyright (C) 2026 Maxim [maxirmx] Samsonov (www.sw.consulting)
+// All rights reserved.
+// This file is a part of Klinok application
+
+import { computed, ref } from "vue";
+import AppIcon from "./AppIcon.vue";
+import AppPaginator from "./AppPaginator.vue";
+import MedicalRecordEntry from "./MedicalRecordEntry.vue";
+import type { MedicalRecordDraft } from "../repositories/types";
+
+const props = withDefaults(defineProps<{
+  records: readonly MedicalRecordDraft[];
+  page: number;
+  pageSize: number;
+  pageSizes?: readonly number[];
+  headingId?: string;
+}>(), {
+  pageSizes: () => [10, 20, 50],
+  headingId: "epicrisis-heading",
+});
+
+const emit = defineEmits<{
+  "update:page": [page: number];
+  "update:pageSize": [pageSize: number];
+  activate: [recordId: string];
+}>();
+
+const dateSort = ref<"asc" | "desc">("asc");
+const sortedRecords = computed(() => [...props.records].sort((left, right) => {
+  const order = left.encounterDate.localeCompare(right.encounterDate) || left.recordId.localeCompare(right.recordId);
+  return dateSort.value === "asc" ? order : -order;
+}));
+const pageCount = computed(() => Math.max(1, Math.ceil(props.records.length / props.pageSize)));
+const currentPage = computed(() => Math.min(Math.max(1, props.page), pageCount.value));
+const pagedRecords = computed(() => sortedRecords.value.slice(
+  (currentPage.value - 1) * props.pageSize,
+  currentPage.value * props.pageSize,
+));
+function toggleDateSort() {
+  dateSort.value = dateSort.value === "asc" ? "desc" : "asc";
+  emit("update:page", 1);
+}
+</script>
+
+<template>
+  <article class="panel owner-epicrisis" :aria-labelledby="headingId">
+    <h2 :id="headingId">Эпикриз</h2>
+    <p v-if="!records.length" class="owner-epicrisis-empty">Записей для эпикриза пока нет.</p>
+    <div v-else class="owner-access-table-wrap epicrisis-table-wrap">
+      <div class="epicrisis-table-header">
+        <span role="columnheader" :aria-sort="dateSort === 'asc' ? 'ascending' : 'descending'">
+          <button class="table-sort-button" type="button" @click="toggleDateSort">
+            <span>Дата</span>
+            <AppIcon name="chevron-down" :class="{ descending: dateSort === 'desc' }" />
+          </button>
+        </span>
+        <span>Что случилось</span>
+        <span>Диагноз</span>
+        <span>Итог</span>
+      </div>
+      <div class="owner-epicrisis-list">
+        <MedicalRecordEntry
+          v-for="record in pagedRecords"
+          :key="record.recordId"
+          :record="record"
+          mode="epicrisis"
+          :confirmed="false"
+          @activate="emit('activate', $event)"
+        />
+      </div>
+    </div>
+    <AppPaginator
+      v-if="records.length"
+      class="owner-epicrisis-pagination"
+      :page="currentPage"
+      :page-size="pageSize"
+      :total-items="records.length"
+      :page-sizes="pageSizes"
+      page-size-label="Записей на странице"
+      aria-label="Навигация по эпикризу"
+      @update:page="emit('update:page', $event)"
+      @update:page-size="emit('update:pageSize', $event)"
+    />
+  </article>
+</template>

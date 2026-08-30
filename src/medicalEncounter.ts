@@ -416,10 +416,14 @@ export function parseDiagnosisDraft(draft: DiagnosisDraft): { value?: DiagnosisS
 }
 
 const paths = new Map<string, string>();
+const secondLevelLabels = new Map<string, string>();
 function indexPaths(nodes: WhatHappenedOption[], parents: string[] = []) {
   for (const node of nodes) {
     const path = [...parents, node.label];
-    if (!node.children?.length) paths.set(node.id, path.join(" › "));
+    if (!node.children?.length) {
+      paths.set(node.id, path.join(" › "));
+      secondLevelLabels.set(node.id, path[1] ?? node.label);
+    }
     else indexPaths(node.children, path);
   }
 }
@@ -427,6 +431,10 @@ indexPaths(WHAT_HAPPENED_TREE.children ?? []);
 
 export function whatHappenedPath(id: string): string {
   return paths.get(id) ?? id;
+}
+
+export function whatHappenedSecondLevelLabel(id: string): string {
+  return secondLevelLabels.get(id) ?? id;
 }
 
 export function isWhatHappenedValue(value: unknown): value is WhatHappenedSectionValue {

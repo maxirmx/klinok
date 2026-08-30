@@ -5,8 +5,9 @@
 import { flushPromises, mount, type VueWrapper } from "@vue/test-utils";
 import { createMemoryHistory, createRouter } from "vue-router";
 import { createPinia } from "pinia";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import AppIcon from "../src/components/AppIcon.vue";
+import LaboratoryComparison from "../src/components/LaboratoryComparison.vue";
 import OwnerScreen from "../src/screens/OwnerScreen.vue";
 import type { MedicalRecordDraft, MedicalSnapshot, PetProfile } from "../src/repositories/types";
 
@@ -24,7 +25,10 @@ const repositoryMocks = vi.hoisted(() => ({
   confirmRecord: vi.fn().mockResolvedValue(undefined),
 }));
 const clipboardWriteText = vi.fn().mockResolvedValue(undefined);
+const scrollIntoView = vi.fn();
 const searchDoctorDirectory = vi.hoisted(() => vi.fn());
+const originalScrollIntoViewDescriptor = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "scrollIntoView");
+const originalClipboardDescriptor = Object.getOwnPropertyDescriptor(navigator, "clipboard");
 
 vi.mock("../src/appStore", async () => {
   const { reactive, readonly } = await import("vue");
@@ -38,6 +42,7 @@ vi.mock("../src/appStore", async () => {
   };
   const state = reactive({
     feedback: null as { kind: "success" | "error"; text: string } | null,
+    session: { authenticated: true, accountId: "owner-1" as string | undefined },
     control: {
       profile: { firstName: "Ольга", patronymic: "", lastName: "Владелец" },
       profiles: [],
@@ -57,6 +62,7 @@ vi.mock("../src/appStore", async () => {
     requireRepository: () => ({ medical: repositoryMocks }),
     searchDoctorDirectory,
     setOwnerMedicalState: (medical: MedicalSnapshot) => { state.medical = medical; },
+    setOwnerSessionAccountId: (accountId: string | undefined) => { state.session.accountId = accountId; },
   };
 });
 
@@ -139,7 +145,14 @@ async function setMedical(medical: MedicalSnapshot) {
   store.setOwnerMedicalState(medical);
 }
 
-async function mountAt(path: string, scenarioId: string) {
+async function setSessionAccountId(accountId: string | undefined) {
+  const store = await import("../src/appStore") as typeof import("../src/appStore") & {
+    setOwnerSessionAccountId: (value: string | undefined) => void;
+  };
+  store.setOwnerSessionAccountId(accountId);
+}
+
+async function mountAt(path: string, scenarioId: string, attachToDocument = false) {
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [
@@ -157,6 +170,7 @@ async function mountAt(path: string, scenarioId: string) {
   return mount(OwnerScreen, {
     props: { role: "owner", scenarioId },
     global: { plugins: [createPinia(), router] },
+    ...(attachToDocument ? { attachTo: document.body } : {}),
   });
 }
 
@@ -171,6 +185,12 @@ function labelled(wrapper: VueWrapper, text: string) {
 
 beforeEach(async () => {
   vi.clearAllMocks();
+  Object.defineProperty(HTMLElement.prototype, "scrollIntoView", {
+    configurable: true,
+    value: scrollIntoView,
+  });
+  localStorage.clear();
+  await setSessionAccountId("owner-1");
   Object.defineProperty(navigator, "clipboard", {
     configurable: true,
     value: { writeText: clipboardWriteText },
@@ -182,6 +202,19 @@ beforeEach(async () => {
   repositoryMocks.confirmRecord.mockResolvedValue(undefined);
   searchDoctorDirectory.mockResolvedValue({ items: [], page: 1, pageSize: 50, total: 0, pageCount: 1 });
   await setMedical(snapshot());
+});
+
+afterEach(() => {
+  if (originalScrollIntoViewDescriptor) {
+    Object.defineProperty(HTMLElement.prototype, "scrollIntoView", originalScrollIntoViewDescriptor);
+  } else {
+    Reflect.deleteProperty(HTMLElement.prototype, "scrollIntoView");
+  }
+  if (originalClipboardDescriptor) {
+    Object.defineProperty(navigator, "clipboard", originalClipboardDescriptor);
+  } else {
+    Reflect.deleteProperty(navigator, "clipboard");
+  }
 });
 
 describe("Owner pages", () => {
@@ -275,9 +308,15 @@ describe("Owner pages", () => {
     const wrapper = await mountAt("/owner/pets/pet-1", "owner-pet-detail");
 
     expect(wrapper.get(".owner-medical-record h2").text()).toBe("Медицинская карта");
-    expect(wrapper.text()).not.toContain("Эпикриз");
+    expect(wrapper.get(".owner-epicrisis h2").text()).toBe("Эпикриз");
     expect(wrapper.text()).not.toContain("Предыдущие приёмы");
-    expect(wrapper.find(".medical-record-entry-epicrisis").exists()).toBe(false);
+    expect(wrapper.findAll(".medical-record-entry-epicrisis")).toHaveLength(1);
+    expect(wrapper.findAll(".epicrisis-table-header > span").map((header) => header.text()))
+      .toEqual(["Дата", "Что случилось", "Диагноз", "Итог"]);
+    expect(wrapper.get(".epicrisis-table-wrap").classes()).toContain("owner-access-table-wrap");
+    expect(wrapper.get(".medical-record-entry-epicrisis").text()).toContain("Контрольный осмотр");
+    expect(wrapper.get(".medical-record-entry-epicrisis").text()).not.toContain("Всё хорошо, необходимо");
+    expect(wrapper.get(".medical-record-entry-epicrisis").text()).toContain("Без жалоб");
     expect(wrapper.findAll(".medical-record-entry-details")).toHaveLength(1);
     expect(wrapper.get(".medical-record-entry-details").text()).toContain("Ожидает подтверждения");
     const confirm = wrapper.get(".owner-encounter-confirm");
@@ -429,6 +468,29 @@ describe("Owner pages", () => {
     expect(history.get("h2").text()).toBe("История лабораторных показателей");
     expect(history.classes()).toContain("panel");
     expect(wrapper.get(".owner-medical-record").find(".laboratory-comparison").exists()).toBe(false);
+    const detailPanels = wrapper.findAll(".owner-pet-detail > .panel").map((panel) => panel.element);
+    expect(detailPanels.indexOf(wrapper.get(".owner-epicrisis").element))
+      .toBeLessThan(detailPanels.indexOf(history.element));
+    expect(wrapper.getComponent(LaboratoryComparison).props()).toMatchObject({
+      accountId: "owner-1",
+      role: "owner",
+      petId: "pet-1",
+    });
+    await setSessionAccountId(undefined);
+    await wrapper.vm.$nextTick();
+    expect(wrapper.findComponent(LaboratoryComparison).exists()).toBe(false);
+    expect([...Array.from({ length: localStorage.length }, (_, index) => localStorage.key(index))])
+      .not.toContain("klinok:v3:undefined:owner:pet-1:laboratory-comparison");
+  });
+
+  it("renders an empty epicrisis panel for a pet without medical records", async () => {
+    await setMedical(snapshot({ pets: [pet] }));
+    const wrapper = await mountAt("/owner/pets/pet-1", "owner-pet-detail");
+
+    const epicrisis = wrapper.get(".owner-epicrisis");
+    expect(epicrisis.get("h2").text()).toBe("Эпикриз");
+    expect(epicrisis.get(".owner-epicrisis-empty").text()).toBe("Записей для эпикриза пока нет.");
+    expect(epicrisis.find(".app-paginator").exists()).toBe(false);
   });
 
   it("offers fixed species and sex values and creates a complete profile with notes", async () => {
@@ -655,7 +717,7 @@ describe("Owner pages", () => {
         };
       }),
     }));
-    const detail = await mountAt("/owner/pets/pet-1", "owner-pet-detail");
+    const detail = await mountAt("/owner/pets/pet-1", "owner-pet-detail", true);
 
     expect(detail.get(".workspace-topbar h1").text()).toBe("Кабинет владельца");
     expect(detail.find(".owner-page-heading").exists()).toBe(false);
@@ -666,7 +728,15 @@ describe("Owner pages", () => {
     expect(detail.get(".owner-pet-profile-details").text()).toContain("Шарик");
     expect(detail.get(".owner-pet-profile-details").text()).toContain("Собака · Бигль");
     expect(detail.get(".owner-medical-record h2").text()).toBe("Медицинская карта");
-    expect(detail.find(".medical-record-entry-epicrisis").exists()).toBe(false);
+    expect(detail.get(".owner-epicrisis h2").text()).toBe("Эпикриз");
+    expect(detail.findAll(".medical-record-entry-epicrisis")).toHaveLength(10);
+    const epicrisisDateHeader = detail.get('.owner-epicrisis [role="columnheader"]');
+    expect(epicrisisDateHeader.attributes("aria-sort")).toBe("ascending");
+    expect(detail.get(".medical-record-entry-epicrisis").text()).toContain("01.07.2026");
+    await epicrisisDateHeader.get("button").trigger("click");
+    expect(epicrisisDateHeader.attributes("aria-sort")).toBe("descending");
+    expect(detail.get(".medical-record-entry-epicrisis").text()).toContain("11.07.2026");
+    expect(detail.get(".owner-epicrisis-pagination").text()).toContain("Показаны 1–10 из 11");
     expect(detail.findAll("details.owner-encounter-record")).toHaveLength(10);
     const encounterRecord = detail.get("details.owner-encounter-record");
     expect(encounterRecord.get("summary").text()).toContain("Семён Врач");
@@ -676,7 +746,7 @@ describe("Owner pages", () => {
     expect(medicalPagination.text()).toContain("Показаны 1–10 из 11");
     await medicalPagination.get('button[title="Следующая страница"]').trigger("click");
     expect(detail.findAll("details.owner-encounter-record")).toHaveLength(1);
-    expect(medicalPagination.text()).toContain("Показаны 11–11 из 11");
+    expect(detail.get(".owner-medical-pagination").text()).toContain("Показаны 11–11 из 11");
 
     const filters = detail.get(".medical-record-filters");
     expect(filters.findAll('select[aria-label="Раздел"] option').map((option) => option.text())).toEqual([
@@ -706,6 +776,36 @@ describe("Owner pages", () => {
     expect(detail.find("details.owner-encounter-record").exists()).toBe(false);
     expect(detail.text()).toContain("Записи по выбранным условиям не найдены.");
 
+    const focus = vi.spyOn(HTMLElement.prototype, "focus");
+    const latestEpicrisis = detail.findAll(".medical-record-entry-epicrisis")
+      .find((row) => row.text().includes("11.07.2026"))!;
+    await latestEpicrisis.trigger("click");
+    await flushPromises();
+    expect(filters.get<HTMLInputElement>('input[type="search"]').element.value).toBe("");
+    expect(filters.get<HTMLInputElement>('.medical-record-date-filter input[type="date"]').element.value).toBe("");
+    expect(filters.get<HTMLSelectElement>('select[aria-label="Статус"]').element.value).toBe("");
+    expect(detail.get(".owner-medical-pagination").text()).toContain("Показаны 11–11 из 11");
+    const targetRecord = detail.get("#encounter-record-11");
+    expect(targetRecord.attributes()).toHaveProperty("open");
+    expect(focus.mock.instances.at(-1)).toBe(targetRecord.get("summary").element);
+    focus.mockRestore();
+    expect(scrollIntoView).toHaveBeenCalledWith({ block: "start" });
+
+    (targetRecord.element as HTMLDetailsElement).open = false;
+    await targetRecord.trigger("toggle");
+    await medicalPagination.get('button[title="Предыдущая страница"]').trigger("click");
+    await medicalPagination.get('button[title="Следующая страница"]').trigger("click");
+    expect(detail.get("#encounter-record-11").attributes()).not.toHaveProperty("open");
+
+    await detail.get('.owner-epicrisis-pagination button[title="Следующая страница"]').trigger("click");
+    expect(detail.findAll(".medical-record-entry-epicrisis")).toHaveLength(1);
+    expect(detail.get(".owner-epicrisis-pagination").text()).toContain("Показаны 11–11 из 11");
+    expect(detail.get(".owner-medical-pagination").text()).toContain("Показаны 11–11 из 11");
+    await detail.get('.owner-epicrisis-pagination select').setValue("20");
+    expect(detail.findAll(".medical-record-entry-epicrisis")).toHaveLength(11);
+    expect(detail.get(".owner-epicrisis-pagination").text()).toContain("Показаны 1–11 из 11");
+
+    detail.unmount();
     const wrapper = await mountAt("/owner/pets/pet-1/access", "owner-pet-access");
     expect(wrapper.get(".workspace-topbar h1").text()).toBe("Кабинет владельца");
     expect(wrapper.get(".owner-page-heading h2").text()).toBe("Доступ врачей");
@@ -891,6 +991,7 @@ describe("Owner pages", () => {
 
     await setMedical(snapshot({ pets: [pet] }));
     const detail = await mountAt("/owner/pets/pet-1", "owner-pet-detail");
+    expect(detail.get(".workspace-shell").classes()).toContain("pet-detail-view");
     expect(detail.get(".owner-pet-profile-details").text())
       .toMatch(/\d+ полн(?:ый|ых) (?:год|года|лет) · дата рождения 17\.06\.2022/);
     expect(detail.findAll(".owner-profile-fields dt").map((node) => node.text())).toEqual([

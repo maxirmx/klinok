@@ -9,6 +9,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { DoctorPetAccessDto, PetAccessRequest } from "@klinok/contracts";
 import AppCatalogCombobox from "../src/components/AppCatalogCombobox.vue";
 import AppIcon from "../src/components/AppIcon.vue";
+import LaboratoryComparison from "../src/components/LaboratoryComparison.vue";
 import LaboratoryTestsEditor from "../src/components/LaboratoryTestsEditor.vue";
 import InstrumentalFindingEditor from "../src/components/InstrumentalFindingEditor.vue";
 import InstrumentalTestsEditor from "../src/components/InstrumentalTestsEditor.vue";
@@ -38,7 +39,7 @@ vi.mock("../src/appStore", async () => {
     activeRole: "doctor" as const,
     feedback: null,
     syncNotifications: [] as SyncNotification[],
-    session: { authenticated: true, accountId: "doctor-1" },
+    session: { authenticated: true, accountId: "doctor-1" as string | undefined },
     control: {
       profile: { firstName: "Вера", lastName: "Врач" },
       profiles: [], roles: [], allRoles: [], devices: [], pendingQueue: [], notifications: [], roleAudit: [],
@@ -56,6 +57,7 @@ vi.mock("../src/appStore", async () => {
     searchPetDirectory: directoryMocks.searchPetDirectory,
     setDoctorMedicalState: (medical: MedicalSnapshot) => { state.medical = medical; },
     setDoctorSyncNotifications: (notifications: SyncNotification[]) => { state.syncNotifications = notifications; },
+    setDoctorSessionAccountId: (accountId: string | undefined) => { state.session.accountId = accountId; },
   };
 });
 
@@ -194,7 +196,14 @@ async function setSyncNotifications(notifications: SyncNotification[]) {
   store.setDoctorSyncNotifications(notifications);
 }
 
-async function mountAt(path: string, scenarioId: string) {
+async function setSessionAccountId(accountId: string | undefined) {
+  const store = await import("../src/appStore") as typeof import("../src/appStore") & {
+    setDoctorSessionAccountId: (value: string | undefined) => void;
+  };
+  store.setDoctorSessionAccountId(accountId);
+}
+
+async function mountAt(path: string, scenarioId: string, attachToDocument = false) {
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [
@@ -208,12 +217,17 @@ async function mountAt(path: string, scenarioId: string) {
   });
   await router.push(path);
   await router.isReady();
-  return mount(DoctorScreen, { props: { role: "doctor", scenarioId }, global: { plugins: [createPinia(), router] } });
+  return mount(DoctorScreen, {
+    props: { role: "doctor", scenarioId },
+    global: { plugins: [createPinia(), router] },
+    ...(attachToDocument ? { attachTo: document.body } : {}),
+  });
 }
 
 beforeEach(async () => {
   vi.clearAllMocks();
   localStorage.clear();
+  await setSessionAccountId("doctor-1");
   await setMedical(snapshot());
   await setSyncNotifications([]);
   directoryMocks.loadDoctorPetAccesses.mockResolvedValue(accessPage([doctorAccess()]));
@@ -2054,17 +2068,33 @@ describe("Doctor pages", () => {
 
   it("uses verified status in the medical card and does not offer changes to a confirmed record", async () => {
     await setMedical(snapshot(undefined, { records: [medicalRecord], confirmedRecordIds: [medicalRecord.recordId] }));
-    const wrapper = await mountAt("/doctor/pets/pet-1", "doctor-pet-detail");
+    const wrapper = await mountAt("/doctor/pets/pet-1", "doctor-pet-detail", true);
     await flushPromises();
 
+    expect(wrapper.get(".workspace-shell").classes()).toContain("pet-detail-view");
     const details = wrapper.get(".medical-record-entry-details");
     expect(wrapper.get(".doctor-medical-record h2").text()).toBe("Медицинская карта");
-    expect(wrapper.text()).not.toContain("Эпикриз");
+    const epicrisis = wrapper.get(".owner-epicrisis");
+    expect(epicrisis.get("h2").text()).toBe("Эпикриз");
+    expect(epicrisis.findAll(".epicrisis-table-header > span").map((header) => header.text()))
+      .toEqual(["Дата", "Что случилось", "Диагноз", "Итог"]);
+    expect(epicrisis.get(".epicrisis-table-wrap").classes()).toContain("owner-access-table-wrap");
+    expect(epicrisis.findAll(".medical-record-entry-epicrisis")).toHaveLength(1);
+    const detailPanels = wrapper.findAll(".doctor-pet-detail > .panel").map((panel) => panel.element);
+    expect(detailPanels.indexOf(epicrisis.element))
+      .toBeLessThan(detailPanels.indexOf(wrapper.get(".encounter-editor").element));
     expect(wrapper.text()).not.toContain("Предыдущие приёмы");
-    expect(wrapper.find(".medical-record-entry-epicrisis").exists()).toBe(false);
     expect(details.text()).toContain("Подтверждена");
     expect(details.find(".medical-record-edit").exists()).toBe(false);
+    const collapsedSummary = details.get("summary");
+    expect(collapsedSummary.text()).toContain("Вера Врач");
+    expect(collapsedSummary.text()).not.toContain("Не ест");
+    expect(collapsedSummary.text()).not.toContain("Итог");
+    expect(collapsedSummary.text()).not.toContain("Редакция");
 
+    await epicrisis.get(".medical-record-entry-epicrisis").trigger("click");
+    await flushPromises();
+    expect(details.attributes()).toHaveProperty("open");
     expect(wrapper.get(".encounter-editor h2").text()).toBe("Сегодняшний приём");
     const saveEncounterButton = wrapper.get('.encounter-editor-heading button[title="Сохранить запись"]');
     expect(saveEncounterButton.text()).toBe("");
@@ -2095,6 +2125,40 @@ describe("Doctor pages", () => {
     expect(wrapper.find(".medical-record-entry-details").exists()).toBe(false);
     await wrapper.get('.doctor-history-filters select[aria-label="Статус"]').setValue("confirmed");
     expect(wrapper.findAll(".medical-record-entry-details")).toHaveLength(1);
+    wrapper.unmount();
+  });
+
+  it("sorts the doctor epicrisis by date and clamps its independent page", async () => {
+    const records = Array.from({ length: 11 }, (_, index): MedicalRecordDraft => {
+      const day = String(index + 1).padStart(2, "0");
+      const timestamp = `2026-07-${day}T10:00:00.000Z`;
+      return {
+        ...medicalRecord,
+        recordId: `record-${day}`,
+        encounterDate: `2026-07-${day}`,
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      };
+    });
+    await setMedical(snapshot(undefined, { records }));
+    const wrapper = await mountAt("/doctor/pets/pet-1", "doctor-pet-detail");
+    await flushPromises();
+
+    const epicrisis = wrapper.get(".owner-epicrisis");
+    expect(epicrisis.findAll(".medical-record-entry-epicrisis")).toHaveLength(10);
+    const dateHeader = epicrisis.get('[role="columnheader"]');
+    expect(dateHeader.attributes("aria-sort")).toBe("ascending");
+    expect(epicrisis.get(".medical-record-entry-epicrisis").text()).toContain("01.07.2026");
+    await dateHeader.get("button").trigger("click");
+    expect(dateHeader.attributes("aria-sort")).toBe("descending");
+    expect(epicrisis.get(".medical-record-entry-epicrisis").text()).toContain("11.07.2026");
+    await epicrisis.get('button[title="Следующая страница"]').trigger("click");
+    expect(epicrisis.findAll(".medical-record-entry-epicrisis")).toHaveLength(1);
+    expect(epicrisis.get(".medical-record-entry-epicrisis").text()).toContain("01.07.2026");
+
+    await setMedical(snapshot(undefined, { records: [records[0]!] }));
+    await flushPromises();
+    expect(epicrisis.get(".owner-epicrisis-pagination").text()).toContain("Показаны 1–1 из 1");
   });
 
   it("renders laboratory history as a bordered panel outside the medical card", async () => {
@@ -2106,6 +2170,16 @@ describe("Doctor pages", () => {
     expect(history.get("h2").text()).toBe("История лабораторных показателей");
     expect(history.classes()).toContain("panel");
     expect(wrapper.get(".doctor-medical-record").find(".laboratory-comparison").exists()).toBe(false);
+    expect(wrapper.getComponent(LaboratoryComparison).props()).toMatchObject({
+      accountId: "doctor-1",
+      role: "doctor",
+      petId: "pet-1",
+    });
+    await setSessionAccountId(undefined);
+    await wrapper.vm.$nextTick();
+    expect(wrapper.findComponent(LaboratoryComparison).exists()).toBe(false);
+    expect([...Array.from({ length: localStorage.length }, (_, index) => localStorage.key(index))])
+      .not.toContain("klinok:v3:undefined:doctor:pet-1:laboratory-comparison");
   });
 
   it("deletes an unconfirmed encounter after confirmation", async () => {
