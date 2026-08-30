@@ -15,7 +15,6 @@ import {
   diagnosisConfirmedSummary,
   diagnosisDifferentialCustomTexts,
   diagnosisLabel,
-  encounterSummary,
   freeText,
   generalDataMeasurements,
   isFreeTextValue,
@@ -33,6 +32,7 @@ import {
   vaccinationDetails,
   whatHappenedComment,
   whatHappenedPath,
+  whatHappenedSecondLevelLabel,
   whatHappenedSelectedIds,
 } from "../medicalEncounter";
 import { isTherapeuticAppointmentValue } from "../therapeuticAppointment";
@@ -54,10 +54,11 @@ const props = withDefaults(defineProps<{
 });
 
 const emit = defineEmits<{
-  activate: [record: MedicalRecordDraft];
+  activate: [recordId: string];
   confirm: [record: MedicalRecordDraft];
   edit: [record: MedicalRecordDraft];
   delete: [record: MedicalRecordDraft];
+  toggle: [recordId: string, open: boolean];
 }>();
 
 const encounterSectionDisplayRanks = new Map(ENCOUNTER_SECTION_ORDER.map((kind, index) => [kind, index]));
@@ -72,17 +73,18 @@ const populatedSections = computed(() =>
       - (encounterSectionDisplayRanks.get(right.kind) ?? Number.MAX_SAFE_INTEGER)),
 );
 
-const conditionHeadlines = computed(() => {
-  const selectedIds = whatHappenedSelectedIds(props.record.sections["what-happened"]?.value);
-  return [
-    { id: "well", label: "Всё хорошо", tone: "well" },
-    { id: "problem", label: "Не всё хорошо", tone: "problem" },
-    { id: "critical", label: "Всё плохо", tone: "critical" },
-  ].filter((condition) => selectedIds.some((id) => id === condition.id || id.startsWith(`${condition.id}.`)));
+const epicrisisWhatHappened = computed(() => {
+  const value = props.record.sections["what-happened"]?.value;
+  const paths = [...new Set(whatHappenedSelectedIds(value).map(whatHappenedSecondLevelLabel))];
+  const comment = whatHappenedComment(value).trim();
+  return {
+    paths,
+    comment,
+    fallback: paths.length || comment ? "" : props.record.text.trim(),
+  };
 });
-
-const collapsedOutcome = computed(() => outcomeSummary(props.record.sections.outcome?.value) || "Не заполнено");
-const collapsedDiagnosis = computed(() => diagnosisConfirmedSummary(props.record.sections.diagnosis?.value));
+const epicrisisDiagnosis = computed(() => diagnosisConfirmedSummary(props.record.sections.diagnosis?.value));
+const epicrisisOutcome = computed(() => outcomeSummary(props.record.sections.outcome?.value));
 
 function formatDate(value: string) {
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
@@ -97,6 +99,11 @@ function formatLocalDateTime(value: string) {
     timeStyle: "medium",
   }).format(date);
 }
+
+function emitToggle(event: Event) {
+  const details = event.currentTarget as HTMLDetailsElement;
+  emit("toggle", props.record.recordId, details.open);
+}
 </script>
 
 <template>
@@ -105,14 +112,26 @@ function formatLocalDateTime(value: string) {
     class="epicrisis-row medical-record-entry medical-record-entry-epicrisis"
     type="button"
     :aria-label="`Открыть приём от ${formatDate(record.encounterDate)}`"
-    @click="emit('activate', record)"
+    @click="emit('activate', record.recordId)"
   >
-    <span>{{ formatDate(record.encounterDate) }}</span>
-    <strong>{{ encounterSummary(record) }}</strong>
-    <span>{{ diagnosisConfirmedSummary(record.sections.diagnosis?.value) || 'Не заполнено' }}</span>
-    <span>{{ outcomeSummary(record.sections.outcome?.value) || 'Не заполнено' }}</span>
-    <span class="status-badge" :class="confirmed ? 'approved' : 'pending'">
-      {{ confirmed ? 'Подтверждена' : 'Ожидает подтверждения' }}
+    <span class="epicrisis-cell epicrisis-date">
+      <small class="epicrisis-cell-label">Дата</small>
+      <span>{{ formatDate(record.encounterDate) }}</span>
+    </span>
+    <span class="epicrisis-cell epicrisis-what-happened">
+      <small class="epicrisis-cell-label">Что случилось</small>
+      <span v-for="path in epicrisisWhatHappened.paths" :key="path">{{ path }}</span>
+      <span v-if="epicrisisWhatHappened.comment">{{ epicrisisWhatHappened.comment }}</span>
+      <span v-if="epicrisisWhatHappened.fallback">{{ epicrisisWhatHappened.fallback }}</span>
+      <span v-if="!epicrisisWhatHappened.paths.length && !epicrisisWhatHappened.comment && !epicrisisWhatHappened.fallback">—</span>
+    </span>
+    <span v-if="epicrisisDiagnosis" class="epicrisis-cell epicrisis-diagnosis">
+      <small class="epicrisis-cell-label">Диагноз</small>
+      <span>{{ epicrisisDiagnosis }}</span>
+    </span>
+    <span class="epicrisis-cell epicrisis-outcome">
+      <small class="epicrisis-cell-label">Итог</small>
+      <span>{{ epicrisisOutcome || '—' }}</span>
     </span>
   </button>
 
@@ -121,6 +140,7 @@ function formatLocalDateTime(value: string) {
     :id="`encounter-${record.recordId}`"
     class="owner-encounter-record medical-record-entry medical-record-entry-details"
     :open="open || editing || undefined"
+    @toggle="emitToggle"
   >
     <summary class="owner-encounter-summary">
       <span class="medical-record-chevron" aria-hidden="true">
@@ -128,18 +148,8 @@ function formatLocalDateTime(value: string) {
         <AppIcon class="medical-record-chevron-expanded" name="chevron-down" />
       </span>
       <span class="owner-encounter-summary-copy">
-        <strong>
-          {{ formatDate(record.encounterDate) }} ·
-          <template v-if="conditionHeadlines.length">
-            <template v-for="(condition, index) in conditionHeadlines" :key="condition.id">
-              <span v-if="index">; </span><span class="medical-record-condition" :class="`medical-record-condition-${condition.tone}`">{{ condition.label }}</span>
-            </template>
-          </template>
-          <template v-else>{{ encounterSummary(record) }}</template>
-          <span v-if="collapsedDiagnosis" class="medical-record-collapsed-diagnosis"> · Диагноз: {{ collapsedDiagnosis }}</span>
-          <span class="medical-record-collapsed-outcome"> · Итог: {{ collapsedOutcome }}</span>
-        </strong>
-        <small>Редакция {{ record.revision }} · {{ record.authorDisplayName }}</small>
+        <strong>{{ formatDate(record.encounterDate) }}</strong>
+        <small>{{ record.authorDisplayName }}</small>
       </span>
       <span class="status-badge" :class="confirmed ? 'approved' : 'pending'">
         {{ confirmed ? 'Подтверждена' : 'Ожидает подтверждения' }}

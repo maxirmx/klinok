@@ -80,15 +80,26 @@ describe("About page", () => {
     const technicalHelp = wrapper.findAll(".about-card")
       .find((card) => card.get("h3").text() === "Техническая помощь")!;
     expect(technicalHelp.findAll("li").map((item) => item.text())).toEqual([
-      "Яшина Полина Алексеевна",
-      "Радевич Мария Александровна",
-      "Шпиньков Дмитрий Владимирович",
-      "Шкловская Полина Евгеньевна",
-      "Назаренко Елена Алексеевна",
       "Имберт Габриэла Сергеевна",
+      "Назаренко Елена Алексеевна",
+      "Радевич Мария Александровна",
+      "Шкловская Полина Евгеньевна",
+      "Шпиньков Дмитрий Владимирович",
+      "Яшина Полина Алексеевна",
     ]);
-    expect(wrapper.get(".about-sponsors").text()).toContain("Маликов Иван Андреевичведущий, блогер, инфлюенсер");
-    expect(wrapper.get(".about-sponsors").findAll("li")).toHaveLength(6);
+    const sponsors = wrapper.get(".about-sponsors");
+    expect(sponsors.findAll("li > span").map((item) => item.text())).toEqual([
+      "Букреев Михаил",
+      "Елкина Таисия Сергеевна",
+      "Маликов Иван Андреевич",
+      "Никольская Наталья",
+      "Павлова Екатерина Андреевна",
+      "Порада Тамара Вячеславовна",
+      "Пузырко Тимур",
+      "Пущин Владимир",
+      "Строкова Евгения Александровна",
+    ]);
+    expect(sponsors.text()).toContain("Маликов Иван Андреевичведущий, блогер, инфлюенсер");
   });
 
   it("is reachable before sign-in and returns to the login page", async () => {
