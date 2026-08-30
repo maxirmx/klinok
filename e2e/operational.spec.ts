@@ -1087,7 +1087,7 @@ test("fresh provisioning, Doctor approval, grant, draft, and confirmation", asyn
     .toBe(true);
 
   const createEditorHeading = doctorPage.locator(".doctor-pet-detail > .encounter-editor .encounter-editor-heading");
-  await expect(createEditorHeading.getByRole("heading", { name: "Новая запись", exact: true })).toBeVisible();
+  await expect(createEditorHeading.getByRole("heading", { name: "Сегодняшний приём", exact: true })).toBeVisible();
   const createStickyTargets = [
     therapeuticDelete,
     hemoglobinInput,
