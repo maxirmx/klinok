@@ -15,6 +15,7 @@ import AppIcon from "../components/AppIcon.vue";
 import AppPaginator from "../components/AppPaginator.vue";
 import AppSelect from "../components/AppSelect.vue";
 import ConfirmationDialog from "../components/ConfirmationDialog.vue";
+import EpicrisisTable from "../components/EpicrisisTable.vue";
 import MedicalRecordEntry from "../components/MedicalRecordEntry.vue";
 import LaboratoryComparison from "../components/LaboratoryComparison.vue";
 import ModalDialog from "../components/ModalDialog.vue";
@@ -170,10 +171,6 @@ function compareMedicalRecords(
 const epicrisisRecords = computed(() => [...petRecords.value]
   .sort((left, right) => compareMedicalRecords(left, right, "desc")));
 const epicrisisPageCount = computed(() => Math.max(1, Math.ceil(epicrisisRecords.value.length / epicrisisPageSize.value)));
-const pagedEpicrisisRecords = computed(() => epicrisisRecords.value.slice(
-  (epicrisisPage.value - 1) * epicrisisPageSize.value,
-  epicrisisPage.value * epicrisisPageSize.value,
-));
 const filteredPetRecords = computed(() => petRecords.value.filter((record) => {
   const confirmed = confirmedIds.value.has(record.recordId);
   if (medicalStatus.value === "confirmed" && !confirmed) return false;
@@ -953,30 +950,14 @@ async function confirmMedicalRecord() {
         </template>
       </PetProfileView>
 
-      <article class="panel owner-epicrisis" aria-labelledby="owner-epicrisis-heading">
-        <h2 id="owner-epicrisis-heading">Эпикриз</h2>
-        <p v-if="!epicrisisRecords.length" class="owner-epicrisis-empty">Записей для эпикриза пока нет.</p>
-        <div v-else class="owner-epicrisis-list">
-          <MedicalRecordEntry
-            v-for="record in pagedEpicrisisRecords"
-            :key="record.recordId"
-            :record="record"
-            mode="epicrisis"
-            :confirmed="confirmedIds.has(record.recordId)"
-            @activate="openMedicalRecord"
-          />
-        </div>
-        <AppPaginator
-          v-if="epicrisisRecords.length"
-          v-model:page="epicrisisPage"
-          v-model:page-size="epicrisisPageSize"
-          class="owner-epicrisis-pagination"
-          :total-items="epicrisisRecords.length"
-          :page-sizes="pageSizes"
-          page-size-label="Записей на странице"
-          aria-label="Навигация по эпикризу"
-        />
-      </article>
+      <EpicrisisTable
+        v-model:page="epicrisisPage"
+        v-model:page-size="epicrisisPageSize"
+        :records="epicrisisRecords"
+        :page-sizes="pageSizes"
+        heading-id="owner-epicrisis-heading"
+        @activate="openMedicalRecord"
+      />
 
       <LaboratoryComparison :records="petRecords" :confirmed-ids="confirmedIds" />
 

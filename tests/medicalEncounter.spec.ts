@@ -30,6 +30,7 @@ import {
   sectionSearchText,
   vaccinationDetails,
   whatHappenedPath,
+  whatHappenedSecondLevelLabel,
 } from "../src/medicalEncounter";
 import {
   DIAGNOSIS_CATALOG,
@@ -70,6 +71,7 @@ describe("medical encounter templates", () => {
     expect(whatHappenedPath("well.1")).toBe("Всё хорошо, необходимо › Контрольный осмотр");
     expect(whatHappenedPath("well.8")).toBe("Всё хорошо, необходимо › Взятие анализов");
     expect(whatHappenedPath("well.9")).toBe("Всё хорошо, необходимо › Проведение исследования");
+    expect(whatHappenedSecondLevelLabel("well.1")).toBe("Контрольный осмотр");
     expect(isWhatHappenedTaxonomyId("well.1")).toBe(true);
     expect(isWhatHappenedTaxonomyId("well.8")).toBe(true);
     expect(isWhatHappenedTaxonomyId("well.9")).toBe(true);
@@ -82,6 +84,8 @@ describe("medical encounter templates", () => {
       "problem.laboratory.urine",
     ]);
     expect(whatHappenedPath("problem.laboratory.urine.10")).toContain("Есть кристаллы");
+    expect(whatHappenedSecondLevelLabel("problem.laboratory.urine.10"))
+      .toBe("Лабораторными анализами");
   });
 
   it("derives a readable summary while persisting stable IDs", () => {

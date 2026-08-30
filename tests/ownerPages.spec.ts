@@ -284,7 +284,11 @@ describe("Owner pages", () => {
     expect(wrapper.get(".owner-epicrisis h2").text()).toBe("Эпикриз");
     expect(wrapper.text()).not.toContain("Предыдущие приёмы");
     expect(wrapper.findAll(".medical-record-entry-epicrisis")).toHaveLength(1);
-    expect(wrapper.get(".medical-record-entry-epicrisis").text()).toContain("Всё хорошо, необходимо");
+    expect(wrapper.findAll(".epicrisis-table-header > span").map((header) => header.text()))
+      .toEqual(["Дата", "Что случилось", "Диагноз", "Итог"]);
+    expect(wrapper.get(".epicrisis-table-wrap").classes()).toContain("owner-access-table-wrap");
+    expect(wrapper.get(".medical-record-entry-epicrisis").text()).toContain("Контрольный осмотр");
+    expect(wrapper.get(".medical-record-entry-epicrisis").text()).not.toContain("Всё хорошо, необходимо");
     expect(wrapper.get(".medical-record-entry-epicrisis").text()).toContain("Без жалоб");
     expect(wrapper.findAll(".medical-record-entry-details")).toHaveLength(1);
     expect(wrapper.get(".medical-record-entry-details").text()).toContain("Ожидает подтверждения");

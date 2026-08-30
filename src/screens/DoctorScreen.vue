@@ -3,7 +3,7 @@
 // All rights reserved.
 // This file is a part of Klinok application
 
-import { computed, reactive, ref, toRaw, watch } from "vue";
+import { computed, nextTick, reactive, ref, toRaw, watch } from "vue";
 import { RouterLink, useRoute, useRouter } from "vue-router";
 import {
   normalizeRussianSearchText,
@@ -22,6 +22,7 @@ import AppPaginator from "../components/AppPaginator.vue";
 import AppSelect from "../components/AppSelect.vue";
 import ConfirmationDialog from "../components/ConfirmationDialog.vue";
 import EncounterEditorForm from "../components/EncounterEditorForm.vue";
+import EpicrisisTable from "../components/EpicrisisTable.vue";
 import MedicalRecordEntry from "../components/MedicalRecordEntry.vue";
 import LaboratoryComparison from "../components/LaboratoryComparison.vue";
 import ModalDialog from "../components/ModalDialog.vue";
@@ -154,6 +155,8 @@ const historyStatus = ref<"" | "confirmed" | "unconfirmed">("");
 const historySort = ref<"desc" | "asc">("desc");
 const historyPage = ref(1);
 const historyPageSize = ref<(typeof pageSizes)[number]>(10);
+const epicrisisPage = ref(1);
+const epicrisisPageSize = ref<(typeof pageSizes)[number]>(10);
 
 function updateHomeFilter(value: string) { homeFilter.value = value as HomeAccessFilter; }
 function updateHistorySection(value: string) { historySection.value = value as MedicalEncounterSectionKind | ""; }
@@ -191,6 +194,12 @@ const canWrite = computed(() => selectedGrant.value?.actions.includes("write_unc
 const canDelegate = computed(() => selectedGrant.value?.actions.includes("delegate") ?? false);
 const confirmedIds = computed(() => new Set(appState.medical.confirmedRecordIds));
 const petRecords = computed(() => appState.medical.records.filter((record) => record.petId === petId.value));
+const epicrisisRecords = computed(() => [...petRecords.value].sort((left, right) => {
+  const dateOrder = left.encounterDate.localeCompare(right.encounterDate)
+    || left.createdAt.localeCompare(right.createdAt);
+  return dateOrder ? -dateOrder : left.recordId.localeCompare(right.recordId);
+}));
+const epicrisisPageCount = computed(() => Math.max(1, Math.ceil(epicrisisRecords.value.length / epicrisisPageSize.value)));
 const currentDirectoryPet = computed(() => selectedDirectoryPet.value?.petId === petId.value
   ? selectedDirectoryPet.value
   : homeAccesses.value.find((pet) => pet.petId === petId.value));
@@ -260,6 +269,28 @@ const filteredRecords = computed(() => petRecords.value.filter((record) => {
   return !query || content.includes(query);
 }).sort((left, right) => (historySort.value === "desc" ? -1 : 1) * (left.encounterDate.localeCompare(right.encounterDate) || left.createdAt.localeCompare(right.createdAt))));
 const pagedRecords = computed(() => filteredRecords.value.slice((historyPage.value - 1) * historyPageSize.value, historyPage.value * historyPageSize.value));
+
+async function openMedicalRecord(recordId: string) {
+  if (!petRecords.value.some((record) => record.recordId === recordId)) return;
+  historyQuery.value = "";
+  historyFrom.value = "";
+  historyTo.value = "";
+  historySection.value = "";
+  historyStatus.value = "";
+  historyPage.value = 1;
+  await nextTick();
+
+  const targetIndex = filteredRecords.value.findIndex((record) => record.recordId === recordId);
+  if (targetIndex < 0) return;
+  historyPage.value = Math.floor(targetIndex / historyPageSize.value) + 1;
+  await nextTick();
+
+  const target = document.getElementById(`encounter-${recordId}`) as HTMLDetailsElement | null;
+  if (!target) return;
+  target.open = true;
+  target.scrollIntoView?.({ block: "start" });
+  target.querySelector<HTMLElement>("summary")?.focus();
+}
 
 async function perform(task: () => Promise<unknown>, success = ""): Promise<boolean> {
   busy.value = true;
@@ -696,6 +727,10 @@ watch(requestDialogOpen, (open) => {
   if (!open && props.scenarioId === "doctor-pet-request-access") void router.replace("/doctor/home");
 });
 watch([historyQuery, historyFrom, historyTo, historySection, historyStatus, historySort, historyPageSize], () => { historyPage.value = 1; });
+watch([petId, epicrisisPageSize], () => { epicrisisPage.value = 1; });
+watch(epicrisisPageCount, (pageCount) => {
+  if (epicrisisPage.value > pageCount) epicrisisPage.value = pageCount;
+});
 watch([petId, delegationPageSize], () => { delegationPage.value = 1; });
 watch(delegationPageCount, (pageCount) => {
   if (delegationPage.value > pageCount) delegationPage.value = pageCount;
@@ -887,6 +922,15 @@ watch(delegationPageCount, (pageCount) => {
           <button v-if="selectedGrant" class="outline-action inline danger-outline owner-profile-action" type="button" title="Отказаться от доступа" aria-label="Отказаться от доступа" @click="openSelectedPetRelinquish"><AppIcon name="close" /></button>
         </template>
       </PetProfileView>
+
+      <EpicrisisTable
+        v-model:page="epicrisisPage"
+        v-model:page-size="epicrisisPageSize"
+        :records="epicrisisRecords"
+        :page-sizes="pageSizes"
+        heading-id="doctor-epicrisis-heading"
+        @activate="openMedicalRecord"
+      />
 
       <article v-if="canWrite && !encounter.recordId" class="panel encounter-editor">
         <EncounterEditorForm

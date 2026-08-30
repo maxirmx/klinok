@@ -300,7 +300,9 @@ describe("MedicalRecordEntry", () => {
 
     expect(wrapper.element.tagName).toBe("BUTTON");
     expect(wrapper.text()).toContain("21.07.2026");
-    expect(wrapper.text()).toContain("Не ест");
+    expect(wrapper.get(".epicrisis-what-happened").findAll("span").map((item) => item.text()))
+      .toEqual(["Пищеварением", "Не ест со вчерашнего дня"]);
+    expect(wrapper.text()).not.toContain("Не всё хорошо с");
     expect(wrapper.text()).toContain("Гингивит острый");
     expect(wrapper.text()).toContain("Выздоровление; Улучшение");
     expect(wrapper.text()).toContain("Назначено лечение");
@@ -309,6 +311,25 @@ describe("MedicalRecordEntry", () => {
       .toEqual(["Дата", "Что случилось", "Диагноз", "Итог"]);
     await wrapper.trigger("click");
     expect(wrapper.emitted("activate")?.[0]).toEqual([record.recordId]);
+
+    const deduplicated = mount(MedicalRecordEntry, {
+      props: {
+        record: {
+          ...record,
+          sections: {
+            ...record.sections,
+            "what-happened": {
+              ...record.sections["what-happened"]!,
+              value: { selectedIds: ["problem.digestive.1", "problem.digestive.2"], comment: "" },
+            },
+          },
+        },
+        mode: "epicrisis",
+        confirmed: false,
+      },
+    });
+    expect(deduplicated.get(".epicrisis-what-happened").findAll("span").map((item) => item.text()))
+      .toEqual(["Пищеварением"]);
 
     const withoutOutcome = mount(MedicalRecordEntry, {
       props: {

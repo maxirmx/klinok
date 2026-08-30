@@ -1293,14 +1293,26 @@ label > input[type="checkbox"] {
 .vaccination-values dd { margin: 0; }
 .owner-epicrisis { min-width: 0; }
 .owner-epicrisis > h2 { margin: 0; }
-.owner-epicrisis-list { margin-top: 12px; border-top: 1px solid var(--line); }
+.epicrisis-table-wrap { margin-top: 12px; }
+.epicrisis-table-header {
+  display: grid;
+  grid-template-columns: 110px minmax(0, 1.4fr) minmax(0, .8fr) minmax(0, .7fr);
+  gap: 12px;
+  padding: 11px 12px;
+  border-bottom: 1px solid var(--line);
+  background: var(--brand-bg-neutral);
+  color: var(--text-soft);
+  font-size: 11px;
+  font-weight: 700;
+}
+.owner-epicrisis-list { margin: 0; }
 .owner-epicrisis-empty { margin: 12px 0 0; color: var(--text-muted); }
 .epicrisis-row { width: 100%; display: grid; grid-template-columns: 110px minmax(0, 1.4fr) minmax(0, .8fr) minmax(0, .7fr); gap: 12px; align-items: start; padding: 12px; border: 0; border-bottom: 1px solid var(--line); background: transparent; color: var(--text); font: inherit; text-align: left; cursor: pointer; }
 .epicrisis-row:last-child { border-bottom: 0; }
 .epicrisis-row:hover { background: var(--brand-sky-soft); }
 .epicrisis-row:focus-visible { outline: 2px solid var(--brand-sky); outline-offset: -2px; }
 .epicrisis-cell { display: grid; min-width: 0; align-content: start; gap: 4px; overflow-wrap: anywhere; }
-.epicrisis-cell-label { color: var(--text-muted); font-size: 11px; font-weight: 600; }
+.epicrisis-cell-label { display: none; color: var(--text-muted); font-size: 11px; font-weight: 600; }
 .epicrisis-date { grid-column: 1; }
 .epicrisis-what-happened { grid-column: 2; }
 .epicrisis-diagnosis { grid-column: 3; }
@@ -1441,8 +1453,28 @@ label > input[type="checkbox"] {
   .owner-encounter-summary > .status-badge { grid-column: 2; justify-self: start; }
   .doctor-history-filters,
   .medical-record-filters { grid-template-columns: 1fr; }
-  .epicrisis-row { grid-template-columns: minmax(0, 1fr); }
-  .epicrisis-row > .epicrisis-cell { grid-column: 1; }
+  .epicrisis-table-header { display: none; }
+  .owner-epicrisis-list { display: grid; gap: 10px; }
+  .epicrisis-row {
+    overflow: hidden;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0;
+    padding: 0;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    background: var(--surface);
+  }
+  .owner-epicrisis-list > .epicrisis-row:last-child { border-bottom: 1px solid var(--line); }
+  .epicrisis-row > .epicrisis-cell {
+    grid-column: 1;
+    grid-template-columns: minmax(104px, .45fr) minmax(0, 1fr);
+    gap: 10px;
+    padding: 11px 12px;
+    border-bottom: 1px solid var(--line);
+  }
+  .epicrisis-row > .epicrisis-cell:last-child { border-bottom: 0; }
+  .epicrisis-cell-label { display: block; grid-column: 1; }
+  .epicrisis-cell > span { grid-column: 2; }
   .general-data-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .vaccination-fields { grid-template-columns: 1fr; }
   .therapeutic-tabs { grid-template-columns: repeat(2, minmax(0, 1fr)); }

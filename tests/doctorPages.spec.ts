@@ -194,7 +194,7 @@ async function setSyncNotifications(notifications: SyncNotification[]) {
   store.setDoctorSyncNotifications(notifications);
 }
 
-async function mountAt(path: string, scenarioId: string) {
+async function mountAt(path: string, scenarioId: string, attachToDocument = false) {
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [
@@ -208,7 +208,11 @@ async function mountAt(path: string, scenarioId: string) {
   });
   await router.push(path);
   await router.isReady();
-  return mount(DoctorScreen, { props: { role: "doctor", scenarioId }, global: { plugins: [createPinia(), router] } });
+  return mount(DoctorScreen, {
+    props: { role: "doctor", scenarioId },
+    global: { plugins: [createPinia(), router] },
+    ...(attachToDocument ? { attachTo: document.body } : {}),
+  });
 }
 
 beforeEach(async () => {
@@ -2054,14 +2058,21 @@ describe("Doctor pages", () => {
 
   it("uses verified status in the medical card and does not offer changes to a confirmed record", async () => {
     await setMedical(snapshot(undefined, { records: [medicalRecord], confirmedRecordIds: [medicalRecord.recordId] }));
-    const wrapper = await mountAt("/doctor/pets/pet-1", "doctor-pet-detail");
+    const wrapper = await mountAt("/doctor/pets/pet-1", "doctor-pet-detail", true);
     await flushPromises();
 
     const details = wrapper.get(".medical-record-entry-details");
     expect(wrapper.get(".doctor-medical-record h2").text()).toBe("Медицинская карта");
-    expect(wrapper.text()).not.toContain("Эпикриз");
+    const epicrisis = wrapper.get(".owner-epicrisis");
+    expect(epicrisis.get("h2").text()).toBe("Эпикриз");
+    expect(epicrisis.findAll(".epicrisis-table-header > span").map((header) => header.text()))
+      .toEqual(["Дата", "Что случилось", "Диагноз", "Итог"]);
+    expect(epicrisis.get(".epicrisis-table-wrap").classes()).toContain("owner-access-table-wrap");
+    expect(epicrisis.findAll(".medical-record-entry-epicrisis")).toHaveLength(1);
+    const detailPanels = wrapper.findAll(".doctor-pet-detail > .panel").map((panel) => panel.element);
+    expect(detailPanels.indexOf(epicrisis.element))
+      .toBeLessThan(detailPanels.indexOf(wrapper.get(".encounter-editor").element));
     expect(wrapper.text()).not.toContain("Предыдущие приёмы");
-    expect(wrapper.find(".medical-record-entry-epicrisis").exists()).toBe(false);
     expect(details.text()).toContain("Подтверждена");
     expect(details.find(".medical-record-edit").exists()).toBe(false);
     const collapsedSummary = details.get("summary");
@@ -2069,6 +2080,10 @@ describe("Doctor pages", () => {
     expect(collapsedSummary.text()).not.toContain("Не ест");
     expect(collapsedSummary.text()).not.toContain("Итог");
     expect(collapsedSummary.text()).not.toContain("Редакция");
+
+    await epicrisis.get(".medical-record-entry-epicrisis").trigger("click");
+    await flushPromises();
+    expect(details.attributes()).toHaveProperty("open");
 
     expect(wrapper.get(".encounter-editor h2").text()).toBe("Сегодняшний приём");
     const saveEncounterButton = wrapper.get('.encounter-editor-heading button[title="Сохранить запись"]');
@@ -2100,6 +2115,35 @@ describe("Doctor pages", () => {
     expect(wrapper.find(".medical-record-entry-details").exists()).toBe(false);
     await wrapper.get('.doctor-history-filters select[aria-label="Статус"]').setValue("confirmed");
     expect(wrapper.findAll(".medical-record-entry-details")).toHaveLength(1);
+    wrapper.unmount();
+  });
+
+  it("keeps the doctor epicrisis newest-first and clamps its independent page", async () => {
+    const records = Array.from({ length: 11 }, (_, index): MedicalRecordDraft => {
+      const day = String(index + 1).padStart(2, "0");
+      const timestamp = `2026-07-${day}T10:00:00.000Z`;
+      return {
+        ...medicalRecord,
+        recordId: `record-${day}`,
+        encounterDate: `2026-07-${day}`,
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      };
+    });
+    await setMedical(snapshot(undefined, { records }));
+    const wrapper = await mountAt("/doctor/pets/pet-1", "doctor-pet-detail");
+    await flushPromises();
+
+    const epicrisis = wrapper.get(".owner-epicrisis");
+    expect(epicrisis.findAll(".medical-record-entry-epicrisis")).toHaveLength(10);
+    expect(epicrisis.get(".medical-record-entry-epicrisis").text()).toContain("11.07.2026");
+    await epicrisis.get('button[title="Следующая страница"]').trigger("click");
+    expect(epicrisis.findAll(".medical-record-entry-epicrisis")).toHaveLength(1);
+    expect(epicrisis.get(".medical-record-entry-epicrisis").text()).toContain("01.07.2026");
+
+    await setMedical(snapshot(undefined, { records: [records[0]!] }));
+    await flushPromises();
+    expect(epicrisis.get(".owner-epicrisis-pagination").text()).toContain("Показаны 1–1 из 1");
   });
 
   it("renders laboratory history as a bordered panel outside the medical card", async () => {

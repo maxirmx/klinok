@@ -32,6 +32,7 @@ import {
   vaccinationDetails,
   whatHappenedComment,
   whatHappenedPath,
+  whatHappenedSecondLevelLabel,
   whatHappenedSelectedIds,
 } from "../medicalEncounter";
 import { isTherapeuticAppointmentValue } from "../therapeuticAppointment";
@@ -74,7 +75,7 @@ const populatedSections = computed(() =>
 
 const epicrisisWhatHappened = computed(() => {
   const value = props.record.sections["what-happened"]?.value;
-  const paths = whatHappenedSelectedIds(value).map(whatHappenedPath);
+  const paths = [...new Set(whatHappenedSelectedIds(value).map(whatHappenedSecondLevelLabel))];
   const comment = whatHappenedComment(value).trim();
   return {
     paths,
