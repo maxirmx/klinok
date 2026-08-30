@@ -2071,6 +2071,7 @@ describe("Doctor pages", () => {
     const wrapper = await mountAt("/doctor/pets/pet-1", "doctor-pet-detail", true);
     await flushPromises();
 
+    expect(wrapper.get(".workspace-shell").classes()).toContain("pet-detail-view");
     const details = wrapper.get(".medical-record-entry-details");
     expect(wrapper.get(".doctor-medical-record h2").text()).toBe("Медицинская карта");
     const epicrisis = wrapper.get(".owner-epicrisis");
@@ -2094,8 +2095,8 @@ describe("Doctor pages", () => {
     await epicrisis.get(".medical-record-entry-epicrisis").trigger("click");
     await flushPromises();
     expect(details.attributes()).toHaveProperty("open");
-
-    expect(wrapper.get(".encounter-editor h2").text()).toBe("Сегодняшний приём");
+Сегодняшний приём
+    expect(wrapper.get(".encounter-editor h2").text()).toBe("Новая запись");
     const saveEncounterButton = wrapper.get('.encounter-editor-heading button[title="Сохранить запись"]');
     expect(saveEncounterButton.text()).toBe("");
     expect(saveEncounterButton.attributes("aria-label")).toBe("Сохранить запись");
@@ -2128,7 +2129,7 @@ describe("Doctor pages", () => {
     wrapper.unmount();
   });
 
-  it("keeps the doctor epicrisis newest-first and clamps its independent page", async () => {
+  it("sorts the doctor epicrisis by date and clamps its independent page", async () => {
     const records = Array.from({ length: 11 }, (_, index): MedicalRecordDraft => {
       const day = String(index + 1).padStart(2, "0");
       const timestamp = `2026-07-${day}T10:00:00.000Z`;
@@ -2146,6 +2147,11 @@ describe("Doctor pages", () => {
 
     const epicrisis = wrapper.get(".owner-epicrisis");
     expect(epicrisis.findAll(".medical-record-entry-epicrisis")).toHaveLength(10);
+    const dateHeader = epicrisis.get('[role="columnheader"]');
+    expect(dateHeader.attributes("aria-sort")).toBe("ascending");
+    expect(epicrisis.get(".medical-record-entry-epicrisis").text()).toContain("01.07.2026");
+    await dateHeader.get("button").trigger("click");
+    expect(dateHeader.attributes("aria-sort")).toBe("descending");
     expect(epicrisis.get(".medical-record-entry-epicrisis").text()).toContain("11.07.2026");
     await epicrisis.get('button[title="Следующая страница"]').trigger("click");
     expect(epicrisis.findAll(".medical-record-entry-epicrisis")).toHaveLength(1);

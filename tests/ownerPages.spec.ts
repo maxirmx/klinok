@@ -730,6 +730,12 @@ describe("Owner pages", () => {
     expect(detail.get(".owner-medical-record h2").text()).toBe("Медицинская карта");
     expect(detail.get(".owner-epicrisis h2").text()).toBe("Эпикриз");
     expect(detail.findAll(".medical-record-entry-epicrisis")).toHaveLength(10);
+    const epicrisisDateHeader = detail.get('.owner-epicrisis [role="columnheader"]');
+    expect(epicrisisDateHeader.attributes("aria-sort")).toBe("ascending");
+    expect(detail.get(".medical-record-entry-epicrisis").text()).toContain("01.07.2026");
+    await epicrisisDateHeader.get("button").trigger("click");
+    expect(epicrisisDateHeader.attributes("aria-sort")).toBe("descending");
+    expect(detail.get(".medical-record-entry-epicrisis").text()).toContain("11.07.2026");
     expect(detail.get(".owner-epicrisis-pagination").text()).toContain("Показаны 1–10 из 11");
     expect(detail.findAll("details.owner-encounter-record")).toHaveLength(10);
     const encounterRecord = detail.get("details.owner-encounter-record");
@@ -985,6 +991,7 @@ describe("Owner pages", () => {
 
     await setMedical(snapshot({ pets: [pet] }));
     const detail = await mountAt("/owner/pets/pet-1", "owner-pet-detail");
+    expect(detail.get(".workspace-shell").classes()).toContain("pet-detail-view");
     expect(detail.get(".owner-pet-profile-details").text())
       .toMatch(/\d+ полн(?:ый|ых) (?:год|года|лет) · дата рождения 17\.06\.2022/);
     expect(detail.findAll(".owner-profile-fields dt").map((node) => node.text())).toEqual([

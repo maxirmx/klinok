@@ -76,6 +76,52 @@ async function expectSameHorizontalBounds(first: Locator, second: Locator): Prom
   expect(Math.abs(firstBox!.x + firstBox!.width - secondBox!.x - secondBox!.width)).toBeLessThanOrEqual(1);
 }
 
+async function expectSameHorizontalBoundsForAll(elements: Locator): Promise<void> {
+  const bounds = await elements.evaluateAll((items) => items.map((item) => {
+    const box = item.getBoundingClientRect();
+    return { left: box.left, right: box.right };
+  }));
+  expect(bounds.length).toBeGreaterThan(1);
+  const reference = bounds[0]!;
+  expect(bounds.every((bound) => (
+    Math.abs(bound.left - reference.left) <= 1 && Math.abs(bound.right - reference.right) <= 1
+  )), JSON.stringify(bounds)).toBe(true);
+}
+
+async function expectFillsWorkspaceContent(element: Locator): Promise<void> {
+  const bounds = await element.evaluate((target) => {
+    const workspace = target.closest(".workspace-content");
+    if (!workspace) return null;
+    const workspaceBox = workspace.getBoundingClientRect();
+    const targetBox = target.getBoundingClientRect();
+    const style = getComputedStyle(workspace);
+    return {
+      availableLeft: workspaceBox.left + Number.parseFloat(style.paddingLeft),
+      availableRight: workspaceBox.right - Number.parseFloat(style.paddingRight),
+      targetLeft: targetBox.left,
+      targetRight: targetBox.right,
+    };
+  });
+  expect(bounds).not.toBeNull();
+  expect(Math.abs(bounds!.targetLeft - bounds!.availableLeft)).toBeLessThanOrEqual(1);
+  expect(Math.abs(bounds!.targetRight - bounds!.availableRight)).toBeLessThanOrEqual(1);
+}
+
+async function expectSamePanelBorder(panels: Locator): Promise<void> {
+  const styles = await panels.evaluateAll((elements) => elements.map((element) => {
+    const style = getComputedStyle(element);
+    return {
+      borderColor: style.borderColor,
+      borderRadius: style.borderRadius,
+      borderStyle: style.borderStyle,
+      borderWidth: style.borderWidth,
+    };
+  }));
+  expect(styles.length).toBeGreaterThan(1);
+  const reference = styles[0]!;
+  expect(styles.slice(1)).toEqual(styles.slice(1).map(() => reference));
+}
+
 async function expectStickyEncounterHeading(
   page: Page,
   heading: Locator,
@@ -1022,7 +1068,7 @@ test("fresh provisioning, Doctor approval, grant, draft, and confirmation", asyn
     addXrayVenaCava,
     addXrayLungs,
     addXrayConclusion,
-    deleteXrayStudy,
+    deleteXrayStudy,Сегодняшний приём
     deleteSediment,
     deleteConcrementSize,
     therapeuticCard.getByRole("button", { name: "Удалить раздел", exact: true }),
@@ -1041,6 +1087,7 @@ test("fresh provisioning, Doctor approval, grant, draft, and confirmation", asyn
     .toBe(true);
 
   const createEditorHeading = doctorPage.locator(".doctor-pet-detail > .encounter-editor .encounter-editor-heading");
+  await expect(createEditorHeading.getByRole("heading", { name: "Новая запись", exact: true })).toBeVisible();
   const createStickyTargets = [
     therapeuticDelete,
     hemoglobinInput,
@@ -1173,6 +1220,11 @@ test("fresh provisioning, Doctor approval, grant, draft, and confirmation", asyn
   await doctorPage.getByRole("button", { name: "Сохранить запись" }).click();
   const doctorRecord = doctorPage.locator(".medical-record-entry-details").filter({ hasText: "Всё хорошо" });
   await expect(doctorRecord).toBeVisible();
+  await expectFillsWorkspaceContent(doctorPage.locator(".doctor-pet-detail"));
+  await expectSameHorizontalBoundsForAll(doctorPage.locator(".doctor-pet-detail > .panel"));
+  await expectSamePanelBorder(doctorPage.locator(
+    ".doctor-pet-detail > :is(.owner-epicrisis, .encounter-editor, .laboratory-comparison, .doctor-medical-record)",
+  ));
   await doctorRecord.locator("summary").click();
   await expect(doctorRecord.getByText("Всё хорошо, необходимо › Взятие анализов", { exact: true })).toBeVisible();
   await expect(doctorRecord.getByText("Всё хорошо, необходимо › Проведение исследования", { exact: true })).toBeVisible();
@@ -1234,22 +1286,64 @@ test("fresh provisioning, Doctor approval, grant, draft, and confirmation", asyn
   await ownerHistorySearch.fill("");
   const laboratoryComparison = ownerPage.locator(".laboratory-comparison");
   await expect(laboratoryComparison).toBeVisible({ timeout: replicationTimeout });
+  await ownerPage.setViewportSize({ width: 1800, height: 1000 });
+  await expectFillsWorkspaceContent(ownerPage.locator(".owner-pet-detail"));
+  await expectSameHorizontalBoundsForAll(ownerPage.locator(".owner-pet-detail > .panel"));
+  await ownerPage.getByRole("button", { name: "Копировать идентификатор питомца" }).click();
+  const ownerAlert = ownerPage.locator(".workspace-alert");
+  await expect(ownerAlert).toBeVisible();
+  await expectSameHorizontalBounds(ownerAlert, ownerPage.locator(".owner-pet-detail"));
+  const epicrisisDateHeader = ownerPage.locator('.owner-epicrisis [role="columnheader"]');
+  const epicrisisDateSort = epicrisisDateHeader.getByRole("button", { name: "Дата" });
+  await expect(epicrisisDateHeader).toHaveAttribute("aria-sort", "ascending");
+  await expectTopAligned(epicrisisDateSort, ownerPage.locator(".epicrisis-table-header > span").nth(1));
+  await epicrisisDateSort.click();
+  await expect(epicrisisDateHeader).toHaveAttribute("aria-sort", "descending");
+  await expectSamePanelBorder(ownerPage.locator(
+    ".owner-pet-detail > :is(.owner-epicrisis, .laboratory-comparison, .owner-medical-record)",
+  ));
   await ownerPage.setViewportSize({ width: 1280, height: 720 });
   await laboratoryComparison.locator(".app-catalog-toggle").click();
   await laboratoryComparison.getByRole("option", { name: /Лейкоциты \(WBC\)/ }).click();
   await laboratoryComparison.locator(".app-catalog-toggle").click();
   await laboratoryComparison.getByRole("option", { name: /Гематокрит \(Hct, PCV\)/ }).click();
-  await expect(laboratoryComparison.locator(".laboratory-comparison-selection")).toHaveCount(2);
-  await expect(laboratoryComparison.locator(".laboratory-comparison-desktop")).toBeVisible();
-  await expect(laboratoryComparison.locator(".laboratory-comparison-mobile")).toBeHidden();
+  await expect(laboratoryComparison.locator(
+    ".laboratory-results thead .laboratory-comparison-column-heading",
+  )).toHaveCount(2);
+  await expect(laboratoryComparison.locator(".laboratory-comparison-selections")).toHaveCount(0);
+  await expect(laboratoryComparison.locator(".laboratory-comparison-table")).toBeVisible();
+  await expect(laboratoryComparison.locator(".laboratory-results-scroll")).toHaveClass(/owner-access-table-wrap/);
+  await expect(laboratoryComparison.locator(".laboratory-results")).toHaveClass(/owner-access-table/);
   await expect(laboratoryComparison.locator(".laboratory-results")).toBeVisible();
+  const laboratoryDateHeader = laboratoryComparison.locator(".laboratory-results th").first();
+  await expect(laboratoryDateHeader).toHaveAttribute("aria-sort", "ascending");
+  await expectTopAligned(
+    laboratoryDateHeader.getByRole("button", { name: "Дата" }),
+    laboratoryComparison.locator(".laboratory-results th").nth(1).locator(".laboratory-comparison-column-label"),
+  );
+  await laboratoryDateHeader.getByRole("button", { name: "Дата" }).click();
+  await expect(laboratoryDateHeader).toHaveAttribute("aria-sort", "descending");
   await ownerPage.reload();
   await expect(laboratoryComparison).toBeVisible({ timeout: replicationTimeout });
-  await expect(laboratoryComparison.locator(".laboratory-comparison-selection")).toHaveCount(2);
+  await expect(laboratoryComparison.locator(
+    ".laboratory-results thead .laboratory-comparison-column-heading",
+  )).toHaveCount(2);
   const removeLeukocytes = laboratoryComparison.getByRole("button", { name: /Удалить показатель «Лейкоциты \(WBC\),/ });
   const removeHematocrit = laboratoryComparison.getByRole("button", { name: /Удалить показатель «Гематокрит \(Hct, PCV\), %»/ });
   await expect(removeLeukocytes).toBeVisible();
   await expect(removeHematocrit).toBeVisible();
+  await expect(removeLeukocytes).toHaveCSS("border-top-width", "0px");
+  const removeControlMetrics = await removeLeukocytes.evaluate((button) => {
+    const icon = button.querySelector(".app-icon")!;
+    const label = button.parentElement!.querySelector(".laboratory-comparison-column-label")!;
+    return {
+      fontSize: Number.parseFloat(getComputedStyle(label).fontSize),
+      iconHeight: icon.getBoundingClientRect().height,
+      iconWidth: icon.getBoundingClientRect().width,
+    };
+  });
+  expect(Math.abs(removeControlMetrics.iconHeight - removeControlMetrics.fontSize)).toBeLessThanOrEqual(1);
+  expect(Math.abs(removeControlMetrics.iconWidth - removeControlMetrics.fontSize)).toBeLessThanOrEqual(1);
   await removeLeukocytes.click();
   await expect(removeLeukocytes).toHaveCount(0);
   await expect(removeHematocrit).toBeVisible();
@@ -1261,35 +1355,25 @@ test("fresh provisioning, Doctor approval, grant, draft, and confirmation", asyn
   await expect(laboratoryComparison.getByRole("button", { name: /Удалить показатель «Гематокрит \(Hct, PCV\), %»/ })).toBeVisible();
 
   await ownerPage.setViewportSize({ width: 752, height: 1200 });
-  const mobileLaboratoryHistory = laboratoryComparison.locator(".laboratory-comparison-mobile");
-  await expect(mobileLaboratoryHistory).toBeVisible();
-  await expect(laboratoryComparison.locator(".laboratory-comparison-desktop")).toBeHidden();
+  const laboratoryTable = laboratoryComparison.locator(".laboratory-results");
+  await expect(laboratoryTable).toBeVisible();
+  await expect(laboratoryComparison.locator(".laboratory-results-mobile-columns")).toBeVisible();
+  await expect(removeHematocrit).toBeVisible();
   expect(await laboratoryComparison.evaluate((panel) => panel.scrollWidth <= panel.clientWidth + 1)).toBe(true);
-  const mobileLaboratoryEntry = mobileLaboratoryHistory.locator(".laboratory-mobile-entry").first();
-  await expect(mobileLaboratoryEntry.locator("header .laboratory-mobile-study")).toContainText("Общеклинический анализ крови");
-  await expect(mobileLaboratoryEntry.locator(".laboratory-mobile-status")).toHaveCount(0);
-  const laboratoryMetadata = mobileLaboratoryEntry.locator(".laboratory-mobile-metadata");
-  const laboratoryMetadataSummary = laboratoryMetadata.locator("summary");
-  const laboratoryValue = mobileLaboratoryEntry.locator(".laboratory-mobile-value");
-  const [laboratoryValueBox, laboratorySummaryBox] = await Promise.all([
-    laboratoryValue.boundingBox(),
-    laboratoryMetadataSummary.boundingBox(),
-  ]);
-  expect(laboratoryValueBox).not.toBeNull();
-  expect(laboratorySummaryBox).not.toBeNull();
-  expect(Math.abs(laboratoryValueBox!.y - laboratorySummaryBox!.y)).toBeLessThanOrEqual(1);
-  await laboratoryMetadataSummary.focus();
-  await laboratoryMetadataSummary.press("Enter");
-  await expect(laboratoryMetadata).toHaveAttribute("open", "");
-  await expect(laboratoryMetadata).toContainText("Ветлаб");
-  await expect(laboratoryMetadata).toContainText("Ожидает подтверждения");
+  const laboratoryComparisonCard = laboratoryTable.locator("tbody tr").first();
+  await expect(laboratoryComparisonCard.locator('td[data-label="Исследование"]')).toContainText("Общеклинический анализ крови");
+  await expect(laboratoryComparisonCard.locator('td[data-label="Лаборатория"]')).toHaveCount(0);
+  await expect(laboratoryComparisonCard.locator('td[data-label="Статус"]')).toHaveCount(0);
+  await expect(laboratoryComparisonCard.locator('td[data-label^="Гематокрит"]')).toBeVisible();
+  expect(await laboratoryComparisonCard.locator('td[data-label="Исследование"]').evaluate((cell) =>
+    getComputedStyle(cell, "::before").content.replaceAll('"', "")
+  )).toBe("Исследование");
 
   await ownerPage.setViewportSize({ width: 390, height: 844 });
-  await expect(mobileLaboratoryHistory).toBeVisible();
+  await expect(laboratoryTable).toBeVisible();
   expect(await laboratoryComparison.evaluate((panel) => panel.scrollWidth <= panel.clientWidth + 1)).toBe(true);
   await ownerPage.setViewportSize({ width: 1280, height: 720 });
-  await expect(laboratoryComparison.locator(".laboratory-comparison-desktop")).toBeVisible();
-  await expect(mobileLaboratoryHistory).toBeHidden();
+  await expect(laboratoryComparison.locator(".laboratory-comparison-table")).toBeVisible();
   await ownerRecord.locator("summary").click();
   await expect(ownerRecord.getByText("Всё хорошо, необходимо › Взятие анализов", { exact: true })).toBeVisible();
   await expect(ownerRecord.getByText("Всё хорошо, необходимо › Проведение исследования", { exact: true })).toBeVisible();
