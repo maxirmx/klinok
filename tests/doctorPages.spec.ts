@@ -2095,7 +2095,6 @@ describe("Doctor pages", () => {
     await epicrisis.get(".medical-record-entry-epicrisis").trigger("click");
     await flushPromises();
     expect(details.attributes()).toHaveProperty("open");
-Сегодняшний приём
     expect(wrapper.get(".encounter-editor h2").text()).toBe("Новая запись");
     const saveEncounterButton = wrapper.get('.encounter-editor-heading button[title="Сохранить запись"]');
     expect(saveEncounterButton.text()).toBe("");

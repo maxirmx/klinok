@@ -1068,7 +1068,7 @@ test("fresh provisioning, Doctor approval, grant, draft, and confirmation", asyn
     addXrayVenaCava,
     addXrayLungs,
     addXrayConclusion,
-    deleteXrayStudy,Сегодняшний приём
+    deleteXrayStudy,
     deleteSediment,
     deleteConcrementSize,
     therapeuticCard.getByRole("button", { name: "Удалить раздел", exact: true }),
