@@ -257,34 +257,40 @@ describe("MedicalRecordEntry", () => {
     expect(history.text()).toContain("Контроль");
   });
 
-  it.each([
-    ["well.1", "Всё хорошо", "well"],
-    ["problem.digestive.1", "Не всё хорошо", "problem"],
-    ["critical.1", "Всё плохо", "critical"],
-  ])("shows the general condition for %s in the record header", (selectedId, label, tone) => {
-    const whatHappened = record.sections["what-happened"]!;
+  it("keeps the collapsed record header limited to date, author, and status", () => {
     const wrapper = mount(MedicalRecordEntry, {
       props: {
-        record: {
-          ...record,
-          sections: {
-            ...record.sections,
-            "what-happened": {
-              ...whatHappened,
-              value: { selectedIds: [selectedId], comment: "Подробный комментарий" },
-            },
-          },
-        },
+        record,
         mode: "details",
         confirmed: false,
       },
     });
 
     const summary = wrapper.get(".owner-encounter-summary");
-    expect(summary.text()).toContain(label);
-    expect(summary.text()).not.toContain("Подробный комментарий");
-    expect(summary.text()).toContain("Итог: Выздоровление; Улучшение; Назначено лечение");
-    expect(summary.get(`.medical-record-condition-${tone}`).text()).toBe(label);
+    expect(summary.text()).toContain("21.07.2026");
+    expect(summary.text()).toContain("Вера Врач");
+    expect(summary.text()).toContain("Ожидает подтверждения");
+    expect(summary.text()).not.toContain("Не ест");
+    expect(summary.text()).not.toContain("Гингивит");
+    expect(summary.text()).not.toContain("Итог");
+    expect(summary.text()).not.toContain("Редакция");
+  });
+
+  it("reports native details toggles", async () => {
+    const wrapper = mount(MedicalRecordEntry, {
+      props: {
+        record,
+        mode: "details",
+        confirmed: false,
+        open: true,
+      },
+    });
+
+    const details = wrapper.get("details");
+    (details.element as HTMLDetailsElement).open = false;
+    await details.trigger("toggle");
+
+    expect(wrapper.emitted("toggle")?.at(-1)).toEqual([record.recordId, false]);
   });
 
   it("renders and activates the compact epicrisis mode", async () => {
@@ -294,13 +300,36 @@ describe("MedicalRecordEntry", () => {
 
     expect(wrapper.element.tagName).toBe("BUTTON");
     expect(wrapper.text()).toContain("21.07.2026");
-    expect(wrapper.text()).toContain("Не ест");
+    expect(wrapper.get(".epicrisis-what-happened").findAll("span").map((item) => item.text()))
+      .toEqual(["Пищеварением", "Не ест со вчерашнего дня"]);
+    expect(wrapper.text()).not.toContain("Не всё хорошо с");
     expect(wrapper.text()).toContain("Гингивит острый");
     expect(wrapper.text()).toContain("Выздоровление; Улучшение");
     expect(wrapper.text()).toContain("Назначено лечение");
-    expect(wrapper.text()).toContain("Ожидает подтверждения");
+    expect(wrapper.text()).not.toContain("Ожидает подтверждения");
+    expect(wrapper.findAll(".epicrisis-cell-label").map((label) => label.text()))
+      .toEqual(["Дата", "Что случилось", "Диагноз", "Итог"]);
     await wrapper.trigger("click");
-    expect(wrapper.emitted("activate")?.[0]).toEqual([record]);
+    expect(wrapper.emitted("activate")?.[0]).toEqual([record.recordId]);
+
+    const deduplicated = mount(MedicalRecordEntry, {
+      props: {
+        record: {
+          ...record,
+          sections: {
+            ...record.sections,
+            "what-happened": {
+              ...record.sections["what-happened"]!,
+              value: { selectedIds: ["problem.digestive.1", "problem.digestive.2"], comment: "" },
+            },
+          },
+        },
+        mode: "epicrisis",
+        confirmed: false,
+      },
+    });
+    expect(deduplicated.get(".epicrisis-what-happened").findAll("span").map((item) => item.text()))
+      .toEqual(["Пищеварением"]);
 
     const withoutOutcome = mount(MedicalRecordEntry, {
       props: {
@@ -309,7 +338,9 @@ describe("MedicalRecordEntry", () => {
         confirmed: false,
       },
     });
-    expect(withoutOutcome.text()).toContain("Не заполнено");
+    expect(withoutOutcome.text()).not.toContain("Не заполнено");
+    expect(withoutOutcome.find(".epicrisis-diagnosis").exists()).toBe(false);
+    expect(withoutOutcome.get(".epicrisis-outcome").text()).toBe("Итог—");
 
     const legacyOutcome = mount(MedicalRecordEntry, {
       props: {
@@ -367,9 +398,9 @@ describe("MedicalRecordEntry", () => {
     expect(wrapper.get(".owner-encounter-sections").findAll(":scope > .encounter-history-section")).toHaveLength(5);
     expect(wrapper.get(".owner-encounter-sections").classes()).not.toContain("owner-encounter-sections-editing");
     const summary = wrapper.get(".owner-encounter-summary");
-    expect(summary.text()).toContain("21.07.2026 · Не всё хорошо");
-    expect(summary.text()).not.toContain("Пищеварением");
-    expect(summary.get(".medical-record-condition-problem").text()).toBe("Не всё хорошо");
+    expect(summary.text()).toContain("21.07.2026");
+    expect(summary.text()).toContain("Вера Врач");
+    expect(summary.text()).not.toContain("Не всё хорошо");
     expect(wrapper.get(".encounter-history-comment").text()).toBe("Не ест со вчерашнего дня");
     expect(wrapper.text()).toContain("Контроль через неделю");
     const authorIdentity = wrapper.findAll(".person-identity")
@@ -397,8 +428,8 @@ describe("MedicalRecordEntry", () => {
     await wrapper.setProps({ confirmed: false });
     const edit = wrapper.get(".medical-record-edit");
     expect(wrapper.get(".owner-encounter-summary").find(".medical-record-actions").exists()).toBe(false);
-    expect(wrapper.get(".medical-record-collapsed-outcome").text()).toBe("· Итог: Выздоровление; Улучшение; Назначено лечение");
-    expect(wrapper.get(".medical-record-collapsed-diagnosis").text()).toBe("· Диагноз: Гингивит острый");
+    expect(wrapper.get(".owner-encounter-summary").text()).not.toContain("Выздоровление");
+    expect(wrapper.get(".owner-encounter-summary").text()).not.toContain("Гингивит");
     expect(wrapper.findAll(".encounter-history-section")[0]!.get(".encounter-history-heading").find(".medical-record-actions").exists()).toBe(true);
     expect(edit.text()).toBe("");
     expect(edit.attributes("title")).toBe("Редактировать запись");
@@ -475,7 +506,7 @@ describe("MedicalRecordEntry", () => {
     expect(wrapper.find(".owner-encounter-confirm").exists()).toBe(false);
   });
 
-  it("shows an explicit missing outcome after what happened in the collapsed summary", () => {
+  it("does not add missing section placeholders to the collapsed summary", () => {
     const wrapper = mount(MedicalRecordEntry, {
       props: {
         record: { ...record, sections: { "what-happened": record.sections["what-happened"] } },
@@ -484,7 +515,9 @@ describe("MedicalRecordEntry", () => {
       },
     });
 
-    expect(wrapper.get(".owner-encounter-summary").text()).toContain("Итог: Не заполнено");
+    const summary = wrapper.get(".owner-encounter-summary");
+    expect(summary.text()).toBe("21.07.2026Вера ВрачОжидает подтверждения");
+    expect(summary.text()).not.toContain("Не заполнено");
   });
 
   it("renders structured vaccination and chipping details", () => {
