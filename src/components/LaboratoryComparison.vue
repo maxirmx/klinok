@@ -16,6 +16,7 @@ import { isLaboratoryTestsValue } from "../medicalEncounter";
 import AppIcon from "./AppIcon.vue";
 import AppCatalogCombobox from "./AppCatalogCombobox.vue";
 import AppPaginator from "./AppPaginator.vue";
+import AppTableSort from "./AppTableSort.vue";
 
 type PageSize = 10 | 20 | 50;
 
@@ -30,7 +31,8 @@ const selectedIds = ref<string[]>([]);
 const customText = ref("");
 const page = ref(1);
 const pageSize = ref<PageSize>(10);
-const dateSort = ref<"asc" | "desc">("asc");
+const dateSortFields = [{ value: "date", label: "Дата" }] as const;
+const dateSort = ref<"asc" | "desc">("desc");
 const sessionSelections = new Map<string, string[]>();
 let hydratingPreference = false;
 let hydratedPreferenceKey = "";
@@ -54,7 +56,10 @@ const selectedIndicators = computed(() => selectedIds.value.flatMap((id) => {
 const rows = computed(() => occurrences.value
   .filter(({ study }) => study.mode === "panel" && study.results.some((result) => selectedIds.value.includes(result.indicatorId)))
   .sort((left, right) => {
-    const order = left.study.date.localeCompare(right.study.date) || left.study.id.localeCompare(right.study.id);
+    const order = left.study.date.localeCompare(right.study.date)
+      || left.record.createdAt.localeCompare(right.record.createdAt)
+      || left.study.id.localeCompare(right.study.id)
+      || left.record.recordId.localeCompare(right.record.recordId);
     return dateSort.value === "asc" ? order : -order;
   }));
 const pageCount = computed(() => Math.max(1, Math.ceil(rows.value.length / pageSize.value)));
@@ -88,10 +93,11 @@ watch([preferenceKey, indicatorMap], ([key, indicators]) => {
 }, { immediate: true });
 function result(study: (typeof occurrences.value)[number]["study"], id: string) { return study.mode === "panel" ? study.results.find((item) => item.indicatorId === id) : undefined; }
 function date(value: string) { const [year, month, day] = value.split("-"); return `${day}.${month}.${year}`; }
-function toggleDateSort() {
-  dateSort.value = dateSort.value === "asc" ? "desc" : "asc";
+function updateDateSort(direction: "asc" | "desc") {
+  dateSort.value = direction;
   page.value = 1;
 }
+function toggleDateSort() { updateDateSort(dateSort.value === "asc" ? "desc" : "asc"); }
 function removeIndicator(id: string) {
   selectedIds.value = selectedIds.value.filter((selectedId) => selectedId !== id);
 }
@@ -101,20 +107,31 @@ function removeIndicator(id: string) {
     <h2>История лабораторных показателей</h2>
     <AppCatalogCombobox v-model:selected-ids="selectedIds" v-model:custom-text="customText" multiple :allow-custom="false" label="Показатели для сравнения" :options="options" placeholder="Выберите показатели" />
     <div v-if="selectedIds.length" class="laboratory-comparison-table">
+      <div class="laboratory-results-mobile-columns" role="list" aria-label="Выбранные показатели">
+        <span v-for="indicator in selectedIndicators" :key="indicator.id" class="laboratory-comparison-column-heading" role="listitem">
+          <span class="laboratory-comparison-column-label">{{ indicator.label }}</span>
+          <button
+            type="button"
+            class="laboratory-comparison-remove"
+            :title="`Удалить показатель «${indicator.label}»`"
+            :aria-label="`Удалить показатель «${indicator.label}»`"
+            @click="removeIndicator(indicator.id)"
+          ><AppIcon name="close" /></button>
+        </span>
+      </div>
+      <AppTableSort
+        class="laboratory-mobile-sort"
+        field="date"
+        :direction="dateSort"
+        :fields="dateSortFields"
+        ascending-label="Сначала старые"
+        descending-label="Сначала новые"
+        descending-first
+        aria-label="Сортировка истории лабораторных показателей"
+        @update:direction="updateDateSort"
+      />
       <div class="owner-access-table-wrap laboratory-results-scroll">
         <table class="owner-access-table laboratory-results">
-          <caption class="laboratory-results-mobile-columns">
-            <span v-for="indicator in selectedIndicators" :key="indicator.id" class="laboratory-comparison-column-heading">
-              <span class="laboratory-comparison-column-label">{{ indicator.label }}</span>
-              <button
-                type="button"
-                class="laboratory-comparison-remove"
-                :title="`Удалить показатель «${indicator.label}»`"
-                :aria-label="`Удалить показатель «${indicator.label}»`"
-                @click="removeIndicator(indicator.id)"
-              ><AppIcon name="close" /></button>
-            </span>
-          </caption>
           <thead>
             <tr>
               <th :aria-sort="dateSort === 'asc' ? 'ascending' : 'descending'">

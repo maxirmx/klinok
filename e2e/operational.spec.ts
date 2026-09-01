@@ -76,6 +76,14 @@ async function expectSameHorizontalBounds(first: Locator, second: Locator): Prom
   expect(Math.abs(firstBox!.x + firstBox!.width - secondBox!.x - secondBox!.width)).toBeLessThanOrEqual(1);
 }
 
+async function expectNextFullWidthRow(previous: Locator, row: Locator): Promise<void> {
+  await expectSameHorizontalBounds(previous, row);
+  const [previousBox, rowBox] = await Promise.all([previous.boundingBox(), row.boundingBox()]);
+  expect(previousBox).not.toBeNull();
+  expect(rowBox).not.toBeNull();
+  expect(rowBox!.y).toBeGreaterThanOrEqual(previousBox!.y + previousBox!.height);
+}
+
 async function expectSameHorizontalBoundsForAll(elements: Locator): Promise<void> {
   const bounds = await elements.evaluateAll((items) => items.map((item) => {
     const box = item.getBoundingClientRect();
@@ -377,6 +385,15 @@ test("fresh provisioning, Doctor approval, grant, draft, and confirmation", asyn
   await administratorPage.getByLabel("ФИО или идентификатор").fill("Алена");
   const requestRow = administratorPage.locator(".administrator-table tbody tr").filter({ hasText: doctorAccountId });
   await expect(requestRow).toBeVisible({ timeout: replicationTimeout });
+  await administratorPage.setViewportSize({ width: 752, height: 1200 });
+  const administratorMobileSort = administratorPage.locator(".administrator-mobile-sort");
+  await expect(administratorMobileSort).toBeVisible();
+  await expectNextFullWidthRow(administratorPage.locator(".administrator-user-filters"), administratorMobileSort);
+  await administratorMobileSort.getByLabel("Сортировка пользователей").selectOption("doctor:desc");
+  await expect(administratorMobileSort.locator(".app-select-value")).toHaveCSS("white-space", "nowrap");
+  await expect(requestRow).toBeVisible({ timeout: replicationTimeout });
+  expect(await administratorPage.locator(".administrator-panel").evaluate((panel) => panel.scrollWidth <= panel.clientWidth + 1)).toBe(true);
+  await administratorPage.setViewportSize({ width: 1280, height: 720 });
   await requestRow.getByRole("button", { name: "Одобрить роль «Ветеринар»", exact: true }).click();
   const approvalDialog = administratorPage.getByRole("dialog", { name: "Одобрить роль «Ветеринар»?" });
   await expect(approvalDialog).toBeVisible();
@@ -1295,10 +1312,10 @@ test("fresh provisioning, Doctor approval, grant, draft, and confirmation", asyn
   await expectSameHorizontalBounds(ownerAlert, ownerPage.locator(".owner-pet-detail"));
   const epicrisisDateHeader = ownerPage.locator('.owner-epicrisis [role="columnheader"]');
   const epicrisisDateSort = epicrisisDateHeader.getByRole("button", { name: "Дата" });
-  await expect(epicrisisDateHeader).toHaveAttribute("aria-sort", "ascending");
+  await expect(epicrisisDateHeader).toHaveAttribute("aria-sort", "descending");
   await expectTopAligned(epicrisisDateSort, ownerPage.locator(".epicrisis-table-header > span").nth(1));
   await epicrisisDateSort.click();
-  await expect(epicrisisDateHeader).toHaveAttribute("aria-sort", "descending");
+  await expect(epicrisisDateHeader).toHaveAttribute("aria-sort", "ascending");
   await expectSamePanelBorder(ownerPage.locator(
     ".owner-pet-detail > :is(.owner-epicrisis, .laboratory-comparison, .owner-medical-record)",
   ));
@@ -1316,13 +1333,13 @@ test("fresh provisioning, Doctor approval, grant, draft, and confirmation", asyn
   await expect(laboratoryComparison.locator(".laboratory-results")).toHaveClass(/owner-access-table/);
   await expect(laboratoryComparison.locator(".laboratory-results")).toBeVisible();
   const laboratoryDateHeader = laboratoryComparison.locator(".laboratory-results th").first();
-  await expect(laboratoryDateHeader).toHaveAttribute("aria-sort", "ascending");
+  await expect(laboratoryDateHeader).toHaveAttribute("aria-sort", "descending");
   await expectTopAligned(
     laboratoryDateHeader.getByRole("button", { name: "Дата" }),
     laboratoryComparison.locator(".laboratory-results th").nth(1).locator(".laboratory-comparison-column-label"),
   );
   await laboratoryDateHeader.getByRole("button", { name: "Дата" }).click();
-  await expect(laboratoryDateHeader).toHaveAttribute("aria-sort", "descending");
+  await expect(laboratoryDateHeader).toHaveAttribute("aria-sort", "ascending");
   await ownerPage.reload();
   await expect(laboratoryComparison).toBeVisible({ timeout: replicationTimeout });
   await expect(laboratoryComparison.locator(
@@ -1355,9 +1372,29 @@ test("fresh provisioning, Doctor approval, grant, draft, and confirmation", asyn
   await expect(laboratoryComparison.getByRole("button", { name: /Удалить показатель «Гематокрит \(Hct, PCV\), %»/ })).toBeVisible();
 
   await ownerPage.setViewportSize({ width: 752, height: 1200 });
+  const epicrisisMobileSort = ownerPage.locator(".owner-epicrisis-heading .app-table-sort");
+  const epicrisisMobileSelector = epicrisisMobileSort.getByLabel("Сортировка эпикриза");
+  await expect(epicrisisMobileSort).toBeVisible();
+  await expect(epicrisisMobileSort.locator(".app-select-value")).toHaveText("Сначала новые");
+  await expect(epicrisisMobileSort.locator(".app-select")).toHaveCSS("background-color", "rgb(255, 255, 255)");
+  await expect(epicrisisMobileSort.locator(".app-select-value")).toHaveCSS("white-space", "nowrap");
+  expect(await ownerPage.locator(".owner-epicrisis-heading").evaluate((heading) => {
+    const style = getComputedStyle(heading);
+    return style.display === "flex" && style.flexWrap === "nowrap";
+  })).toBe(true);
+  await epicrisisMobileSelector.selectOption("date:asc");
+  await expect(epicrisisDateHeader).toHaveAttribute("aria-sort", "ascending");
+  const laboratoryMobileSort = laboratoryComparison.locator(".app-table-sort");
+  const laboratoryMobileColumns = laboratoryComparison.locator(".laboratory-results-mobile-columns");
+  await expect(laboratoryMobileSort).toBeVisible();
+  await expect(laboratoryMobileColumns).toBeVisible();
+  await expectNextFullWidthRow(laboratoryMobileColumns, laboratoryMobileSort);
+  await expectSameHorizontalBounds(laboratoryMobileSort, laboratoryComparison.locator(".laboratory-results-scroll"));
+  await expect(laboratoryMobileSort.locator(".app-select-value")).toHaveText("Сначала новые");
+  await laboratoryMobileSort.getByLabel("Сортировка истории лабораторных показателей").selectOption("date:asc");
+  await expect(laboratoryDateHeader).toHaveAttribute("aria-sort", "ascending");
   const laboratoryTable = laboratoryComparison.locator(".laboratory-results");
   await expect(laboratoryTable).toBeVisible();
-  await expect(laboratoryComparison.locator(".laboratory-results-mobile-columns")).toBeVisible();
   await expect(removeHematocrit).toBeVisible();
   expect(await laboratoryComparison.evaluate((panel) => panel.scrollWidth <= panel.clientWidth + 1)).toBe(true);
   const laboratoryComparisonCard = laboratoryTable.locator("tbody tr").first();
@@ -1501,11 +1538,30 @@ test("fresh provisioning, Doctor approval, grant, draft, and confirmation", asyn
   await expectEmailText(request, doctorEmail, "Доступ к питомцу «Ёжик» отозван.");
   await openProfileAndWaitForSync(ownerPage);
 
+  await doctorPage.bringToFront();
+  await doctorPage.locator(".workspace-sidebar").getByRole("link", { name: "Мед. карты" }).click();
+  await expect(doctorPage).toHaveURL(/\/doctor\/home/);
+  await doctorPage.setViewportSize({ width: 752, height: 1200 });
+  const doctorAccessMobileSort = doctorPage.locator(".doctor-access-mobile-sort");
+  await expect(doctorAccessMobileSort).toBeVisible();
+  await expectNextFullWidthRow(doctorPage.locator(".doctor-access-filters"), doctorAccessMobileSort);
+  await doctorAccessMobileSort.getByLabel("Сортировка доступов к медицинским картам").selectOption("pet:desc");
+  await expect(doctorPage.locator(".doctor-access-table th").first()).toHaveAttribute("aria-sort", "descending");
+  expect(await doctorPage.locator(".doctor-page").evaluate((panel) => panel.scrollWidth <= panel.clientWidth + 1)).toBe(true);
+
   await administratorPage.bringToFront();
   await administratorPage.locator(".workspace-sidebar").getByRole("link", { name: "Журнал" }).click();
   await expect(administratorPage).toHaveURL(/\/admin\/audit/);
   await expect(administratorPage.getByText(/Блокчейн проверен · блок/)).toBeVisible();
   await expect(administratorPage.locator(".administrator-audit-table tbody tr").first()).toBeVisible();
+  await expect(administratorPage.locator(".administrator-audit-table th").first()).toHaveAttribute("aria-sort", "descending");
+  await administratorPage.setViewportSize({ width: 752, height: 1200 });
+  const auditMobileSort = administratorPage.locator(".administrator-mobile-sort");
+  await expect(auditMobileSort).toBeVisible();
+  await expectNextFullWidthRow(administratorPage.locator(".administrator-audit-filters"), auditMobileSort);
+  await auditMobileSort.getByLabel("Сортировка журнала действий").selectOption("date:asc");
+  await expect(administratorPage.locator(".administrator-audit-table th").first()).toHaveAttribute("aria-sort", "ascending");
+  expect(await administratorPage.locator(".administrator-panel").evaluate((panel) => panel.scrollWidth <= panel.clientWidth + 1)).toBe(true);
 
   if (process.env.KLINOK_E2E_RESTART_API === "true") await restartApi();
   await ownerPage.getByRole("button", { name: "Выйти", exact: true }).click();

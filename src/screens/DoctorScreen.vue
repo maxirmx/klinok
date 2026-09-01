@@ -20,6 +20,7 @@ import AccessStatusField from "../components/AccessStatusField.vue";
 import AppIcon from "../components/AppIcon.vue";
 import AppPaginator from "../components/AppPaginator.vue";
 import AppSelect from "../components/AppSelect.vue";
+import AppTableSort from "../components/AppTableSort.vue";
 import ConfirmationDialog from "../components/ConfirmationDialog.vue";
 import EncounterEditorForm from "../components/EncounterEditorForm.vue";
 import EpicrisisTable from "../components/EpicrisisTable.vue";
@@ -84,6 +85,10 @@ const homeFilterOptions = [
   { value: "requested", label: "Ожидающие запросы" },
   { value: "revoked", label: "Отозванные" },
 ];
+const homeSortFields = [
+  { value: "pet", label: "Питомец" },
+  { value: "owner", label: "Владелец" },
+] as const;
 const historySectionOptions = [
   { value: "", label: "Все разделы" },
   ...ENCOUNTER_SECTION_ORDER.map((value) => ({ value, label: ENCOUNTER_SECTION_LABELS[value] })),
@@ -362,6 +367,14 @@ function changeHomeSort(field: HomeSortField) {
     homeSortDirection.value = "asc";
   }
 }
+
+function updateHomeSortField(field: string) {
+  if (homeSort.value === field) return;
+  homeSort.value = field as HomeSortField;
+  homeSortDirection.value = "asc";
+}
+
+function updateHomeSortDirection(direction: SortDirection) { homeSortDirection.value = direction; }
 
 function homeSortAria(field: HomeSortField): "ascending" | "descending" | "none" {
   if (homeSort.value !== field) return "none";
@@ -765,6 +778,15 @@ watch(delegationPageCount, (pageCount) => {
           </span>
         </label>
       </div>
+      <AppTableSort
+        class="doctor-access-mobile-sort"
+        :field="homeSort"
+        :direction="homeSortDirection"
+        :fields="homeSortFields"
+        aria-label="Сортировка доступов к медицинским картам"
+        @update:field="updateHomeSortField"
+        @update:direction="updateHomeSortDirection"
+      />
       <div class="owner-access-table-wrap">
         <table class="owner-access-table doctor-access-table">
           <colgroup>

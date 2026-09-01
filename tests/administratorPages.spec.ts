@@ -445,6 +445,31 @@ describe("Administrator pages", () => {
     }, "approved", undefined);
   });
 
+  it("keeps administrator sorting available through the mobile control", async () => {
+    await setState({
+      profiles: [
+        profile("doctor-1", "Анна", "Врач"),
+        profile("owner-1", "Ольга", "Владелец"),
+      ],
+      roles: [role("doctor-1", "doctor", "pending"), role("owner-1", "owner", "approved")],
+    });
+    const wrapper = await mountAt("/admin/home", "administrator-home");
+    const mobileSort = wrapper.get(".administrator-mobile-sort");
+    const field = mobileSort.get<HTMLSelectElement>('select[aria-label="Сортировка пользователей"]');
+
+    expect(field.element.value).toBe("name:asc");
+    expect(mobileSort.attributes("data-sort-direction")).toBe("asc");
+    await field.setValue("doctor:asc");
+    await flushPromises();
+    expect(appMocks.loadAdministratorUsers).toHaveBeenLastCalledWith("", false, 1, 20, "doctor", "asc");
+    expect(wrapper.findAll(".administrator-role-table th")[2]!.attributes("aria-sort")).toBe("ascending");
+
+    await field.setValue("doctor:desc");
+    await flushPromises();
+    expect(appMocks.loadAdministratorUsers).toHaveBeenLastCalledWith("", false, 1, 20, "doctor", "desc");
+    expect(wrapper.findAll(".administrator-role-table th")[2]!.attributes("aria-sort")).toBe("descending");
+  });
+
   it("keeps the freshly loaded role status authoritative when the current snapshot is stale", async () => {
     await setState({
       profiles: [profile("doctor-1", "Анна", "Врач")],
@@ -742,6 +767,16 @@ describe("Administrator pages", () => {
     expect(rows[0]!.text()).toContain("Роль восстановлена");
     expect(rows[0]!.text()).toContain("Начальный Администратор");
     expect(rows[2]!.text()).toContain("Роль назначена при инициализации");
+    const dateHeader = wrapper.get(".administrator-audit-table th");
+    expect(dateHeader.attributes("aria-sort")).toBe("descending");
+    const mobileSort = wrapper.get<HTMLSelectElement>('select[aria-label="Сортировка журнала действий"]');
+    expect(mobileSort.element.value).toBe("date:desc");
+    await mobileSort.setValue("date:asc");
+    expect(dateHeader.attributes("aria-sort")).toBe("ascending");
+    expect(wrapper.findAll(".administrator-audit-table tbody tr")[0]!.text()).toContain("Роль назначена при инициализации");
+    await dateHeader.get("button").trigger("click");
+    expect(dateHeader.attributes("aria-sort")).toBe("descending");
+    expect(wrapper.findAll(".administrator-audit-table tbody tr")[0]!.text()).toContain("Роль восстановлена");
 
     await searchLabel.get("input").setValue("Семен");
     expect(wrapper.findAll(".administrator-audit-table tbody tr")).toHaveLength(2);
@@ -775,5 +810,27 @@ describe("Administrator pages", () => {
     expect(wrapper.get(".administrator-audit-table tbody tr").text()).toContain("Анна Врач");
     expect(wrapper.get(".administrator-audit-table tbody tr").text()).toContain("Алексей Администратор");
     expect(wrapper.text()).not.toContain("ФИО не указано");
+  });
+
+  it("orders equal audit timestamps deterministically and resets pagination after sorting", async () => {
+    localStorage.setItem("klinok:admin-audit-page-size", "10");
+    const roleAudit = Array.from({ length: 11 }, (_, index) => auditEntry({
+      blockHash: `audit-${index + 1}`,
+      ledgerHeight: index + 1,
+      category: "request",
+      action: `Действие ${index + 1}`,
+      createdAt: "2026-07-10T10:00:00.000Z",
+    }));
+    await setState({ roleAudit });
+    const wrapper = await mountAt("/admin/audit", "administrator-audit");
+
+    expect(wrapper.findAll(".administrator-audit-table tbody tr")).toHaveLength(10);
+    expect(wrapper.get(".administrator-audit-table tbody tr").text()).toContain("Действие 11");
+    await wrapper.get('.app-paginator button[aria-label="Страница 2"]').trigger("click");
+    expect(wrapper.get(".administrator-audit-table tbody tr").text()).toContain("Действие 1");
+
+    await wrapper.get<HTMLSelectElement>('select[aria-label="Сортировка журнала действий"]').setValue("date:asc");
+
+    expect(wrapper.get(".administrator-audit-table tbody tr").text()).toContain("Действие 1");
   });
 });
