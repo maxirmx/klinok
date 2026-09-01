@@ -1139,6 +1139,17 @@ test("fresh provisioning, Doctor approval, grant, draft, and confirmation", asyn
   expect(await vaccinationCard.evaluate((card) => card.scrollWidth <= card.clientWidth + 1)).toBe(true);
   expect(await laboratoryCard.evaluate((card) => card.scrollWidth <= card.clientWidth + 1)).toBe(true);
   expect(await instrumentalCard.evaluate((card) => card.scrollWidth <= card.clientWidth + 1)).toBe(true);
+  const whatHappenedCard = doctorPage.locator(".encounter-what-happened");
+  const problemTree = doctorPage.getByRole("tree", { name: "Не всё хорошо с", exact: true });
+  await problemTree.locator(":scope > li > details > summary").click();
+  const laboratorySummary = problemTree.locator("summary").filter({ hasText: /^Лабораторными анализами$/ });
+  await laboratorySummary.click();
+  const laboratoryOptions = laboratorySummary.locator("..").locator("fieldset");
+  await expect(laboratoryOptions.getByLabel("Повышена глюкоза в крови", { exact: true })).toBeVisible();
+  await expect(laboratoryOptions.getByLabel("Есть кристаллы в моче", { exact: true })).toBeVisible();
+  await expect(whatHappenedCard.locator(".encounter-chips .selection-chip")).toHaveCount(3);
+  expect(await laboratoryOptions.evaluate((panel) => panel.scrollWidth <= panel.clientWidth + 1)).toBe(true);
+  expect(await whatHappenedCard.evaluate((card) => card.scrollWidth <= card.clientWidth + 1)).toBe(true);
   await doctorPage.evaluate(() => window.scrollTo(0, 0));
   const [encounterHeadingBox, whatHappenedBox] = await Promise.all([
     doctorPage.locator(".doctor-pet-detail > .encounter-editor .encounter-editor-heading").boundingBox(),
@@ -1563,7 +1574,28 @@ test("fresh provisioning, Doctor approval, grant, draft, and confirmation", asyn
   await expect(administratorPage.locator(".administrator-audit-table th").first()).toHaveAttribute("aria-sort", "ascending");
   expect(await administratorPage.locator(".administrator-panel").evaluate((panel) => panel.scrollWidth <= panel.clientWidth + 1)).toBe(true);
 
-  if (process.env.KLINOK_E2E_RESTART_API === "true") await restartApi();
+  if (process.env.KLINOK_E2E_RESTART_API === "true") {
+    const auditHashesBeforeMigration = await queryPostgres(`SELECT coalesce(string_agg(block_hash, ',' ORDER BY height), '')
+      FROM audit_blocks WHERE aggregate_type='medicalRecord' AND aggregate_id='${recordId}'`);
+    await queryPostgres(`UPDATE medical_records
+      SET sections=jsonb_set(
+        sections,
+        '{what-happened,value,selectedIds}',
+        '["problem.eyes.11", "removed.option", "problem.eyes.1", "problem.eyes.10", "problem.eyes.1"]'::jsonb,
+        true
+      )
+      WHERE record_id='${recordId}';
+      DELETE FROM schema_migrations WHERE version='002_what_happened_catalog';`);
+    await restartApi();
+    expect(await queryPostgres(`SELECT sections #>> '{what-happened,value,selectedIds}'
+      FROM medical_records WHERE record_id='${recordId}'`))
+      .toBe('["problem.eyes.1", "problem.eyes.12", "problem.eyes.10"]');
+    expect(await queryPostgres("SELECT count(*) FROM schema_migrations WHERE version='002_what_happened_catalog'"))
+      .toBe("1");
+    expect(await queryPostgres(`SELECT coalesce(string_agg(block_hash, ',' ORDER BY height), '')
+      FROM audit_blocks WHERE aggregate_type='medicalRecord' AND aggregate_id='${recordId}'`))
+      .toBe(auditHashesBeforeMigration);
+  }
   await ownerPage.getByRole("button", { name: "Выйти", exact: true }).click();
   await expect(ownerPage).toHaveURL(/\/auth\/login/);
   await expect(ownerPage.getByLabel("Название этого устройства")).toHaveValue("Основной браузер");

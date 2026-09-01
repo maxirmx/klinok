@@ -53,6 +53,16 @@ export {
   type LaboratoryTestsSectionValue,
   type LaboratoryStudyTypeCatalogItem,
 } from "./laboratory.js";
+export {
+  WHAT_HAPPENED_LEAF_COUNT,
+  WHAT_HAPPENED_TAXONOMY_IDS,
+  WHAT_HAPPENED_TREE,
+  canonicalWhatHappenedIds,
+  isWhatHappenedTaxonomyId,
+  whatHappenedLeafLabel,
+  whatHappenedPath,
+  type WhatHappenedOption,
+} from "./whatHappened.js";
 
 export const ROLES = ["administrator", "doctor", "owner"] as const;
 export type Role = (typeof ROLES)[number];
@@ -264,22 +274,6 @@ export const MEDICAL_ENCOUNTER_SECTION_KINDS = [
 ] as const;
 export type MedicalEncounterSectionKind = (typeof MEDICAL_ENCOUNTER_SECTION_KINDS)[number];
 
-export const WHAT_HAPPENED_TAXONOMY_RANGES = {
-  well: 9,
-  "problem.general": 18,
-  "problem.digestive": 25,
-  "problem.respiratory": 5,
-  "problem.skin": 24,
-  "problem.urinary": 13,
-  "problem.eyes": 11,
-  "problem.musculoskeletal": 14,
-  "problem.laboratory.cbc": 6,
-  "problem.laboratory.biochemistry": 11,
-  "problem.laboratory.urine": 10,
-  "problem.research": 6,
-  critical: 7,
-} as const;
-
 export const OUTCOME_TAXONOMY_IDS = [
   "outcome.no-observation",
   "outcome.observation",
@@ -289,14 +283,6 @@ export const OUTCOME_TAXONOMY_IDS = [
   "outcome.deterioration",
   "outcome.death",
 ] as const;
-
-export function isWhatHappenedTaxonomyId(value: string): boolean {
-  const match = /^(.*)\.(\d+)$/.exec(value);
-  if (!match) return false;
-  const maximum = WHAT_HAPPENED_TAXONOMY_RANGES[match[1] as keyof typeof WHAT_HAPPENED_TAXONOMY_RANGES];
-  const position = Number(match[2]);
-  return maximum !== undefined && Number.isInteger(position) && position >= 1 && position <= maximum;
-}
 
 export function isOutcomeTaxonomyId(value: string): value is (typeof OUTCOME_TAXONOMY_IDS)[number] {
   return (OUTCOME_TAXONOMY_IDS as readonly string[]).includes(value);

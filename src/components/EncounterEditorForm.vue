@@ -20,6 +20,7 @@ import {
   REVACCINATION_INTERVAL_OPTIONS,
   WHAT_HAPPENED_TREE,
   calculateNextRevaccinationDate,
+  canonicalWhatHappenedIds,
   emptyVaccinationDraft,
   emptyDiagnosisDraft,
   parseDiagnosisDraft,
@@ -140,10 +141,10 @@ function toggleSelection(id: string) {
   if (index >= 0) selectedIds.value = selectedIds.value.filter((selectedId) => selectedId !== id);
   else {
     const condition = id.split(".", 1)[0];
-    selectedIds.value = [
+    selectedIds.value = canonicalWhatHappenedIds([
       ...selectedIds.value.filter((selectedId) => selectedId.split(".", 1)[0] === condition),
       id,
-    ];
+    ]);
   }
 }
 

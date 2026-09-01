@@ -1948,6 +1948,27 @@ describe("Doctor pages", () => {
       "Взятие анализов",
       "Проведение исследования",
     ]);
+    const problemDetails = (label: string) => wrapper.findAll(
+      '.encounter-condition-trees > .encounter-taxonomy[aria-label="Не всё хорошо с"] details',
+    ).find((details) => details.get("summary").text() === label)!;
+    const laboratory = problemDetails("Лабораторными анализами");
+    expect(laboratory.findAll("details")).toHaveLength(0);
+    expect(laboratory.findAll("label")).toHaveLength(27);
+    expect(laboratory.findAll("label").map((label) => label.text())).toContain("Повышена глюкоза в крови");
+    const eyes = problemDetails("Глазами");
+    expect(eyes.findAll("label").map((label) => label.text())).toEqual([
+      "Слезятся",
+      "Мокрые дорожки около глаз",
+      "Мутные истечения из глаз",
+      "Щурится",
+      "Глаз закрыт, не открывается",
+      "Не может закрыть глаз",
+      "Травма глаза",
+      "Зрачок расширен",
+      "Зрачки разного размера",
+      "Зрачок сужен",
+      "Ослеп; натыкается на предметы",
+    ]);
     expect(wrapper.findAll(".encounter-condition-trees > .encounter-taxonomy > li > details").every((tree) => tree.attributes("open") === undefined)).toBe(true);
     expect(wrapper.get(".encounter-date-field").exists()).toBe(true);
     const addSection = wrapper.get(".encounter-add-section");

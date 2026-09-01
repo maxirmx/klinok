@@ -6,6 +6,7 @@ import { randomUUID } from "node:crypto";
 import {
   PET_SEXES,
   MEDICAL_ENCOUNTER_SECTION_KINDS,
+  canonicalWhatHappenedIds,
   isDiagnosisTaxonomyId,
   isOutcomeTaxonomyId,
   isWhatHappenedTaxonomyId,
@@ -202,6 +203,7 @@ export function validateMedicalEncounter(value: unknown): MedicalEncounterInput 
     encounterDate,
     sections: {
       ...currentSections,
+      "what-happened": { selectedIds: canonicalWhatHappenedIds(selectedIds), comment },
       ...(sections["laboratory-tests"] && !("text" in object(sections["laboratory-tests"]))
         ? { "laboratory-tests": laboratorySection(sections["laboratory-tests"]) } : {}),
       ...(sections["instrumental-tests"] && !("text" in object(sections["instrumental-tests"]))

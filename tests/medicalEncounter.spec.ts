@@ -3,7 +3,14 @@
 // This file is a part of Klinok application
 
 import { describe, expect, it } from "vitest";
-import { isWhatHappenedTaxonomyId } from "../packages/contracts/src/index";
+import {
+  WHAT_HAPPENED_LEAF_COUNT,
+  WHAT_HAPPENED_TAXONOMY_IDS,
+  canonicalWhatHappenedIds,
+  isWhatHappenedTaxonomyId,
+  whatHappenedLeafLabel,
+  whatHappenedPath,
+} from "../packages/contracts/src/index";
 import {
   ENCOUNTER_SECTION_LABELS,
   ENCOUNTER_SECTION_ORDER,
@@ -29,8 +36,6 @@ import {
   replaceConflictingOutcome,
   sectionSearchText,
   vaccinationDetails,
-  whatHappenedPath,
-  whatHappenedSecondLevelLabel,
 } from "../src/medicalEncounter";
 import {
   DIAGNOSIS_CATALOG,
@@ -54,8 +59,10 @@ describe("medical encounter templates", () => {
     ]);
   });
 
-  it("contains stable, arbitrary-depth taxonomy identifiers including laboratory groups", () => {
+  it("contains the canonical 159-leaf, three-level taxonomy in deterministic order", () => {
     expect(WHAT_HAPPENED_TREE.label).toBe("Что случилось");
+    expect(WHAT_HAPPENED_LEAF_COUNT).toBe(159);
+    expect(new Set(WHAT_HAPPENED_TAXONOMY_IDS).size).toBe(159);
     const well = WHAT_HAPPENED_TREE.children?.find((node) => node.id === "well");
     expect(well?.children?.map(({ id, label }) => ({ id, label }))).toEqual([
       { id: "well.1", label: "Контрольный осмотр" },
@@ -71,21 +78,42 @@ describe("medical encounter templates", () => {
     expect(whatHappenedPath("well.1")).toBe("Всё хорошо, необходимо › Контрольный осмотр");
     expect(whatHappenedPath("well.8")).toBe("Всё хорошо, необходимо › Взятие анализов");
     expect(whatHappenedPath("well.9")).toBe("Всё хорошо, необходимо › Проведение исследования");
-    expect(whatHappenedSecondLevelLabel("well.1")).toBe("Контрольный осмотр");
+    expect(whatHappenedLeafLabel("well.1")).toBe("Контрольный осмотр");
+    expect(whatHappenedPath("removed.option")).toBe("removed.option");
+    expect(whatHappenedLeafLabel("removed.option")).toBe("removed.option");
     expect(isWhatHappenedTaxonomyId("well.1")).toBe(true);
     expect(isWhatHappenedTaxonomyId("well.8")).toBe(true);
     expect(isWhatHappenedTaxonomyId("well.9")).toBe(true);
     expect(isWhatHappenedTaxonomyId("well.10")).toBe(false);
     const laboratory = WHAT_HAPPENED_TREE.children?.find((node) => node.id === "problem")?.children
       ?.find((node) => node.id === "problem.laboratory");
-    expect(laboratory?.children?.map((node) => node.id)).toEqual([
-      "problem.laboratory.cbc",
-      "problem.laboratory.biochemistry",
-      "problem.laboratory.urine",
+    expect(laboratory?.children).toHaveLength(27);
+    expect(laboratory?.children?.every((node) => !node.children?.length)).toBe(true);
+    expect(laboratory?.children?.[0]?.id).toBe("problem.laboratory.cbc.1");
+    expect(laboratory?.children?.at(-1)?.id).toBe("problem.laboratory.urine.10");
+    expect(whatHappenedPath("problem.laboratory.urine.10"))
+      .toBe("Не всё хорошо с › Лабораторными анализами › Есть кристаллы в моче");
+    expect(whatHappenedLeafLabel("problem.laboratory.urine.10")).toBe("Есть кристаллы в моче");
+
+    const eyes = WHAT_HAPPENED_TREE.children?.find((node) => node.id === "problem")?.children
+      ?.find((node) => node.id === "problem.eyes");
+    expect(eyes?.children?.map(({ id, label }) => ({ id, label }))).toEqual([
+      { id: "problem.eyes.1", label: "Слезятся" },
+      { id: "problem.eyes.12", label: "Мокрые дорожки около глаз" },
+      { id: "problem.eyes.2", label: "Мутные истечения из глаз" },
+      { id: "problem.eyes.3", label: "Щурится" },
+      { id: "problem.eyes.4", label: "Глаз закрыт, не открывается" },
+      { id: "problem.eyes.5", label: "Не может закрыть глаз" },
+      { id: "problem.eyes.6", label: "Травма глаза" },
+      { id: "problem.eyes.7", label: "Зрачок расширен" },
+      { id: "problem.eyes.8", label: "Зрачки разного размера" },
+      { id: "problem.eyes.9", label: "Зрачок сужен" },
+      { id: "problem.eyes.10", label: "Ослеп; натыкается на предметы" },
     ]);
-    expect(whatHappenedPath("problem.laboratory.urine.10")).toContain("Есть кристаллы");
-    expect(whatHappenedSecondLevelLabel("problem.laboratory.urine.10"))
-      .toBe("Лабораторными анализами");
+    expect(isWhatHappenedTaxonomyId("problem.eyes.11")).toBe(false);
+    expect(isWhatHappenedTaxonomyId("problem.eyes.12")).toBe(true);
+    expect(canonicalWhatHappenedIds(["critical.1", "problem.eyes.12", "well.1", "problem.eyes.1"]))
+      .toEqual(["well.1", "problem.eyes.1", "problem.eyes.12", "critical.1"]);
   });
 
   it("derives a readable summary while persisting stable IDs", () => {

@@ -5,7 +5,7 @@
 
 import type { WhatHappenedOption } from "../medicalEncounter";
 
-withDefaults(defineProps<{ node: WhatHappenedOption; selected: string[]; root?: boolean }>(), {
+withDefaults(defineProps<{ node: WhatHappenedOption; selected: readonly string[]; root?: boolean }>(), {
   root: false,
 });
 const emit = defineEmits<{ toggle: [id: string] }>();

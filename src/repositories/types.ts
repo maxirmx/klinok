@@ -33,6 +33,7 @@ export type {
   TherapeuticAppointmentSectionValue,
   TherapeuticProblemValue,
   VaccinationSectionValue,
+  WhatHappenedOption,
   WhatHappenedSectionValue,
 } from "@klinok/contracts";
 export {
@@ -53,4 +54,11 @@ export {
   laboratoryStudyTypeById,
   normalizeLaboratoryTestsValue,
   normalizeInstrumentalTestsValue,
+  WHAT_HAPPENED_LEAF_COUNT,
+  WHAT_HAPPENED_TAXONOMY_IDS,
+  WHAT_HAPPENED_TREE,
+  canonicalWhatHappenedIds,
+  isWhatHappenedTaxonomyId,
+  whatHappenedLeafLabel,
+  whatHappenedPath,
 } from "@klinok/contracts";
