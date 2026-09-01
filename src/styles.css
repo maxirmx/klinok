@@ -3365,12 +3365,11 @@ label > input[type="checkbox"] {
     text-align: left;
   }
   .laboratory-results td > .laboratory-result-content { grid-column: 2; }
-}
-.laboratory-panel-results {
-  container-type: inline-size;
-  width: 100%;
-  min-width: 0;
-}
+  .laboratory-panel-results {
+    container-type: inline-size;
+    width: 100%;
+    min-width: 0;
+  }
 .laboratory-panel-layout { display: grid; grid-template-columns: minmax(0, 1fr); width: min(100%, 52rem); min-width: 0; }
 .laboratory-editor-results .laboratory-panel-layout { width: 100%; }
 .laboratory-result-headings { display: none; }
