@@ -1302,7 +1302,7 @@ label > input[type="checkbox"] {
   border: 2px solid var(--line);
   border-radius: 12px;
 }
-.owner-epicrisis > h2 { margin: 0; }
+.owner-epicrisis-heading > h2 { margin: 0; }
 .epicrisis-table-wrap { margin-top: 12px; }
 .epicrisis-table-header {
   display: grid;
@@ -2989,6 +2989,7 @@ label > input[type="checkbox"] {
 .doctor-access-table th .doctor-sort-button .app-icon.descending,
 .owner-access-table th .table-sort-button .app-icon.descending,
 .epicrisis-table-header .table-sort-button .app-icon.descending { transform: none; }
+.app-table-sort { display: none; }
 .epicrisis-table-header .table-sort-button { min-height: 0; align-items: flex-start; }
 .administrator-role-content {
   display: flex;
@@ -3163,6 +3164,41 @@ label > input[type="checkbox"] {
   .administrator-user-filters .administrator-search { width: 100%; }
   .administrator-search { max-width: none; }
   .administrator-audit-filters { grid-template-columns: 1fr; }
+  .app-table-sort {
+    display: block;
+    width: fit-content;
+    max-width: 100%;
+    min-width: 0;
+  }
+  .owner-epicrisis-heading {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+  }
+  .owner-epicrisis-heading > h2 { flex: 0 0 auto; }
+  .owner-epicrisis-heading > .app-table-sort { flex: 0 1 auto; }
+  .administrator-mobile-sort,
+  .doctor-access-mobile-sort {
+    width: 100%;
+    margin: 10px 0;
+  }
+  .laboratory-mobile-sort { width: 100%; }
+  .app-table-sort .app-select {
+    width: max-content;
+    max-width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+  }
+  .app-table-sort .app-select-value {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .administrator-mobile-sort .app-select,
+  .doctor-access-mobile-sort .app-select,
+  .laboratory-mobile-sort .app-select { width: 100%; }
   .administrator-table-wrap {
     overflow: visible;
     border: 0;
@@ -3351,6 +3387,11 @@ label > input[type="checkbox"] {
 .laboratory-results .table-sort-button { min-height: 0; align-items: flex-start; }
 .laboratory-results-mobile-columns { display: none; }
 .laboratory-comparison-table { display: grid; min-width: 0; gap: 12px; }
+.laboratory-panel-results {
+  container-type: inline-size;
+  width: 100%;
+  min-width: 0;
+}
 @media (max-width: 760px) {
   .laboratory-results.owner-access-table { min-width: 0; }
   .laboratory-results-mobile-columns {
@@ -3358,18 +3399,13 @@ label > input[type="checkbox"] {
     width: 100%;
     flex-wrap: wrap;
     gap: 8px 16px;
-    margin-bottom: 10px;
     color: var(--text-soft);
     font-size: 11px;
     font-weight: 700;
     text-align: left;
   }
   .laboratory-results td > .laboratory-result-content { grid-column: 2; }
-  .laboratory-panel-results {
-    container-type: inline-size;
-    width: 100%;
-    min-width: 0;
-  }
+}
 .laboratory-panel-layout { display: grid; grid-template-columns: minmax(0, 1fr); width: min(100%, 52rem); min-width: 0; }
 .laboratory-editor-results .laboratory-panel-layout { width: 100%; }
 .laboratory-result-headings { display: none; }

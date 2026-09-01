@@ -731,9 +731,14 @@ describe("Owner pages", () => {
     expect(detail.get(".owner-epicrisis h2").text()).toBe("Эпикриз");
     expect(detail.findAll(".medical-record-entry-epicrisis")).toHaveLength(10);
     const epicrisisDateHeader = detail.get('.owner-epicrisis [role="columnheader"]');
+    expect(epicrisisDateHeader.attributes("aria-sort")).toBe("descending");
+    expect(detail.get(".medical-record-entry-epicrisis").text()).toContain("11.07.2026");
+    const epicrisisMobileSort = detail.get<HTMLSelectElement>('.owner-epicrisis select[aria-label="Сортировка эпикриза"]');
+    expect(epicrisisMobileSort.element.value).toBe("date:desc");
+    await epicrisisDateHeader.get("button").trigger("click");
     expect(epicrisisDateHeader.attributes("aria-sort")).toBe("ascending");
     expect(detail.get(".medical-record-entry-epicrisis").text()).toContain("01.07.2026");
-    await epicrisisDateHeader.get("button").trigger("click");
+    await epicrisisMobileSort.setValue("date:desc");
     expect(epicrisisDateHeader.attributes("aria-sort")).toBe("descending");
     expect(detail.get(".medical-record-entry-epicrisis").text()).toContain("11.07.2026");
     expect(detail.get(".owner-epicrisis-pagination").text()).toContain("Показаны 1–10 из 11");

@@ -9,6 +9,7 @@ import { normalizeRussianSearchText, type AccountProfile, type DirectoryProfileD
 import AppIcon from "../components/AppIcon.vue";
 import AppPaginator from "../components/AppPaginator.vue";
 import AppSelect from "../components/AppSelect.vue";
+import AppTableSort from "../components/AppTableSort.vue";
 import ModalDialog from "../components/ModalDialog.vue";
 import PendingCountBadge from "../components/PendingCountBadge.vue";
 import PersonIdentity from "../components/PersonIdentity.vue";
@@ -50,6 +51,7 @@ type AdministratorRow = DirectoryUserDto;
 
 type AuditRow = {
   eventId: string;
+  ledgerHeight: number;
   createdAt: string;
   category: AuditCategory;
   action: string;
@@ -64,6 +66,13 @@ const router = useRouter();
 const alertStore = useAlertStore();
 const displayedRoles: Role[] = ["owner", "doctor", "administrator"];
 const advancedRoles: AdvancedRole[] = ["doctor", "administrator"];
+const administratorSortFields = [
+  { value: "name", label: "ФИО" },
+  { value: "owner", label: "Владелец" },
+  { value: "doctor", label: "Ветеринар" },
+  { value: "administrator", label: "Администратор" },
+] as const;
+const auditSortFields = [{ value: "date", label: "Дата и время" }] as const;
 const pageSizes = [10, 20, 50] as const;
 const cabinetPageSizeKey = "klinok:admin-role-table-page-size";
 const auditPageSizeKey = "klinok:admin-audit-page-size";
@@ -96,6 +105,7 @@ const auditRole = ref<AdvancedRole | "">("");
 const auditAction = ref<AuditCategory | "">("");
 const auditPage = ref(1);
 const auditPageSize = ref(readPageSize(auditPageSizeKey));
+const auditSortDirection = ref<SortDirection>("desc");
 const auditProfiles = ref<Record<string, DirectoryProfileDto>>({});
 let auditProfilesRefreshId = 0;
 
@@ -199,6 +209,14 @@ function changeSort(field: SortField) {
     sortDirection.value = "asc";
   }
 }
+
+function updateSortField(field: string) {
+  if (sortField.value === field) return;
+  sortField.value = field as SortField;
+  sortDirection.value = "asc";
+}
+
+function updateSortDirection(direction: SortDirection) { sortDirection.value = direction; }
 
 function sortAria(field: SortField): "ascending" | "descending" | "none" {
   if (sortField.value !== field) return "none";
@@ -373,6 +391,7 @@ async function submitDecision() {
 
 const auditRows = computed<AuditRow[]>(() => appState.control.roleAudit.map((entry) => ({
   eventId: entry.blockHash,
+  ledgerHeight: entry.ledgerHeight,
   createdAt: entry.createdAt,
   category: entry.category,
   action: entry.action,
@@ -394,6 +413,11 @@ const filteredAuditRows = computed(() => {
       profileName(row.actorAccountId),
       row.actorAccountId,
     ].some((value) => normalize(value).includes(query));
+  }).sort((left, right) => {
+    const order = left.createdAt.localeCompare(right.createdAt)
+      || left.ledgerHeight - right.ledgerHeight
+      || left.eventId.localeCompare(right.eventId);
+    return auditSortDirection.value === "asc" ? order : -order;
   });
 });
 
@@ -422,6 +446,15 @@ function formatDate(value: string): string {
     dateStyle: "short",
     timeStyle: "short",
   }).format(new Date(value));
+}
+
+function updateAuditSortDirection(direction: SortDirection) {
+  auditSortDirection.value = direction;
+  auditPage.value = 1;
+}
+
+function toggleAuditSort() {
+  updateAuditSortDirection(auditSortDirection.value === "asc" ? "desc" : "asc");
 }
 
 async function signOut() {
@@ -458,7 +491,7 @@ watch(localRoleRevision, () => {
 });
 watch(pendingRoleCount, (count) => { if (!count) pendingOnly.value = false; });
 watch(pageSize, (value) => localStorage.setItem(cabinetPageSizeKey, String(value)));
-watch([auditSearch, auditRole, auditAction, auditPageSize], () => { auditPage.value = 1; });
+watch([auditSearch, auditRole, auditAction, auditPageSize, auditSortDirection], () => { auditPage.value = 1; });
 watch(auditPageSize, (value) => localStorage.setItem(auditPageSizeKey, String(value)));
 watch(auditPageCount, (count) => { if (auditPage.value > count) auditPage.value = count; });
 watch(
@@ -534,6 +567,15 @@ onBeforeUnmount(clearDirectoryRefreshTimer);
           {{ pendingOnly ? "Ожидающие решения по выбранным условиям не найдены." : "Пользователи с таким ФИО или идентификатором не найдены." }}
         </p>
         <template v-else>
+          <AppTableSort
+            class="administrator-mobile-sort"
+            :field="sortField"
+            :direction="sortDirection"
+            :fields="administratorSortFields"
+            aria-label="Сортировка пользователей"
+            @update:field="updateSortField"
+            @update:direction="updateSortDirection"
+          />
           <div class="administrator-table-wrap">
             <table class="administrator-table administrator-role-table">
               <thead>
@@ -701,11 +743,27 @@ onBeforeUnmount(clearDirectoryRefreshTimer);
         <p v-if="!auditRows.length" class="administrator-empty">Действий с расширенными ролями пока нет.</p>
         <p v-else-if="!filteredAuditRows.length" class="administrator-empty">Действия по выбранным условиям не найдены.</p>
         <template v-else>
+          <AppTableSort
+            class="administrator-mobile-sort"
+            field="date"
+            :direction="auditSortDirection"
+            :fields="auditSortFields"
+            ascending-label="Сначала старые"
+            descending-label="Сначала новые"
+            descending-first
+            aria-label="Сортировка журнала действий"
+            @update:direction="updateAuditSortDirection"
+          />
           <div class="administrator-table-wrap">
             <table class="administrator-table administrator-audit-table">
               <thead>
                 <tr>
-                  <th>Дата и время</th>
+                  <th :aria-sort="auditSortDirection === 'asc' ? 'ascending' : 'descending'">
+                    <button type="button" @click="toggleAuditSort">
+                      Дата и время
+                      <AppIcon name="chevron-down" :class="{ descending: auditSortDirection === 'desc' }" />
+                    </button>
+                  </th>
                   <th>Пользователь</th>
                   <th>Действие</th>
                   <th>Роль</th>

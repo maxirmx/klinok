@@ -301,6 +301,17 @@ describe("Doctor pages", () => {
     await flushPromises();
     expect(petSortHeader.attributes("aria-sort")).toBe("ascending");
     expect(directoryMocks.loadDoctorPetAccesses).toHaveBeenLastCalledWith("", "all", 1, 10, "pet", "asc");
+    const mobileSort = wrapper.get(".doctor-access-mobile-sort");
+    const mobileSortSelector = mobileSort.get<HTMLSelectElement>('select[aria-label="Сортировка доступов к медицинским картам"]');
+    expect(mobileSortSelector.element.value).toBe("pet:asc");
+    await mobileSortSelector.setValue("owner:asc");
+    await flushPromises();
+    expect(ownerSortHeader.attributes("aria-sort")).toBe("ascending");
+    expect(directoryMocks.loadDoctorPetAccesses).toHaveBeenLastCalledWith("", "all", 1, 10, "owner", "asc");
+    await mobileSortSelector.setValue("owner:desc");
+    await flushPromises();
+    expect(ownerSortHeader.attributes("aria-sort")).toBe("descending");
+    expect(directoryMocks.loadDoctorPetAccesses).toHaveBeenLastCalledWith("", "all", 1, 10, "owner", "desc");
     expect(wrapper.find('[role="dialog"]').exists()).toBe(false);
     await requestAccessButton.trigger("click");
     expect(wrapper.get('[role="dialog"]').text()).toContain("Запросить доступ");
@@ -485,10 +496,14 @@ describe("Doctor pages", () => {
     expect(wrapper.get(".doctor-access-table tbody tr").text()).toContain("pet-11");
     expect(directoryMocks.loadDoctorPetAccesses).toHaveBeenLastCalledWith("", "requested", 2, 10, "owner", "asc");
 
+    await wrapper.get<HTMLSelectElement>('select[aria-label="Сортировка доступов к медицинским картам"]').setValue("owner:desc");
+    await flushPromises();
+    expect(directoryMocks.loadDoctorPetAccesses).toHaveBeenLastCalledWith("", "requested", 1, 10, "owner", "desc");
+
     await wrapper.get<HTMLSelectElement>(".doctor-access-pagination select").setValue("20");
     await flushPromises();
     expect(localStorage.getItem("klinok:doctor-pets-page-size")).toBe("20");
-    expect(directoryMocks.loadDoctorPetAccesses).toHaveBeenLastCalledWith("", "requested", 1, 20, "owner", "asc");
+    expect(directoryMocks.loadDoctorPetAccesses).toHaveBeenLastCalledWith("", "requested", 1, 20, "owner", "desc");
     expect(directoryMocks.lookupPetDirectory).not.toHaveBeenCalled();
   });
 
@@ -2147,14 +2162,14 @@ describe("Doctor pages", () => {
     const epicrisis = wrapper.get(".owner-epicrisis");
     expect(epicrisis.findAll(".medical-record-entry-epicrisis")).toHaveLength(10);
     const dateHeader = epicrisis.get('[role="columnheader"]');
-    expect(dateHeader.attributes("aria-sort")).toBe("ascending");
-    expect(epicrisis.get(".medical-record-entry-epicrisis").text()).toContain("01.07.2026");
-    await dateHeader.get("button").trigger("click");
     expect(dateHeader.attributes("aria-sort")).toBe("descending");
     expect(epicrisis.get(".medical-record-entry-epicrisis").text()).toContain("11.07.2026");
+    await dateHeader.get("button").trigger("click");
+    expect(dateHeader.attributes("aria-sort")).toBe("ascending");
+    expect(epicrisis.get(".medical-record-entry-epicrisis").text()).toContain("01.07.2026");
     await epicrisis.get('button[title="Следующая страница"]').trigger("click");
     expect(epicrisis.findAll(".medical-record-entry-epicrisis")).toHaveLength(1);
-    expect(epicrisis.get(".medical-record-entry-epicrisis").text()).toContain("01.07.2026");
+    expect(epicrisis.get(".medical-record-entry-epicrisis").text()).toContain("11.07.2026");
 
     await setMedical(snapshot(undefined, { records: [records[0]!] }));
     await flushPromises();

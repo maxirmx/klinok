@@ -7,6 +7,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import AppCatalogCombobox from "../src/components/AppCatalogCombobox.vue";
 import AppIcon from "../src/components/AppIcon.vue";
 import AppPaginator from "../src/components/AppPaginator.vue";
+import AppTableSort from "../src/components/AppTableSort.vue";
 import LaboratoryComparison from "../src/components/LaboratoryComparison.vue";
 import {
   laboratoryComparisonPreferenceKey,
@@ -138,13 +139,17 @@ describe("LaboratoryComparison", () => {
     expect(comparison.get(".laboratory-results tbody tr").findAll("td").map((cell) => cell.attributes("data-label")))
       .toEqual(["Дата", "Исследование", "Гематокрит, %", "Гемоглобин, г/л"]);
     const dateHeader = comparison.get(".laboratory-results th");
-    expect(dateHeader.attributes("aria-sort")).toBe("ascending");
-    expect(comparison.findAll('tbody td[data-label="Дата"]').map((cell) => cell.text()))
-      .toEqual(["14.08.2026", "15.08.2026"]);
-    await dateHeader.get("button").trigger("click");
     expect(dateHeader.attributes("aria-sort")).toBe("descending");
     expect(comparison.findAll('tbody td[data-label="Дата"]').map((cell) => cell.text()))
       .toEqual(["15.08.2026", "14.08.2026"]);
+    expect(comparison.get<HTMLSelectElement>('select[aria-label="Сортировка истории лабораторных показателей"]').element.value)
+      .toBe("date:desc");
+    expect(Array.from(comparison.get(".laboratory-comparison-table").element.children).slice(0, 3).map((element) => element.className))
+      .toEqual(["laboratory-results-mobile-columns", "app-table-sort laboratory-mobile-sort", "owner-access-table-wrap laboratory-results-scroll"]);
+    await dateHeader.get("button").trigger("click");
+    expect(dateHeader.attributes("aria-sort")).toBe("ascending");
+    expect(comparison.findAll('tbody td[data-label="Дата"]').map((cell) => cell.text()))
+      .toEqual(["14.08.2026", "15.08.2026"]);
     expect(comparison.find(".app-paginator").exists()).toBe(true);
     expect(wrapper.getComponent(AppPaginator).attributes("aria-label")).toBe("Навигация по истории лабораторных показателей");
     wrapper.getComponent(AppPaginator).vm.$emit("update:page", 1);
@@ -184,6 +189,28 @@ describe("LaboratoryComparison", () => {
     ]);
   });
 
+  it("uses record creation time as a stable tie-breaker for studies on the same date", async () => {
+    const hematocrit = { indicatorId: "lab.indicator.cbc.001", indicatorName: "Гематокрит", unit: "%" };
+    const older = {
+      ...record(panelSection("study-older", "2026-08-15", "Ветлаб", [{ ...hematocrit, result: "41" }]), "record-older"),
+      createdAt: "2026-08-15T09:00:00.000Z",
+    };
+    const newer = {
+      ...record(panelSection("study-newer", "2026-08-15", "Ветлаб", [{ ...hematocrit, result: "43" }]), "record-newer"),
+      createdAt: "2026-08-15T11:00:00.000Z",
+    };
+    const wrapper = mount(LaboratoryComparison, {
+      props: { records: [older, newer], confirmedIds: new Set<string>(), ...comparisonScope },
+    });
+    wrapper.getComponent(AppCatalogCombobox).vm.$emit("update:selectedIds", [hematocrit.indicatorId]);
+    await wrapper.vm.$nextTick();
+
+    expect(wrapper.findAll(".laboratory-result-content").map((value) => value.text())).toEqual(["43", "41"]);
+    wrapper.getComponent(AppTableSort).vm.$emit("update:direction", "asc");
+    await wrapper.vm.$nextTick();
+    expect(wrapper.findAll(".laboratory-result-content").map((value) => value.text())).toEqual(["41", "43"]);
+  });
+
   it("uses one paginator and clamps the table page after records shrink", async () => {
     const hematocrit = { indicatorId: "lab.indicator.cbc.001", indicatorName: "Гематокрит", unit: "%" };
     const hemoglobin = { indicatorId: "lab.indicator.cbc.002", indicatorName: "Гемоглобин", unit: "г/л" };
@@ -208,6 +235,10 @@ describe("LaboratoryComparison", () => {
 
     expect(paginator.props("page")).toBe(2);
     expect(wrapper.findAll(".laboratory-results tbody tr")).toHaveLength(2);
+    wrapper.getComponent(AppTableSort).vm.$emit("update:direction", "asc");
+    await wrapper.vm.$nextTick();
+    expect(paginator.props("page")).toBe(1);
+    expect(wrapper.findAll(".laboratory-results tbody tr")).toHaveLength(10);
     await wrapper.setProps({ records: records.slice(0, 5) });
     await wrapper.vm.$nextTick();
 

@@ -5,6 +5,7 @@
 import { mount } from "@vue/test-utils";
 import { describe, expect, it } from "vitest";
 import AppPaginator from "../src/components/AppPaginator.vue";
+import AppTableSort from "../src/components/AppTableSort.vue";
 import EpicrisisTable from "../src/components/EpicrisisTable.vue";
 import type { MedicalRecordDraft } from "../src/repositories/types";
 
@@ -32,15 +33,31 @@ describe("EpicrisisTable", () => {
     });
     const dateHeader = wrapper.get('[role="columnheader"]');
 
-    expect(dateHeader.attributes("aria-sort")).toBe("ascending");
-    expect(wrapper.findAll(".epicrisis-row").map((row) => row.text().match(/Запись \d/)?.[0]))
-      .toEqual(["Запись 1", "Запись 2", "Запись 3"]);
-
-    await dateHeader.get("button").trigger("click");
-
     expect(dateHeader.attributes("aria-sort")).toBe("descending");
     expect(wrapper.findAll(".epicrisis-row").map((row) => row.text().match(/Запись \d/)?.[0]))
       .toEqual(["Запись 3", "Запись 2", "Запись 1"]);
+    expect(wrapper.get<HTMLSelectElement>('select[aria-label="Сортировка эпикриза"]').element.value).toBe("date:desc");
+
+    await dateHeader.get("button").trigger("click");
+
+    expect(dateHeader.attributes("aria-sort")).toBe("ascending");
+    expect(wrapper.findAll(".epicrisis-row").map((row) => row.text().match(/Запись \d/)?.[0]))
+      .toEqual(["Запись 1", "Запись 2", "Запись 3"]);
+    expect(wrapper.emitted("update:page")).toEqual([[1]]);
+  });
+
+  it("keeps equal encounter dates deterministic and shares direction with the mobile control", async () => {
+    const older = { ...medicalRecord(1), recordId: "record-older", encounterDate: "2026-07-10", createdAt: "2026-07-10T09:00:00.000Z" };
+    const newer = { ...medicalRecord(2), recordId: "record-newer", encounterDate: "2026-07-10", createdAt: "2026-07-10T11:00:00.000Z" };
+    const wrapper = mount(EpicrisisTable, {
+      props: { records: [older, newer], page: 2, pageSize: 1 },
+    });
+
+    expect(wrapper.get(".epicrisis-row").text()).toContain("Запись 1");
+    wrapper.getComponent(AppTableSort).vm.$emit("update:direction", "asc");
+    await wrapper.vm.$nextTick();
+
+    expect(wrapper.get('[role="columnheader"]').attributes("aria-sort")).toBe("ascending");
     expect(wrapper.emitted("update:page")).toEqual([[1]]);
   });
 
@@ -51,7 +68,7 @@ describe("EpicrisisTable", () => {
     });
 
     expect(wrapper.findAll(".epicrisis-row")).toHaveLength(1);
-    expect(wrapper.get(".epicrisis-row").text()).toContain("Запись 11");
+    expect(wrapper.get(".epicrisis-row").text()).toContain("Запись 1");
 
     await wrapper.setProps({ records: records.slice(0, 1) });
 
