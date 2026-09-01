@@ -235,8 +235,28 @@ describe("Klinok repository facade", () => {
     })).resolves.toBe("record-new");
     await expect(repository.medical.saveEncounter({
       recordId: "record-1", petId: "pet-1", encounterDate: "2026-08-10",
-      sections: { "what-happened": { selectedIds: [], comment: "Повторно" }, outcome: { selectedIds: [], comment: "" } },
+      sections: {
+        "what-happened": {
+          selectedIds: ["problem.eyes.10", "problem.eyes.1", "problem.eyes.12"],
+          comment: "  Повторно  ",
+        },
+        outcome: { selectedIds: [], comment: "" },
+      },
     }, "Повторный осмотр")).resolves.toBe("record-1");
+    await expect(repository.medical.saveEncounter({
+      recordId: "record-1", petId: "pet-1", encounterDate: "2026-08-10",
+      sections: {
+        "what-happened": { selectedIds: ["problem.eyes.1", "problem.eyes.1"], comment: "Повтор" },
+        outcome: { selectedIds: [], comment: "" },
+      },
+    })).rejects.toThrow("неизвестный или повторяющийся вариант");
+    await expect(repository.medical.saveEncounter({
+      recordId: "record-1", petId: "pet-1", encounterDate: "2026-08-10",
+      sections: {
+        "what-happened": { selectedIds: ["removed.option"], comment: "Повтор" },
+        outcome: { selectedIds: [], comment: "" },
+      },
+    })).rejects.toThrow("неизвестный или повторяющийся вариант");
     await expect(repository.medical.deleteRecord("pet-1", "missing-record")).rejects.toThrow("Медицинская запись не найдена");
     await repository.medical.deleteRecord("pet-1", "record-1");
     await repository.medical.confirmRecord("pet-1", "record-1", 2);
@@ -244,7 +264,21 @@ describe("Klinok repository facade", () => {
     expect(executeOffline).toHaveBeenCalledWith(expect.objectContaining({ type: "pet.create", entityId: "pet-new" }));
     expect(executeOffline).toHaveBeenCalledWith(expect.objectContaining({ type: "pet.update", expectedRevision: 2 }));
     expect(executeOffline).toHaveBeenCalledWith(expect.objectContaining({ type: "record.create", entityId: "record-new" }));
-    expect(executeOffline).toHaveBeenCalledWith(expect.objectContaining({ type: "record.update", entityId: "record-1", expectedRevision: 2 }));
+    expect(executeOffline).toHaveBeenCalledWith(expect.objectContaining({
+      type: "record.update",
+      entityId: "record-1",
+      expectedRevision: 2,
+      payload: expect.objectContaining({
+        input: expect.objectContaining({
+          sections: expect.objectContaining({
+            "what-happened": {
+              selectedIds: ["problem.eyes.1", "problem.eyes.12", "problem.eyes.10"],
+              comment: "Повторно",
+            },
+          }),
+        }),
+      }),
+    }));
     expect(executeOnline).toHaveBeenCalledWith(expect.objectContaining({ type: "access.delegate", expectedRevision: 3 }));
     expect(executeOnline).toHaveBeenCalledWith(expect.objectContaining({ type: "access.actions.update", payload: { actions: ["read", "write_unconfirmed"] } }));
     expect(executeOnline).toHaveBeenCalledWith(expect.objectContaining({ type: "record.confirm", expectedRevision: 2 }));

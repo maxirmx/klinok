@@ -18,6 +18,7 @@ import type {
   Role,
   RoleRequest,
 } from "@klinok/contracts";
+import { canonicalWhatHappenedIds, isWhatHappenedTaxonomyId } from "@klinok/contracts";
 import { normalizePetInput } from "../petProfile";
 import { AuthClient, AuthClientError } from "./authClient";
 import {
@@ -212,9 +213,23 @@ class ApiMedicalRepository {
   async saveEncounter(input: MedicalEncounterInput, title = "Что случилось"): Promise<string> {
     const recordId = input.recordId ?? crypto.randomUUID();
     const previous = this.parent.current.medical.records.find((candidate) => candidate.recordId === recordId);
+    const selectedIds = input.sections["what-happened"].selectedIds;
+    if (new Set(selectedIds).size !== selectedIds.length || selectedIds.some((id) => !isWhatHappenedTaxonomyId(id))) {
+      throw new Error("Раздел «Что случилось» содержит неизвестный или повторяющийся вариант.");
+    }
+    const normalizedInput: MedicalEncounterInput = {
+      ...input,
+      sections: {
+        ...input.sections,
+        "what-happened": {
+          selectedIds: canonicalWhatHappenedIds(selectedIds),
+          comment: input.sections["what-happened"].comment.trim(),
+        },
+      },
+    };
     await this.parent.executeOffline({
       type: previous ? "record.update" : "record.create", entityId: recordId,
-      expectedRevision: previous?.revision, payload: { input: { ...input, recordId }, title },
+      expectedRevision: previous?.revision, payload: { input: { ...normalizedInput, recordId }, title },
     });
     return recordId;
   }

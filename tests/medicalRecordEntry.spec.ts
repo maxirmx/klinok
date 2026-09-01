@@ -319,7 +319,7 @@ describe("MedicalRecordEntry", () => {
     expect(wrapper.element.tagName).toBe("BUTTON");
     expect(wrapper.text()).toContain("21.07.2026");
     expect(wrapper.get(".epicrisis-what-happened").findAll("span").map((item) => item.text()))
-      .toEqual(["Пищеварением", "Не ест со вчерашнего дня"]);
+      .toEqual(["Не ест", "Не ест со вчерашнего дня"]);
     expect(wrapper.text()).not.toContain("Не всё хорошо с");
     expect(wrapper.text()).toContain("Гингивит острый");
     expect(wrapper.text()).toContain("Выздоровление; Улучшение");
@@ -330,7 +330,7 @@ describe("MedicalRecordEntry", () => {
     await wrapper.trigger("click");
     expect(wrapper.emitted("activate")?.[0]).toEqual([record.recordId]);
 
-    const deduplicated = mount(MedicalRecordEntry, {
+    const multipleAnswers = mount(MedicalRecordEntry, {
       props: {
         record: {
           ...record,
@@ -346,8 +346,27 @@ describe("MedicalRecordEntry", () => {
         confirmed: false,
       },
     });
-    expect(deduplicated.get(".epicrisis-what-happened").findAll("span").map((item) => item.text()))
-      .toEqual(["Пищеварением"]);
+    expect(multipleAnswers.get(".epicrisis-what-happened").findAll("span").map((item) => item.text()))
+      .toEqual(["Не ест", "Снижен аппетит"]);
+
+    const duplicateLabels = mount(MedicalRecordEntry, {
+      props: {
+        record: {
+          ...record,
+          sections: {
+            ...record.sections,
+            "what-happened": {
+              ...record.sections["what-happened"]!,
+              value: { selectedIds: ["problem.general.7", "problem.musculoskeletal.7"], comment: "" },
+            },
+          },
+        },
+        mode: "epicrisis",
+        confirmed: false,
+      },
+    });
+    expect(duplicateLabels.get(".epicrisis-what-happened").findAll("span").map((item) => item.text()))
+      .toEqual(["Вокализирует при дотрагивании", "Вокализирует при дотрагивании"]);
 
     const withoutOutcome = mount(MedicalRecordEntry, {
       props: {

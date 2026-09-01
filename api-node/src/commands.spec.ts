@@ -55,26 +55,27 @@ async function confirmVaccinationAgainst(current: { confirmed: unknown; profile:
 }
 
 describe("command boundary", () => {
-  it("accepts the appended well-visit taxonomy IDs without changing existing identifiers", () => {
+  it("accepts canonical taxonomy IDs, rejects removed IDs, and orders selections", () => {
     const result = validateMedicalEncounter({
       petId: "pet-1",
       encounterDate: "2026-08-10",
       sections: {
         "what-happened": {
-          selectedIds: ["well.1", "well.7", "well.8", "well.9"],
-          comment: "Плановый визит",
+          selectedIds: ["problem.eyes.10", "problem.eyes.1", "problem.eyes.12"],
+          comment: "  Жалобы на глаза  ",
         },
         outcome: { selectedIds: ["outcome.observation"], comment: "" },
       },
     });
 
     expect(result.sections["what-happened"].selectedIds)
-      .toEqual(["well.1", "well.7", "well.8", "well.9"]);
+      .toEqual(["problem.eyes.1", "problem.eyes.12", "problem.eyes.10"]);
+    expect(result.sections["what-happened"].comment).toBe("Жалобы на глаза");
     expect(() => validateMedicalEncounter({
       petId: "pet-1",
       encounterDate: "2026-08-10",
       sections: {
-        "what-happened": { selectedIds: ["well.10"], comment: "" },
+        "what-happened": { selectedIds: ["problem.eyes.11"], comment: "" },
         outcome: { selectedIds: ["outcome.observation"], comment: "" },
       },
     })).toThrow("The what-happened section is invalid.");
