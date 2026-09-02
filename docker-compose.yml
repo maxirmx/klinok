@@ -17,6 +17,16 @@ services:
       timeout: 3s
       retries: 30
 
+  adminer:
+    image: adminer:6.0.1-standalone
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      ADMINER_DEFAULT_SERVER: postgres
+    ports:
+      - "127.0.0.1:${KLINOK_ADMINER_PORT:-8081}:8080"
+
   mail:
     image: axllent/mailpit:v1.27
     ports:

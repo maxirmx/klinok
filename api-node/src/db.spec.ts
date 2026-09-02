@@ -24,6 +24,18 @@ function migrationClient(applied: readonly string[] = []) {
 }
 
 describe("PostgreSQL migrations", () => {
+  it("defines ownership transfers with one pending request per pet and indexed party queues", async () => {
+    const sql = await readFile(new URL("../migrations/003_pet_ownership_transfers.sql", import.meta.url), "utf8");
+
+    expect(sql).toContain("CREATE TABLE pet_ownership_transfers");
+    expect(sql).toContain("CHECK (from_owner_account_id <> to_owner_account_id)");
+    expect(sql).toContain("initiated_by_account_id IN (from_owner_account_id, to_owner_account_id)");
+    expect(sql).toContain("pet_ownership_transfers_one_pending_idx");
+    expect(sql).toContain("WHERE status = 'pending'");
+    expect(sql).toContain("pet_ownership_transfers_from_owner_pending_idx");
+    expect(sql).toContain("pet_ownership_transfers_to_owner_pending_idx");
+  });
+
   it("keeps the database catalogue migration synchronized with the shared catalogue", async () => {
     const sql = await readFile(new URL("../migrations/002_what_happened_catalog.sql", import.meta.url), "utf8");
     const array = /FROM unnest\(ARRAY\[([\s\S]*?)\]::text\[\]\)/.exec(sql)?.[1] ?? "";
@@ -44,10 +56,10 @@ describe("PostgreSQL migrations", () => {
     await database.migrate();
 
     const calls = client.query.mock.calls;
-    expect(calls.filter(([sql]) => sql === "BEGIN")).toHaveLength(2);
-    expect(calls.filter(([sql]) => sql === "COMMIT")).toHaveLength(2);
+    expect(calls.filter(([sql]) => sql === "BEGIN")).toHaveLength(3);
+    expect(calls.filter(([sql]) => sql === "COMMIT")).toHaveLength(3);
     expect(calls.filter(([sql]) => sql === "INSERT INTO schema_migrations(version) VALUES ($1)")
-      .map(([, values]) => values)).toEqual([["001_initial"], ["002_what_happened_catalog"]]);
+      .map(([, values]) => values)).toEqual([["001_initial"], ["002_what_happened_catalog"], ["003_pet_ownership_transfers"]]);
     expect(calls.find(([sql]) => String(sql).includes("WITH catalog(id, sort_order)"))).toBeDefined();
     expect(info).toHaveBeenCalledWith(
       'Migration 002_what_happened_catalog: {"scanned_records":"3","changed_records":"2","partially_cleaned_records":"1"}',
@@ -57,7 +69,7 @@ describe("PostgreSQL migrations", () => {
   });
 
   it("skips migrations that are already registered", async () => {
-    const client = migrationClient(["001_initial", "002_what_happened_catalog"]);
+    const client = migrationClient(["001_initial", "002_what_happened_catalog", "003_pet_ownership_transfers"]);
     const database = new Database("postgres://unused");
     Object.defineProperty(database, "pool", { value: { connect: vi.fn().mockResolvedValue(client) } });
 

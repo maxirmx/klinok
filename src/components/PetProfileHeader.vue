@@ -12,10 +12,12 @@ withDefaults(defineProps<{
   showDetails?: boolean;
   ownerDisplayName?: string;
   ownerAccountId?: string;
+  statusLabel?: string;
 }>(), {
   showDetails: true,
   ownerDisplayName: "",
   ownerAccountId: "",
+  statusLabel: "",
 });
 </script>
 
@@ -25,6 +27,7 @@ withDefaults(defineProps<{
     <span v-else class="owner-pet-placeholder" aria-hidden="true">{{ pet.species.slice(0, 1).toLocaleUpperCase('ru') }}</span>
     <div v-if="showDetails" class="owner-pet-profile-details">
       <h2>{{ pet.name }}</h2>
+      <span v-if="statusLabel" class="status-badge pending owner-pet-transfer-status">{{ statusLabel }}</span>
       <small class="owner-pet-id">{{ pet.petId }}</small>
       <p>{{ pet.species }} · {{ pet.breed }}</p>
       <p>{{ petBirthSummary(pet) }}</p>

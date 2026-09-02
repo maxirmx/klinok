@@ -9,7 +9,7 @@ import pg, { type PoolClient, type QueryResultRow } from "pg";
 
 const { Pool } = pg;
 export type DbClient = Pick<PoolClient, "query">;
-const MIGRATION_VERSIONS = ["001_initial", "002_what_happened_catalog"] as const;
+const MIGRATION_VERSIONS = ["001_initial", "002_what_happened_catalog", "003_pet_ownership_transfers"] as const;
 
 export class Database {
   readonly pool: pg.Pool;

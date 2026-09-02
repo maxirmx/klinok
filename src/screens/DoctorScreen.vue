@@ -908,7 +908,7 @@ watch(delegationPageCount, (pageCount) => {
       />
 
       <ModalDialog v-model="requestDialogOpen" title="Запросить доступ" :busy="busy">
-        <div class="form-stack grant-access-form doctor-request-access-form">
+        <div class="form-stack directory-dialog-form doctor-request-access-form">
           <p v-if="requestError" class="form-alert error" role="alert">{{ requestError }}</p>
           <form class="form-stack doctor-request-search-form" @submit.prevent="findPets">
             <label class="doctor-request-owner-field"><span>ФИО владельца, его часть или полный идентификатор (необязательно при поиске по полному идентификатору питомца)</span><input v-model="petOwnerQuery" type="search" /></label>
@@ -1067,9 +1067,9 @@ watch(delegationPageCount, (pageCount) => {
       </template>
       <p v-if="!canDelegate" class="form-alert error">Текущий доступ не разрешает делегирование.</p>
       <ModalDialog v-model="delegationDialogOpen" title="Делегировать доступ" :busy="busy">
-        <div class="form-stack grant-access-form">
+        <div class="form-stack directory-dialog-form">
           <p v-if="delegationError" class="form-alert error" role="alert">{{ delegationError }}</p>
-          <form class="form-stack grant-search-form" @submit.prevent="findDoctors">
+          <form class="form-stack directory-dialog-search" @submit.prevent="findDoctors">
             <label><span>ФИО врача, его часть или полный идентификатор</span><input v-model="doctorQuery" required /></label>
             <button class="primary-action inline access-icon-action grant-search-action" type="submit" :disabled="busy" :title="busy ? 'Поиск врача…' : 'Найти врача'" :aria-label="busy ? 'Поиск врача…' : 'Найти врача'"><AppIcon name="search" /></button>
           </form>

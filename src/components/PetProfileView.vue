@@ -10,6 +10,7 @@ defineProps<{
   pet: PetProfile;
   ownerDisplayName?: string;
   ownerAccountId?: string;
+  statusLabel?: string;
 }>();
 
 defineSlots<{
@@ -28,6 +29,7 @@ function formatDate(value: string) {
       :pet="pet"
       :owner-display-name="ownerDisplayName"
       :owner-account-id="ownerAccountId"
+      :status-label="statusLabel"
     >
       <template #actions><slot name="actions" /></template>
     </PetProfileHeader>

@@ -37,6 +37,11 @@ const EVENT_LABELS: Record<string, string> = {
   "medical.record.deleted": "Удаление медицинской записи",
   "medical.record.confirmed": "Подтверждение медицинской записи",
   "medical.addendum.created": "Добавление комментария к медицинской записи",
+  "transfer.requested": "Запрос передачи питомца",
+  "transfer.completed": "Передача питомца",
+  "transfer.rejected": "Отклонение передачи питомца",
+  "transfer.cancelled": "Отмена передачи питомца",
+  "transfer.invalidated": "Инвалидация передачи питомца",
 };
 
 const AUTH_ERRORS: Record<string, string> = {
@@ -104,6 +109,17 @@ const AUTH_ERRORS: Record<string, string> = {
   DEPENDENCY_REJECTED: "Связанное более раннее изменение не было сохранено.",
   OPERATION_ID_REUSED: "Идентификатор операции уже использован для другого изменения.",
   LEDGER_INVALID: "Проверка журнала изменений не пройдена. Изменения временно запрещены.",
+  TRANSFER_REQUEST_NOT_FOUND: "Запрос передачи питомца не найден.",
+  TRANSFER_REQUEST_NOT_PENDING: "Статус запроса передачи уже изменился.",
+  TRANSFER_ALREADY_PENDING: "Передача этого питомца уже ожидает решения.",
+  TRANSFER_TARGET_STALE: "Данные питомца или владельца изменились. Обновите результаты поиска.",
+  TRANSFER_REQUEST_STALE: "Данные передачи изменились. Запрос признан устаревшим.",
+  TRANSFER_TO_SELF: "Нельзя передать питомца самому себе.",
+  TRANSFER_OWNER_UNAVAILABLE: "Один из владельцев больше недоступен для передачи.",
+  TRANSFER_PARTY_REQUIRED: "Операция доступна только участнику передачи.",
+  TRANSFER_INITIATOR_REQUIRED: "Отменить запрос может только его инициатор.",
+  TRANSFER_RESPONDER_REQUIRED: "Ответить на запрос может только вторая сторона.",
+  OWNERSHIP_LOSS_ACKNOWLEDGEMENT_REQUIRED: "Подтвердите потерю управления профилем и медицинской картой питомца.",
 };
 
 export function syncReasonText(reason: SyncReasonKey): string {

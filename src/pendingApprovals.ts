@@ -20,6 +20,14 @@ interface OwnerPendingSource {
   readonly confirmedRecordIds?: readonly string[];
 }
 
+interface OwnerTransferPendingSource {
+  readonly transferRequests?: readonly {
+    readonly transferRequestId: string;
+    readonly initiatedByAccountId: string;
+    readonly status: string;
+  }[];
+}
+
 export interface OwnerPetPendingApprovals {
   accessRequests: number;
   medicalRecords: number;
@@ -73,4 +81,13 @@ export function ownerPendingApprovals(medical: OwnerPendingSource): OwnerPending
     total: accessKeys.size + recordKeys.size,
     byPet,
   };
+}
+
+export function ownerPendingTransferCount(medical: OwnerTransferPendingSource, accountId: string): number {
+  const ids = new Set<string>();
+  for (const request of medical.transferRequests ?? []) {
+    if (request.status !== "pending" || request.initiatedByAccountId === accountId || ids.has(request.transferRequestId)) continue;
+    ids.add(request.transferRequestId);
+  }
+  return ids.size;
 }

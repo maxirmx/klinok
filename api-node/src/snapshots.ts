@@ -14,6 +14,7 @@ import {
   profileFromRow,
   recordFromRow,
   roleFromRow,
+  transferRequestFromRow,
   displayName,
 } from "./rows.js";
 
@@ -101,6 +102,20 @@ export class SnapshotService {
         : roleApproved && role === "doctor"
           ? (await client.query("SELECT * FROM access_requests WHERE requester_account_id=$1 ORDER BY requested_at", [accountId])).rows
           : [];
+      const transferRequests = roleApproved && role === "owner"
+        ? (await client.query(
+          `SELECT t.*,p.name AS pet_name,p.species AS pet_species,
+             concat_ws(' ',from_profile.first_name,from_profile.patronymic,from_profile.last_name) AS from_owner_display_name,
+             concat_ws(' ',to_profile.first_name,to_profile.patronymic,to_profile.last_name) AS to_owner_display_name
+           FROM pet_ownership_transfers t
+           JOIN pets p ON p.pet_id=t.pet_id
+           JOIN profiles from_profile ON from_profile.account_id=t.from_owner_account_id
+           JOIN profiles to_profile ON to_profile.account_id=t.to_owner_account_id
+           WHERE t.from_owner_account_id=$1 OR t.to_owner_account_id=$1
+           ORDER BY t.created_at DESC,t.transfer_request_id`,
+          [accountId],
+        )).rows
+        : [];
       const records = petIds.length
         ? (await client.query("SELECT * FROM medical_records WHERE pet_id = ANY($1::text[]) AND deleted_at IS NULL ORDER BY encounter_date DESC, updated_at DESC", [petIds])).rows
         : [];
@@ -117,6 +132,10 @@ export class SnapshotService {
       for (const request of accessRequests) {
         profileIds.add(String(request.owner_account_id));
         profileIds.add(String(request.requester_account_id));
+      }
+      for (const request of transferRequests) {
+        profileIds.add(String(request.from_owner_account_id));
+        profileIds.add(String(request.to_owner_account_id));
       }
       if (role === "administrator") {
         for (const item of allRoles.rows) profileIds.add(String(item.account_id));
@@ -149,6 +168,7 @@ export class SnapshotService {
             const request = accessRequestFromRow(row);
             return { ...request, requesterDisplayName: currentNames.get(request.requesterAccountId) ?? request.requesterDisplayName };
           }),
+          transferRequests: transferRequests.map(transferRequestFromRow),
           records: records.map(recordFromRow),
           confirmations: confirmations.map(confirmationFromRow),
           confirmedRecordIds: confirmations.map((row) => String(row.record_id)),

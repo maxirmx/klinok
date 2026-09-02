@@ -30,6 +30,7 @@ export type {
   PetAccessRequest,
   PetProfile,
   PetProfileInput,
+  PetTransferRequest,
   TherapeuticAppointmentSectionValue,
   TherapeuticProblemValue,
   VaccinationSectionValue,

@@ -20,6 +20,7 @@ import type {
 } from "@klinok/contracts";
 import { canonicalWhatHappenedIds, isWhatHappenedTaxonomyId } from "@klinok/contracts";
 import { normalizePetInput } from "../petProfile";
+import { authErrorText } from "../russianMessages";
 import { AuthClient, AuthClientError } from "./authClient";
 import {
   clearOfflineAccount,
@@ -47,6 +48,8 @@ function commandAction(type: ClientCommand["type"]): string {
     "record.confirm": "medical.record.confirmed", "access.request": "grant.requested", "access.cancel": "grant.request.cancelled",
     "access.reject": "grant.request.rejected", "access.grant": "grant.created", "access.delegate": "grant.delegated",
     "access.revoke": "grant.revoked", "access.relinquish": "grant.relinquished", "access.actions.update": "grant.actions.updated",
+    "transfer.request": "transfer.requested", "transfer.accept": "transfer.completed",
+    "transfer.reject": "transfer.rejected", "transfer.cancel": "transfer.cancelled",
   }[type];
 }
 
@@ -81,6 +84,7 @@ function optimisticRecord(command: ClientCommand, snapshot: AppSnapshotDto): Med
 
 function applyOptimistic(source: AppSnapshotDto, commands: ClientCommand[]): AppSnapshotDto {
   const snapshot = structuredClone(source);
+  snapshot.medical.transferRequests ??= [];
   for (const command of commands) {
     if (command.type === "pet.create") {
       const input = normalizePetInput(command.payload as unknown as PetProfileInput);
@@ -180,6 +184,39 @@ class ApiMedicalRepository {
     const grantId = crypto.randomUUID();
     await this.parent.executeOnline({ type: "access.grant", entityId: grantId, payload: { petId, doctorAccountId, actions, ...options } });
     return grantId;
+  }
+  async requestPetTransfer(input: {
+    petId: string;
+    toOwnerAccountId: string;
+    expectedFromOwnerAccountId: string;
+    expectedPetRevision: number;
+    expectedFromOwnerProfileRevision: number;
+    expectedToOwnerProfileRevision: number;
+    ownershipLossAcknowledged: boolean;
+  }): Promise<string> {
+    const transferRequestId = crypto.randomUUID();
+    await this.parent.executeOnline({ type: "transfer.request", entityId: transferRequestId, payload: input });
+    return transferRequestId;
+  }
+  async acceptPetTransfer(transferRequestId: string, ownershipLossAcknowledged = false): Promise<void> {
+    await this.changePetTransfer("transfer.accept", transferRequestId, { ownershipLossAcknowledged });
+  }
+  async rejectPetTransfer(transferRequestId: string): Promise<void> {
+    await this.changePetTransfer("transfer.reject", transferRequestId);
+  }
+  async cancelPetTransfer(transferRequestId: string): Promise<void> {
+    await this.changePetTransfer("transfer.cancel", transferRequestId);
+  }
+  private async changePetTransfer(
+    type: "transfer.accept" | "transfer.reject" | "transfer.cancel",
+    transferRequestId: string,
+    payload: Record<string, unknown> = {},
+  ): Promise<void> {
+    await this.parent.refresh();
+    const request = (this.parent.current.medical.transferRequests ?? []).find((candidate) =>
+      candidate.transferRequestId === transferRequestId && candidate.status === "pending");
+    if (!request) throw new Error("Статус запроса передачи изменился. Обновите список.");
+    await this.parent.executeOnline({ type, entityId: transferRequestId, expectedRevision: request.revision, payload });
   }
   async delegateGrant(parentGrantId: string, doctorAccountId: string, actions: PetGrantAction[], options: { granteeDisplayName?: string } = {}): Promise<string> {
     const parent = this.parent.current.medical.grants.find((candidate) => candidate.grantId === parentGrantId);
@@ -321,7 +358,9 @@ export class KlinokRepository {
     const response = await this.client.execute([command]);
     const result = response.results[0];
     if (!result || (result.status !== "applied" && result.status !== "duplicate")) {
-      throw new AuthClientError(result?.error?.code ?? "REQUEST_FAILED", result?.error?.message ?? "Операция не выполнена.", result?.status === "conflict" ? 409 : 400);
+      if (result?.status === "conflict") await this.refresh();
+      const code = result?.error?.code ?? "REQUEST_FAILED";
+      throw new AuthClientError(code, authErrorText(code), result?.status === "conflict" ? 409 : 400);
     }
     await this.refresh();
     return result.value as T | undefined;

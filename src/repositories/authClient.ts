@@ -132,6 +132,10 @@ export class AuthClient {
     const params = new URLSearchParams({ query, page: String(page), pageSize: String(pageSize), sort });
     return this.request<DirectoryPageDto<DirectoryProfileDto>>(`/api/directory/doctors?${params}`);
   }
+  searchOwners(query = "", page = 1, pageSize = 20) {
+    const params = new URLSearchParams({ query, page: String(page), pageSize: String(pageSize) });
+    return this.request<DirectoryPageDto<DirectoryProfileDto>>(`/api/directory/owners?${params}`);
+  }
   searchUsers(query = "", pendingOnly = false, page = 1, pageSize = 20, sort = "name", direction = "asc") {
     const params = new URLSearchParams({ query, pendingOnly: String(pendingOnly), page: String(page), pageSize: String(pageSize), sort, direction });
     return this.request<DirectoryPageDto<DirectoryUserDto>>(`/api/directory/users?${params}`);
@@ -145,8 +149,9 @@ export class AuthClient {
     });
   }
   lookupDirectoryPet(petId: string) { return this.request<DirectoryPetDto>(`/api/directory/pets/${encodeURIComponent(petId)}`); }
-  searchDirectoryPets(owner = "", pet = "", page = 1, pageSize = 20, sort = "owner") {
+  searchDirectoryPets(owner = "", pet = "", page = 1, pageSize = 20, sort = "owner", ownerAccountId = "") {
     const params = new URLSearchParams({ owner, pet, page: String(page), pageSize: String(pageSize), sort, direction: "asc" });
+    if (ownerAccountId) params.set("ownerAccountId", ownerAccountId);
     return this.request<DirectoryPageDto<DirectoryPetDto>>(`/api/directory/pets?${params}`);
   }
   getMyDirectoryPets(query = "", page = 1, pageSize = 20, sort = "owner", direction = "asc") {

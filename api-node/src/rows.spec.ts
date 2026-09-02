@@ -3,7 +3,7 @@
 // This file is a part of Klinok application
 
 import { describe, expect, it } from "vitest";
-import { dateOnly, recordFromRow } from "./rows.js";
+import { dateOnly, recordFromRow, transferRequestFromRow } from "./rows.js";
 
 describe("PostgreSQL row conversion", () => {
   it("preserves date-only values returned as strings or local Date objects", () => {
@@ -31,5 +31,45 @@ describe("PostgreSQL row conversion", () => {
 
     expect(record.sections["laboratory-tests"]).toBeUndefined();
     expect(record.sections["what-happened"]).toBeDefined();
+  });
+
+  it("maps ownership transfer rows with current display data and immutable identifiers", () => {
+    expect(transferRequestFromRow({
+      transfer_request_id: "transfer-1",
+      pet_id: "pet-1",
+      pet_revision: 4,
+      from_owner_account_id: "owner-1",
+      from_owner_display_name: "Алёна Ёлкина",
+      from_owner_profile_revision: 2,
+      to_owner_account_id: "owner-2",
+      to_owner_display_name: "Иван Петров",
+      to_owner_profile_revision: 3,
+      initiated_by_account_id: "owner-2",
+      pet_name: "Ёжик",
+      pet_species: "Кошка",
+      status: "completed",
+      revision: 2,
+      created_at: "2026-08-15T10:00:00.000Z",
+      decided_at: "2026-08-16T10:00:00.000Z",
+      decided_by: "owner-1",
+    })).toEqual({
+      transferRequestId: "transfer-1",
+      petId: "pet-1",
+      petRevision: 4,
+      fromOwnerAccountId: "owner-1",
+      fromOwnerDisplayName: "Алёна Ёлкина",
+      fromOwnerProfileRevision: 2,
+      toOwnerAccountId: "owner-2",
+      toOwnerDisplayName: "Иван Петров",
+      toOwnerProfileRevision: 3,
+      initiatedByAccountId: "owner-2",
+      petName: "Ёжик",
+      petSpecies: "Кошка",
+      status: "completed",
+      revision: 2,
+      createdAt: "2026-08-15T10:00:00.000Z",
+      decidedAt: "2026-08-16T10:00:00.000Z",
+      decidedBy: "owner-1",
+    });
   });
 });

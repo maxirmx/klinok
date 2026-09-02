@@ -15,7 +15,7 @@ describe("operational routes", () => {
     expect(paths).toEqual(expect.arrayContaining([
       "/auth/login", "/auth/register", "/auth/register/consent", "/auth/verify-email", "/about",
       "/profile", "/owner/home", "/owner/pets/new", "/owner/pets/:petId", "/owner/pets/:petId/edit",
-      "/owner/pets/:petId/access",
+      "/owner/pets/:petId/access", "/owner/transfers",
       "/doctor/home", "/admin/home", "/admin/audit",
     ]));
   });
@@ -27,7 +27,7 @@ describe("operational routes", () => {
     expect(text).not.toContain("/company/");
     expect(text).not.toContain("/vet/");
     expect(text).not.toContain("/cancel-access");
-    expect(scenarioRegistry.every((scenario) => ["issue:25", "issue:34", "issue:96", "owner-pages"].includes(scenario.figmaNodeId))).toBe(true);
+    expect(scenarioRegistry.every((scenario) => ["issue:25", "issue:34", "issue:50", "issue:96", "owner-pages"].includes(scenario.figmaNodeId))).toBe(true);
   });
 
   it("keeps the prototype pet-list URL as a compatibility redirect", () => {
