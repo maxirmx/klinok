@@ -190,12 +190,14 @@ label > span {
 }
 
 .primary-action {
-  background: var(--blue);
-  color: #fff;
-  box-shadow: 0 10px 24px rgba(64, 135, 209, 0.18);
+  border: 1.5px solid var(--blue);
+  background: var(--brand-bg-sky);
+  color: var(--blue);
+  box-shadow: none;
 }
 
 .primary-action:disabled {
+  border-color: rgba(16, 32, 51, 0.16);
   background: var(--brand-bg-neutral);
   color: var(--text-muted);
   box-shadow: none;
@@ -206,7 +208,15 @@ label > span {
 }
 
 .primary-action.danger {
-  background: var(--danger);
+  border-color: var(--danger);
+  background: transparent;
+  color: var(--danger);
+}
+
+.primary-action.danger:disabled {
+  border-color: rgba(16, 32, 51, 0.16);
+  background: var(--brand-bg-neutral);
+  color: var(--text-muted);
 }
 
 .outline-action {
@@ -2760,7 +2770,6 @@ label > input[type="checkbox"] {
   padding-top: 8px;
   border-top: 1px solid var(--line);
 }
-.directory-dialog-hint { color: var(--text-muted); font-size: .8rem !important; }
 .directory-dialog-result { align-items: flex-start; }
 .transfer-selected-owner {
   display: grid;
@@ -2775,8 +2784,6 @@ label > input[type="checkbox"] {
 .transfer-selected-owner > span { grid-column: 1; color: var(--text-muted); font-size: .75rem; }
 .transfer-selected-owner > .person-identity { grid-column: 1; }
 .transfer-selected-owner > button { grid-column: 2; grid-row: 1 / span 2; }
-.transfer-pet-result > div { min-width: 0; }
-.transfer-pet-result small,
 .transfer-identity-id,
 .transfer-review dd > small,
 .transfer-table td > small { display: block; margin-top: 3px; color: var(--text-muted); font-size: 10px; overflow-wrap: anywhere; }

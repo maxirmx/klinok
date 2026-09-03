@@ -28,6 +28,7 @@ import MedicalRecordEntry from "../components/MedicalRecordEntry.vue";
 import LaboratoryComparison from "../components/LaboratoryComparison.vue";
 import ModalDialog from "../components/ModalDialog.vue";
 import PetAccessManager from "../components/PetAccessManager.vue";
+import PetDirectoryActionDialog from "../components/PetDirectoryActionDialog.vue";
 import PetProfileView from "../components/PetProfileView.vue";
 import PersonIdentity from "../components/PersonIdentity.vue";
 import WorkspaceShell from "../components/WorkspaceShell.vue";
@@ -38,7 +39,6 @@ import {
   logout,
   requireRepository,
   searchDoctorDirectory,
-  searchPetDirectory,
 } from "../appStore";
 import {
   ENCOUNTER_SECTION_LABELS,
@@ -132,10 +132,6 @@ const selectedDirectoryPet = ref<DirectoryPetDto | null>(null);
 let accessRefreshId = 0;
 const requestDialogOpen = ref(props.scenarioId === "doctor-pet-request-access");
 const requestError = ref("");
-const petOwnerQuery = ref("");
-const petNameQuery = ref("");
-const petSearchResults = ref<DirectoryPetDto[]>([]);
-const petSearchPerformed = ref(false);
 const doctorQuery = ref("");
 const doctors = ref<DirectoryProfileDto[]>([]);
 const doctorSearchPerformed = ref(false);
@@ -381,21 +377,6 @@ function homeSortAria(field: HomeSortField): "ascending" | "descending" | "none"
   return homeSortDirection.value === "asc" ? "ascending" : "descending";
 }
 
-async function findPets() {
-  petSearchResults.value = [];
-  petSearchPerformed.value = false;
-  await performModal(requestError, async () => {
-    const owner = petOwnerQuery.value.trim();
-    const pet = petNameQuery.value.trim();
-    if (!owner) petSearchResults.value = [await lookupPetDirectory(pet)];
-    else {
-      const result = await searchPetDirectory(owner, pet, 1, 50);
-      petSearchResults.value = result.items;
-    }
-    petSearchPerformed.value = true;
-  }, "Не удалось найти питомца.");
-}
-
 async function requestAccess(pet: DirectoryPetDto) {
   let autoApproved = false;
   const succeeded = await performModal(requestError, async () => {
@@ -407,8 +388,6 @@ async function requestAccess(pet: DirectoryPetDto) {
     autoApproved = appState.medical.grants.some((candidate) =>
       candidate.requestId === requestId && candidate.petId === pet.petId && candidate.status === "active",
     );
-    petSearchResults.value = petSearchResults.value.filter((candidate) => candidate.petId !== pet.petId);
-    if (!petSearchResults.value.length) petSearchPerformed.value = false;
   }, "Не удалось отправить запрос.");
   if (succeeded) {
     alertStore.success(autoApproved ? "Доступ предоставлен автоматически." : "Запрос отправлен владельцу.");
@@ -429,8 +408,6 @@ async function cancelPendingRequest(petId: string, requestId: string) {
 
 function openRequestDialog() {
   requestError.value = "";
-  petSearchResults.value = [];
-  petSearchPerformed.value = false;
   requestDialogOpen.value = true;
 }
 
@@ -907,22 +884,15 @@ watch(delegationPageCount, (pageCount) => {
         aria-label="Навигация по доступам"
       />
 
-      <ModalDialog v-model="requestDialogOpen" title="Запросить доступ" :busy="busy">
-        <div class="form-stack directory-dialog-form doctor-request-access-form">
-          <p v-if="requestError" class="form-alert error" role="alert">{{ requestError }}</p>
-          <form class="form-stack doctor-request-search-form" @submit.prevent="findPets">
-            <label class="doctor-request-owner-field"><span>ФИО владельца, его часть или полный идентификатор (необязательно при поиске по полному идентификатору питомца)</span><input v-model="petOwnerQuery" type="search" /></label>
-            <label class="doctor-request-pet-field"><span>Кличка, её часть или полный идентификатор питомца</span><input v-model="petNameQuery" type="search" required /></label>
-            <button class="primary-action inline access-icon-action doctor-request-search-action" type="submit" :disabled="busy" :title="busy ? 'Поиск питомца…' : 'Найти питомца'" :aria-label="busy ? 'Поиск питомца…' : 'Найти питомца'"><AppIcon name="search" /></button>
-          </form>
-          <div v-for="pet in petSearchResults" :key="pet.petId" class="list-row doctor-request-result">
-            <div><strong>{{ pet.species }} {{ pet.name }}</strong><small>{{ pet.petId }}</small><PersonIdentity :display-name="pet.ownerDisplayName" :account-id="pet.ownerAccountId" /></div>
-            <button class="primary-action inline access-icon-action" type="button" :disabled="busy" title="Отправить запрос" aria-label="Отправить запрос" @click="requestAccess(pet)"><AppIcon name="check" /></button>
-          </div>
-          <p v-if="petSearchPerformed && !petSearchResults.length">Питомцы не найдены.</p>
-          <div class="confirmation-dialog-actions"><button class="outline-action inline access-icon-action" type="button" :disabled="busy" title="Закрыть" aria-label="Закрыть" @click="requestDialogOpen = false"><AppIcon name="close" /></button></div>
-        </div>
-      </ModalDialog>
+      <PetDirectoryActionDialog
+        v-model="requestDialogOpen"
+        title="Запросить доступ"
+        action-title="Отправить запрос"
+        :busy="busy"
+        :error="requestError"
+        @action="requestAccess"
+        @clear-error="requestError = ''"
+      />
     </section>
 
     <section v-else-if="selectedPet && scenarioId === 'doctor-pet-detail'" class="doctor-page doctor-pet-detail">

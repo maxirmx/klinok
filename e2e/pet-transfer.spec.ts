@@ -193,7 +193,7 @@ async function requestIncomingTransfer(page: Page, petId: string): Promise<void>
   await expect(page.locator(".confirmation-dialog-backdrop")).toHaveCount(1);
   await dialog.getByRole("searchbox", { name: /^Кличка/ }).fill(petId);
   await dialog.getByRole("button", { name: "Найти питомца" }).click();
-  const result = dialog.locator(".transfer-pet-result").filter({ hasText: petId });
+  const result = dialog.locator(".doctor-request-result").filter({ hasText: petId });
   await expect(result).toBeVisible();
   await result.getByRole("button", { name: "Выбрать питомца" }).click();
   const review = page.getByRole("dialog", { name: "Подтвердить запрос передачи" });
@@ -256,7 +256,19 @@ test("pet card moves in both directions through one overlay flow", async ({ brow
   await ownerAPage.getByLabel("Окрас", { exact: true }).fill("трёхцветный");
   await ownerAPage.getByLabel("Вес, кг").fill("12.4");
   await ownerAPage.getByLabel("Заметки").fill("Карточка должна пережить обе передачи");
-  await ownerAPage.getByRole("button", { name: "Сохранить питомца" }).click();
+  const savePetAction = ownerAPage.getByRole("button", { name: "Сохранить питомца" });
+  const cancelPetAction = ownerAPage.getByRole("link", { name: "Отмена" });
+  const [savePetStyle, cancelPetStyle] = await Promise.all([savePetAction, cancelPetAction].map((action) => action.evaluate((element) => {
+    const style = getComputedStyle(element);
+    return {
+      backgroundColor: style.backgroundColor,
+      borderColor: style.borderColor,
+      boxShadow: style.boxShadow,
+      color: style.color,
+    };
+  })));
+  expect(savePetStyle).toEqual(cancelPetStyle);
+  await savePetAction.click();
   await expect(ownerAPage).toHaveURL(/\/owner\/pets\/[0-9a-f-]+$/i);
   const petId = new URL(ownerAPage.url()).pathname.split("/").at(-1)!;
   expect(petId).toMatch(/^[0-9a-f-]+$/i);
@@ -322,6 +334,17 @@ test("pet card moves in both directions through one overlay flow", async ({ brow
   }
   expect(transferWidths.columns[5]).toBeLessThanOrEqual(101);
   const outgoingTrigger = ownerAPage.getByRole("button", { name: "Передать питомца", exact: true });
+  const incomingTrigger = ownerAPage.getByRole("button", { name: "Запросить передачу", exact: true });
+  const [outgoingTriggerStyle, incomingTriggerStyle] = await Promise.all([outgoingTrigger, incomingTrigger].map((action) => action.evaluate((element) => {
+    const style = getComputedStyle(element);
+    return {
+      backgroundColor: style.backgroundColor,
+      borderColor: style.borderColor,
+      boxShadow: style.boxShadow,
+      color: style.color,
+    };
+  })));
+  expect(incomingTriggerStyle).toEqual(outgoingTriggerStyle);
   await expect(outgoingTrigger).toBeEnabled();
   await outgoingTrigger.click();
   const outgoingSearch = ownerAPage.getByRole("dialog", { name: "Передать питомца" });
@@ -376,7 +399,7 @@ test("pet card moves in both directions through one overlay flow", async ({ brow
   const blockedIncomingDialog = ownerBPage.getByRole("dialog", { name: "Запросить передачу" });
   await blockedIncomingDialog.getByRole("searchbox", { name: /^Кличка/ }).fill(petId);
   await blockedIncomingDialog.getByRole("button", { name: "Найти питомца" }).click();
-  await expect(blockedIncomingDialog.locator(".transfer-pet-result")).toHaveCount(0);
+  await expect(blockedIncomingDialog.locator(".doctor-request-result")).toHaveCount(0);
   await expect(blockedIncomingDialog).toContainText("Питомцы не найдены.");
   await blockedIncomingDialog.getByRole("button", { name: "Закрыть" }).click();
   const emailedConfirmationLink = await transferConfirmationLink(request, ownerBEmail);
@@ -441,7 +464,23 @@ test("pet card moves in both directions through one overlay flow", async ({ brow
   const initiatedRow = ownerAPage.locator(".transfer-table tbody tr").filter({ hasText: petId }).filter({ hasText: "Ожидает решения" });
   await initiatedRow.getByRole("button", { name: "Отменить запрос передачи" }).click();
   const cancelDialog = ownerAPage.getByRole("alertdialog", { name: "Отменить запрос передачи?" });
-  await cancelDialog.getByRole("button", { name: "Отменить запрос" }).click();
+  const destructiveConfirmation = cancelDialog.getByRole("button", { name: "Отменить запрос" });
+  const destructiveConfirmationStyle = await destructiveConfirmation.evaluate((element) => {
+    const style = getComputedStyle(element);
+    return {
+      backgroundColor: style.backgroundColor,
+      borderColor: style.borderColor,
+      boxShadow: style.boxShadow,
+      color: style.color,
+    };
+  });
+  expect(destructiveConfirmationStyle).toEqual({
+    backgroundColor: "rgba(0, 0, 0, 0)",
+    borderColor: "rgb(199, 54, 47)",
+    boxShadow: "none",
+    color: "rgb(199, 54, 47)",
+  });
+  await destructiveConfirmation.click();
   await expect(ownerAPage.getByText("Запрос передачи отменён.")).toBeVisible();
 
   await ownerBPage.bringToFront();

@@ -5,11 +5,12 @@
 
 import { computed, nextTick, ref, watch } from "vue";
 import type { DirectoryPetDto, DirectoryProfileDto, PetProfile } from "@klinok/contracts";
-import { appState, lookupPetDirectory, requireRepository, searchOwnerDirectory, searchPetDirectory } from "../appStore";
+import { appState, lookupPetDirectory, requireRepository, searchOwnerDirectory } from "../appStore";
 import { useAlertStore } from "../stores/alert";
 import AppIcon from "./AppIcon.vue";
 import AppPaginator from "./AppPaginator.vue";
 import ModalDialog from "./ModalDialog.vue";
+import PetDirectoryActionDialog from "./PetDirectoryActionDialog.vue";
 import PersonIdentity from "./PersonIdentity.vue";
 
 const props = defineProps<{
@@ -34,16 +35,11 @@ const ownerPage = ref(1);
 const ownerPageSize = ref(10);
 const ownerTotal = ref(0);
 const selectedOwner = ref<DirectoryProfileDto | null>(null);
-const petQuery = ref("");
-const petResults = ref<DirectoryPetDto[]>([]);
-const petSearchPerformed = ref(false);
-const petPage = ref(1);
-const petPageSize = ref(10);
-const petTotal = ref(0);
 const selectedDirectoryPet = ref<DirectoryPetDto | null>(null);
 const selectedOutgoingPet = ref<PetProfile | null>(null);
 const ownershipLossAcknowledged = ref(false);
 const reviewHeading = ref<HTMLElement | null>(null);
+let returnFocus: HTMLElement | null = null;
 
 const title = computed(() => step.value === "confirm"
   ? props.mode === "outgoing" ? "Подтвердить передачу питомца" : "Подтвердить запрос передачи"
@@ -63,6 +59,9 @@ const selectedOutgoingPetId = computed({
     else selectedOutgoingPet.value = null;
   },
 });
+const unavailableIncomingPetIds = computed(() => appState.medical.transferRequests
+  .filter((request) => request.status === "pending")
+  .map((request) => request.petId));
 const reviewFromOwner = computed(() => props.mode === "outgoing"
   ? {
       accountId: currentAccountId.value,
@@ -82,6 +81,12 @@ function hasPendingTransfer(petId: string) {
   return appState.medical.transferRequests.some((request) => request.petId === petId && request.status === "pending");
 }
 
+function incomingPetActionError(pet: DirectoryPetDto): string {
+  if (pet.ownerAccountId === currentAccountId.value) return "Нельзя запросить передачу собственного питомца.";
+  if (hasPendingTransfer(pet.petId)) return "Передача этого питомца уже ожидает решения.";
+  return "";
+}
+
 function reset() {
   busy.value = false;
   error.value = "";
@@ -93,21 +98,34 @@ function reset() {
   ownerPageSize.value = 10;
   ownerTotal.value = 0;
   selectedOwner.value = null;
-  petQuery.value = "";
-  petResults.value = [];
-  petSearchPerformed.value = false;
-  petPage.value = 1;
-  petPageSize.value = 10;
-  petTotal.value = 0;
   selectedDirectoryPet.value = null;
   selectedOutgoingPet.value = null;
   ownershipLossAcknowledged.value = false;
 }
 
-watch(() => props.modelValue, (open) => { if (open) reset(); });
+async function restoreFocus() {
+  const target = returnFocus;
+  returnFocus = null;
+  await nextTick();
+  if (target?.isConnected) target.focus();
+}
+
+watch(() => props.modelValue, (open) => {
+  if (open) {
+    returnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    reset();
+  } else {
+    void restoreFocus();
+  }
+});
+
+function updateOpen(open: boolean) {
+  emit("update:modelValue", open);
+  if (!open) void restoreFocus();
+}
 
 function close() {
-  if (!busy.value) emit("update:modelValue", false);
+  if (!busy.value) updateOpen(false);
 }
 
 async function findOwners(page = ownerPage.value) {
@@ -129,44 +147,11 @@ async function findOwners(page = ownerPage.value) {
 
 function selectOwner(owner: DirectoryProfileDto) {
   selectedOwner.value = owner;
-  if (props.mode === "outgoing" && reviewPet.value) openConfirmation();
-  else {
-    petResults.value = [];
-    petSearchPerformed.value = false;
-    petPage.value = 1;
-  }
-}
-
-async function findPets(page = petPage.value) {
-  busy.value = true;
-  error.value = "";
-  petResults.value = [];
-  petSearchPerformed.value = false;
-  try {
-    const query = petQuery.value.trim();
-    if (!query) throw new Error("Укажите кличку или полный идентификатор питомца.");
-    const exactLookup = !selectedOwner.value;
-    const result = await searchPetDirectory("", query, exactLookup ? 1 : page, petPageSize.value, "pet", selectedOwner.value?.accountId ?? "", true);
-    const exactItems = exactLookup ? result.items.filter((pet) => pet.petId === query) : result.items;
-    const availableItems = exactItems.filter((pet) => !hasPendingTransfer(pet.petId));
-    if (exactLookup && availableItems.some((pet) => pet.ownerAccountId === currentAccountId.value)) {
-      throw new Error("Нельзя запросить передачу собственного питомца.");
-    }
-    petPage.value = exactLookup ? 1 : result.page;
-    petResults.value = availableItems;
-    petTotal.value = Math.max(0, result.total - (result.items.length - availableItems.length));
-    petSearchPerformed.value = true;
-  } catch (reason) {
-    error.value = reason instanceof Error ? reason.message : "Не удалось найти питомца.";
-  } finally {
-    busy.value = false;
-  }
+  if (reviewPet.value) openConfirmation();
 }
 
 function selectPet(pet: DirectoryPetDto) {
   if (hasPendingTransfer(pet.petId)) {
-    petResults.value = petResults.value.filter((result) => result.petId !== pet.petId);
-    petTotal.value = Math.max(0, petTotal.value - 1);
     error.value = "Передача этого питомца уже ожидает решения.";
     return;
   }
@@ -248,7 +233,7 @@ async function requestTransfer() {
       expectedToOwnerProfileRevision: props.mode === "outgoing" ? targetOwner!.revision : profile.revision,
       ownershipLossAcknowledged: props.mode === "outgoing" && ownershipLossAcknowledged.value,
     });
-    emit("update:modelValue", false);
+    updateOpen(false);
     alertStore.success("Запрос передачи отправлен.");
     emit("completed", transferRequestId);
   } catch (reason) {
@@ -260,17 +245,33 @@ async function requestTransfer() {
 
 function changeOwnerPage(page: number) { void findOwners(page); }
 function changeOwnerPageSize(pageSize: number) { ownerPageSize.value = pageSize; ownerPage.value = 1; void findOwners(1); }
-function changePetPage(page: number) { void findPets(page); }
-function changePetPageSize(pageSize: number) { petPageSize.value = pageSize; petPage.value = 1; void findPets(1); }
 </script>
 
 <template>
+  <PetDirectoryActionDialog
+    v-if="mode === 'incoming' && step === 'search'"
+    :model-value="modelValue"
+    title="Запросить передачу"
+    action-title="Выбрать питомца"
+    :busy="busy"
+    :error="error"
+    transferable-only
+    :excluded-owner-account-id="currentAccountId"
+    excluded-owner-error="Нельзя запросить передачу собственного питомца."
+    :unavailable-pet-ids="unavailableIncomingPetIds"
+    unavailable-pet-error="Передача этого питомца уже ожидает решения."
+    :validate-action="incomingPetActionError"
+    @update:model-value="updateOpen"
+    @action="selectPet"
+    @clear-error="error = ''"
+  />
   <ModalDialog
+    v-else
     :model-value="modelValue"
     :title="title"
     :busy="busy"
     :role="step === 'confirm' && mode === 'outgoing' ? 'alertdialog' : 'dialog'"
-    @update:model-value="emit('update:modelValue', $event)"
+    @update:model-value="updateOpen"
   >
     <div class="form-stack directory-dialog-form pet-transfer-dialog">
       <p v-if="error" class="form-alert error" role="alert">{{ error }}</p>
@@ -307,25 +308,6 @@ function changePetPageSize(pageSize: number) { petPageSize.value = pageSize; pet
             <PersonIdentity :display-name="selectedOwner.displayName" :account-id="selectedOwner.accountId" />
             <button class="outline-action inline access-icon-action" type="button" title="Сбросить владельца" aria-label="Сбросить владельца" @click="selectedOwner = null"><AppIcon name="close" /></button>
           </div>
-        </template>
-
-        <template v-if="mode === 'incoming'">
-          <div v-if="selectedOwner" class="transfer-selected-owner">
-            <span>Выбран текущий владелец</span>
-            <PersonIdentity :display-name="selectedOwner.displayName" :account-id="selectedOwner.accountId" />
-            <button class="outline-action inline access-icon-action" type="button" title="Сбросить владельца" aria-label="Сбросить владельца" @click="selectedOwner = null"><AppIcon name="close" /></button>
-          </div>
-          <form class="form-stack directory-dialog-search" @submit.prevent="findPets(1)">
-            <label><span>Кличка, её часть или полный идентификатор питомца</span><input v-model="petQuery" type="search" required /></label>
-            <button class="primary-action inline access-icon-action" type="submit" :disabled="busy" :title="busy ? 'Поиск питомца…' : 'Найти питомца'" :aria-label="busy ? 'Поиск питомца…' : 'Найти питомца'"><AppIcon name="search" /></button>
-          </form>
-          <p v-if="!selectedOwner" class="directory-dialog-hint">Без выбранного владельца укажите полный идентификатор питомца.</p>
-          <div v-for="result in petResults" :key="result.petId" class="list-row directory-dialog-result transfer-pet-result">
-            <div><strong>{{ result.species }} {{ result.name }}</strong><small>{{ result.petId }}</small><PersonIdentity :display-name="result.ownerDisplayName" :account-id="result.ownerAccountId" /></div>
-            <button class="outline-action inline access-icon-action" type="button" title="Выбрать питомца" aria-label="Выбрать питомца" @click="selectPet(result)"><AppIcon name="check" /></button>
-          </div>
-          <p v-if="petSearchPerformed && !petResults.length">Питомцы не найдены.</p>
-          <AppPaginator v-if="petTotal > petPageSize" :page="petPage" :page-size="petPageSize" :total-items="petTotal" aria-label="Навигация по найденным питомцам" @update:page="changePetPage" @update:page-size="changePetPageSize" />
         </template>
 
         <div class="confirmation-dialog-actions"><button class="outline-action inline access-icon-action" type="button" :disabled="busy" title="Закрыть" aria-label="Закрыть" @click="close"><AppIcon name="close" /></button></div>

@@ -63,6 +63,7 @@ vi.mock("../src/appStore", () => ({
 
 import AppIcon from "../src/components/AppIcon.vue";
 import PersonIdentity from "../src/components/PersonIdentity.vue";
+import PetDirectoryActionDialog from "../src/components/PetDirectoryActionDialog.vue";
 import PetTransferDialog from "../src/components/PetTransferDialog.vue";
 import PetTransferManager from "../src/components/PetTransferManager.vue";
 
@@ -96,6 +97,52 @@ beforeEach(() => {
 });
 
 describe("pet transfer overlay", () => {
+  it("configures shared pet-directory dialog labels and close actions", async () => {
+    const wrapper = mount(PetDirectoryActionDialog, {
+      props: {
+        modelValue: true,
+        title: "Выбрать животное",
+        actionTitle: "Продолжить",
+        searchTitle: "Искать животное",
+        closeTitle: "Закрыть поиск",
+      },
+      global: { plugins: [createPinia()] },
+    });
+
+    expect(wrapper.get('[role="dialog"] h2').text()).toBe("Выбрать животное");
+    expect(wrapper.get(".doctor-request-search-action").attributes("title")).toBe("Искать животное");
+    await wrapper.get('button[title="Закрыть поиск"]').trigger("click");
+    await wrapper.get(".confirmation-dialog-backdrop").trigger("click");
+    expect(wrapper.emitted("update:modelValue")).toEqual([[false], [false]]);
+  });
+
+  it("removes a shared search result that becomes unavailable before its action", async () => {
+    const unavailablePetIds: string[] = [];
+    const wrapper = mount(PetDirectoryActionDialog, {
+      props: {
+        modelValue: true,
+        title: "Запросить передачу",
+        actionTitle: "Выбрать питомца",
+        unavailablePetIds,
+        unavailablePetError: "Передача уже ожидает решения.",
+      },
+      global: { plugins: [createPinia()] },
+    });
+    const form = wrapper.get("form.doctor-request-search-form");
+    await form.get('.doctor-request-owner-field input[type="search"]').setValue("Алёна");
+    await form.get('.doctor-request-pet-field input[type="search"]').setValue("Ёжик");
+    await form.trigger("submit");
+    await flushPromises();
+    const action = wrapper.get('button[title="Выбрать питомца"]');
+
+    unavailablePetIds.push("pet-1");
+    await action.trigger("click");
+
+    expect(wrapper.get('[role="alert"]').text()).toBe("Передача уже ожидает решения.");
+    expect(wrapper.find('button[title="Выбрать питомца"]').exists()).toBe(false);
+    expect(wrapper.emitted("action")).toBeUndefined();
+  });
+
   it("uses distinct dedicated icons for outgoing and incoming transfer entry points", () => {
     const outgoing = mount(AppIcon, { props: { name: "building-circle-arrow-right" } });
     const incoming = mount(AppIcon, { props: { name: "arrow-right-to-city" } });
@@ -208,17 +255,20 @@ describe("pet transfer overlay", () => {
 
   it("supports exact pet lookup without selecting an owner for an incoming request", async () => {
     const otherPet = { ...directoryPet, ownerAccountId: "owner-2", ownerDisplayName: "Иван Петров", ownerProfileRevision: 3 };
-    mocks.searchPetDirectory.mockResolvedValue({ items: [otherPet], page: 1, pageSize: 10, total: 1, pageCount: 1 });
     mocks.lookupPetDirectory.mockResolvedValue(otherPet);
     const wrapper = mount(PetTransferDialog, {
       props: { modelValue: true, mode: "incoming" },
       global: { plugins: [createPinia()] },
     });
-    const searchForms = wrapper.findAll("form.directory-dialog-search");
-    await searchForms[1]!.get('input[type="search"]').setValue("pet-1");
-    await searchForms[1]!.trigger("submit");
+    const sharedDialog = wrapper.getComponent(PetDirectoryActionDialog);
+    expect(sharedDialog.props("title")).toBe("Запросить передачу");
+    expect(sharedDialog.props("actionTitle")).toBe("Выбрать питомца");
+    const petForm = wrapper.get("form.doctor-request-search-form");
+    await petForm.get('.doctor-request-pet-field input[type="search"]').setValue("pet-1");
+    await petForm.trigger("submit");
     await flushPromises();
-    expect(mocks.searchPetDirectory).toHaveBeenCalledWith("", "pet-1", 1, 10, "pet", "", true);
+    expect(mocks.lookupPetDirectory).toHaveBeenCalledWith("pet-1");
+    expect(mocks.searchPetDirectory).not.toHaveBeenCalled();
     expect(wrapper.text()).toContain("Иван Петров");
     await wrapper.get('button[title="Выбрать питомца"]').trigger("click");
     expect(wrapper.get('[role="dialog"]').text()).toContain("Подтвердить запрос передачи");
@@ -233,13 +283,38 @@ describe("pet transfer overlay", () => {
     }));
   });
 
+  it("restores focus to the trigger after the shared search advances to confirmation", async () => {
+    const trigger = document.createElement("button");
+    document.body.append(trigger);
+    trigger.focus();
+    const otherPet = { ...directoryPet, ownerAccountId: "owner-2", ownerDisplayName: "Иван Петров", ownerProfileRevision: 3 };
+    mocks.lookupPetDirectory.mockResolvedValue(otherPet);
+    const wrapper = mount(PetTransferDialog, {
+      props: { modelValue: false, mode: "incoming" },
+      global: { plugins: [createPinia()] },
+      attachTo: document.body,
+    });
+
+    await wrapper.setProps({ modelValue: true });
+    await wrapper.get('.doctor-request-pet-field input[type="search"]').setValue("pet-1");
+    await wrapper.get("form.doctor-request-search-form").trigger("submit");
+    await flushPromises();
+    await wrapper.get('button[title="Выбрать питомца"]').trigger("click");
+    await wrapper.get("form.transfer-review").trigger("submit");
+    await flushPromises();
+
+    expect(document.activeElement).toBe(trigger);
+    wrapper.unmount();
+    trigger.remove();
+  });
+
   it("continues to reject an exact lookup of the current Owner's pet", async () => {
     const wrapper = mount(PetTransferDialog, {
       props: { modelValue: true, mode: "incoming" },
       global: { plugins: [createPinia()] },
     });
-    const petForm = wrapper.findAll("form.directory-dialog-search")[1]!;
-    await petForm.get('input[type="search"]').setValue("pet-1");
+    const petForm = wrapper.get("form.doctor-request-search-form");
+    await petForm.get('.doctor-request-pet-field input[type="search"]').setValue("pet-1");
     await petForm.trigger("submit");
     await flushPromises();
 
@@ -267,37 +342,37 @@ describe("pet transfer overlay", () => {
     expect(wrapper.get(".transfer-review dl").attributes("aria-label")).toBe("Участники передачи");
   });
 
-  it("scopes a name search to the selected Owner's opaque account identifier", async () => {
+  it("uses the same owner-and-pet name search as the doctor access dialog", async () => {
+    const otherPet = { ...directoryPet, ownerAccountId: "owner-2", ownerDisplayName: "Иван Петров", ownerProfileRevision: 3 };
+    mocks.searchPetDirectory.mockResolvedValue({ items: [otherPet], page: 1, pageSize: 50, total: 1, pageCount: 1 });
     const wrapper = mount(PetTransferDialog, {
       props: { modelValue: true, mode: "incoming" },
       global: { plugins: [createPinia()] },
     });
-    await wrapper.get('input[type="search"]').setValue("Иван");
-    await wrapper.findAll("form.directory-dialog-search")[0]!.trigger("submit");
-    await flushPromises();
-    await wrapper.get('button[title="Выбрать владельца"]').trigger("click");
-    const petForm = wrapper.findAll("form.directory-dialog-search")[1]!;
-    await petForm.get('input[type="search"]').setValue("Еж");
+    const petForm = wrapper.get("form.doctor-request-search-form");
+    await petForm.get('.doctor-request-owner-field input[type="search"]').setValue("Иван");
+    await petForm.get('.doctor-request-pet-field input[type="search"]').setValue("Еж");
     await petForm.trigger("submit");
     await flushPromises();
 
-    expect(mocks.searchPetDirectory).toHaveBeenCalledWith("", "Еж", 1, 10, "pet", "owner-2", true);
+    expect(mocks.searchPetDirectory).toHaveBeenCalledWith("Иван", "Еж", 1, 50, "owner", "", true);
+    expect(wrapper.get(".doctor-request-result").text()).toContain("Иван Петров");
   });
 
   it("does not show pets that already have a pending transfer", async () => {
     const otherPet = { ...directoryPet, ownerAccountId: "owner-2", ownerDisplayName: "Иван Петров", ownerProfileRevision: 3 };
     state.medical.transferRequests = [transfer({ petId: otherPet.petId })];
-    mocks.searchPetDirectory.mockResolvedValue({ items: [otherPet], page: 1, pageSize: 10, total: 1, pageCount: 1 });
+    mocks.lookupPetDirectory.mockResolvedValue(otherPet);
     const wrapper = mount(PetTransferDialog, {
       props: { modelValue: true, mode: "incoming" },
       global: { plugins: [createPinia()] },
     });
-    const petForm = wrapper.findAll("form.directory-dialog-search")[1]!;
-    await petForm.get('input[type="search"]').setValue("pet-1");
+    const petForm = wrapper.get("form.doctor-request-search-form");
+    await petForm.get('.doctor-request-pet-field input[type="search"]').setValue("pet-1");
     await petForm.trigger("submit");
     await flushPromises();
 
-    expect(mocks.searchPetDirectory).toHaveBeenCalledWith("", "pet-1", 1, 10, "pet", "", true);
+    expect(mocks.lookupPetDirectory).toHaveBeenCalledWith("pet-1");
     expect(wrapper.find('button[title="Выбрать питомца"]').exists()).toBe(false);
     expect(wrapper.text()).toContain("Питомцы не найдены");
   });
@@ -309,8 +384,9 @@ describe("pet transfer overlay", () => {
       props: { modelValue: true, mode: "incoming" },
       global: { plugins: [createPinia()] },
     });
-    const petForm = wrapper.findAll("form.directory-dialog-search")[1]!;
-    await petForm.get('input[type="search"]').setValue("pet-1");
+    const petForm = wrapper.get("form.doctor-request-search-form");
+    await petForm.get('.doctor-request-owner-field input[type="search"]').setValue("Иван");
+    await petForm.get('.doctor-request-pet-field input[type="search"]').setValue("Еж");
     await petForm.trigger("submit");
     await flushPromises();
     state.medical.transferRequests = [transfer({ petId: otherPet.petId })];
@@ -378,10 +454,11 @@ describe("pet transfer overlay", () => {
       props: { modelValue: true, mode: "incoming" }, global: { plugins: [createPinia()] },
     });
     const selected = { ...directoryPet, ownerAccountId: "owner-2", ownerDisplayName: "Иван Петров", ownerProfileRevision: 3 };
-    mocks.searchPetDirectory.mockResolvedValueOnce({ items: [selected], page: 1, pageSize: 10, total: 1, pageCount: 1 });
-    mocks.lookupPetDirectory.mockResolvedValueOnce({ ...selected, ownerProfileRevision: 4 });
-    const petForm = incoming.findAll("form.directory-dialog-search")[1]!;
-    await petForm.get('input[type="search"]').setValue("pet-1");
+    mocks.lookupPetDirectory
+      .mockResolvedValueOnce(selected)
+      .mockResolvedValueOnce({ ...selected, ownerProfileRevision: 4 });
+    const petForm = incoming.get("form.doctor-request-search-form");
+    await petForm.get('.doctor-request-pet-field input[type="search"]').setValue("pet-1");
     await petForm.trigger("submit");
     await flushPromises();
     await incoming.get('button[title="Выбрать питомца"]').trigger("click");
