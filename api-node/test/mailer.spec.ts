@@ -3,7 +3,7 @@
 // This file is a part of Klinok application
 
 import { describe, expect, it, vi } from "vitest";
-import { EmailWorker, type EmailTransport } from "./mailer.js";
+import { EmailWorker, type EmailTransport } from "../src/mailer.js";
 
 describe("email outbox", () => {
   it("uses bounded exponential retries and records a terminal failure", async () => {

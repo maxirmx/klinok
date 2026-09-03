@@ -36,6 +36,7 @@ export const scenarioRegistry: ScenarioRegistryEntry[] = [
   { id: "about", title: "О программе", role: "shared", access: "public", path: "/about", figmaNodeId: "issue:96", component: "AboutScreen", implemented: true },
   { id: "user-profile", title: "Настройки", role: "shared", access: "authenticated", path: "/profile", figmaNodeId: "issue:25", component: "RoleStatusScreen", implemented: true },
   { id: "owner-home", title: "Кабинет владельца", role: "owner", access: "authenticated", path: "/owner/home", figmaNodeId: "issue:25", component: "OwnerScreen", implemented: true },
+  { id: "owner-transfers", title: "Передачи питомцев", role: "owner", access: "authenticated", path: "/owner/transfers", figmaNodeId: "issue:50", component: "OwnerScreen", implemented: true },
   { id: "owner-pet-create", title: "Кабинет владельца", role: "owner", access: "authenticated", path: "/owner/pets/new", figmaNodeId: "owner-pages", component: "OwnerScreen", implemented: true },
   { id: "owner-pet-detail", title: "Кабинет владельца", role: "owner", access: "authenticated", path: "/owner/pets/:petId", figmaNodeId: "owner-pages", component: "OwnerScreen", implemented: true },
   { id: "owner-pet-edit", title: "Редактировать питомца", role: "owner", access: "authenticated", path: "/owner/pets/:petId/edit", figmaNodeId: "owner-pages", component: "OwnerScreen", implemented: true },

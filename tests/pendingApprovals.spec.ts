@@ -5,7 +5,7 @@
 import { mount } from "@vue/test-utils";
 import { describe, expect, it } from "vitest";
 import PendingCountBadge from "../src/components/PendingCountBadge.vue";
-import { administratorPendingRequestCount, ownerPendingApprovals } from "../src/pendingApprovals";
+import { administratorPendingRequestCount, ownerPendingApprovals, ownerPendingTransferCount } from "../src/pendingApprovals";
 
 describe("pending approval selectors", () => {
   it("caps the visible badge while hiding zero values", async () => {
@@ -63,5 +63,17 @@ describe("pending approval selectors", () => {
       total: 0,
       byPet: {},
     });
+  });
+
+  it("counts actionable transfer requests separately from pet approvals", () => {
+    expect(ownerPendingTransferCount({
+      transferRequests: [
+        { transferRequestId: "transfer-1", initiatedByAccountId: "owner-2", status: "pending" },
+        { transferRequestId: "transfer-1", initiatedByAccountId: "owner-2", status: "pending" },
+        { transferRequestId: "transfer-2", initiatedByAccountId: "owner-1", status: "pending" },
+        { transferRequestId: "transfer-3", initiatedByAccountId: "owner-2", status: "completed" },
+      ],
+    }, "owner-1")).toBe(1);
+    expect(ownerPendingTransferCount({}, "owner-1")).toBe(0);
   });
 });

@@ -194,6 +194,8 @@ export interface DirectoryPetDto {
   petId: string;
   ownerAccountId: string;
   ownerDisplayName: string;
+  ownerProfileRevision: number;
+  revision: number;
   species: string;
   name: string;
   updatedAt: string;
@@ -375,6 +377,29 @@ export interface MedicalRecordConfirmation {
   appliedProfileLatestVaccination?: { date: string; name: string; recordId: string };
 }
 
+export type PetTransferRequestStatus = "pending" | "completed" | "rejected" | "cancelled" | "invalidated";
+
+export interface PetTransferRequest {
+  transferRequestId: string;
+  petId: string;
+  petRevision: number;
+  fromOwnerAccountId: string;
+  fromOwnerDisplayName: string;
+  fromOwnerProfileRevision: number;
+  toOwnerAccountId: string;
+  toOwnerDisplayName: string;
+  toOwnerProfileRevision: number;
+  initiatedByAccountId: string;
+  retainDoctorAccess: boolean;
+  petName: string;
+  petSpecies: string;
+  status: PetTransferRequestStatus;
+  revision: number;
+  createdAt: string;
+  decidedAt?: string;
+  decidedBy?: string;
+}
+
 export interface AuditRoleEntryDto {
   ledgerHeight: number;
   blockHash: string;
@@ -410,6 +435,7 @@ export interface MedicalSnapshot {
   pets: PetProfile[];
   grants: PetAccessGrant[];
   accessRequests: PetAccessRequest[];
+  transferRequests: PetTransferRequest[];
   records: MedicalRecordDraft[];
   confirmations: MedicalRecordConfirmation[];
   confirmedRecordIds: string[];
@@ -427,6 +453,7 @@ export type ClientCommandType =
   | "pet.create" | "pet.update" | "pet.delete"
   | "access.request" | "access.cancel" | "access.reject" | "access.grant"
   | "access.delegate" | "access.revoke" | "access.relinquish" | "access.actions.update"
+  | "transfer.request" | "transfer.accept" | "transfer.reject" | "transfer.cancel"
   | "record.create" | "record.update" | "record.delete" | "record.confirm";
 
 export interface ClientCommand<TPayload = Record<string, unknown>> {

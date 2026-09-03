@@ -99,6 +99,13 @@ function snapshot(role: AppSnapshotDto["role"] = "owner"): AppSnapshotDto {
         requestId: "request-1", petId: "pet-1", ownerAccountId: "account-1", requesterAccountId: "doctor-1",
         requesterDisplayName: "Иван Врач", status: "pending", revision: 2, requestedAt: timestamp,
       }],
+      transferRequests: [{
+        transferRequestId: "transfer-1", petId: "pet-1", petRevision: 2,
+        fromOwnerAccountId: "account-1", fromOwnerDisplayName: "Анна Петрова", fromOwnerProfileRevision: 3,
+        toOwnerAccountId: "owner-2", toOwnerDisplayName: "Ольга Иванова", toOwnerProfileRevision: 1,
+        initiatedByAccountId: "owner-2", retainDoctorAccess: false, petName: "Барс", petSpecies: "Кошка",
+        status: "pending", revision: 1, createdAt: timestamp,
+      }],
       records: [{
         recordId: "record-1", petId: "pet-1", revision: 2, authorAccountId: "doctor-1", authorDisplayName: "Иван Врач",
         encounterDate: "2026-08-09", title: "Осмотр", text: "Жалоба", sections: {}, createdAt: timestamp, updatedAt: timestamp,
@@ -194,7 +201,7 @@ describe("Klinok repository facade", () => {
     const executeOffline = vi.spyOn(repository, "executeOffline") as Mock;
     executeOnline.mockResolvedValue(undefined);
     executeOffline.mockResolvedValue(undefined);
-    const ids = ["pet-new", "request-local-1", "request-new", "grant-new", "grant-direct", "grant-child", "record-new"];
+    const ids = ["pet-new", "request-local-1", "request-new", "grant-new", "grant-direct", "grant-child", "record-new", "transfer-new"];
     vi.spyOn(crypto, "randomUUID").mockImplementation(() => ids.shift() ?? "generated-id");
     const listener = vi.fn();
     const unsubscribe = repository.medical.subscribe(listener);
@@ -260,6 +267,16 @@ describe("Klinok repository facade", () => {
     await expect(repository.medical.deleteRecord("pet-1", "missing-record")).rejects.toThrow("Медицинская запись не найдена");
     await repository.medical.deleteRecord("pet-1", "record-1");
     await repository.medical.confirmRecord("pet-1", "record-1", 2);
+    await expect(repository.medical.requestPetTransfer({
+      petId: "pet-1", toOwnerAccountId: "owner-2", expectedFromOwnerAccountId: "account-1",
+      expectedPetRevision: 2, expectedFromOwnerProfileRevision: 3, expectedToOwnerProfileRevision: 1,
+      ownershipLossAcknowledged: true,
+    })).resolves.toBe("transfer-new");
+    await repository.medical.acceptPetTransfer("transfer-1", true);
+    await repository.medical.acceptPetTransfer("transfer-1", false, true);
+    await repository.medical.rejectPetTransfer("transfer-1");
+    await repository.medical.cancelPetTransfer("transfer-1");
+    await expect(repository.medical.cancelPetTransfer("missing-transfer")).rejects.toThrow("Статус запроса передачи изменился");
 
     expect(executeOffline).toHaveBeenCalledWith(expect.objectContaining({ type: "pet.create", entityId: "pet-new" }));
     expect(executeOffline).toHaveBeenCalledWith(expect.objectContaining({ type: "pet.update", expectedRevision: 2 }));
@@ -282,6 +299,12 @@ describe("Klinok repository facade", () => {
     expect(executeOnline).toHaveBeenCalledWith(expect.objectContaining({ type: "access.delegate", expectedRevision: 3 }));
     expect(executeOnline).toHaveBeenCalledWith(expect.objectContaining({ type: "access.actions.update", payload: { actions: ["read", "write_unconfirmed"] } }));
     expect(executeOnline).toHaveBeenCalledWith(expect.objectContaining({ type: "record.confirm", expectedRevision: 2 }));
+    expect(executeOnline).toHaveBeenCalledWith(expect.objectContaining({ type: "transfer.request", entityId: "transfer-new" }));
+    expect(executeOnline).toHaveBeenCalledWith(expect.objectContaining({ type: "transfer.accept", entityId: "transfer-1", expectedRevision: 1 }));
+    expect(executeOnline).toHaveBeenCalledWith(expect.objectContaining({
+      type: "transfer.accept",
+      payload: { ownershipLossAcknowledged: false, retainDoctorAccess: true },
+    }));
     await repository.dispose();
   });
 

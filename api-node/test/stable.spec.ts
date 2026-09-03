@@ -3,7 +3,7 @@
 // This file is a part of Klinok application
 
 import { describe, expect, it } from "vitest";
-import { normalizeEmail, sha256, stableSerialize } from "./stable.js";
+import { normalizeEmail, sha256, stableSerialize } from "../src/stable.js";
 
 describe("canonical serialization", () => {
   it("sorts nested object keys while retaining array order", () => {

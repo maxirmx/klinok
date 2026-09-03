@@ -11,11 +11,11 @@ import AppAlert from "./AppAlert.vue";
 import BrandLogo from "./BrandLogo.vue";
 import PendingCountBadge from "./PendingCountBadge.vue";
 import { appState } from "../appStore";
-import { administratorPendingRequestCount, ownerPendingApprovals } from "../pendingApprovals";
+import { administratorPendingRequestCount, ownerPendingApprovals, ownerPendingTransferCount } from "../pendingApprovals";
 import { roleHomePath } from "../roleNavigation";
 import { APP_VERSION } from "../version";
 
-type WorkspaceIcon = "home" | "pets" | "plus" | "user" | "book" | "bell" | "eye" | "medical-tools";
+type WorkspaceIcon = "home" | "pets" | "plus" | "user" | "book" | "bell" | "eye" | "medical-tools" | "arrow-right-to-city";
 type WorkspaceNavItem = { id: string; label: string; icon: WorkspaceIcon };
 type WorkspacePathNavItem = WorkspaceNavItem & { path: string; exact: boolean };
 type WorkspacePendingNavItem = WorkspacePathNavItem & { pendingCount: number };
@@ -66,10 +66,12 @@ const ownerRootNavigation: WorkspacePathNavItem = {
   exact: true,
 };
 const ownerPending = computed(() => ownerPendingApprovals(appState.medical));
+const ownerTransferPending = computed(() => ownerPendingTransferCount(appState.medical, appState.session.accountId ?? ""));
 const administratorPendingCount = computed(() => props.administratorPendingCount
   ?? administratorPendingRequestCount(appState.control));
 const ownerChildNavigation = computed<WorkspacePendingNavItem[]>(() => [
   { id: "owner-add-pet", label: "Добавить питомца", icon: "plus", path: "/owner/pets/new", exact: true, pendingCount: 0 },
+  { id: "owner-transfers", label: "Передачи", icon: "arrow-right-to-city", path: "/owner/transfers", exact: true, pendingCount: ownerTransferPending.value },
   ...appState.medical.pets.map((pet) => ({
     id: `owner-pet-${pet.petId}`,
     label: pet.name,

@@ -11,11 +11,15 @@ const props = withDefaults(defineProps<{
   description: string;
   confirmLabel: string;
   cancelLabel?: string;
+  error?: string;
   busy?: boolean;
+  confirmDisabled?: boolean;
   tone?: "danger" | "primary";
 }>(), {
   cancelLabel: "Отмена",
+  error: "",
   busy: false,
+  confirmDisabled: false,
   tone: "danger",
 });
 
@@ -45,6 +49,7 @@ function confirm() {
     :role="tone === 'danger' ? 'alertdialog' : 'dialog'"
     @update:model-value="emit('update:modelValue', $event)"
   >
+    <p v-if="error" class="form-alert error" role="alert">{{ error }}</p>
     <div class="confirmation-dialog-actions">
       <button class="outline-action inline" type="button" :disabled="busy" @click="cancel">
         {{ cancelLabel }}
@@ -53,7 +58,7 @@ function confirm() {
         class="primary-action inline"
         :class="{ danger: tone === 'danger' }"
         type="button"
-        :disabled="busy"
+        :disabled="busy || confirmDisabled"
         @click="confirm"
       >
         {{ confirmLabel }}

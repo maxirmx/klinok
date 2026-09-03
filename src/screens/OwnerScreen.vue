@@ -23,6 +23,8 @@ import PendingCountBadge from "../components/PendingCountBadge.vue";
 import PetAccessManager from "../components/PetAccessManager.vue";
 import PetColorCombobox from "../components/PetColorCombobox.vue";
 import PetProfileView from "../components/PetProfileView.vue";
+import PetTransferDialog from "../components/PetTransferDialog.vue";
+import PetTransferManager from "../components/PetTransferManager.vue";
 import PersonIdentity from "../components/PersonIdentity.vue";
 import WorkspaceShell from "../components/WorkspaceShell.vue";
 import { appState, logout, requireRepository, searchDoctorDirectory } from "../appStore";
@@ -81,6 +83,8 @@ const doctorResults = ref<DirectoryProfileDto[]>([]);
 const doctorSearchPerformed = ref(false);
 const selectedDoctor = ref<DirectoryProfileDto | null>(null);
 const grantDelegate = ref(false);
+const incomingTransferDialogOpen = ref(false);
+const outgoingTransferDialogOpen = ref(false);
 const birthMode = ref<"date" | "year">("date");
 const draft = reactive({
   name: "",
@@ -108,10 +112,27 @@ const selectedPet = computed(() =>
   appState.medical.pets.find((pet) => pet.petId === String(route.params.petId ?? "")) ?? null,
 );
 const isHome = computed(() => props.scenarioId === "owner-home");
+const isTransfers = computed(() => props.scenarioId === "owner-transfers");
+const linkedTransferRequestId = computed(() => typeof route.query.request === "string" ? route.query.request : "");
 const isCreate = computed(() => props.scenarioId === "owner-pet-create");
 const isEdit = computed(() => props.scenarioId === "owner-pet-edit");
 const isAccess = computed(() => props.scenarioId === "owner-pet-access");
 const isForm = computed(() => isCreate.value || isEdit.value);
+const transferActionAvailable = computed(() => appState.repositoryConnected
+  && appState.sync.connectionState === "connected" && !appState.sync.syncing);
+const pendingTransferPetIds = computed(() => new Set(appState.medical.transferRequests
+  .filter((request) => request.status === "pending")
+  .map((request) => request.petId)));
+const selectedPetTransferPending = computed(() => selectedPet.value
+  ? pendingTransferPetIds.value.has(selectedPet.value.petId)
+  : false);
+const outgoingTransferActionAvailable = computed(() => transferActionAvailable.value
+  && !selectedPetTransferPending.value);
+const outgoingTransferActionTitle = computed(() => selectedPetTransferPending.value
+  ? "Передача уже ожидает решения"
+  : transferActionAvailable.value
+    ? "Передать питомца"
+    : "Передача временно недоступна: данные синхронизируются");
 const pendingApprovals = computed(() => ownerPendingApprovals(appState.medical));
 const selectedPetPending = computed(() => selectedPet.value
   ? pendingApprovals.value.byPet[selectedPet.value.petId]
@@ -135,6 +156,16 @@ const medicalRecordConfirmationOpen = computed({
   set: (open: boolean) => {
     if (!open && !medicalRecordConfirmationBusy.value) medicalRecordConfirmationTarget.value = null;
   },
+});
+
+watch(selectedPet, (current, previous) => {
+  if (previous && !current && route.params.petId) {
+    outgoingTransferDialogOpen.value = false;
+    void router.replace("/owner/home");
+  }
+});
+watch(selectedPetTransferPending, (pending) => {
+  if (pending) outgoingTransferDialogOpen.value = false;
 });
 
 function updatePetSpecies(value: string) { draft.species = value as PetSpecies; }
@@ -670,21 +701,26 @@ async function confirmMedicalRecord() {
 
 <template>
   <WorkspaceShell role="owner" title="Кабинет владельца" :profile-name="profileName" @sign-out="signOut">
-    <div v-if="isHome || isForm || isAccess || !selectedPet" class="owner-section-heading owner-page-heading">
+    <div
+      v-if="!isTransfers && (isHome || isForm || isAccess || !selectedPet)"
+      class="owner-section-heading owner-page-heading"
+    >
       <div>
         <h2>{{ pageTitle }}</h2>
         <p v-if="isHome">Профили и медицинская история ваших животных</p>
         <p v-else-if="isAccess">Управляйте запросами, доступом и правом делегирования.</p>
       </div>
-      <RouterLink
-        v-if="isHome"
-        class="primary-action inline owner-profile-action"
-        to="/owner/pets/new"
-        title="Добавить питомца"
-        aria-label="Добавить питомца"
-      >
-        <AppIcon name="plus" />
-      </RouterLink>
+      <div v-if="isHome" class="row-actions owner-page-heading-actions">
+        <button
+          class="outline-action inline owner-profile-action"
+          type="button"
+          :disabled="!transferActionAvailable"
+          :title="transferActionAvailable ? 'Запросить передачу' : 'Передача временно недоступна: данные синхронизируются'"
+          :aria-label="transferActionAvailable ? 'Запросить передачу' : 'Передача временно недоступна: данные синхронизируются'"
+          @click="incomingTransferDialogOpen = true"
+        ><AppIcon name="arrow-right-to-city" /></button>
+        <RouterLink class="primary-action inline owner-profile-action" to="/owner/pets/new" title="Добавить питомца" aria-label="Добавить питомца"><AppIcon name="plus" /></RouterLink>
+      </div>
       <div v-else-if="isAccess && selectedPet" class="row-actions owner-page-heading-actions">
         <button
           class="primary-action inline owner-profile-action"
@@ -720,6 +756,7 @@ async function confirmMedicalRecord() {
             <strong>{{ pet.name }}</strong>
             <small>{{ pet.species }} · {{ pet.breed }}</small>
             <small>{{ petBirthSummary(pet) }}</small>
+            <span v-if="pendingTransferPetIds.has(pet.petId)" class="status-badge pending owner-pet-transfer-status">Ожидание передачи</span>
             <span
               v-if="pendingApprovals.byPet[pet.petId]?.total"
               class="owner-pet-card-approvals"
@@ -744,6 +781,8 @@ async function confirmMedicalRecord() {
         <RouterLink class="primary-action inline" to="/owner/pets/new">Добавить питомца</RouterLink>
       </div>
     </section>
+
+    <PetTransferManager v-else-if="isTransfers" :linked-request-id="linkedTransferRequestId" />
 
     <section v-else-if="isForm && (isCreate || selectedPet)" class="owner-form-layout">
       <form class="panel form-stack owner-pet-form" @submit.prevent="savePet">
@@ -884,9 +923,9 @@ async function confirmMedicalRecord() {
         title="Предоставить доступ"
         :busy="grantBusy"
       >
-        <div class="form-stack grant-access-form">
+        <div class="form-stack directory-dialog-form">
           <p v-if="grantError" class="form-alert error" role="alert">{{ grantError }}</p>
-          <form class="form-stack grant-search-form" @submit.prevent="findDoctors">
+          <form class="form-stack directory-dialog-search" @submit.prevent="findDoctors">
             <label>
               <span>ФИО врача, его часть или полный идентификатор</span>
               <input v-model="doctorQuery" type="search" required />
@@ -910,7 +949,7 @@ async function confirmMedicalRecord() {
     </PetAccessManager>
 
     <section v-else-if="selectedPet" class="owner-pet-detail">
-      <PetProfileView :pet="selectedPet">
+      <PetProfileView :pet="selectedPet" :status-label="selectedPetTransferPending ? 'Ожидание передачи' : ''">
         <template #actions>
           <RouterLink
             class="primary-action inline owner-profile-action"
@@ -920,6 +959,16 @@ async function confirmMedicalRecord() {
           >
             <AppIcon name="edit" />
           </RouterLink>
+          <button
+            class="outline-action inline owner-profile-action"
+            type="button"
+            :disabled="!outgoingTransferActionAvailable"
+            :title="outgoingTransferActionTitle"
+            :aria-label="outgoingTransferActionTitle"
+            @click="outgoingTransferDialogOpen = true"
+          >
+            <AppIcon name="building-circle-arrow-right" />
+          </button>
           <RouterLink
             class="outline-action inline owner-profile-action"
             :to="`/owner/pets/${selectedPet.petId}/access`"
@@ -1031,5 +1080,8 @@ async function confirmMedicalRecord() {
       <p>Профиль отсутствует, удалён или ещё не синхронизирован.</p>
       <RouterLink class="primary-action inline" to="/owner/home">На главную страницу</RouterLink>
     </section>
+
+    <PetTransferDialog v-model="incomingTransferDialogOpen" mode="incoming" />
+    <PetTransferDialog v-if="selectedPet" v-model="outgoingTransferDialogOpen" mode="outgoing" :pet="selectedPet" />
   </WorkspaceShell>
 </template>

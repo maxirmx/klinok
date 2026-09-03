@@ -3,8 +3,8 @@
 // This file is a part of Klinok application
 
 import { describe, expect, it } from "vitest";
-import type { DbClient } from "./db.js";
-import { Ledger } from "./ledger.js";
+import type { DbClient } from "../src/db.js";
+import { Ledger } from "../src/ledger.js";
 
 type StoredBlock = Record<string, unknown> & { height: string; block_hash: string; previous_hash: string };
 

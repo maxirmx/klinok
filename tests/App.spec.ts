@@ -184,7 +184,7 @@ describe("operational Russian UI", () => {
     const owner = await mountScreen(OwnerScreen, "/owner/home", { scenarioId: "owner-home", role: "owner" });
     const sidebarLabels = owner.findAll(".workspace-sidebar-nav .workspace-nav-item span").map((node) => node.text());
     expect(sidebarLabels).toEqual([
-      "Питомцы", "Добавить питомца",
+      "Питомцы", "Добавить питомца", "Передачи",
     ]);
     expect(owner.findAll(".workspace-sidebar-nav .workspace-nav-item")[0]!.getComponent(AppIcon).props("name")).toBe("pets");
     expect(owner.get(".workspace-sidebar-footer .workspace-settings-nav-item").getComponent(AppIcon).props("name"))

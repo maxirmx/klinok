@@ -9,7 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import AppIcon from "../src/components/AppIcon.vue";
 import LaboratoryComparison from "../src/components/LaboratoryComparison.vue";
 import OwnerScreen from "../src/screens/OwnerScreen.vue";
-import type { MedicalRecordDraft, MedicalSnapshot, PetProfile } from "../src/repositories/types";
+import type { MedicalRecordDraft, MedicalSnapshot, PetProfile, PetTransferRequest } from "../src/repositories/types";
 
 const repositoryMocks = vi.hoisted(() => ({
   createPet: vi.fn().mockResolvedValue("pet-new"),
@@ -36,6 +36,7 @@ vi.mock("../src/appStore", async () => {
     pets: [],
     grants: [],
     accessRequests: [],
+    transferRequests: [],
     records: [],
     confirmations: [],
     confirmedRecordIds: [],
@@ -55,6 +56,8 @@ vi.mock("../src/appStore", async () => {
       ledger: { valid: true, height: 0, headHash: "0".repeat(64), verifiedAt: "2026-07-17T00:00:00.000Z" },
     },
     medical: emptyMedical,
+    repositoryConnected: true,
+    sync: { connectionState: "connected", syncing: false },
   });
   return {
     appState: readonly(state),
@@ -107,6 +110,25 @@ const medicalRecord: MedicalRecordDraft = {
   updatedAt: "2026-07-17T10:00:00.000Z",
 };
 
+const pendingTransfer: PetTransferRequest = {
+  transferRequestId: "transfer-1",
+  petId: pet.petId,
+  petRevision: pet.revision,
+  fromOwnerAccountId: "owner-1",
+  fromOwnerDisplayName: "Ольга Владелец",
+  fromOwnerProfileRevision: 1,
+  toOwnerAccountId: "owner-2",
+  toOwnerDisplayName: "Иван Новый",
+  toOwnerProfileRevision: 1,
+  initiatedByAccountId: "owner-1",
+  retainDoctorAccess: false,
+  petName: pet.name,
+  petSpecies: pet.species,
+  status: "pending",
+  revision: 1,
+  createdAt: "2026-07-17T11:00:00.000Z",
+};
+
 function withLaboratoryPanel(record: MedicalRecordDraft): MedicalRecordDraft {
   return { ...record, sections: { ...record.sections, "laboratory-tests": {
     kind: "laboratory-tests",
@@ -131,6 +153,7 @@ function snapshot(overrides: Partial<MedicalSnapshot> = {}): MedicalSnapshot {
     pets: [],
     grants: [],
     accessRequests: [],
+    transferRequests: [],
     records: [],
     confirmations: [],
     confirmedRecordIds: [],
@@ -157,6 +180,7 @@ async function mountAt(path: string, scenarioId: string, attachToDocument = fals
     history: createMemoryHistory(),
     routes: [
       { path: "/owner/home", component: { template: "<div />" } },
+      { path: "/owner/transfers", component: { template: "<div />" } },
       { path: "/owner/pets/new", component: { template: "<div />" } },
       { path: "/owner/pets/:petId", component: { template: "<div />" } },
       { path: "/owner/pets/:petId/edit", component: { template: "<div />" } },
@@ -218,6 +242,14 @@ afterEach(() => {
 });
 
 describe("Owner pages", () => {
+  it("does not repeat the transfer manager heading on the transfers page", async () => {
+    const wrapper = await mountAt("/owner/transfers", "owner-transfers");
+
+    expect(wrapper.find(".owner-page-heading").exists()).toBe(false);
+    expect(wrapper.get(".pet-transfer-manager h3").text()).toBe("Запросы передачи");
+    expect(wrapper.text()).not.toContain("Создавайте и обрабатывайте запросы передачи питомцев.");
+  });
+
   it("shows access and medical approvals by pet and hides them after resolution", async () => {
     const pendingAccess = {
       requestId: "request-1",
@@ -271,6 +303,7 @@ describe("Owner pages", () => {
     expect(wrapper.findAll(".workspace-nav-tree .workspace-nav-item span").map((node) => node.text())).toEqual([
       "Питомцы",
       "Добавить питомца",
+      "Передачи",
       "Шарик",
     ]);
     expect(wrapper.findAll(".workspace-nav-tree .workspace-nav-item")[0]!.getComponent(AppIcon).props("name")).toBe("pets");
@@ -301,6 +334,41 @@ describe("Owner pages", () => {
     expect(wrapper.get(".owner-pet-card").text()).toContain("Бигль");
     expect(wrapper.get(".owner-pet-card").text()).toMatch(/\d+ полн(?:ый|ых) (?:год|года|лет)/);
     expect(wrapper.text()).not.toContain("Любит длительные прогулки");
+  });
+
+  it("marks a pet with a pending transfer and disables starting another transfer", async () => {
+    await setMedical(snapshot({ pets: [pet], transferRequests: [pendingTransfer] }));
+    const home = await mountAt("/owner/home", "owner-home");
+
+    expect(home.get(".owner-pet-card .owner-pet-transfer-status").text()).toBe("Ожидание передачи");
+
+    home.unmount();
+    const detail = await mountAt("/owner/pets/pet-1", "owner-pet-detail");
+    expect(detail.get(".owner-pet-profile .owner-pet-transfer-status").text()).toBe("Ожидание передачи");
+    const transferButton = detail.get<HTMLButtonElement>('button[aria-label="Передача уже ожидает решения"]');
+    expect(transferButton.element.disabled).toBe(true);
+    await transferButton.trigger("click");
+    expect(detail.find('[role="dialog"]').exists()).toBe(false);
+
+    await setMedical(snapshot({
+      pets: [pet],
+      transferRequests: [{ ...pendingTransfer, status: "completed", revision: 2 }],
+    }));
+    await flushPromises();
+
+    expect(detail.find(".owner-pet-transfer-status").exists()).toBe(false);
+    expect(detail.get<HTMLButtonElement>('button[aria-label="Передать питомца"]').element.disabled).toBe(false);
+  });
+
+  it("returns to the Owner home when an authoritative refresh removes the open pet", async () => {
+    await setMedical(snapshot({ pets: [pet] }));
+    const wrapper = await mountAt("/owner/pets/pet-1", "owner-pet-detail");
+    expect(wrapper.vm.$route.path).toBe("/owner/pets/pet-1");
+
+    await setMedical(snapshot());
+    await flushPromises();
+
+    expect(wrapper.vm.$route.path).toBe("/owner/home");
   });
 
   it("asks for owner attestation before confirming a medical record", async () => {

@@ -13,6 +13,7 @@ export COMPOSE_PROJECT_NAME="${COMPOSE_PROJECT_NAME:-klinok_local}"
 export KLINOK_BOOTSTRAP_EMAIL="${KLINOK_BOOTSTRAP_EMAIL:-administrator@example.ru}"
 export KLINOK_BOOTSTRAP_PASSWORD="${KLINOK_BOOTSTRAP_PASSWORD:-bootstrap-password-2026}"
 export KLINOK_PUBLIC_ORIGIN="${KLINOK_PUBLIC_ORIGIN:-http://localhost:8080}"
+export KLINOK_ADMINER_PORT="${KLINOK_ADMINER_PORT:-8081}"
 
 diagnose() {
   status=$?
@@ -22,7 +23,7 @@ diagnose() {
 trap diagnose EXIT
 
 if [[ "${KLINOK_SKIP_BUILD:-false}" != "true" ]]; then docker compose build; fi
-docker compose up -d postgres mail
+docker compose up -d postgres mail adminer
 docker compose run --rm -T -e KLINOK_BOOTSTRAP_EMAIL -e KLINOK_BOOTSTRAP_PASSWORD api node api-node/dist/provision.js
 docker compose up -d api ui
 
@@ -30,5 +31,5 @@ for _ in {1..60}; do curl --fail --silent "$KLINOK_PUBLIC_ORIGIN/api/auth/sessio
 curl --fail --silent "$KLINOK_PUBLIC_ORIGIN/api/auth/session" >/dev/null
 
 trap - EXIT
-printf '\nKlinok v3 is running:\n  Application: %s\n  Test email: %s\n  Test password: %s\n  Mailpit: http://localhost:8025\n\n' "$KLINOK_PUBLIC_ORIGIN" "$KLINOK_BOOTSTRAP_EMAIL" "$KLINOK_BOOTSTRAP_PASSWORD"
+printf '\nKlinok v3 is running:\n  Application: %s\n  Test email: %s\n  Test password: %s\n  Mailpit: http://localhost:8025\n  Adminer: http://localhost:%s\n\n' "$KLINOK_PUBLIC_ORIGIN" "$KLINOK_BOOTSTRAP_EMAIL" "$KLINOK_BOOTSTRAP_PASSWORD" "$KLINOK_ADMINER_PORT"
 printf 'Stop it with: COMPOSE_PROJECT_NAME=%s docker compose down\n' "$COMPOSE_PROJECT_NAME"

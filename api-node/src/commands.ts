@@ -22,16 +22,23 @@ import {
   type MedicalRecordDraft,
   type PetGrantAction,
   type PetProfileInput,
+  type PetTransferRequest,
   type Role,
 } from "@klinok/contracts";
 import type { PoolClient } from "pg";
 import type { Database } from "./db.js";
 import { ApiError, optionalText, requireText } from "./errors.js";
 import { type AuditInput, Ledger } from "./ledger.js";
-import { confirmationFromRow, displayName, grantFromRow, iso, petFromRow, recordFromRow, roleFromRow } from "./rows.js";
+import { confirmationFromRow, displayName, grantFromRow, iso, petFromRow, recordFromRow, roleFromRow, transferRequestFromRow } from "./rows.js";
 
 interface Actor { accountId: string }
-interface Applied { value?: unknown; revision?: number; audit: Omit<AuditInput, "operationId" | "actorAccountId" | "activeRole"> }
+interface Applied {
+  value?: unknown;
+  revision?: number;
+  status?: "applied" | "conflict" | "rejected";
+  error?: { code: string; message: string };
+  audit: Omit<AuditInput, "operationId" | "actorAccountId" | "activeRole">;
+}
 
 const GRANT_ACTIONS = new Set<PetGrantAction>(["read", "write_unconfirmed", "delegate"]);
 const MAX_DIAGNOSIS_TEXT_LENGTH = 10_000;
@@ -277,6 +284,36 @@ async function actorProfile(client: PoolClient, accountId: string): Promise<Reco
   return row;
 }
 
+async function activeOwnerProfiles(client: PoolClient, accountIds: string[]): Promise<Map<string, Record<string, unknown>>> {
+  const result = await client.query(
+    `SELECT a.account_id,a.email,a.credential_status,p.revision AS profile_revision,
+       p.first_name,p.last_name,p.patronymic,p.updated_at
+     FROM accounts a JOIN profiles p USING(account_id) JOIN roles r USING(account_id)
+     WHERE a.account_id=ANY($1::text[]) AND a.credential_status='active'
+       AND r.role='owner' AND r.status='approved'
+     ORDER BY a.account_id FOR SHARE OF a,p,r`,
+    [[...new Set(accountIds)].sort()],
+  );
+  return new Map(result.rows.map((row) => [String(row.account_id), row as Record<string, unknown>]));
+}
+
+async function transferDto(client: PoolClient, transferRequestId: string): Promise<PetTransferRequest> {
+  const result = await client.query(
+    `SELECT t.*,p.name AS pet_name,p.species AS pet_species,
+       concat_ws(' ',from_profile.first_name,from_profile.patronymic,from_profile.last_name) AS from_owner_display_name,
+       concat_ws(' ',to_profile.first_name,to_profile.patronymic,to_profile.last_name) AS to_owner_display_name
+     FROM pet_ownership_transfers t
+     JOIN pets p ON p.pet_id=t.pet_id
+     JOIN profiles from_profile ON from_profile.account_id=t.from_owner_account_id
+     JOIN profiles to_profile ON to_profile.account_id=t.to_owner_account_id
+     WHERE t.transfer_request_id=$1`,
+    [transferRequestId],
+  );
+  const row = result.rows[0] as Record<string, unknown> | undefined;
+  if (!row) throw new ApiError(404, "TRANSFER_REQUEST_NOT_FOUND", "The pet transfer request was not found.");
+  return transferRequestFromRow(row);
+}
+
 async function petRow(client: PoolClient, petId: string, lock = false): Promise<Record<string, unknown>> {
   const result = await client.query(`SELECT * FROM pets WHERE pet_id = $1${lock ? " FOR UPDATE" : ""}`, [petId]);
   const row = result.rows[0] as Record<string, unknown> | undefined;
@@ -433,6 +470,16 @@ async function handleRole(client: PoolClient, actor: Actor, command: ClientComma
        WHERE account_id = $1 AND role = $2 RETURNING *`,
       [targetId, role, status, actor.accountId, optionalText(payload.reason, 1_000) ?? null],
     );
+    const invalidatedTransferRequestIds: string[] = [];
+    if (role === "owner" && status !== "approved") {
+      const invalidated = await client.query(
+        `UPDATE pet_ownership_transfers SET status='invalidated',revision=revision+1,decided_at=now(),decided_by=$2
+         WHERE status='pending' AND (from_owner_account_id=$1 OR to_owner_account_id=$1)
+         RETURNING transfer_request_id`,
+        [targetId, actor.accountId],
+      );
+      invalidatedTransferRequestIds.push(...invalidated.rows.map((row) => String(row.transfer_request_id)));
+    }
     const roleLabel = role === "doctor" ? "Ветеринар" : role === "administrator" ? "Администратор" : "Владелец";
     const statusLabel = status === "approved" ? "одобрена" : status === "rejected" ? "отклонена" : "отозвана";
     await enqueueAccountEmail(client, targetId, "Статус роли в системе \"Клинок\" изменён", `Роль «${roleLabel}» ${statusLabel}.`);
@@ -440,7 +487,7 @@ async function handleRole(client: PoolClient, actor: Actor, command: ClientComma
     return { value, revision: value.revision, audit: {
       action: restoring ? "role.restored" : `role.${status}`,
       aggregateType: "role", aggregateId: value.requestId, relatedAccountId: targetId,
-      metadata: { role, status, reason: value.reason ?? "" }, beforeState: roleFromRow(before), afterState: value,
+      metadata: { role, status, reason: value.reason ?? "", invalidatedTransferRequestIds }, beforeState: roleFromRow(before), afterState: value,
     } };
   }
 
@@ -522,12 +569,17 @@ async function handlePet(client: PoolClient, actor: Actor, command: ClientComman
     await client.query("UPDATE pets SET revision = revision + 1, deleted_at = $2, updated_at = $2 WHERE pet_id = $1", [command.entityId, now]);
     await client.query("UPDATE access_requests SET status = 'rejected', revision = revision + 1, decided_at = $2, decided_by = $3 WHERE pet_id = $1 AND status = 'pending'", [command.entityId, now, actor.accountId]);
     await client.query("UPDATE access_grants SET status = 'revoked', revision = revision + 1, revoked_at = $2 WHERE pet_id = $1 AND status = 'active'", [command.entityId, now]);
+    const invalidated = await client.query(
+      "UPDATE pet_ownership_transfers SET status='invalidated',revision=revision+1,decided_at=$2,decided_by=$3 WHERE pet_id=$1 AND status='pending' RETURNING transfer_request_id",
+      [command.entityId, now, actor.accountId],
+    );
+    const invalidatedTransferRequestIds = invalidated.rows.map((row) => String(row.transfer_request_id));
     await enqueueAccessStatusEmails(client, rejectedRecipients, String(before.name), "отклонён");
     await enqueueAccessStatusEmails(client, revokedRecipients, String(before.name), "отозван");
     const value = { ...petFromRow(before), revision: Number(before.revision) + 1, tombstoned: true, updatedAt: now.toISOString() };
     return { value, revision: value.revision, audit: {
       action: "pet.deleted", aggregateType: "pet", aggregateId: command.entityId,
-      metadata: { ownerAccountId: actor.accountId }, beforeState: petFromRow(before), afterState: value,
+      metadata: { ownerAccountId: actor.accountId, invalidatedTransferRequestIds }, beforeState: petFromRow(before), afterState: value,
     } };
   }
 
@@ -542,9 +594,184 @@ async function handlePet(client: PoolClient, actor: Actor, command: ClientComman
       JSON.stringify(input.latestVaccination ?? null), input.weightKg, input.notes ?? null],
   );
   const value = petFromRow(result.rows[0]);
+  const invalidated = await client.query(
+    "UPDATE pet_ownership_transfers SET status='invalidated',revision=revision+1,decided_at=now(),decided_by=$2 WHERE pet_id=$1 AND status='pending' RETURNING transfer_request_id",
+    [command.entityId, actor.accountId],
+  );
+  const invalidatedTransferRequestIds = invalidated.rows.map((row) => String(row.transfer_request_id));
   return { value, revision: value.revision, audit: {
     action: "pet.updated", aggregateType: "pet", aggregateId: command.entityId,
-    metadata: { ownerAccountId: actor.accountId }, beforeState: petFromRow(before), afterState: value,
+    metadata: { ownerAccountId: actor.accountId, invalidatedTransferRequestIds }, beforeState: petFromRow(before), afterState: value,
+  } };
+}
+
+async function handleTransfer(client: PoolClient, actor: Actor, command: ClientCommand, publicOrigin: string): Promise<Applied> {
+  await requireActiveRole(client, actor, command, ["owner"]);
+  const payload = object(command.payload);
+
+  if (command.type === "transfer.request") {
+    const petId = requireText(payload.petId, "petId", 100);
+    const pet = await petRow(client, petId, true);
+    const fromOwnerAccountId = String(pet.owner_account_id);
+    const toOwnerAccountId = requireText(payload.toOwnerAccountId, "toOwnerAccountId", 100);
+    const expectedFromOwnerAccountId = requireText(payload.expectedFromOwnerAccountId, "expectedFromOwnerAccountId", 100);
+    const expectedPetRevision = Number(payload.expectedPetRevision);
+    const expectedFromOwnerProfileRevision = Number(payload.expectedFromOwnerProfileRevision);
+    const expectedToOwnerProfileRevision = Number(payload.expectedToOwnerProfileRevision);
+    if (fromOwnerAccountId !== expectedFromOwnerAccountId || Number(pet.revision) !== expectedPetRevision) {
+      throw new ApiError(409, "TRANSFER_TARGET_STALE", "The selected pet or current owner changed.");
+    }
+    if (fromOwnerAccountId === toOwnerAccountId) throw new ApiError(409, "TRANSFER_TO_SELF", "A pet cannot be transferred to the same Owner.");
+    if (actor.accountId !== fromOwnerAccountId && actor.accountId !== toOwnerAccountId) {
+      throw new ApiError(403, "TRANSFER_PARTY_REQUIRED", "Only a transfer party may create the request.");
+    }
+    if (payload.retainDoctorAccess !== undefined && typeof payload.retainDoctorAccess !== "boolean") {
+      throw new ApiError(400, "VALIDATION_FAILED", "The Doctor access policy must be a boolean.");
+    }
+    if (actor.accountId !== toOwnerAccountId && payload.retainDoctorAccess !== undefined) {
+      throw new ApiError(403, "TRANSFER_ACCESS_POLICY_OWNER_REQUIRED", "Only the new Owner may choose the Doctor access policy.");
+    }
+    const retainDoctorAccess = actor.accountId === toOwnerAccountId && payload.retainDoctorAccess === true;
+    if (actor.accountId === fromOwnerAccountId && payload.ownershipLossAcknowledged !== true) {
+      throw new ApiError(400, "OWNERSHIP_LOSS_ACKNOWLEDGEMENT_REQUIRED", "The current Owner must acknowledge loss of control.");
+    }
+    const owners = await activeOwnerProfiles(client, [fromOwnerAccountId, toOwnerAccountId]);
+    const fromOwner = owners.get(fromOwnerAccountId);
+    const toOwner = owners.get(toOwnerAccountId);
+    if (!fromOwner || !toOwner) throw new ApiError(409, "TRANSFER_OWNER_UNAVAILABLE", "Both transfer parties must be active approved Owners.");
+    if (!Number.isInteger(expectedFromOwnerProfileRevision) || Number(fromOwner.profile_revision) !== expectedFromOwnerProfileRevision
+      || !Number.isInteger(expectedToOwnerProfileRevision) || Number(toOwner.profile_revision) !== expectedToOwnerProfileRevision) {
+      throw new ApiError(409, "TRANSFER_TARGET_STALE", "A selected Owner profile changed.");
+    }
+    const pending = await client.query("SELECT * FROM pet_ownership_transfers WHERE pet_id=$1 AND status='pending' FOR UPDATE", [petId]);
+    if (pending.rowCount) throw new ApiError(409, "TRANSFER_ALREADY_PENDING", "A pet transfer request is already pending.");
+    await client.query(
+      `INSERT INTO pet_ownership_transfers(transfer_request_id,pet_id,pet_revision,from_owner_account_id,
+       from_owner_profile_revision,to_owner_account_id,to_owner_profile_revision,initiated_by_account_id,
+       retain_doctor_access,status,revision,created_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'pending',1,now())`,
+      [command.entityId, petId, Number(pet.revision), fromOwnerAccountId, Number(fromOwner.profile_revision),
+        toOwnerAccountId, Number(toOwner.profile_revision), actor.accountId, retainDoctorAccess],
+    );
+    const value = await transferDto(client, command.entityId);
+    const otherParty = actor.accountId === fromOwnerAccountId ? toOwnerAccountId : fromOwnerAccountId;
+    await enqueueAccountEmail(
+      client,
+      otherParty,
+      "Запрос передачи питомца в системе \"Клинок\"",
+      `Ожидает решения запрос передачи питомца «${String(pet.name)}».\n\nПодтвердить или отклонить передачу:\n${new URL(`/owner/transfers?request=${encodeURIComponent(command.entityId)}`, publicOrigin).toString()}`,
+    );
+    return { value, revision: value.revision, audit: {
+      action: "transfer.requested", aggregateType: "petTransfer", aggregateId: command.entityId,
+      relatedAccountId: otherParty, metadata: { petId, fromOwnerAccountId, toOwnerAccountId }, afterState: value,
+    } };
+  }
+
+  let lockedPet: Record<string, unknown> | undefined;
+  let lockedOwners: Map<string, Record<string, unknown>> | undefined;
+  if (command.type === "transfer.accept") {
+    const preview = await client.query(
+      "SELECT pet_id,from_owner_account_id,to_owner_account_id FROM pet_ownership_transfers WHERE transfer_request_id=$1",
+      [command.entityId],
+    );
+    if (!preview.rowCount) throw new ApiError(404, "TRANSFER_REQUEST_NOT_FOUND", "The pet transfer request was not found.");
+    const petResult = await client.query("SELECT * FROM pets WHERE pet_id=$1 FOR UPDATE", [preview.rows[0].pet_id]);
+    lockedPet = petResult.rows[0] as Record<string, unknown> | undefined;
+    lockedOwners = await activeOwnerProfiles(client, [
+      String(preview.rows[0].from_owner_account_id),
+      String(preview.rows[0].to_owner_account_id),
+    ]);
+  }
+  const found = await client.query("SELECT * FROM pet_ownership_transfers WHERE transfer_request_id=$1 FOR UPDATE", [command.entityId]);
+  const beforeRow = found.rows[0] as Record<string, unknown> | undefined;
+  if (!beforeRow) throw new ApiError(404, "TRANSFER_REQUEST_NOT_FOUND", "The pet transfer request was not found.");
+  if (beforeRow.status !== "pending") throw new ApiError(409, "TRANSFER_REQUEST_NOT_PENDING", "The pet transfer request is no longer pending.");
+  expected(command, Number(beforeRow.revision));
+  const fromOwnerAccountId = String(beforeRow.from_owner_account_id);
+  const toOwnerAccountId = String(beforeRow.to_owner_account_id);
+  if (actor.accountId !== fromOwnerAccountId && actor.accountId !== toOwnerAccountId) {
+    throw new ApiError(403, "TRANSFER_PARTY_REQUIRED", "Only a transfer party may decide the request.");
+  }
+  const initiator = String(beforeRow.initiated_by_account_id);
+  const before = await transferDto(client, command.entityId);
+
+  if (command.type === "transfer.cancel" || command.type === "transfer.reject") {
+    const cancelling = command.type === "transfer.cancel";
+    if (cancelling && actor.accountId !== initiator) throw new ApiError(403, "TRANSFER_INITIATOR_REQUIRED", "Only the initiator may cancel the request.");
+    if (!cancelling && actor.accountId === initiator) throw new ApiError(403, "TRANSFER_RESPONDER_REQUIRED", "Only the other party may reject the request.");
+    const status = cancelling ? "cancelled" : "rejected";
+    await client.query(
+      "UPDATE pet_ownership_transfers SET status=$2,revision=revision+1,decided_at=now(),decided_by=$3 WHERE transfer_request_id=$1",
+      [command.entityId, status, actor.accountId],
+    );
+    const value = await transferDto(client, command.entityId);
+    const otherParty = actor.accountId === fromOwnerAccountId ? toOwnerAccountId : fromOwnerAccountId;
+    await enqueueAccountEmail(client, otherParty, "Статус передачи питомца в системе \"Клинок\" изменён", `Запрос передачи питомца «${value.petName}» ${cancelling ? "отменён" : "отклонён"}.`);
+    return { value, revision: value.revision, audit: {
+      action: `transfer.${status}`, aggregateType: "petTransfer", aggregateId: command.entityId,
+      relatedAccountId: otherParty, metadata: { petId: value.petId }, beforeState: before, afterState: value,
+    } };
+  }
+
+  if (actor.accountId === initiator) throw new ApiError(403, "TRANSFER_RESPONDER_REQUIRED", "Only the other party may accept the request.");
+  if (payload.retainDoctorAccess !== undefined && typeof payload.retainDoctorAccess !== "boolean") {
+    throw new ApiError(400, "VALIDATION_FAILED", "The Doctor access policy must be a boolean.");
+  }
+  if (actor.accountId !== toOwnerAccountId && payload.retainDoctorAccess !== undefined) {
+    throw new ApiError(403, "TRANSFER_ACCESS_POLICY_OWNER_REQUIRED", "Only the new Owner may choose the Doctor access policy.");
+  }
+  if (actor.accountId === fromOwnerAccountId && payload.ownershipLossAcknowledged !== true) {
+    throw new ApiError(400, "OWNERSHIP_LOSS_ACKNOWLEDGEMENT_REQUIRED", "The current Owner must acknowledge loss of control.");
+  }
+  const pet = lockedPet;
+  const owners = lockedOwners ?? await activeOwnerProfiles(client, [fromOwnerAccountId, toOwnerAccountId]);
+  const stale = !pet || Boolean(pet.deleted_at) || String(pet.owner_account_id) !== fromOwnerAccountId
+    || Number(pet.revision) !== Number(beforeRow.pet_revision)
+    || Number(owners.get(fromOwnerAccountId)?.profile_revision) !== Number(beforeRow.from_owner_profile_revision)
+    || Number(owners.get(toOwnerAccountId)?.profile_revision) !== Number(beforeRow.to_owner_profile_revision);
+  if (stale) {
+    await client.query(
+      "UPDATE pet_ownership_transfers SET status='invalidated',revision=revision+1,decided_at=now(),decided_by=$2 WHERE transfer_request_id=$1",
+      [command.entityId, actor.accountId],
+    );
+    const value = await transferDto(client, command.entityId);
+    return { value, revision: value.revision, status: "conflict", error: {
+      code: "TRANSFER_REQUEST_STALE", message: "The pet, Owner, account, role, or revision changed before acceptance.",
+    }, audit: {
+      action: "transfer.invalidated", aggregateType: "petTransfer", aggregateId: command.entityId,
+      relatedAccountId: actor.accountId, metadata: { petId: before.petId }, beforeState: before, afterState: value,
+    } };
+  }
+
+  const retainDoctorAccess = actor.accountId === toOwnerAccountId
+    ? payload.retainDoctorAccess === true
+    : before.retainDoctorAccess;
+  const pendingAccessRecipients = await pendingPetAccessRequesterEmails(client, before.petId);
+  const activeGrantRecipients = retainDoctorAccess ? [] : await activePetGrantRecipientEmails(client, before.petId);
+  const updatedPet = await client.query(
+    `UPDATE pets SET owner_account_id=$2,revision=revision+1,updated_at=now()
+     WHERE pet_id=$1 AND owner_account_id=$3 AND revision=$4 AND deleted_at IS NULL RETURNING *`,
+    [before.petId, toOwnerAccountId, fromOwnerAccountId, before.petRevision],
+  );
+  if (!updatedPet.rowCount) throw new ApiError(409, "TRANSFER_REQUEST_STALE", "The pet changed before acceptance.");
+  await client.query("UPDATE access_requests SET status='rejected',revision=revision+1,decided_at=now(),decided_by=$2 WHERE pet_id=$1 AND status='pending'", [before.petId, actor.accountId]);
+  if (!retainDoctorAccess) {
+    await client.query("UPDATE access_grants SET status='revoked',revision=revision+1,revoked_at=now() WHERE pet_id=$1 AND status='active'", [before.petId]);
+  }
+  await client.query(
+    "UPDATE pet_ownership_transfers SET status='completed',revision=revision+1,decided_at=now(),decided_by=$2,retain_doctor_access=$3 WHERE transfer_request_id=$1",
+    [command.entityId, actor.accountId, retainDoctorAccess],
+  );
+  const value = await transferDto(client, command.entityId);
+  await enqueueAccessStatusEmails(client, pendingAccessRecipients, value.petName, "отклонён");
+  await enqueueAccessStatusEmails(client, activeGrantRecipients, value.petName, "отозван");
+  await enqueueAccountEmail(client, fromOwnerAccountId, "Передача питомца в системе \"Клинок\" завершена", `Управление профилем и медицинской картой питомца «${value.petName}» передано новому владельцу.`);
+  await enqueueAccountEmail(client, toOwnerAccountId, "Передача питомца в системе \"Клинок\" завершена", `Вы получили управление профилем и медицинской картой питомца «${value.petName}».`);
+  return { value, revision: value.revision, audit: {
+    action: "transfer.completed", aggregateType: "petTransfer", aggregateId: command.entityId,
+    relatedAccountId: toOwnerAccountId, metadata: { petId: before.petId, fromOwnerAccountId, toOwnerAccountId, retainDoctorAccess },
+    beforeState: { request: before, pet: petFromRow(pet!) },
+    afterState: { request: value, pet: petFromRow(updatedPet.rows[0]) },
   } };
 }
 
@@ -683,11 +910,15 @@ async function handleAccess(client: PoolClient, actor: Actor, command: ClientCom
     } };
   }
 
+  const preview = await client.query("SELECT pet_id FROM access_grants WHERE grant_id=$1", [command.entityId]);
+  const previewRow = preview.rows[0] as Record<string, unknown> | undefined;
+  if (!previewRow) throw new ApiError(409, "GRANT_NOT_ACTIVE", "The grant is no longer active.");
+  const pet = await petRow(client, String(previewRow.pet_id), true);
   const found = await client.query("SELECT * FROM access_grants WHERE grant_id=$1 FOR UPDATE", [command.entityId]);
   const before = found.rows[0] as Record<string, unknown> | undefined;
   if (!before || before.status !== "active") throw new ApiError(409, "GRANT_NOT_ACTIVE", "The grant is no longer active.");
+  if (before.pet_id !== previewRow.pet_id) throw new ApiError(409, "REVISION_CONFLICT", "The grant changed before this operation was applied.");
   expected(command, Number(before.revision));
-  const pet = await petRow(client, String(before.pet_id), true);
   await requireActiveRole(client, actor, command, ["owner", "doctor"]);
   if (command.type === "access.actions.update") {
     if (before.grantor_account_id !== actor.accountId && pet.owner_account_id !== actor.accountId) throw new ApiError(403, "GRANTOR_REQUIRED", "Only the grantor may change access actions.");
@@ -848,6 +1079,11 @@ async function handleRecord(client: PoolClient, actor: Actor, command: ClientCom
     [record.petId, weight ?? null, chip ?? null, JSON.stringify(confirmedVaccinationUpdate ?? null),
       JSON.stringify(profileVaccinationUpdate ?? null)],
   );
+  const invalidated = await client.query(
+    "UPDATE pet_ownership_transfers SET status='invalidated',revision=revision+1,decided_at=now(),decided_by=$2 WHERE pet_id=$1 AND status='pending' RETURNING transfer_request_id",
+    [record.petId, actor.accountId],
+  );
+  const invalidatedTransferRequestIds = invalidated.rows.map((row) => String(row.transfer_request_id));
   await enqueueAccountEmail(
     client,
     record.authorAccountId,
@@ -857,14 +1093,19 @@ async function handleRecord(client: PoolClient, actor: Actor, command: ClientCom
   return { value: { confirmationId }, revision: record.revision, audit: {
     action: "record.confirmed", aggregateType: "medicalRecord", aggregateId: command.entityId,
     metadata: { petId: record.petId, recordRevision: record.revision, updatesWeight: weight !== undefined,
-      updatesChip: Boolean(chip), updatesVaccination: Boolean(confirmedVaccinationUpdate || profileVaccinationUpdate) },
+      updatesChip: Boolean(chip), updatesVaccination: Boolean(confirmedVaccinationUpdate || profileVaccinationUpdate),
+      invalidatedTransferRequestIds },
     beforeState: medicalRecordAuditState(record, "unconfirmed"),
     afterState: medicalRecordAuditState(record, "confirmed", { confirmation }),
   } };
 }
 
 export class CommandService {
-  constructor(private readonly db: Database, private readonly ledger: Ledger) {}
+  constructor(
+    private readonly db: Database,
+    private readonly ledger: Ledger,
+    private readonly publicOrigin = "http://localhost:8080",
+  ) {}
 
   async execute(actor: Actor, command: ClientCommand): Promise<CommandResult> {
     if (!this.ledger.isValid()) return { operationId: command.operationId, status: "rejected", error: { code: "LEDGER_INVALID", message: "The audit ledger is invalid." } };
@@ -879,7 +1120,9 @@ export class CommandService {
           if (receipt.rows[0].actor_account_id !== actor.accountId || receipt.rows[0].command_type !== command.type) {
             throw new ApiError(409, "OPERATION_ID_REUSED", "The operation identifier was already used for another command.");
           }
-          return { result: { ...receipt.rows[0].result, status: "duplicate" as const } };
+          return { result: receipt.rows[0].result.status === "applied"
+            ? { ...receipt.rows[0].result, status: "duplicate" as const }
+            : receipt.rows[0].result };
         }
         const account = await client.query("SELECT credential_status FROM accounts WHERE account_id=$1 FOR SHARE", [actor.accountId]);
         if (account.rows[0]?.credential_status !== "active") throw new ApiError(401, "SESSION_INVALID", "The account is unavailable.");
@@ -887,6 +1130,9 @@ export class CommandService {
         if (command.type.startsWith("role.")) applied = await handleRole(client, actor, command);
         else if (command.type.startsWith("pet.")) applied = await handlePet(client, actor, command);
         else if (command.type.startsWith("access.")) applied = await handleAccess(client, actor, command);
+        else if (["transfer.request", "transfer.accept", "transfer.reject", "transfer.cancel"].includes(command.type)) {
+          applied = await handleTransfer(client, actor, command, this.publicOrigin);
+        }
         else if (command.type.startsWith("record.")) applied = await handleRecord(client, actor, command);
         else throw new ApiError(400, "COMMAND_UNSUPPORTED", "The command type is unsupported.");
         const block = await this.ledger.append(client, {
@@ -897,9 +1143,10 @@ export class CommandService {
         });
         const result: CommandResult = {
           operationId: command.operationId,
-          status: "applied",
+          status: applied.status ?? "applied",
           ...(applied.revision !== undefined ? { revision: applied.revision } : {}),
           ...(applied.value !== undefined ? { value: applied.value } : {}),
+          ...(applied.error ? { error: applied.error } : {}),
         };
         await client.query(
           "INSERT INTO operation_receipts(operation_id, actor_account_id, command_type, result) VALUES ($1,$2,$3,$4::jsonb)",
@@ -912,11 +1159,15 @@ export class CommandService {
     } catch (reason) {
       if (reason instanceof ApiError) return {
         operationId: command.operationId,
-        status: reason.status === 409 && reason.code === "REVISION_CONFLICT" ? "conflict" : "rejected",
+        status: reason.status === 409 && ["REVISION_CONFLICT", "TRANSFER_TARGET_STALE", "TRANSFER_REQUEST_STALE"].includes(reason.code)
+          ? "conflict"
+          : "rejected",
         error: { code: reason.code, message: reason.message },
       };
       const code = reason && typeof reason === "object" && "code" in reason ? String(reason.code) : "";
-      if (code === "23505") return { operationId: command.operationId, status: "rejected", error: { code: "DUPLICATE_RESOURCE", message: "The resource already exists." } };
+      if (code === "23505") return command.type === "transfer.request"
+        ? { operationId: command.operationId, status: "rejected", error: { code: "TRANSFER_ALREADY_PENDING", message: "A pet transfer request is already pending." } }
+        : { operationId: command.operationId, status: "rejected", error: { code: "DUPLICATE_RESOURCE", message: "The resource already exists." } };
       throw reason;
     }
   }

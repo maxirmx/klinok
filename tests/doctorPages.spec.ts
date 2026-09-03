@@ -13,6 +13,7 @@ import LaboratoryComparison from "../src/components/LaboratoryComparison.vue";
 import LaboratoryTestsEditor from "../src/components/LaboratoryTestsEditor.vue";
 import InstrumentalFindingEditor from "../src/components/InstrumentalFindingEditor.vue";
 import InstrumentalTestsEditor from "../src/components/InstrumentalTestsEditor.vue";
+import PetDirectoryActionDialog from "../src/components/PetDirectoryActionDialog.vue";
 import DoctorScreen from "../src/screens/DoctorScreen.vue";
 import type { SyncNotification } from "../src/repositories/offlineStore";
 import type { MedicalRecordDraft, MedicalSnapshot, PetProfile } from "../src/repositories/types";
@@ -520,6 +521,9 @@ describe("Doctor pages", () => {
       page: 1, pageSize: 50, total: 1, pageCount: 1,
     });
     const wrapper = await mountAt("/doctor/pets/request-access", "doctor-pet-request-access");
+    const sharedDialog = wrapper.getComponent(PetDirectoryActionDialog);
+    expect(sharedDialog.props("title")).toBe("Запросить доступ");
+    expect(sharedDialog.props("actionTitle")).toBe("Отправить запрос");
     const dialog = wrapper.get('[role="dialog"]');
     expect(dialog.findAll("label span").map((label) => label.text())).toEqual(expect.arrayContaining([
       "ФИО владельца, его часть или полный идентификатор (необязательно при поиске по полному идентификатору питомца)",

@@ -38,6 +38,8 @@ defineProps<{
     | "restore"
     | "share"
     | "share-off"
+    | "building-circle-arrow-right"
+    | "arrow-right-to-city"
     | "more";
 }>();
 </script>
@@ -167,6 +169,14 @@ defineProps<{
       <circle cx="6" cy="12" r="2.2" />
       <circle cx="18" cy="19" r="2.2" />
       <path d="m8 11 7.8-4.6M8 13l3.2 1.9M14.8 17l1.2.7M4 4l16 16" />
+    </g>
+    <g v-else-if="name === 'building-circle-arrow-right'" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.55">
+      <path d="M3.2 20.3h9.2M4.6 20.3V5.2h7.8v6.1M7.1 8h.1M9.9 8h.1M7.1 10.8h.1M9.9 10.8h.1M7.1 13.6h.1" />
+      <circle cx="17.2" cy="16.1" r="4.2" />
+      <path d="M14.9 16.1h4.6M17.8 14.2l1.9 1.9-1.9 1.9" />
+    </g>
+    <g v-else-if="name === 'arrow-right-to-city'" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.55">
+      <path d="M2.8 12h8.1M8.2 9.3l2.7 2.7-2.7 2.7M13.2 20.2V5.1h7.6v15.1M15.6 8h.1M18.4 8h.1M15.6 10.8h.1M18.4 10.8h.1M15.6 13.6h.1M18.4 13.6h.1M12 20.2h10" />
     </g>
     <g v-else-if="name === 'more'" fill="currentColor">
       <circle cx="12" cy="5" r="1.7" />

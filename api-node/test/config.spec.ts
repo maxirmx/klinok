@@ -3,7 +3,7 @@
 // This file is a part of Klinok application
 
 import { describe, expect, it } from "vitest";
-import { loadApiConfig } from "./config.js";
+import { loadApiConfig } from "../src/config.js";
 
 describe("API configuration", () => {
   it.each([

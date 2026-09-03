@@ -57,6 +57,7 @@
 ## User-facing alerts
 
 - Use `src/stores/alert.ts` for transient operation success and error messages that belong to the current page. Render them only through the shared `src/components/AppAlert.vue` surface; do not add screen-local page-level alert implementations.
+- Render the shared alert at the full available inline width of its owning screen or content region on every screen. Align its inline-start and inline-end edges with the other top-level content; do not give the alert an independent maximum width or additional horizontal inset.
 - Keep validation messages beside their fields, modal-specific errors inside the open modal, and persistent application states such as permissions, device enrollment, key recovery, and synchronization in their contextual components.
 - Alerts are single-message, latest-wins state. They remain until dismissed or navigation changes the route path; query-only and hash-only navigation must preserve them.
 

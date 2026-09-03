@@ -41,7 +41,10 @@ const title = computed(() => ({
 async function submitLogin() {
   try {
     await login(email.value, password.value, deviceName.value);
-    const destination = roleHomePath(appState.activeRole);
+    const continuation = Array.isArray(route.query.continue) ? route.query.continue[0] : route.query.continue;
+    const destination = typeof continuation === "string" && continuation.startsWith("/") && !continuation.startsWith("//")
+      ? continuation
+      : roleHomePath(appState.activeRole);
     await router.replace(destination);
   } catch { /* app store exposes a localized error */ }
 }

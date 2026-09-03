@@ -184,7 +184,7 @@ export async function buildApi(config: ApiConfig, provided?: { db?: Database; le
   await db.migrate();
   const ledger = provided?.ledger ?? new Ledger();
   await ledger.verify(db.pool);
-  const commands = new CommandService(db, ledger);
+  const commands = new CommandService(db, ledger, config.publicOrigin);
   const snapshots = new SnapshotService(db, ledger);
   const app = Fastify({ logger: true, trustProxy: config.trustProxy, bodyLimit: 2_000_000 });
   await app.register(cookie);
@@ -400,16 +400,22 @@ export async function buildApi(config: ApiConfig, provided?: { db?: Database; le
     const expectedRevision = Number(input.expectedRevision);
     if (!Number.isInteger(expectedRevision) || expectedRevision < 1) throw new ApiError(400, "VALIDATION_FAILED", "expectedRevision is required.");
     const operationId = `profile:${randomUUID()}`;
+    const invalidatedTransferRequestIds: string[] = [];
     let result!: DirectoryProfileDto;
     await auditMutation(db, ledger, {
       operationId, action: "profile.updated", actorAccountId: context.accountId,
-      aggregateType: "profile", aggregateId: context.accountId, metadata: {},
+      aggregateType: "profile", aggregateId: context.accountId, metadata: { invalidatedTransferRequestIds },
     }, async (client) => {
       const updated = await client.query(
         "UPDATE profiles SET revision=revision+1,first_name=$2,last_name=$3,patronymic=$4,updated_at=now() WHERE account_id=$1 AND revision=$5 RETURNING *",
         [context.accountId, firstName, lastName, patronymic ?? null, expectedRevision],
       );
       if (!updated.rowCount) throw new ApiError(409, "REVISION_CONFLICT", "The profile changed before this update.");
+      const invalidated = await client.query(
+        "UPDATE pet_ownership_transfers SET status='invalidated',revision=revision+1,decided_at=now(),decided_by=$1 WHERE status='pending' AND (from_owner_account_id=$1 OR to_owner_account_id=$1) RETURNING transfer_request_id",
+        [context.accountId],
+      );
+      invalidatedTransferRequestIds.push(...invalidated.rows.map((row) => String(row.transfer_request_id)));
       result = profileDto(updated.rows[0]);
     });
     return { operationId, profile: result };
@@ -446,9 +452,10 @@ export async function buildApi(config: ApiConfig, provided?: { db?: Database; le
     const account = await db.one<{ immutable_bootstrap: boolean }>("SELECT immutable_bootstrap FROM accounts WHERE account_id=$1", [context.accountId]);
     if (account?.immutable_bootstrap) throw new ApiError(409, "BOOTSTRAP_ACCOUNT_IMMUTABLE", "The bootstrap account cannot be deleted.");
     const operationId = randomUUID();
+    const invalidatedTransferRequestIds: string[] = [];
     await auditMutation(db, ledger, {
       operationId, action: "account.deleted", actorAccountId: context.accountId,
-      aggregateType: "account", aggregateId: context.accountId, metadata: {},
+      aggregateType: "account", aggregateId: context.accountId, metadata: { invalidatedTransferRequestIds },
     }, async (client) => {
       await client.query("UPDATE accounts SET credential_status='deleted',deleted_at=now(),updated_at=now(),email_normalized='deleted:'||account_id WHERE account_id=$1", [context.accountId]);
       await client.query("UPDATE sessions SET revoked_at=now() WHERE account_id=$1 AND revoked_at IS NULL", [context.accountId]);
@@ -457,6 +464,10 @@ export async function buildApi(config: ApiConfig, provided?: { db?: Database; le
         WHERE status='pending' AND (owner_account_id=$1 OR requester_account_id=$1 OR pet_id IN (SELECT pet_id FROM pets WHERE owner_account_id=$1))`, [context.accountId]);
       await client.query(`UPDATE access_grants SET status='revoked',revoked_at=now(),revision=revision+1
         WHERE status='active' AND (grantor_account_id=$1 OR grantee_account_id=$1 OR pet_id IN (SELECT pet_id FROM pets WHERE owner_account_id=$1))`, [context.accountId]);
+      const invalidated = await client.query(`UPDATE pet_ownership_transfers SET status='invalidated',revision=revision+1,decided_at=now(),decided_by=$1
+        WHERE status='pending' AND (from_owner_account_id=$1 OR to_owner_account_id=$1 OR pet_id IN (SELECT pet_id FROM pets WHERE owner_account_id=$1))
+        RETURNING transfer_request_id`, [context.accountId]);
+      invalidatedTransferRequestIds.push(...invalidated.rows.map((row) => String(row.transfer_request_id)));
     });
     clearSessionCookies(reply, config);
     return { operationId };
@@ -587,6 +598,34 @@ export async function buildApi(config: ApiConfig, provided?: { db?: Database; le
     return paged(rows.rows.map(profileDto), total, page, pageSize);
   });
 
+  app.get<{ Querystring: Record<string, string> }>("/api/directory/owners", {
+    config: { rateLimit: { max: 60, timeWindow: "1 minute" } },
+  }, async (request, reply) => {
+    const context = await sessionContext(db, request);
+    const ownerRole = await db.one(
+      "SELECT 1 FROM roles WHERE account_id=$1 AND role='owner' AND status='approved'",
+      [context.accountId],
+    );
+    if (!ownerRole) throw new ApiError(403, "OWNER_ROLE_REQUIRED", "An approved Owner role is required.");
+    const { page, pageSize, offset } = pageInput(request.query);
+    const query = String(request.query.query ?? "").trim();
+    const pattern = `%${query}%`;
+    const condition = `r.role='owner' AND r.status='approved' AND a.credential_status='active' AND p.account_id<>$3
+      AND ($1='' OR translate(concat_ws(' ',p.first_name,p.patronymic,p.last_name),'Ёё','Ее') ILIKE translate($2,'Ёё','Ее') OR p.account_id ILIKE $2)`;
+    const values = [query, pattern, context.accountId];
+    const total = Number((await db.one<{ count: string }>(
+      `SELECT count(*) FROM profiles p JOIN roles r USING(account_id) JOIN accounts a USING(account_id) WHERE ${condition}`,
+      values,
+    ))!.count);
+    const rows = await db.pool.query(
+      `SELECT p.* FROM profiles p JOIN roles r USING(account_id) JOIN accounts a USING(account_id)
+       WHERE ${condition} ORDER BY (p.account_id=$1) DESC,p.last_name,p.first_name,p.account_id LIMIT $4 OFFSET $5`,
+      [...values, pageSize, offset],
+    );
+    reply.header("Cache-Control", "no-store");
+    return paged(rows.rows.map(profileDto), total, page, pageSize);
+  });
+
   app.post("/api/directory/profiles/lookup", async (request) => {
     await sessionContext(db, request);
     const ids = Array.isArray(body(request).accountIds) ? (body(request).accountIds as unknown[]).filter((id): id is string => typeof id === "string").slice(0, 200) : [];
@@ -637,9 +676,11 @@ export async function buildApi(config: ApiConfig, provided?: { db?: Database; le
     if (!Number.isInteger(expectedRevision) || expectedRevision < 1) throw new ApiError(400, "VALIDATION_FAILED", "expectedRevision is required.");
     let profile!: DirectoryProfileDto;
     const operationId = randomUUID();
+    const invalidatedTransferRequestIds: string[] = [];
     await auditMutation(db, ledger, {
       operationId, action: "profile.administrator-updated", actorAccountId: context.accountId, activeRole: "administrator",
-      aggregateType: "profile", aggregateId: request.params.accountId, relatedAccountId: request.params.accountId, metadata: {},
+      aggregateType: "profile", aggregateId: request.params.accountId, relatedAccountId: request.params.accountId,
+      metadata: { invalidatedTransferRequestIds },
     }, async (client) => {
       const updated = await client.query(
         "UPDATE profiles SET revision=revision+1,first_name=$2,last_name=$3,patronymic=$4,updated_at=now() WHERE account_id=$1 AND revision=$5 RETURNING *",
@@ -650,6 +691,11 @@ export async function buildApi(config: ApiConfig, provided?: { db?: Database; le
         if (!exists.rowCount) throw new ApiError(404, "PROFILE_NOT_FOUND", "Profile not found.");
         throw new ApiError(409, "REVISION_CONFLICT", "The profile changed before this update.");
       }
+      const invalidated = await client.query(
+        "UPDATE pet_ownership_transfers SET status='invalidated',revision=revision+1,decided_at=now(),decided_by=$2 WHERE status='pending' AND (from_owner_account_id=$1 OR to_owner_account_id=$1) RETURNING transfer_request_id",
+        [request.params.accountId, context.accountId],
+      );
+      invalidatedTransferRequestIds.push(...invalidated.rows.map((row) => String(row.transfer_request_id)));
       profile = profileDto(updated.rows[0]);
     });
     return { operationId, profile };
@@ -659,37 +705,59 @@ export async function buildApi(config: ApiConfig, provided?: { db?: Database; le
     const { page, pageSize, offset } = pageInput(query);
     const owner = String(query.owner ?? query.query ?? "").trim();
     const pet = String(query.pet ?? query.query ?? "").trim();
+    const ownerAccountId = String(query.ownerAccountId ?? "").trim();
+    const transferableOnly = query.transferableOnly === "true";
     const direction = query.direction === "desc" ? "DESC" : "ASC";
     const order = query.sort === "pet"
-      ? `p.name ${direction},pr.last_name,pr.first_name,p.pet_id`
-      : `pr.last_name ${direction},pr.first_name ${direction},p.name,p.pet_id`;
+      ? `(p.pet_id=$3) DESC,p.name ${direction},pr.last_name,pr.first_name,p.pet_id`
+      : `(p.owner_account_id=$1) DESC,(p.pet_id=$3) DESC,pr.last_name ${direction},pr.first_name ${direction},p.name,p.pet_id`;
+    const exactOwnerPosition = myOnly ? 6 : 5;
     const where = `p.deleted_at IS NULL AND a.credential_status='active' ${myOnly ? "AND p.owner_account_id=$5" : ""}
+      AND ($${exactOwnerPosition}='' OR p.owner_account_id=$${exactOwnerPosition})
+      ${myOnly ? "" : "AND ($1<>'' OR $5<>'' OR p.pet_id=$3)"}
+      ${transferableOnly ? `AND EXISTS (
+        SELECT 1 FROM roles owner_role WHERE owner_role.account_id=p.owner_account_id
+          AND owner_role.role='owner' AND owner_role.status='approved'
+      ) AND NOT EXISTS (
+        SELECT 1 FROM pet_ownership_transfers pending_transfer
+        WHERE pending_transfer.pet_id=p.pet_id AND pending_transfer.status='pending'
+      )` : ""}
       AND ($1='' OR translate(concat_ws(' ',pr.first_name,pr.patronymic,pr.last_name),'Ёё','Ее') ILIKE translate($2,'Ёё','Ее') OR p.owner_account_id ILIKE $2)
       AND ($3='' OR translate(p.name,'Ёё','Ее') ILIKE translate($4,'Ёё','Ее') OR p.pet_id ILIKE $4)`;
     const values = myOnly
-      ? [owner, `%${owner}%`, pet, `%${pet}%`, context.accountId]
-      : [owner, `%${owner}%`, pet, `%${pet}%`];
+      ? [owner, `%${owner}%`, pet, `%${pet}%`, context.accountId, ownerAccountId]
+      : [owner, `%${owner}%`, pet, `%${pet}%`, ownerAccountId];
     const total = Number((await db.one<{ count: string }>(`SELECT count(*) FROM pets p JOIN profiles pr ON pr.account_id=p.owner_account_id JOIN accounts a ON a.account_id=p.owner_account_id WHERE ${where}`, values))!.count);
     const rows = await db.pool.query(
-      `SELECT p.*,pr.first_name,pr.last_name,pr.patronymic FROM pets p JOIN profiles pr ON pr.account_id=p.owner_account_id
+      `SELECT p.*,pr.revision AS owner_profile_revision,pr.first_name,pr.last_name,pr.patronymic FROM pets p JOIN profiles pr ON pr.account_id=p.owner_account_id
        JOIN accounts a ON a.account_id=p.owner_account_id WHERE ${where}
        ORDER BY ${order} LIMIT $${values.length + 1} OFFSET $${values.length + 2}`, [...values, pageSize, offset]);
     return paged(rows.rows.map((row): DirectoryPetDto => ({
       petId: row.pet_id, ownerAccountId: row.owner_account_id, ownerDisplayName: displayName(row),
+      ownerProfileRevision: Number(row.owner_profile_revision), revision: Number(row.revision),
       species: row.species, name: row.name, updatedAt: iso(row.updated_at),
     })), total, page, pageSize);
   }
 
-  app.get<{ Querystring: Record<string, string> }>("/api/directory/pets", async (request) => directoryPets(await sessionContext(db, request), request.query, false));
-  app.get<{ Querystring: Record<string, string> }>("/api/directory/my-pets", async (request) => directoryPets(await sessionContext(db, request), request.query, true));
-  app.get<{ Params: { petId: string } }>("/api/directory/pets/:petId", async (request) => {
+  app.get<{ Querystring: Record<string, string> }>("/api/directory/pets", async (request, reply) => {
+    reply.header("Cache-Control", "no-store");
+    return directoryPets(await sessionContext(db, request), request.query, false);
+  });
+  app.get<{ Querystring: Record<string, string> }>("/api/directory/my-pets", async (request, reply) => {
+    reply.header("Cache-Control", "no-store");
+    return directoryPets(await sessionContext(db, request), request.query, true);
+  });
+  app.get<{ Params: { petId: string } }>("/api/directory/pets/:petId", async (request, reply) => {
     await sessionContext(db, request);
     const row = await db.one<Record<string, unknown>>(
-      `SELECT p.*,pr.first_name,pr.last_name,pr.patronymic FROM pets p JOIN profiles pr ON pr.account_id=p.owner_account_id
-       WHERE p.pet_id=$1 AND p.deleted_at IS NULL`, [request.params.petId]);
+      `SELECT p.*,pr.revision AS owner_profile_revision,pr.first_name,pr.last_name,pr.patronymic FROM pets p JOIN profiles pr ON pr.account_id=p.owner_account_id
+       JOIN accounts a ON a.account_id=p.owner_account_id
+       WHERE p.pet_id=$1 AND p.deleted_at IS NULL AND a.credential_status='active'`, [request.params.petId]);
     if (!row) throw new ApiError(404, "PET_NOT_FOUND", "Pet not found.");
+    reply.header("Cache-Control", "no-store");
     return {
       petId: String(row.pet_id), ownerAccountId: String(row.owner_account_id), ownerDisplayName: displayName(row),
+      ownerProfileRevision: Number(row.owner_profile_revision), revision: Number(row.revision),
       species: String(row.species), name: String(row.name), updatedAt: iso(row.updated_at as Date),
     } satisfies DirectoryPetDto;
   });

@@ -9,6 +9,7 @@ import type {
   PetAccessGrant,
   PetAccessRequest,
   PetProfile,
+  PetTransferRequest,
   Role,
   RoleRequest,
 } from "@klinok/contracts";
@@ -110,6 +111,29 @@ export function grantFromRow(row: Record<string, unknown>): PetAccessGrant {
     status: row.status as PetAccessGrant["status"],
     createdAt: iso(row.created_at as Date | string),
     ...(row.revoked_at ? { revokedAt: iso(row.revoked_at as Date | string) } : {}),
+  };
+}
+
+export function transferRequestFromRow(row: Record<string, unknown>): PetTransferRequest {
+  return {
+    transferRequestId: String(row.transfer_request_id),
+    petId: String(row.pet_id),
+    petRevision: Number(row.pet_revision),
+    fromOwnerAccountId: String(row.from_owner_account_id),
+    fromOwnerDisplayName: String(row.from_owner_display_name ?? ""),
+    fromOwnerProfileRevision: Number(row.from_owner_profile_revision),
+    toOwnerAccountId: String(row.to_owner_account_id),
+    toOwnerDisplayName: String(row.to_owner_display_name ?? ""),
+    toOwnerProfileRevision: Number(row.to_owner_profile_revision),
+    initiatedByAccountId: String(row.initiated_by_account_id),
+    retainDoctorAccess: row.retain_doctor_access === true,
+    petName: String(row.pet_name ?? row.name ?? ""),
+    petSpecies: String(row.pet_species ?? row.species ?? ""),
+    status: row.status as PetTransferRequest["status"],
+    revision: Number(row.revision),
+    createdAt: iso(row.created_at as Date | string),
+    ...(row.decided_at ? { decidedAt: iso(row.decided_at as Date | string) } : {}),
+    ...(row.decided_by ? { decidedBy: String(row.decided_by) } : {}),
   };
 }
 

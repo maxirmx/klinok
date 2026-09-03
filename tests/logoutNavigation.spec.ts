@@ -136,7 +136,7 @@ describe("logout navigation", () => {
   it("shows recognizable names before device IDs", async () => {
     const { wrapper } = await mountAt(RoleStatusScreen, "/profile", { scenarioId: "user-profile" });
     expect(wrapper.findAll(".workspace-sidebar-nav .workspace-nav-item span").map((node) => node.text())).toEqual([
-      "Питомцы", "Добавить питомца",
+      "Питомцы", "Добавить питомца", "Передачи",
     ]);
     expect(wrapper.find(".workspace-sidebar-footer .workspace-nav-item.active").text()).toContain("Настройки");
     expect(wrapper.get<HTMLInputElement>('.device-row input').element.value).toBe("Домашний ноутбук");
@@ -323,7 +323,7 @@ describe("logout navigation", () => {
     mockedStore.setMockActiveRole(null);
     const { wrapper } = await mountAt(RoleStatusScreen, "/profile", { scenarioId: "user-profile" });
     expect(wrapper.findAll(".workspace-sidebar-nav .workspace-nav-item span").map((node) => node.text())).toEqual([
-      "Питомцы", "Добавить питомца",
+      "Питомцы", "Добавить питомца", "Передачи",
     ]);
 
     mockedStore.setMockActiveRole("administrator");

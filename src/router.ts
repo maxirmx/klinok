@@ -27,6 +27,7 @@ const components: Record<ScenarioComponentName, Component> = {
 };
 const roleByScenario: Partial<Record<string, Role>> = {
   "owner-home": "owner",
+  "owner-transfers": "owner",
   "owner-pet-create": "owner",
   "owner-pet-detail": "owner",
   "owner-pet-edit": "owner",
