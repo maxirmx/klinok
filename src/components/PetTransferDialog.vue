@@ -38,6 +38,7 @@ const selectedOwner = ref<DirectoryProfileDto | null>(null);
 const selectedDirectoryPet = ref<DirectoryPetDto | null>(null);
 const selectedOutgoingPet = ref<PetProfile | null>(null);
 const ownershipLossAcknowledged = ref(false);
+const retainDoctorAccess = ref(false);
 const reviewHeading = ref<HTMLElement | null>(null);
 let returnFocus: HTMLElement | null = null;
 
@@ -105,6 +106,7 @@ function reset() {
   selectedDirectoryPet.value = null;
   selectedOutgoingPet.value = null;
   ownershipLossAcknowledged.value = false;
+  retainDoctorAccess.value = false;
 }
 
 async function restoreFocus() {
@@ -177,6 +179,7 @@ function selectOutgoingPet(pet: PetProfile) {
 function openConfirmation() {
   error.value = "";
   ownershipLossAcknowledged.value = false;
+  retainDoctorAccess.value = false;
   step.value = "confirm";
   void nextTick(() => reviewHeading.value?.focus());
 }
@@ -236,6 +239,7 @@ async function requestTransfer() {
       expectedFromOwnerProfileRevision: currentPet.ownerProfileRevision,
       expectedToOwnerProfileRevision: props.mode === "outgoing" ? targetOwner!.revision : profile.revision,
       ownershipLossAcknowledged: props.mode === "outgoing" && ownershipLossAcknowledged.value,
+      ...(props.mode === "incoming" ? { retainDoctorAccess: retainDoctorAccess.value } : {}),
     });
     updateOpen(false);
     alertStore.success("Запрос передачи отправлен.");
@@ -328,6 +332,12 @@ function changeOwnerPageSize(pageSize: number) { ownerPageSize.value = pageSize;
           <legend class="visually-hidden">Подтверждение текущего владельца</legend>
           <div class="medical-card-options">
             <label class="check-row"><input v-model="ownershipLossAcknowledged" type="checkbox" /><span>Согласен с тем, что после завершения передачи я потеряю доступ к профилю и медицинской карте питомца.</span></label>
+          </div>
+        </fieldset>
+        <fieldset v-else class="transfer-acknowledgement">
+          <legend class="visually-hidden">Доступы врачей после передачи</legend>
+          <div class="medical-card-options">
+            <label class="check-row"><input v-model="retainDoctorAccess" type="checkbox" /><span>Сохранить действующие доступы врачей к медицинской карте питомца после передачи.</span></label>
           </div>
         </fieldset>
         <div class="confirmation-dialog-actions">

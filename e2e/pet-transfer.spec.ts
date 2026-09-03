@@ -185,7 +185,7 @@ async function approveDoctors(administratorPage: Page, accountIds: string[]): Pr
   }
 }
 
-async function requestIncomingTransfer(page: Page, petId: string): Promise<void> {
+async function requestIncomingTransfer(page: Page, petId: string, retainDoctorAccess = false): Promise<void> {
   const trigger = page.getByRole("button", { name: "Запросить передачу", exact: true });
   await trigger.click();
   const dialog = page.getByRole("dialog", { name: "Запросить передачу" });
@@ -199,7 +199,9 @@ async function requestIncomingTransfer(page: Page, petId: string): Promise<void>
   const review = page.getByRole("dialog", { name: "Подтвердить запрос передачи" });
   await expect(review.locator(".transfer-review dl")).toBeFocused();
   await expect(review.locator(".person-identity-name").nth(1)).toContainText("(Я)");
-  await expect(review.getByRole("checkbox")).toHaveCount(0);
+  const retainAccess = review.getByRole("checkbox", { name: /Сохранить действующие доступы врачей/ });
+  await expect(retainAccess).toBeVisible();
+  if (retainDoctorAccess) await retainAccess.check();
   await review.getByRole("button", { name: "Отправить запрос передачи" }).click();
   await expect(review).toBeHidden();
   await expect(trigger).toBeFocused();
@@ -435,10 +437,15 @@ test("pet card moves in both directions through one overlay flow", async ({ brow
   const firstTransferRow = ownerBPage.locator(".transfer-table tbody tr").filter({ hasText: petId });
   await expect(firstTransferRow).toBeVisible();
   await expect(firstTransferRow).toContainText("Ожидает решения");
+  expect(await firstTransferRow.locator(".transfer-row-actions button").evaluateAll((buttons) =>
+    buttons.map((button) => button.getAttribute("title"))))
+    .toEqual(["Принять передачу", "Отклонить запрос передачи"]);
   const receiverAcceptance = ownerBPage.getByRole("dialog", { name: "Принять передачу питомца?" });
   await expect(receiverAcceptance).toBeVisible();
   await expect(receiverAcceptance.locator(".person-identity-name").nth(1)).toContainText("(Я)");
-  await expect(receiverAcceptance.getByRole("checkbox")).toHaveCount(0);
+  const retainAccess = receiverAcceptance.getByRole("checkbox", { name: /Сохранить действующие доступы врачей/ });
+  await expect(retainAccess).toBeVisible();
+  await retainAccess.check();
   await receiverAcceptance.getByRole("button", { name: "Принять передачу" }).click();
   await expect(ownerBPage.getByText("Передача питомца завершена.")).toBeVisible();
   await expect(firstTransferRow).toContainText("Завершена");
@@ -446,10 +453,10 @@ test("pet card moves in both directions through one overlay flow", async ({ brow
 
   await expectEmailText(request, ownerAEmail, "передано новому владельцу");
   await expectEmailText(request, ownerBEmail, "получили управление");
-  await expectEmailText(request, doctorActiveEmail, "отозван");
   await expectEmailText(request, doctorPendingEmail, "отклонён");
-  expect(await queryPostgres(`SELECT status FROM access_grants WHERE pet_id='${petId}' ORDER BY created_at LIMIT 1`)).toBe("revoked");
+  expect(await queryPostgres(`SELECT status FROM access_grants WHERE pet_id='${petId}' ORDER BY created_at LIMIT 1`)).toBe("active");
   expect(await queryPostgres(`SELECT status FROM access_requests WHERE request_id='${pendingRequestId}'`)).toBe("rejected");
+  expect(await queryPostgres(`SELECT retain_doctor_access FROM pet_ownership_transfers WHERE transfer_request_id='${emailedConfirmationUrl.searchParams.get("request")}'`)).toBe("t");
 
   await ownerAPage.bringToFront();
   await expect(ownerAPage).toHaveURL(/\/owner\/home$/, { timeout: replicationTimeout });
@@ -461,7 +468,7 @@ test("pet card moves in both directions through one overlay flow", async ({ brow
     .filter({ hasText: "История сохраняется при смене владельца" })).toBeVisible();
   await doctorActivePage.bringToFront();
   await doctorActivePage.reload();
-  await expect(doctorActivePage.locator(".doctor-access-table tbody tr").filter({ hasText: petId })).toContainText("Отозван");
+  await expect(doctorActivePage.locator(".doctor-access-table tbody tr").filter({ hasText: petId })).toContainText("Предоставлен");
 
   await ownerAPage.bringToFront();
   await requestIncomingTransfer(ownerAPage, petId);
@@ -477,6 +484,11 @@ test("pet card moves in both directions through one overlay flow", async ({ brow
   await expect(staleAcceptance).toBeVisible();
   await expect(staleAcceptance.locator(".person-identity-name").nth(0)).toContainText("(Я)");
   expect(await staleAcceptance.evaluate((element) => element.scrollWidth <= element.clientWidth + 1)).toBe(true);
+  const acknowledgementText = await staleAcceptance.locator(".transfer-acknowledgement .check-row > span").boundingBox();
+  const accessPolicyText = await staleAcceptance.locator(".transfer-access-policy-summary").boundingBox();
+  expect(acknowledgementText).not.toBeNull();
+  expect(accessPolicyText).not.toBeNull();
+  expect(Math.abs(acknowledgementText!.x - accessPolicyText!.x)).toBeLessThanOrEqual(1);
   await staleAcceptance.getByRole("checkbox", { name: /потеряю доступ к профилю/ }).check();
 
   await ownerAPage.bringToFront();
@@ -523,6 +535,8 @@ test("pet card moves in both directions through one overlay flow", async ({ brow
   await ownerAcceptance.getByRole("checkbox", { name: /потеряю доступ к профилю/ }).check();
   await ownerAcceptanceSubmit.click();
   await expect(ownerBPage.getByText("Передача питомца завершена.")).toBeVisible();
+  await expectEmailText(request, doctorActiveEmail, "отозван");
+  expect(await queryPostgres(`SELECT status FROM access_grants WHERE pet_id='${petId}' ORDER BY created_at LIMIT 1`)).toBe("revoked");
 
   await ownerAPage.bringToFront();
   const returnedPetLink = ownerAPage.locator(`a[href="/owner/pets/${petId}"]`).first();
@@ -541,4 +555,7 @@ test("pet card moves in both directions through one overlay flow", async ({ brow
   expect(await queryPostgres(
     `SELECT string_agg((before_state->'pet'->>'ownerAccountId')||'>'||(after_state->'pet'->>'ownerAccountId'),',' ORDER BY height) FROM audit_blocks WHERE action='transfer.completed' AND metadata->>'petId'='${petId}'`,
   )).toBe(`${ownerAId}>${ownerBId},${ownerBId}>${ownerAId}`);
+  expect(await queryPostgres(
+    `SELECT string_agg(metadata->>'retainDoctorAccess',',' ORDER BY height) FROM audit_blocks WHERE action='transfer.completed' AND metadata->>'petId'='${petId}'`,
+  )).toBe("true,false");
 });

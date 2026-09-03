@@ -103,7 +103,7 @@ function snapshot(role: AppSnapshotDto["role"] = "owner"): AppSnapshotDto {
         transferRequestId: "transfer-1", petId: "pet-1", petRevision: 2,
         fromOwnerAccountId: "account-1", fromOwnerDisplayName: "Анна Петрова", fromOwnerProfileRevision: 3,
         toOwnerAccountId: "owner-2", toOwnerDisplayName: "Ольга Иванова", toOwnerProfileRevision: 1,
-        initiatedByAccountId: "owner-2", petName: "Барс", petSpecies: "Кошка",
+        initiatedByAccountId: "owner-2", retainDoctorAccess: false, petName: "Барс", petSpecies: "Кошка",
         status: "pending", revision: 1, createdAt: timestamp,
       }],
       records: [{
@@ -273,6 +273,7 @@ describe("Klinok repository facade", () => {
       ownershipLossAcknowledged: true,
     })).resolves.toBe("transfer-new");
     await repository.medical.acceptPetTransfer("transfer-1", true);
+    await repository.medical.acceptPetTransfer("transfer-1", false, true);
     await repository.medical.rejectPetTransfer("transfer-1");
     await repository.medical.cancelPetTransfer("transfer-1");
     await expect(repository.medical.cancelPetTransfer("missing-transfer")).rejects.toThrow("Статус запроса передачи изменился");
@@ -300,6 +301,10 @@ describe("Klinok repository facade", () => {
     expect(executeOnline).toHaveBeenCalledWith(expect.objectContaining({ type: "record.confirm", expectedRevision: 2 }));
     expect(executeOnline).toHaveBeenCalledWith(expect.objectContaining({ type: "transfer.request", entityId: "transfer-new" }));
     expect(executeOnline).toHaveBeenCalledWith(expect.objectContaining({ type: "transfer.accept", entityId: "transfer-1", expectedRevision: 1 }));
+    expect(executeOnline).toHaveBeenCalledWith(expect.objectContaining({
+      type: "transfer.accept",
+      payload: { ownershipLossAcknowledged: false, retainDoctorAccess: true },
+    }));
     await repository.dispose();
   });
 

@@ -27,7 +27,8 @@ describe("owner transfer snapshots", () => {
       transfer_request_id: "transfer-1", pet_id: "pet-1", pet_revision: 4,
       from_owner_account_id: "owner-1", from_owner_profile_revision: 2,
       to_owner_account_id: "owner-2", to_owner_profile_revision: 3,
-      initiated_by_account_id: "owner-1", status: transferStatus, revision: transferStatus === "pending" ? 1 : 2,
+      initiated_by_account_id: "owner-1", retain_doctor_access: false,
+      status: transferStatus, revision: transferStatus === "pending" ? 1 : 2,
       created_at: timestamp, ...(transferStatus === "completed" ? { decided_at: timestamp, decided_by: "owner-2" } : {}),
       pet_name: "Ёжик", pet_species: "Кошка", from_owner_display_name: "Алёна Ёлкина", to_owner_display_name: "Иван Петров",
     });

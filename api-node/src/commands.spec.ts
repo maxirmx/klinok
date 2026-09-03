@@ -53,7 +53,7 @@ function transferHarness(options: {
         transfer_request_id: params[0], pet_id: params[1], pet_revision: params[2],
         from_owner_account_id: params[3], from_owner_profile_revision: params[4],
         to_owner_account_id: params[5], to_owner_profile_revision: params[6], initiated_by_account_id: params[7],
-        status: "pending", revision: 1, created_at: timestamp,
+        retain_doctor_access: params[8], status: "pending", revision: 1, created_at: timestamp,
       };
       return { rows: [], rowCount: 1 };
     }
@@ -79,7 +79,14 @@ function transferHarness(options: {
       return { rows: [], rowCount: 1 };
     }
     if (sql.startsWith("UPDATE pet_ownership_transfers SET status='completed'")) {
-      transfer = { ...transfer, status: "completed", revision: Number(transfer?.revision) + 1, decided_at: timestamp, decided_by: params[1] };
+      transfer = {
+        ...transfer,
+        status: "completed",
+        revision: Number(transfer?.revision) + 1,
+        decided_at: timestamp,
+        decided_by: params[1],
+        retain_doctor_access: params[2],
+      };
       return { rows: [], rowCount: 1 };
     }
     if (sql.startsWith("UPDATE pets SET owner_account_id")) {
@@ -115,7 +122,8 @@ function pendingTransfer(initiatedBy = "owner-1"): Record<string, unknown> {
     transfer_request_id: "transfer-1", pet_id: "pet-1", pet_revision: 4,
     from_owner_account_id: "owner-1", from_owner_profile_revision: 2,
     to_owner_account_id: "owner-2", to_owner_profile_revision: 3,
-    initiated_by_account_id: initiatedBy, status: "pending", revision: 1, created_at: timestamp,
+    initiated_by_account_id: initiatedBy, retain_doctor_access: false,
+    status: "pending", revision: 1, created_at: timestamp,
   };
 }
 
@@ -187,9 +195,9 @@ describe("command boundary", () => {
       createdAt: timestamp, payload: {
         petId: "pet-1", toOwnerAccountId: "owner-2", expectedFromOwnerAccountId: "owner-1",
         expectedPetRevision: 4, expectedFromOwnerProfileRevision: 2, expectedToOwnerProfileRevision: 3,
-        ownershipLossAcknowledged: false,
+        ownershipLossAcknowledged: false, retainDoctorAccess: true,
       },
-    })).resolves.toMatchObject({ status: "applied", value: { initiatedByAccountId: "owner-2" } });
+    })).resolves.toMatchObject({ status: "applied", value: { initiatedByAccountId: "owner-2", retainDoctorAccess: true } });
     const incomingEmail = incoming.query.mock.calls.find(([sql]) => String(sql).startsWith("INSERT INTO email_outbox"))?.[1];
     expect(incomingEmail?.[1]).toBe("one@example.ru");
     expect(incomingEmail?.[3]).toContain("https://klinok.example/owner/transfers?request=transfer-in");
@@ -213,6 +221,34 @@ describe("command boundary", () => {
         expectedPetRevision: 4, expectedFromOwnerProfileRevision: 2, expectedToOwnerProfileRevision: 3,
       },
     })).resolves.toMatchObject({ status: "rejected", error: { code: "TRANSFER_ALREADY_PENDING" } });
+  });
+
+  it("allows only the future Owner to choose the Doctor access policy", async () => {
+    const outgoing = transferHarness();
+    await expect(outgoing.service.execute({ accountId: "owner-1" }, {
+      operationId: "op-policy-out", type: "transfer.request", activeRole: "owner", entityId: "transfer-1",
+      createdAt: timestamp, payload: {
+        petId: "pet-1", toOwnerAccountId: "owner-2", expectedFromOwnerAccountId: "owner-1",
+        expectedPetRevision: 4, expectedFromOwnerProfileRevision: 2, expectedToOwnerProfileRevision: 3,
+        ownershipLossAcknowledged: true, retainDoctorAccess: true,
+      },
+    })).resolves.toMatchObject({ status: "rejected", error: { code: "TRANSFER_ACCESS_POLICY_OWNER_REQUIRED" } });
+
+    const incoming = transferHarness();
+    await expect(incoming.service.execute({ accountId: "owner-2" }, {
+      operationId: "op-policy-invalid", type: "transfer.request", activeRole: "owner", entityId: "transfer-2",
+      createdAt: timestamp, payload: {
+        petId: "pet-1", toOwnerAccountId: "owner-2", expectedFromOwnerAccountId: "owner-1",
+        expectedPetRevision: 4, expectedFromOwnerProfileRevision: 2, expectedToOwnerProfileRevision: 3,
+        retainDoctorAccess: "yes",
+      },
+    })).resolves.toMatchObject({ status: "rejected", error: { code: "VALIDATION_FAILED" } });
+
+    const acceptance = transferHarness({ transfer: pendingTransfer("owner-1") });
+    await expect(acceptance.service.execute({ accountId: "owner-2" }, {
+      operationId: "op-policy-invalid-accept", type: "transfer.accept", activeRole: "owner", entityId: "transfer-1",
+      expectedRevision: 1, createdAt: timestamp, payload: { retainDoctorAccess: "yes" },
+    })).resolves.toMatchObject({ status: "rejected", error: { code: "VALIDATION_FAILED" } });
   });
 
   it("rejects stale, self, unrelated-party, and unavailable-Owner requests", async () => {
@@ -250,6 +286,43 @@ describe("command boundary", () => {
     const transferLock = harness.query.mock.calls.findIndex(([sql]) => String(sql).startsWith("SELECT * FROM pet_ownership_transfers WHERE transfer_request_id"));
     expect(ownerLock).toBeGreaterThan(-1);
     expect(transferLock).toBeGreaterThan(ownerLock);
+  });
+
+  it("keeps active Doctor grants when the new Owner chooses to retain them during acceptance", async () => {
+    const harness = transferHarness({ transfer: pendingTransfer("owner-1") });
+    await expect(harness.service.execute({ accountId: "owner-2" }, {
+      operationId: "op-accept-retain", type: "transfer.accept", activeRole: "owner", entityId: "transfer-1",
+      expectedRevision: 1, createdAt: timestamp, payload: { retainDoctorAccess: true },
+    })).resolves.toMatchObject({
+      status: "applied",
+      value: { status: "completed", retainDoctorAccess: true },
+    });
+
+    expect(harness.transfer()).toMatchObject({ status: "completed", retain_doctor_access: true });
+    expect(harness.query.mock.calls.some(([sql]) => String(sql).includes("access_grants"))).toBe(false);
+    expect(harness.query.mock.calls.some(([sql]) => String(sql).startsWith("UPDATE access_requests"))).toBe(true);
+    expect(harness.query.mock.calls.filter(([sql]) => String(sql).startsWith("INSERT INTO email_outbox"))).toHaveLength(3);
+  });
+
+  it("uses the new Owner's persisted policy when the current Owner accepts an incoming request", async () => {
+    const request = { ...pendingTransfer("owner-2"), retain_doctor_access: true };
+    const harness = transferHarness({ transfer: request });
+    await expect(harness.service.execute({ accountId: "owner-1" }, {
+      operationId: "op-accept-persisted-policy", type: "transfer.accept", activeRole: "owner", entityId: "transfer-1",
+      expectedRevision: 1, createdAt: timestamp, payload: { ownershipLossAcknowledged: true },
+    })).resolves.toMatchObject({ status: "applied", value: { retainDoctorAccess: true } });
+
+    expect(harness.query.mock.calls.some(([sql]) => String(sql).includes("access_grants"))).toBe(false);
+  });
+
+  it("prevents the current Owner from changing the new Owner's policy during acceptance", async () => {
+    const harness = transferHarness({ transfer: pendingTransfer("owner-2") });
+    await expect(harness.service.execute({ accountId: "owner-1" }, {
+      operationId: "op-accept-policy-override", type: "transfer.accept", activeRole: "owner", entityId: "transfer-1",
+      expectedRevision: 1, createdAt: timestamp,
+      payload: { ownershipLossAcknowledged: true, retainDoctorAccess: true },
+    })).resolves.toMatchObject({ status: "rejected", error: { code: "TRANSFER_ACCESS_POLICY_OWNER_REQUIRED" } });
+    expect(harness.pet.owner_account_id).toBe("owner-1");
   });
 
   it("requires the current Owner acknowledgement when an incoming request is accepted", async () => {

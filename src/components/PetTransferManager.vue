@@ -27,6 +27,7 @@ const acceptBusy = ref(false);
 const acceptError = ref("");
 const acceptStale = ref(false);
 const ownershipLossAcknowledged = ref(false);
+const retainDoctorAccess = ref(false);
 const rejectTarget = ref<PetTransferRequest | null>(null);
 const cancelTarget = ref<PetTransferRequest | null>(null);
 const decisionBusy = ref(false);
@@ -58,6 +59,7 @@ const acceptOpen = computed({
       acceptError.value = "";
       acceptStale.value = false;
       ownershipLossAcknowledged.value = false;
+      retainDoctorAccess.value = false;
     }
   },
 });
@@ -130,6 +132,7 @@ async function openAccept(request: PetTransferRequest) {
     acceptError.value = "";
     acceptStale.value = false;
     ownershipLossAcknowledged.value = false;
+    retainDoctorAccess.value = false;
   } catch (reason) {
     alertStore.error(reason, "Не удалось проверить запрос передачи.");
   } finally {
@@ -168,7 +171,11 @@ async function acceptTransfer() {
   acceptBusy.value = true;
   acceptError.value = "";
   try {
-    await requireRepository().medical.acceptPetTransfer(target.transferRequestId, ownershipLossAcknowledged.value);
+    if (acceptingAsCurrentOwner.value) {
+      await requireRepository().medical.acceptPetTransfer(target.transferRequestId, ownershipLossAcknowledged.value);
+    } else {
+      await requireRepository().medical.acceptPetTransfer(target.transferRequestId, false, retainDoctorAccess.value);
+    }
     acceptTarget.value = null;
     alertStore.success("Передача питомца завершена.");
   } catch (reason) {
@@ -253,8 +260,8 @@ async function cancelTransfer() {
               <div v-if="request.status === 'pending'" class="row-actions transfer-row-actions">
                 <button v-if="initiatedByCurrent(request)" class="outline-action inline danger-outline owner-profile-action" type="button" :disabled="!actionsAvailable" title="Отменить запрос передачи" aria-label="Отменить запрос передачи" @click="openCancel(request)"><AppIcon name="close" /></button>
                 <template v-else>
-                  <button class="outline-action inline danger-outline owner-profile-action" type="button" :disabled="!actionsAvailable" title="Отклонить запрос передачи" aria-label="Отклонить запрос передачи" @click="openReject(request)"><AppIcon name="close" /></button>
                   <button class="primary-action inline owner-profile-action" type="button" :disabled="!actionsAvailable" title="Принять передачу" aria-label="Принять передачу" @click="openAccept(request)"><AppIcon name="check" /></button>
+                  <button class="outline-action inline danger-outline owner-profile-action" type="button" :disabled="!actionsAvailable" title="Отклонить запрос передачи" aria-label="Отклонить запрос передачи" @click="openReject(request)"><AppIcon name="close" /></button>
                 </template>
               </div>
             </td>
@@ -279,6 +286,15 @@ async function cancelTransfer() {
         <fieldset v-if="acceptingAsCurrentOwner" class="transfer-acknowledgement">
           <legend class="visually-hidden">Подтверждение текущего владельца</legend>
           <div class="medical-card-options"><label class="check-row"><input v-model="ownershipLossAcknowledged" type="checkbox" /><span>Согласен с тем, что после завершения передачи я потеряю доступ к профилю и медицинской карте питомца.</span></label></div>
+          <p class="transfer-access-policy-summary">
+            {{ acceptTarget.retainDoctorAccess
+              ? "Новый владелец решил сохранить действующие доступы врачей к медицинской карте питомца."
+              : "После передачи действующие доступы врачей к медицинской карте питомца будут отозваны." }}
+          </p>
+        </fieldset>
+        <fieldset v-else class="transfer-acknowledgement">
+          <legend class="visually-hidden">Доступы врачей после передачи</legend>
+          <div class="medical-card-options"><label class="check-row"><input v-model="retainDoctorAccess" type="checkbox" /><span>Сохранить действующие доступы врачей к медицинской карте питомца после передачи.</span></label></div>
         </fieldset>
         <div class="confirmation-dialog-actions">
           <button class="outline-action inline access-icon-action" type="button" :disabled="acceptBusy" title="Отмена" aria-label="Отмена" @click="acceptOpen = false"><AppIcon name="close" /></button>

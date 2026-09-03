@@ -625,6 +625,13 @@ async function handleTransfer(client: PoolClient, actor: Actor, command: ClientC
     if (actor.accountId !== fromOwnerAccountId && actor.accountId !== toOwnerAccountId) {
       throw new ApiError(403, "TRANSFER_PARTY_REQUIRED", "Only a transfer party may create the request.");
     }
+    if (payload.retainDoctorAccess !== undefined && typeof payload.retainDoctorAccess !== "boolean") {
+      throw new ApiError(400, "VALIDATION_FAILED", "The Doctor access policy must be a boolean.");
+    }
+    if (actor.accountId !== toOwnerAccountId && payload.retainDoctorAccess !== undefined) {
+      throw new ApiError(403, "TRANSFER_ACCESS_POLICY_OWNER_REQUIRED", "Only the new Owner may choose the Doctor access policy.");
+    }
+    const retainDoctorAccess = actor.accountId === toOwnerAccountId && payload.retainDoctorAccess === true;
     if (actor.accountId === fromOwnerAccountId && payload.ownershipLossAcknowledged !== true) {
       throw new ApiError(400, "OWNERSHIP_LOSS_ACKNOWLEDGEMENT_REQUIRED", "The current Owner must acknowledge loss of control.");
     }
@@ -640,10 +647,11 @@ async function handleTransfer(client: PoolClient, actor: Actor, command: ClientC
     if (pending.rowCount) throw new ApiError(409, "TRANSFER_ALREADY_PENDING", "A pet transfer request is already pending.");
     await client.query(
       `INSERT INTO pet_ownership_transfers(transfer_request_id,pet_id,pet_revision,from_owner_account_id,
-       from_owner_profile_revision,to_owner_account_id,to_owner_profile_revision,initiated_by_account_id,status,revision,created_at)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'pending',1,now())`,
+       from_owner_profile_revision,to_owner_account_id,to_owner_profile_revision,initiated_by_account_id,
+       retain_doctor_access,status,revision,created_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'pending',1,now())`,
       [command.entityId, petId, Number(pet.revision), fromOwnerAccountId, Number(fromOwner.profile_revision),
-        toOwnerAccountId, Number(toOwner.profile_revision), actor.accountId],
+        toOwnerAccountId, Number(toOwner.profile_revision), actor.accountId, retainDoctorAccess],
     );
     const value = await transferDto(client, command.entityId);
     const otherParty = actor.accountId === fromOwnerAccountId ? toOwnerAccountId : fromOwnerAccountId;
@@ -706,6 +714,12 @@ async function handleTransfer(client: PoolClient, actor: Actor, command: ClientC
   }
 
   if (actor.accountId === initiator) throw new ApiError(403, "TRANSFER_RESPONDER_REQUIRED", "Only the other party may accept the request.");
+  if (payload.retainDoctorAccess !== undefined && typeof payload.retainDoctorAccess !== "boolean") {
+    throw new ApiError(400, "VALIDATION_FAILED", "The Doctor access policy must be a boolean.");
+  }
+  if (actor.accountId !== toOwnerAccountId && payload.retainDoctorAccess !== undefined) {
+    throw new ApiError(403, "TRANSFER_ACCESS_POLICY_OWNER_REQUIRED", "Only the new Owner may choose the Doctor access policy.");
+  }
   if (actor.accountId === fromOwnerAccountId && payload.ownershipLossAcknowledged !== true) {
     throw new ApiError(400, "OWNERSHIP_LOSS_ACKNOWLEDGEMENT_REQUIRED", "The current Owner must acknowledge loss of control.");
   }
@@ -729,8 +743,11 @@ async function handleTransfer(client: PoolClient, actor: Actor, command: ClientC
     } };
   }
 
+  const retainDoctorAccess = actor.accountId === toOwnerAccountId
+    ? payload.retainDoctorAccess === true
+    : before.retainDoctorAccess;
   const pendingAccessRecipients = await pendingPetAccessRequesterEmails(client, before.petId);
-  const activeGrantRecipients = await activePetGrantRecipientEmails(client, before.petId);
+  const activeGrantRecipients = retainDoctorAccess ? [] : await activePetGrantRecipientEmails(client, before.petId);
   const updatedPet = await client.query(
     `UPDATE pets SET owner_account_id=$2,revision=revision+1,updated_at=now()
      WHERE pet_id=$1 AND owner_account_id=$3 AND revision=$4 AND deleted_at IS NULL RETURNING *`,
@@ -738,10 +755,12 @@ async function handleTransfer(client: PoolClient, actor: Actor, command: ClientC
   );
   if (!updatedPet.rowCount) throw new ApiError(409, "TRANSFER_REQUEST_STALE", "The pet changed before acceptance.");
   await client.query("UPDATE access_requests SET status='rejected',revision=revision+1,decided_at=now(),decided_by=$2 WHERE pet_id=$1 AND status='pending'", [before.petId, actor.accountId]);
-  await client.query("UPDATE access_grants SET status='revoked',revision=revision+1,revoked_at=now() WHERE pet_id=$1 AND status='active'", [before.petId]);
+  if (!retainDoctorAccess) {
+    await client.query("UPDATE access_grants SET status='revoked',revision=revision+1,revoked_at=now() WHERE pet_id=$1 AND status='active'", [before.petId]);
+  }
   await client.query(
-    "UPDATE pet_ownership_transfers SET status='completed',revision=revision+1,decided_at=now(),decided_by=$2 WHERE transfer_request_id=$1",
-    [command.entityId, actor.accountId],
+    "UPDATE pet_ownership_transfers SET status='completed',revision=revision+1,decided_at=now(),decided_by=$2,retain_doctor_access=$3 WHERE transfer_request_id=$1",
+    [command.entityId, actor.accountId, retainDoctorAccess],
   );
   const value = await transferDto(client, command.entityId);
   await enqueueAccessStatusEmails(client, pendingAccessRecipients, value.petName, "отклонён");
@@ -750,7 +769,7 @@ async function handleTransfer(client: PoolClient, actor: Actor, command: ClientC
   await enqueueAccountEmail(client, toOwnerAccountId, "Передача питомца в системе \"Клинок\" завершена", `Вы получили управление профилем и медицинской картой питомца «${value.petName}».`);
   return { value, revision: value.revision, audit: {
     action: "transfer.completed", aggregateType: "petTransfer", aggregateId: command.entityId,
-    relatedAccountId: toOwnerAccountId, metadata: { petId: before.petId, fromOwnerAccountId, toOwnerAccountId },
+    relatedAccountId: toOwnerAccountId, metadata: { petId: before.petId, fromOwnerAccountId, toOwnerAccountId, retainDoctorAccess },
     beforeState: { request: before, pet: petFromRow(pet!) },
     afterState: { request: value, pet: petFromRow(updatedPet.rows[0]) },
   } };

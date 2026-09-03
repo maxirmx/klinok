@@ -126,6 +126,7 @@ export function transferRequestFromRow(row: Record<string, unknown>): PetTransfe
     toOwnerDisplayName: String(row.to_owner_display_name ?? ""),
     toOwnerProfileRevision: Number(row.to_owner_profile_revision),
     initiatedByAccountId: String(row.initiated_by_account_id),
+    retainDoctorAccess: row.retain_doctor_access === true,
     petName: String(row.pet_name ?? row.name ?? ""),
     petSpecies: String(row.pet_species ?? row.species ?? ""),
     status: row.status as PetTransferRequest["status"],

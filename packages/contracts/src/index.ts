@@ -390,6 +390,7 @@ export interface PetTransferRequest {
   toOwnerDisplayName: string;
   toOwnerProfileRevision: number;
   initiatedByAccountId: string;
+  retainDoctorAccess: boolean;
   petName: string;
   petSpecies: string;
   status: PetTransferRequestStatus;

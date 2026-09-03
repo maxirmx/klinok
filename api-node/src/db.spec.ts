@@ -36,6 +36,12 @@ describe("PostgreSQL migrations", () => {
     expect(sql).toContain("pet_ownership_transfers_to_owner_pending_idx");
   });
 
+  it("adds a backward-compatible new-Owner policy for retaining Doctor access", async () => {
+    const sql = await readFile(new URL("../migrations/004_transfer_doctor_access_policy.sql", import.meta.url), "utf8");
+
+    expect(sql).toContain("ADD COLUMN retain_doctor_access boolean NOT NULL DEFAULT false");
+  });
+
   it("keeps the database catalogue migration synchronized with the shared catalogue", async () => {
     const sql = await readFile(new URL("../migrations/002_what_happened_catalog.sql", import.meta.url), "utf8");
     const array = /FROM unnest\(ARRAY\[([\s\S]*?)\]::text\[\]\)/.exec(sql)?.[1] ?? "";
@@ -56,10 +62,15 @@ describe("PostgreSQL migrations", () => {
     await database.migrate();
 
     const calls = client.query.mock.calls;
-    expect(calls.filter(([sql]) => sql === "BEGIN")).toHaveLength(3);
-    expect(calls.filter(([sql]) => sql === "COMMIT")).toHaveLength(3);
+    expect(calls.filter(([sql]) => sql === "BEGIN")).toHaveLength(4);
+    expect(calls.filter(([sql]) => sql === "COMMIT")).toHaveLength(4);
     expect(calls.filter(([sql]) => sql === "INSERT INTO schema_migrations(version) VALUES ($1)")
-      .map(([, values]) => values)).toEqual([["001_initial"], ["002_what_happened_catalog"], ["003_pet_ownership_transfers"]]);
+      .map(([, values]) => values)).toEqual([
+        ["001_initial"],
+        ["002_what_happened_catalog"],
+        ["003_pet_ownership_transfers"],
+        ["004_transfer_doctor_access_policy"],
+      ]);
     expect(calls.find(([sql]) => String(sql).includes("WITH catalog(id, sort_order)"))).toBeDefined();
     expect(info).toHaveBeenCalledWith(
       'Migration 002_what_happened_catalog: {"scanned_records":"3","changed_records":"2","partially_cleaned_records":"1"}',
@@ -69,7 +80,12 @@ describe("PostgreSQL migrations", () => {
   });
 
   it("skips migrations that are already registered", async () => {
-    const client = migrationClient(["001_initial", "002_what_happened_catalog", "003_pet_ownership_transfers"]);
+    const client = migrationClient([
+      "001_initial",
+      "002_what_happened_catalog",
+      "003_pet_ownership_transfers",
+      "004_transfer_doctor_access_policy",
+    ]);
     const database = new Database("postgres://unused");
     Object.defineProperty(database, "pool", { value: { connect: vi.fn().mockResolvedValue(client) } });
 

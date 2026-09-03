@@ -72,7 +72,7 @@ function transfer(overrides: Partial<PetTransferRequest> = {}): PetTransferReque
     transferRequestId: "transfer-1", petId: "pet-1", petRevision: 4,
     fromOwnerAccountId: "owner-1", fromOwnerDisplayName: "Алёна Ёлкина", fromOwnerProfileRevision: 2,
     toOwnerAccountId: "owner-2", toOwnerDisplayName: "Иван Петров", toOwnerProfileRevision: 3,
-    initiatedByAccountId: "owner-2", petName: "Ёжик", petSpecies: "Кошка",
+    initiatedByAccountId: "owner-2", retainDoctorAccess: false, petName: "Ёжик", petSpecies: "Кошка",
     status: "pending", revision: 1, createdAt: timestamp,
     ...overrides,
   };
@@ -80,6 +80,7 @@ function transfer(overrides: Partial<PetTransferRequest> = {}): PetTransferReque
 
 beforeEach(() => {
   vi.clearAllMocks();
+  state.session.accountId = "owner-1";
   state.medical = {
     pets: [], grants: [], accessRequests: [], transferRequests: [], records: [], confirmations: [], confirmedRecordIds: [],
   };
@@ -278,7 +279,8 @@ describe("pet transfer overlay", () => {
     expect(wrapper.get('[role="dialog"]').text()).toContain("Подтвердить запрос передачи");
     expect(wrapper.get(".transfer-review").findAllComponents(PersonIdentity)
       .map((identity) => identity.props("displayName"))).toEqual(["Иван Петров", "Алёна Ёлкина (Я)"]);
-    expect(wrapper.find("fieldset.transfer-acknowledgement").exists()).toBe(false);
+    expect(wrapper.get("fieldset.transfer-acknowledgement").text()).toContain("Сохранить действующие доступы врачей");
+    await wrapper.get('fieldset.transfer-acknowledgement input[type="checkbox"]').setValue(true);
     await wrapper.get("form.transfer-review").trigger("submit");
     await flushPromises();
 
@@ -286,6 +288,7 @@ describe("pet transfer overlay", () => {
       petId: "pet-1", toOwnerAccountId: "owner-1", expectedFromOwnerAccountId: "owner-2",
       expectedFromOwnerProfileRevision: 3, expectedToOwnerProfileRevision: 2,
       ownershipLossAcknowledged: false,
+      retainDoctorAccess: true,
     }));
   });
 
@@ -578,6 +581,8 @@ describe("pet transfer request manager", () => {
       ["Алёна Ёлкина (Я)", "Иван Петров"],
       ["Иван Петров", "Алёна Ёлкина (Я)"],
     ]);
+    expect(rows[0]!.findAll(".transfer-row-actions button").map((button) => button.attributes("title")))
+      .toEqual(["Принять передачу", "Отклонить запрос передачи"]);
 
     await wrapper.get('button[title="Принять передачу"]').trigger("click");
     await flushPromises();
@@ -585,6 +590,8 @@ describe("pet transfer request manager", () => {
     expect(accept.findAllComponents(PersonIdentity).map((identity) => identity.props("displayName")))
       .toEqual(["Алёна Ёлкина (Я)", "Иван Петров"]);
     expect(accept.text()).toContain("потеряю доступ к профилю");
+    expect(accept.get("fieldset.transfer-acknowledgement .transfer-access-policy-summary").text())
+      .toContain("доступы врачей к медицинской карте питомца будут отозваны");
     await accept.get("form").trigger("submit");
     expect(accept.get('[role="alert"]').text()).toContain("Подтвердите потерю управления");
     await accept.get('input[type="checkbox"]').setValue(true);
@@ -601,6 +608,41 @@ describe("pet transfer request manager", () => {
     await wrapper.get('[role="alertdialog"] button.primary-action').trigger("click");
     await flushPromises();
     expect(mocks.cancelPetTransfer).toHaveBeenCalledWith("transfer-2");
+  });
+
+  it("shows the new Owner's retained-access choice without letting the current Owner change it", async () => {
+    state.medical.transferRequests = [transfer({ retainDoctorAccess: true })];
+    const wrapper = mount(PetTransferManager, { global: { plugins: [createPinia()] } });
+
+    await wrapper.get('button[title="Принять передачу"]').trigger("click");
+    await flushPromises();
+    const accept = wrapper.get('[role="alertdialog"]');
+    expect(accept.get("fieldset.transfer-acknowledgement .transfer-access-policy-summary").text())
+      .toContain("Новый владелец решил сохранить действующие доступы врачей");
+    expect(accept.findAll('input[type="checkbox"]')).toHaveLength(1);
+    await accept.get('input[type="checkbox"]').setValue(true);
+    await accept.get("form").trigger("submit");
+    await flushPromises();
+
+    expect(mocks.acceptPetTransfer).toHaveBeenCalledWith("transfer-1", true);
+  });
+
+  it("lets the new Owner choose whether to retain Doctor access while accepting an outgoing request", async () => {
+    state.session.accountId = "owner-2";
+    state.medical.transferRequests = [transfer({ initiatedByAccountId: "owner-1" })];
+    const wrapper = mount(PetTransferManager, { global: { plugins: [createPinia()] } });
+
+    await wrapper.get('button[title="Принять передачу"]').trigger("click");
+    await flushPromises();
+    const accept = wrapper.get('[role="dialog"]');
+    expect(accept.find("fieldset.transfer-acknowledgement").exists()).toBe(true);
+    expect(accept.text()).toContain("Сохранить действующие доступы врачей");
+    expect(accept.text()).not.toContain("потеряю доступ к профилю");
+    await accept.get('input[type="checkbox"]').setValue(true);
+    await accept.get("form").trigger("submit");
+    await flushPromises();
+
+    expect(mocks.acceptPetTransfer).toHaveBeenCalledWith("transfer-1", false, true);
   });
 
   it("does not open a stale request after authoritative refresh", async () => {

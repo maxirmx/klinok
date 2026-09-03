@@ -2826,6 +2826,11 @@ label > input[type="checkbox"] {
   margin: 1px 0 0;
 }
 .transfer-acknowledgement .check-row > span { min-width: 0; }
+.transfer-acknowledgement .transfer-access-policy-summary {
+  margin: 6px 0 0;
+  margin-inline-start: 28px;
+  color: var(--text-muted);
+}
 .pet-transfer-manager { display: grid; gap: 12px; margin: 0 auto; }
 .transfer-manager-heading { margin: 0; }
 .transfer-manager-heading h3,

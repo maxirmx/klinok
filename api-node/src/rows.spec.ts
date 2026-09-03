@@ -45,6 +45,7 @@ describe("PostgreSQL row conversion", () => {
       to_owner_display_name: "Иван Петров",
       to_owner_profile_revision: 3,
       initiated_by_account_id: "owner-2",
+      retain_doctor_access: true,
       pet_name: "Ёжик",
       pet_species: "Кошка",
       status: "completed",
@@ -63,6 +64,7 @@ describe("PostgreSQL row conversion", () => {
       toOwnerDisplayName: "Иван Петров",
       toOwnerProfileRevision: 3,
       initiatedByAccountId: "owner-2",
+      retainDoctorAccess: true,
       petName: "Ёжик",
       petSpecies: "Кошка",
       status: "completed",
@@ -71,5 +73,21 @@ describe("PostgreSQL row conversion", () => {
       decidedAt: "2026-08-16T10:00:00.000Z",
       decidedBy: "owner-1",
     });
+  });
+
+  it("defaults legacy ownership transfer rows to revoking Doctor access", () => {
+    expect(transferRequestFromRow({
+      transfer_request_id: "legacy-transfer",
+      pet_id: "pet-1",
+      pet_revision: 1,
+      from_owner_account_id: "owner-1",
+      from_owner_profile_revision: 1,
+      to_owner_account_id: "owner-2",
+      to_owner_profile_revision: 1,
+      initiated_by_account_id: "owner-1",
+      status: "pending",
+      revision: 1,
+      created_at: "2026-08-15T10:00:00.000Z",
+    }).retainDoctorAccess).toBe(false);
   });
 });

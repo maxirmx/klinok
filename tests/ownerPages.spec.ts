@@ -121,6 +121,7 @@ const pendingTransfer: PetTransferRequest = {
   toOwnerDisplayName: "Иван Новый",
   toOwnerProfileRevision: 1,
   initiatedByAccountId: "owner-1",
+  retainDoctorAccess: false,
   petName: pet.name,
   petSpecies: pet.species,
   status: "pending",

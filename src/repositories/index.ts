@@ -193,13 +193,21 @@ class ApiMedicalRepository {
     expectedFromOwnerProfileRevision: number;
     expectedToOwnerProfileRevision: number;
     ownershipLossAcknowledged: boolean;
+    retainDoctorAccess?: boolean;
   }): Promise<string> {
     const transferRequestId = crypto.randomUUID();
     await this.parent.executeOnline({ type: "transfer.request", entityId: transferRequestId, payload: input });
     return transferRequestId;
   }
-  async acceptPetTransfer(transferRequestId: string, ownershipLossAcknowledged = false): Promise<void> {
-    await this.changePetTransfer("transfer.accept", transferRequestId, { ownershipLossAcknowledged });
+  async acceptPetTransfer(
+    transferRequestId: string,
+    ownershipLossAcknowledged = false,
+    retainDoctorAccess?: boolean,
+  ): Promise<void> {
+    await this.changePetTransfer("transfer.accept", transferRequestId, {
+      ownershipLossAcknowledged,
+      ...(retainDoctorAccess === undefined ? {} : { retainDoctorAccess }),
+    });
   }
   async rejectPetTransfer(transferRequestId: string): Promise<void> {
     await this.changePetTransfer("transfer.reject", transferRequestId);
