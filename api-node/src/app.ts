@@ -715,7 +715,13 @@ export async function buildApi(config: ApiConfig, provided?: { db?: Database; le
     const where = `p.deleted_at IS NULL AND a.credential_status='active' ${myOnly ? "AND p.owner_account_id=$5" : ""}
       AND ($${exactOwnerPosition}='' OR p.owner_account_id=$${exactOwnerPosition})
       ${myOnly ? "" : "AND ($1<>'' OR $5<>'' OR p.pet_id=$3)"}
-      ${transferableOnly ? "AND NOT EXISTS (SELECT 1 FROM pet_ownership_transfers pending_transfer WHERE pending_transfer.pet_id=p.pet_id AND pending_transfer.status='pending')" : ""}
+      ${transferableOnly ? `AND EXISTS (
+        SELECT 1 FROM roles owner_role WHERE owner_role.account_id=p.owner_account_id
+          AND owner_role.role='owner' AND owner_role.status='approved'
+      ) AND NOT EXISTS (
+        SELECT 1 FROM pet_ownership_transfers pending_transfer
+        WHERE pending_transfer.pet_id=p.pet_id AND pending_transfer.status='pending'
+      )` : ""}
       AND ($1='' OR translate(concat_ws(' ',pr.first_name,pr.patronymic,pr.last_name),'Ёё','Ее') ILIKE translate($2,'Ёё','Ее') OR p.owner_account_id ILIKE $2)
       AND ($3='' OR translate(p.name,'Ёё','Ее') ILIKE translate($4,'Ёё','Ее') OR p.pet_id ILIKE $4)`;
     const values = myOnly

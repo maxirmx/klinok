@@ -36,6 +36,9 @@ const cancelError = ref("");
 const rejectStale = ref(false);
 const cancelStale = ref(false);
 const handledLinkedRequestId = ref("");
+const linkedRequestInFlightId = ref("");
+
+type AcceptOpenResult = "opened" | "changed" | "terminal" | "retryable";
 
 const currentAccountId = computed(() => appState.session.accountId ?? "");
 const actionsAvailable = computed(() => appState.repositoryConnected
@@ -119,29 +122,36 @@ function openCancel(request: PetTransferRequest) {
   cancelStale.value = false;
 }
 
-async function openAccept(request: PetTransferRequest) {
-  if (!actionsAvailable.value) return;
+async function openAccept(request: PetTransferRequest, acceptRefreshedRevision = false): Promise<AcceptOpenResult> {
+  if (!actionsAvailable.value) return "retryable";
   acceptBusy.value = true;
   try {
     await requireRepository().medical.refresh();
     const current = (appState.medical.transferRequests ?? []).find((candidate) => candidate.transferRequestId === request.transferRequestId);
-    if (!current || current.status !== "pending" || current.revision !== request.revision) {
-      throw new Error("Статус запроса передачи изменился. Список обновлён.");
+    if (!current || current.status !== "pending") {
+      alertStore.error(new Error("Статус запроса передачи изменился. Список обновлён."));
+      return "terminal";
+    }
+    if (!acceptRefreshedRevision && current.revision !== request.revision) {
+      alertStore.error(new Error("Статус запроса передачи изменился. Список обновлён."));
+      return "changed";
     }
     acceptTarget.value = current;
     acceptError.value = "";
     acceptStale.value = false;
     ownershipLossAcknowledged.value = false;
     retainDoctorAccess.value = false;
+    return "opened";
   } catch (reason) {
     alertStore.error(reason, "Не удалось проверить запрос передачи.");
+    return "retryable";
   } finally {
     acceptBusy.value = false;
   }
 }
 
 async function openLinkedRequest(requestId: string) {
-  if (!requestId || handledLinkedRequestId.value === requestId) return;
+  if (!requestId || handledLinkedRequestId.value === requestId || linkedRequestInFlightId.value === requestId) return;
   const requestIndex = rows.value.findIndex((request) => request.transferRequestId === requestId);
   if (requestIndex < 0) return;
   page.value = Math.floor(requestIndex / pageSize.value) + 1;
@@ -151,8 +161,13 @@ async function openLinkedRequest(requestId: string) {
     return;
   }
   if (!actionsAvailable.value) return;
-  handledLinkedRequestId.value = requestId;
-  await openAccept(request);
+  linkedRequestInFlightId.value = requestId;
+  try {
+    const result = await openAccept(request, true);
+    if (result === "opened" || result === "terminal") handledLinkedRequestId.value = requestId;
+  } finally {
+    if (linkedRequestInFlightId.value === requestId) linkedRequestInFlightId.value = "";
+  }
 }
 
 watch(

@@ -119,6 +119,7 @@ const AUTH_ERRORS: Record<string, string> = {
   TRANSFER_PARTY_REQUIRED: "Операция доступна только участнику передачи.",
   TRANSFER_INITIATOR_REQUIRED: "Отменить запрос может только его инициатор.",
   TRANSFER_RESPONDER_REQUIRED: "Ответить на запрос может только вторая сторона.",
+  TRANSFER_ACCESS_POLICY_OWNER_REQUIRED: "Только новый владелец может выбрать, сохранять ли доступы врачей.",
   OWNERSHIP_LOSS_ACKNOWLEDGEMENT_REQUIRED: "Подтвердите потерю управления профилем и медицинской картой питомца.",
 };
 

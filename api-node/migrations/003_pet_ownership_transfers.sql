@@ -26,5 +26,7 @@ CREATE INDEX pet_ownership_transfers_from_owner_pending_idx
   ON pet_ownership_transfers(from_owner_account_id, created_at DESC) WHERE status = 'pending';
 CREATE INDEX pet_ownership_transfers_to_owner_pending_idx
   ON pet_ownership_transfers(to_owner_account_id, created_at DESC) WHERE status = 'pending';
-CREATE INDEX pet_ownership_transfers_parties_idx
-  ON pet_ownership_transfers(from_owner_account_id, to_owner_account_id, created_at DESC);
+CREATE INDEX pet_ownership_transfers_from_owner_history_idx
+  ON pet_ownership_transfers(from_owner_account_id, created_at DESC);
+CREATE INDEX pet_ownership_transfers_to_owner_history_idx
+  ON pet_ownership_transfers(to_owner_account_id, created_at DESC);

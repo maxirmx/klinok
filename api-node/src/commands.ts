@@ -910,11 +910,15 @@ async function handleAccess(client: PoolClient, actor: Actor, command: ClientCom
     } };
   }
 
+  const preview = await client.query("SELECT pet_id FROM access_grants WHERE grant_id=$1", [command.entityId]);
+  const previewRow = preview.rows[0] as Record<string, unknown> | undefined;
+  if (!previewRow) throw new ApiError(409, "GRANT_NOT_ACTIVE", "The grant is no longer active.");
+  const pet = await petRow(client, String(previewRow.pet_id), true);
   const found = await client.query("SELECT * FROM access_grants WHERE grant_id=$1 FOR UPDATE", [command.entityId]);
   const before = found.rows[0] as Record<string, unknown> | undefined;
   if (!before || before.status !== "active") throw new ApiError(409, "GRANT_NOT_ACTIVE", "The grant is no longer active.");
+  if (before.pet_id !== previewRow.pet_id) throw new ApiError(409, "REVISION_CONFLICT", "The grant changed before this operation was applied.");
   expected(command, Number(before.revision));
-  const pet = await petRow(client, String(before.pet_id), true);
   await requireActiveRole(client, actor, command, ["owner", "doctor"]);
   if (command.type === "access.actions.update") {
     if (before.grantor_account_id !== actor.accountId && pet.owner_account_id !== actor.accountId) throw new ApiError(403, "GRANTOR_REQUIRED", "Only the grantor may change access actions.");

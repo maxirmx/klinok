@@ -94,7 +94,12 @@ async function findPets() {
     const owner = ownerQuery.value.trim();
     const pet = petQuery.value.trim();
     let found: DirectoryPetDto[];
-    if (!owner) {
+    if (!owner && props.transferableOnly) {
+      const page = await searchPetDirectory("", pet, 1, 50, "owner", "", true);
+      const exactPet = page.items.find((candidate) => candidate.petId === pet);
+      if (exactPet && isExcludedOwner(exactPet)) throw new Error(props.excludedOwnerError);
+      found = exactPet ? [exactPet] : [];
+    } else if (!owner) {
       const exactPet = await lookupPetDirectory(pet);
       if (isExcludedOwner(exactPet)) throw new Error(props.excludedOwnerError);
       found = [exactPet];
