@@ -605,7 +605,7 @@ async function handlePet(client: PoolClient, actor: Actor, command: ClientComman
   } };
 }
 
-async function handleTransfer(client: PoolClient, actor: Actor, command: ClientCommand): Promise<Applied> {
+async function handleTransfer(client: PoolClient, actor: Actor, command: ClientCommand, publicOrigin: string): Promise<Applied> {
   await requireActiveRole(client, actor, command, ["owner"]);
   const payload = object(command.payload);
 
@@ -651,7 +651,7 @@ async function handleTransfer(client: PoolClient, actor: Actor, command: ClientC
       client,
       otherParty,
       "Запрос передачи питомца в системе \"Клинок\"",
-      `Ожидает решения запрос передачи питомца «${String(pet.name)}».`,
+      `Ожидает решения запрос передачи питомца «${String(pet.name)}».\n\nПодтвердить или отклонить передачу:\n${new URL(`/owner/transfers?request=${encodeURIComponent(command.entityId)}`, publicOrigin).toString()}`,
     );
     return { value, revision: value.revision, audit: {
       action: "transfer.requested", aggregateType: "petTransfer", aggregateId: command.entityId,
@@ -1078,7 +1078,11 @@ async function handleRecord(client: PoolClient, actor: Actor, command: ClientCom
 }
 
 export class CommandService {
-  constructor(private readonly db: Database, private readonly ledger: Ledger) {}
+  constructor(
+    private readonly db: Database,
+    private readonly ledger: Ledger,
+    private readonly publicOrigin = "http://localhost:8080",
+  ) {}
 
   async execute(actor: Actor, command: ClientCommand): Promise<CommandResult> {
     if (!this.ledger.isValid()) return { operationId: command.operationId, status: "rejected", error: { code: "LEDGER_INVALID", message: "The audit ledger is invalid." } };
@@ -1104,7 +1108,7 @@ export class CommandService {
         else if (command.type.startsWith("pet.")) applied = await handlePet(client, actor, command);
         else if (command.type.startsWith("access.")) applied = await handleAccess(client, actor, command);
         else if (["transfer.request", "transfer.accept", "transfer.reject", "transfer.cancel"].includes(command.type)) {
-          applied = await handleTransfer(client, actor, command);
+          applied = await handleTransfer(client, actor, command, this.publicOrigin);
         }
         else if (command.type.startsWith("record.")) applied = await handleRecord(client, actor, command);
         else throw new ApiError(400, "COMMAND_UNSUPPORTED", "The command type is unsupported.");

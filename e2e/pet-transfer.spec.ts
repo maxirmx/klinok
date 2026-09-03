@@ -51,6 +51,22 @@ async function expectEmailText(request: APIRequestContext, email: string, expect
   throw new Error(`Email containing "${expectedText}" for ${email} was not captured by Mailpit.`);
 }
 
+async function transferConfirmationLink(request: APIRequestContext, email: string): Promise<string> {
+  for (let attempt = 0; attempt < 60; attempt += 1) {
+    const list = await request.get(`${mailpitUrl}/api/v1/messages`);
+    const messages = (await list.json()).messages as Array<{ ID: string }>;
+    for (const summary of messages) {
+      const message = await request.get(`${mailpitUrl}/api/v1/message/${summary.ID}`);
+      const body = await message.json() as { Text?: string; HTML?: string; To?: Array<{ Address?: string }> };
+      if (!body.To?.some((recipient) => recipient.Address?.toLocaleLowerCase() === email.toLocaleLowerCase())) continue;
+      const match = `${body.Text ?? ""} ${body.HTML ?? ""}`.match(/https?:\/\/[^\s<]+\/owner\/transfers\?request=[^\s<]+/);
+      if (match) return match[0].replace(/&amp;/g, "&");
+    }
+    await new Promise((resolve) => setTimeout(resolve, 500));
+  }
+  throw new Error(`Transfer confirmation link for ${email} was not captured by Mailpit.`);
+}
+
 async function newPage(context: BrowserContext, label: string): Promise<Page> {
   const page = await context.newPage();
   page.setDefaultTimeout(replicationTimeout);
@@ -284,12 +300,36 @@ test("pet card moves in both directions through one overlay flow", async ({ brow
   });
 
   await ownerAPage.reload();
+  await ownerAPage.setViewportSize({ width: 1800, height: 1000 });
+  await ownerAPage.locator(".workspace-sidebar").getByRole("link", { name: /^Передачи/ }).click();
+  await expect(ownerAPage).toHaveURL(/\/owner\/transfers$/);
+  const transferWidths = await ownerAPage.evaluate(() => {
+    const content = document.querySelector<HTMLElement>(".workspace-content")!;
+    const manager = document.querySelector<HTMLElement>(".pet-transfer-manager")!;
+    const table = document.querySelector<HTMLTableElement>(".transfer-table")!;
+    const contentStyle = getComputedStyle(content);
+    return {
+      available: content.clientWidth - Number.parseFloat(contentStyle.paddingLeft) - Number.parseFloat(contentStyle.paddingRight),
+      manager: manager.getBoundingClientRect().width,
+      table: table.getBoundingClientRect().width,
+      columns: [...table.querySelectorAll("th")].map((heading) => heading.getBoundingClientRect().width),
+    };
+  });
+  expect(Math.abs(transferWidths.available - transferWidths.manager)).toBeLessThanOrEqual(1);
+  expect(transferWidths.columns).toHaveLength(6);
+  for (const [index, expectedWidth] of [0.2, 0.23, 0.23, 0.12].entries()) {
+    expect(transferWidths.columns[index]! / transferWidths.table).toBeCloseTo(expectedWidth, 2);
+  }
+  expect(transferWidths.columns[5]).toBeLessThanOrEqual(101);
   const outgoingTrigger = ownerAPage.getByRole("button", { name: "Передать питомца", exact: true });
   await expect(outgoingTrigger).toBeEnabled();
   await outgoingTrigger.click();
   const outgoingSearch = ownerAPage.getByRole("dialog", { name: "Передать питомца" });
-  await expect(ownerAPage).toHaveURL(new RegExp(`/owner/pets/${petId}$`));
+  await expect(ownerAPage).toHaveURL(/\/owner\/transfers$/);
   await expect(ownerAPage.locator(".confirmation-dialog-backdrop")).toHaveCount(1);
+  const outgoingPet = outgoingSearch.getByRole("combobox", { name: "Питомец для передачи" });
+  await expect(outgoingPet.locator("option", { hasText: "Ёжик-путешественник" })).toHaveCount(1);
+  await outgoingPet.selectOption(petId);
   await outgoingSearch.getByRole("searchbox", { name: /^ФИО принимающего владельца/ }).fill("Алена Принимающая");
   await outgoingSearch.getByRole("button", { name: "Найти владельца" }).click();
   const ownerBResult = outgoingSearch.locator(".directory-dialog-result").filter({ hasText: ownerBId });
@@ -316,26 +356,51 @@ test("pet card moves in both directions through one overlay flow", async ({ brow
   await outgoingSubmit.click();
   await expect(outgoingReview).toBeHidden();
   await expect(ownerAPage.getByText("Запрос передачи отправлен.")).toBeVisible();
-  await expect(ownerAPage.getByRole("button", { name: "Передача уже ожидает решения" })).toBeDisabled();
-  await expect(ownerAPage.locator(".owner-pet-profile .owner-pet-transfer-status")).toHaveText("Ожидание передачи");
+  const pendingOutgoingRow = ownerAPage.locator(".transfer-table tbody tr").filter({ hasText: petId });
+  await expect(pendingOutgoingRow).toContainText("Ожидает решения");
+  await expect(pendingOutgoingRow.locator("td").nth(3)).toHaveCSS("white-space", "nowrap");
+  await expect(pendingOutgoingRow.locator("td").nth(4)).toHaveCSS("white-space", "nowrap");
+  await expect(pendingOutgoingRow.locator(".transfer-row-actions")).toHaveCSS("flex-wrap", "nowrap");
   await ownerAPage.locator(".workspace-sidebar").getByRole("link", { name: /^Питомцы/ }).click();
   const pendingPetCard = ownerAPage.locator(`.owner-pet-card[href="/owner/pets/${petId}"]`);
   await expect(pendingPetCard.locator(".owner-pet-transfer-status")).toHaveText("Ожидание передачи");
   await pendingPetCard.click();
   await expect(ownerAPage).toHaveURL(new RegExp(`/owner/pets/${petId}$`));
+  await expect(ownerAPage.getByRole("button", { name: "Передача уже ожидает решения" })).toBeDisabled();
+  await expect(ownerAPage.locator(".owner-pet-profile .owner-pet-transfer-status")).toHaveText("Ожидание передачи");
 
   await ownerBPage.bringToFront();
   await ownerBPage.reload();
-  await ownerBPage.locator(".workspace-sidebar").getByRole("link", { name: /^Передачи/ }).click();
+  const blockedIncomingTrigger = ownerBPage.getByRole("button", { name: "Запросить передачу", exact: true });
+  await blockedIncomingTrigger.click();
+  const blockedIncomingDialog = ownerBPage.getByRole("dialog", { name: "Запросить передачу" });
+  await blockedIncomingDialog.getByRole("searchbox", { name: /^Кличка/ }).fill(petId);
+  await blockedIncomingDialog.getByRole("button", { name: "Найти питомца" }).click();
+  await expect(blockedIncomingDialog.locator(".transfer-pet-result")).toHaveCount(0);
+  await expect(blockedIncomingDialog).toContainText("Питомцы не найдены.");
+  await blockedIncomingDialog.getByRole("button", { name: "Закрыть" }).click();
+  const emailedConfirmationLink = await transferConfirmationLink(request, ownerBEmail);
+  const emailedConfirmationUrl = new URL(emailedConfirmationLink);
+  expect(emailedConfirmationUrl.pathname).toBe("/owner/transfers");
+  expect(emailedConfirmationUrl.searchParams.get("request")).toBeTruthy();
+  await ownerBPage.locator(".workspace-sidebar").getByRole("button", { name: "Выйти", exact: true }).click();
+  await expect(ownerBPage).toHaveURL(/\/auth\/login$/);
+  await ownerBPage.goto(emailedConfirmationLink);
+  await expect(ownerBPage).toHaveURL(/\/auth\/login\?continue=/);
+  await ownerBPage.getByLabel("Электронная почта").fill(ownerBEmail);
+  await ownerBPage.getByLabel("Пароль", { exact: true }).fill(password);
+  await ownerBPage.getByRole("button", { name: "Войти" }).click();
+  await expect(ownerBPage).toHaveURL(new RegExp(`/owner/transfers\\?request=${emailedConfirmationUrl.searchParams.get("request")}$`));
   const firstTransferRow = ownerBPage.locator(".transfer-table tbody tr").filter({ hasText: petId });
   await expect(firstTransferRow).toBeVisible();
   await expect(firstTransferRow).toContainText("Ожидает решения");
-  await firstTransferRow.getByRole("button", { name: "Принять передачу" }).click();
   const receiverAcceptance = ownerBPage.getByRole("dialog", { name: "Принять передачу питомца?" });
+  await expect(receiverAcceptance).toBeVisible();
   await expect(receiverAcceptance.getByRole("checkbox")).toHaveCount(0);
   await receiverAcceptance.getByRole("button", { name: "Принять передачу" }).click();
   await expect(ownerBPage.getByText("Передача питомца завершена.")).toBeVisible();
   await expect(firstTransferRow).toContainText("Завершена");
+  await expect(firstTransferRow.locator("td").last()).toBeEmpty();
 
   await expectEmailText(request, ownerAEmail, "передано новому владельцу");
   await expectEmailText(request, ownerBEmail, "получили управление");

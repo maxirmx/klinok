@@ -62,6 +62,23 @@ describe("login navigation", () => {
     expect(router.currentRoute.value.path).toBe("/doctor/home");
   });
 
+  it("returns to a protected transfer confirmation after login", async () => {
+    const router = createRouter({ history: createMemoryHistory(), routes });
+    await router.push({ path: "/auth/login", query: { continue: "/owner/transfers?request=transfer-1" } });
+    await router.isReady();
+    const wrapper = mount(AuthScreen, {
+      props: { scenarioId: "auth-login" },
+      global: { plugins: [pinia, router] },
+    });
+
+    await wrapper.get('input[type="email"]').setValue("owner@example.ru");
+    await wrapper.get('input[type="password"]').setValue("correct-password");
+    await wrapper.get("form").trigger("submit");
+    await flushPromises();
+
+    expect(router.currentRoute.value.fullPath).toBe("/owner/transfers?request=transfer-1");
+  });
+
   it("renders and dismisses accessible authentication feedback", async () => {
     useAlertStore().error(new Error("Ошибка входа"));
     const router = createRouter({ history: createMemoryHistory(), routes });

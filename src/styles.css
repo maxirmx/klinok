@@ -2313,10 +2313,14 @@ label > input[type="checkbox"] {
 .workspace-nav-item.owner-child .app-icon { width: 18px; height: 18px; }
 .owner-home,
 .owner-form-layout,
-.pet-transfer-manager,
 .owner-page-heading {
   width: min(100%, 1180px);
   margin: 0 auto;
+}
+.pet-transfer-manager {
+  width: 100%;
+  margin-right: 0;
+  margin-left: 0;
 }
 .owner-section-heading {
   display: flex;
@@ -2812,11 +2816,18 @@ label > input[type="checkbox"] {
 .transfer-manager-heading h3,
 .transfer-manager-heading p { margin: 0; }
 .transfer-manager-heading p { margin-top: 5px; color: var(--text-muted); }
-.transfer-table { min-width: 935px; }
-.transfer-table th:nth-child(1) { width: 145px; }
-.transfer-table th:nth-child(4) { width: 120px; }
-.transfer-table th:nth-child(5) { width: 110px; }
-.transfer-table th:nth-child(6) { width: 90px; }
+.transfer-table { min-width: 1040px; }
+.transfer-table th:nth-child(1) { width: 20%; }
+.transfer-table th:nth-child(2),
+.transfer-table th:nth-child(3) { width: 23%; }
+.transfer-table th:nth-child(4) { width: 12%; }
+.transfer-table th:nth-child(5) { width: auto; }
+.transfer-table th:nth-child(6) { width: 100px; }
+.transfer-table :is(th, td):nth-child(4),
+.transfer-table :is(th, td):nth-child(5) { white-space: nowrap; }
+.transfer-manager-actions,
+.transfer-row-actions { flex-wrap: nowrap !important; }
+.transfer-manager-actions { flex: 0 0 auto; }
 .transfer-row-actions { justify-content: flex-end; }
 .status-badge.completed { background: #dcfae6; color: #067647; }
 .status-badge.cancelled,
@@ -3405,6 +3416,8 @@ label > input[type="checkbox"] {
   .owner-access-table td.is-empty { display: none; }
   .owner-access-table td.doctor-access-empty { display: block; text-align: center; }
   .transfer-table { min-width: 0; }
+  .transfer-table :is(th, td):nth-child(4),
+  .transfer-table :is(th, td):nth-child(5) { white-space: normal; }
   .transfer-review dl > div { grid-template-columns: minmax(104px, .45fr) minmax(0, 1fr); }
 }
 .laboratory-study-create, .laboratory-study-list { display: grid; gap: 1rem; }

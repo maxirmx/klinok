@@ -103,7 +103,7 @@ function transferHarness(options: {
     isValid: vi.fn(() => true), append: vi.fn(async () => ({ height: 1, blockHash: "a".repeat(64) })), noteCommitted: vi.fn(),
   } as unknown as Ledger;
   return {
-    service: new CommandService(database as never, ledger),
+    service: new CommandService(database as never, ledger, "https://klinok.example"),
     query,
     pet,
     transfer: () => transfer,
@@ -177,7 +177,9 @@ describe("command boundary", () => {
         ownershipLossAcknowledged: true,
       },
     })).resolves.toMatchObject({ status: "applied", value: { transferRequestId: "transfer-out", status: "pending" } });
-    expect(outgoing.query.mock.calls.find(([sql]) => String(sql).startsWith("INSERT INTO email_outbox"))?.[1]?.[1]).toBe("two@example.ru");
+    const outgoingEmail = outgoing.query.mock.calls.find(([sql]) => String(sql).startsWith("INSERT INTO email_outbox"))?.[1];
+    expect(outgoingEmail?.[1]).toBe("two@example.ru");
+    expect(outgoingEmail?.[3]).toContain("https://klinok.example/owner/transfers?request=transfer-out");
 
     const incoming = transferHarness();
     await expect(incoming.service.execute({ accountId: "owner-2" }, {
@@ -188,7 +190,9 @@ describe("command boundary", () => {
         ownershipLossAcknowledged: false,
       },
     })).resolves.toMatchObject({ status: "applied", value: { initiatedByAccountId: "owner-2" } });
-    expect(incoming.query.mock.calls.find(([sql]) => String(sql).startsWith("INSERT INTO email_outbox"))?.[1]?.[1]).toBe("one@example.ru");
+    const incomingEmail = incoming.query.mock.calls.find(([sql]) => String(sql).startsWith("INSERT INTO email_outbox"))?.[1];
+    expect(incomingEmail?.[1]).toBe("one@example.ru");
+    expect(incomingEmail?.[3]).toContain("https://klinok.example/owner/transfers?request=transfer-in");
   });
 
   it("requires ownership-loss acknowledgement and rejects self or duplicate transfers", async () => {

@@ -92,6 +92,7 @@ describe("Owner transfer directory", () => {
       }], rowCount: 1 };
       if (sql.startsWith("SELECT p.*,pr.revision AS owner_profile_revision")) {
         expect(params.slice(0, 5)).toEqual(["", "%%", "Еж", "%Еж%", "owner-2"]);
+        expect(sql).toContain("NOT EXISTS (SELECT 1 FROM pet_ownership_transfers");
         return { rows: [{
           pet_id: "pet-1", owner_account_id: "owner-2", owner_profile_revision: 3, revision: 4,
           first_name: "Алёна", last_name: "Ёлкина", patronymic: null, species: "Кошка", name: "Ёжик", updated_at: now,
@@ -110,6 +111,7 @@ describe("Owner transfer directory", () => {
       if (sql.startsWith("SELECT count(*) FROM pets")) {
         expect(sql).toContain("($5='' OR p.owner_account_id=$5)");
         expect(sql).toContain("($1<>'' OR $5<>'' OR p.pet_id=$3)");
+        expect(sql).toContain("NOT EXISTS (SELECT 1 FROM pet_ownership_transfers");
         return { count: "1" };
       }
       throw new Error(`Unexpected one SQL: ${sql}`);
@@ -142,7 +144,7 @@ describe("Owner transfer directory", () => {
       expect(JSON.stringify(owners.json())).not.toContain("email");
 
       const pets = await app.inject({
-        method: "GET", url: "/api/directory/pets?owner=&pet=%D0%95%D0%B6&ownerAccountId=owner-2&page=1&pageSize=10&sort=pet",
+        method: "GET", url: "/api/directory/pets?owner=&pet=%D0%95%D0%B6&ownerAccountId=owner-2&page=1&pageSize=10&sort=pet&transferableOnly=true",
         headers: { cookie: "klinok_session_v3=token" },
       });
       expect(pets.statusCode).toBe(200);

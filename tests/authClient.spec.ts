@@ -48,11 +48,11 @@ describe("v3 API client", () => {
     vi.stubGlobal("fetch", fetchMock);
     const client = new AuthClient();
     await client.searchDirectoryPets("Иванов Иван", "Барс", 1, 50);
-    await client.searchDirectoryPets("", "Еж", 2, 10, "pet", "owner/2");
+    await client.searchDirectoryPets("", "Еж", 2, 10, "pet", "owner/2", true);
     await client.searchOwners("Алёна Ёлкина", 2, 10);
     await client.searchUsers("Иван", true, 2, 10, "owner", "desc");
     expect(fetchMock.mock.calls[0]![0]).toBe("/api/directory/pets?owner=%D0%98%D0%B2%D0%B0%D0%BD%D0%BE%D0%B2+%D0%98%D0%B2%D0%B0%D0%BD&pet=%D0%91%D0%B0%D1%80%D1%81&page=1&pageSize=50&sort=owner&direction=asc");
-    expect(fetchMock.mock.calls[1]![0]).toBe("/api/directory/pets?owner=&pet=%D0%95%D0%B6&page=2&pageSize=10&sort=pet&direction=asc&ownerAccountId=owner%2F2");
+    expect(fetchMock.mock.calls[1]![0]).toBe("/api/directory/pets?owner=&pet=%D0%95%D0%B6&page=2&pageSize=10&sort=pet&direction=asc&ownerAccountId=owner%2F2&transferableOnly=true");
     expect(fetchMock.mock.calls[2]![0]).toBe("/api/directory/owners?query=%D0%90%D0%BB%D1%91%D0%BD%D0%B0+%D0%81%D0%BB%D0%BA%D0%B8%D0%BD%D0%B0&page=2&pageSize=10");
     expect(fetchMock.mock.calls[3]![0]).toBe("/api/directory/users?query=%D0%98%D0%B2%D0%B0%D0%BD&pendingOnly=true&page=2&pageSize=10&sort=owner&direction=desc");
   });

@@ -4,6 +4,7 @@
 
 import { flushPromises, mount } from "@vue/test-utils";
 import { createPinia } from "pinia";
+import { reactive } from "vue";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { DirectoryPetDto, DirectoryProfileDto, MedicalSnapshot, PetProfile, PetTransferRequest } from "@klinok/contracts";
 
@@ -82,6 +83,8 @@ beforeEach(() => {
     pets: [], grants: [], accessRequests: [], transferRequests: [], records: [], confirmations: [], confirmedRecordIds: [],
   };
   state.control.profile = { accountId: "owner-1", revision: 2, firstName: "Алёна", lastName: "Ёлкина", updatedAt: timestamp };
+  state.sync.connectionState = "connected";
+  state.sync.syncing = false;
   mocks.lookupPetDirectory.mockResolvedValue(directoryPet);
   mocks.searchOwnerDirectory.mockResolvedValue({ items: [targetOwner], page: 1, pageSize: 10, total: 1, pageCount: 1 });
   mocks.searchPetDirectory.mockResolvedValue({ items: [directoryPet], page: 1, pageSize: 10, total: 1, pageCount: 1 });
@@ -140,8 +143,72 @@ describe("pet transfer overlay", () => {
     wrapper.unmount();
   });
 
+  it("selects an eligible current pet with a selector before starting an outgoing transfer", async () => {
+    const pendingPet = { ...pet, petId: "pet-pending", name: "Ожидающий" };
+    state.medical.pets = [pet, pendingPet];
+    state.medical.transferRequests = [transfer({ petId: pendingPet.petId })];
+    const wrapper = mount(PetTransferDialog, {
+      props: { modelValue: true, mode: "outgoing" },
+      global: { plugins: [createPinia()] },
+    });
+
+    const petSelector = wrapper.get<HTMLSelectElement>('select[aria-label="Питомец для передачи"]');
+    expect(petSelector.findAll("option").map((option) => option.text())).toEqual([
+      "Выберите питомца",
+      "Кошка Ёжик",
+    ]);
+    expect(petSelector.text()).not.toContain("Ожидающий");
+    await petSelector.setValue("pet-1");
+    await wrapper.get('input[type="search"]').setValue("Иван");
+    await wrapper.get("form.directory-dialog-search").trigger("submit");
+    await flushPromises();
+    await wrapper.get('button[title="Выбрать владельца"]').trigger("click");
+
+    const review = wrapper.get('[role="alertdialog"]');
+    expect(review.text()).toContain("Кошка Ёжик");
+    expect(review.text()).toContain("Иван Петров");
+    await review.get('button[title="Назад к поиску"]').trigger("click");
+    expect(wrapper.get<HTMLSelectElement>('select[aria-label="Питомец для передачи"]').element.value).toBe("pet-1");
+    await wrapper.get('button[title="Выбрать владельца"]').trigger("click");
+    await wrapper.get('[role="alertdialog"] input[type="checkbox"]').setValue(true);
+    await wrapper.get('[role="alertdialog"] form.transfer-review').trigger("submit");
+    await flushPromises();
+
+    expect(mocks.lookupPetDirectory).toHaveBeenCalledWith("pet-1");
+    expect(mocks.requestPetTransfer).toHaveBeenCalledWith(expect.objectContaining({
+      petId: "pet-1",
+      toOwnerAccountId: "owner-2",
+      ownershipLossAcknowledged: true,
+    }));
+  });
+
+  it("stops an outgoing selector choice that becomes pending during confirmation", async () => {
+    state.medical.pets = [pet];
+    const wrapper = mount(PetTransferDialog, {
+      props: { modelValue: true, mode: "outgoing" },
+      global: { plugins: [createPinia()] },
+    });
+    await wrapper.get('select[aria-label="Питомец для передачи"]').setValue("pet-1");
+    await wrapper.get('input[type="search"]').setValue("Иван");
+    await wrapper.get("form.directory-dialog-search").trigger("submit");
+    await flushPromises();
+    await wrapper.get('button[title="Выбрать владельца"]').trigger("click");
+    await wrapper.get('input[type="checkbox"]').setValue(true);
+    mocks.refresh.mockImplementationOnce(async () => {
+      state.medical.transferRequests = [transfer({ initiatedByAccountId: "owner-1" })];
+    });
+
+    await wrapper.get("form.transfer-review").trigger("submit");
+    await flushPromises();
+
+    expect(wrapper.get('[role="alert"]').text()).toContain("уже ожидает решения");
+    expect(mocks.lookupPetDirectory).not.toHaveBeenCalled();
+    expect(mocks.requestPetTransfer).not.toHaveBeenCalled();
+  });
+
   it("supports exact pet lookup without selecting an owner for an incoming request", async () => {
     const otherPet = { ...directoryPet, ownerAccountId: "owner-2", ownerDisplayName: "Иван Петров", ownerProfileRevision: 3 };
+    mocks.searchPetDirectory.mockResolvedValue({ items: [otherPet], page: 1, pageSize: 10, total: 1, pageCount: 1 });
     mocks.lookupPetDirectory.mockResolvedValue(otherPet);
     const wrapper = mount(PetTransferDialog, {
       props: { modelValue: true, mode: "incoming" },
@@ -151,6 +218,7 @@ describe("pet transfer overlay", () => {
     await searchForms[1]!.get('input[type="search"]').setValue("pet-1");
     await searchForms[1]!.trigger("submit");
     await flushPromises();
+    expect(mocks.searchPetDirectory).toHaveBeenCalledWith("", "pet-1", 1, 10, "pet", "", true);
     expect(wrapper.text()).toContain("Иван Петров");
     await wrapper.get('button[title="Выбрать питомца"]').trigger("click");
     expect(wrapper.get('[role="dialog"]').text()).toContain("Подтвердить запрос передачи");
@@ -163,6 +231,20 @@ describe("pet transfer overlay", () => {
       expectedFromOwnerProfileRevision: 3, expectedToOwnerProfileRevision: 2,
       ownershipLossAcknowledged: false,
     }));
+  });
+
+  it("continues to reject an exact lookup of the current Owner's pet", async () => {
+    const wrapper = mount(PetTransferDialog, {
+      props: { modelValue: true, mode: "incoming" },
+      global: { plugins: [createPinia()] },
+    });
+    const petForm = wrapper.findAll("form.directory-dialog-search")[1]!;
+    await petForm.get('input[type="search"]').setValue("pet-1");
+    await petForm.trigger("submit");
+    await flushPromises();
+
+    expect(wrapper.get('[role="alert"]').text()).toContain("собственного питомца");
+    expect(wrapper.find('button[title="Выбрать питомца"]').exists()).toBe(false);
   });
 
   it("keeps stale search errors inside the overlay and preserves the selected review", async () => {
@@ -199,7 +281,45 @@ describe("pet transfer overlay", () => {
     await petForm.trigger("submit");
     await flushPromises();
 
-    expect(mocks.searchPetDirectory).toHaveBeenCalledWith("", "Еж", 1, 10, "pet", "owner-2");
+    expect(mocks.searchPetDirectory).toHaveBeenCalledWith("", "Еж", 1, 10, "pet", "owner-2", true);
+  });
+
+  it("does not show pets that already have a pending transfer", async () => {
+    const otherPet = { ...directoryPet, ownerAccountId: "owner-2", ownerDisplayName: "Иван Петров", ownerProfileRevision: 3 };
+    state.medical.transferRequests = [transfer({ petId: otherPet.petId })];
+    mocks.searchPetDirectory.mockResolvedValue({ items: [otherPet], page: 1, pageSize: 10, total: 1, pageCount: 1 });
+    const wrapper = mount(PetTransferDialog, {
+      props: { modelValue: true, mode: "incoming" },
+      global: { plugins: [createPinia()] },
+    });
+    const petForm = wrapper.findAll("form.directory-dialog-search")[1]!;
+    await petForm.get('input[type="search"]').setValue("pet-1");
+    await petForm.trigger("submit");
+    await flushPromises();
+
+    expect(mocks.searchPetDirectory).toHaveBeenCalledWith("", "pet-1", 1, 10, "pet", "", true);
+    expect(wrapper.find('button[title="Выбрать питомца"]').exists()).toBe(false);
+    expect(wrapper.text()).toContain("Питомцы не найдены");
+  });
+
+  it("removes a pet if its transfer becomes pending after the search", async () => {
+    const otherPet = { ...directoryPet, ownerAccountId: "owner-2", ownerDisplayName: "Иван Петров", ownerProfileRevision: 3 };
+    mocks.searchPetDirectory.mockResolvedValue({ items: [otherPet], page: 1, pageSize: 10, total: 1, pageCount: 1 });
+    const wrapper = mount(PetTransferDialog, {
+      props: { modelValue: true, mode: "incoming" },
+      global: { plugins: [createPinia()] },
+    });
+    const petForm = wrapper.findAll("form.directory-dialog-search")[1]!;
+    await petForm.get('input[type="search"]').setValue("pet-1");
+    await petForm.trigger("submit");
+    await flushPromises();
+    state.medical.transferRequests = [transfer({ petId: otherPet.petId })];
+
+    await wrapper.get('button[title="Выбрать питомца"]').trigger("click");
+
+    expect(wrapper.get('[role="alert"]').text()).toContain("уже ожидает решения");
+    expect(wrapper.find('button[title="Выбрать питомца"]').exists()).toBe(false);
+    expect(wrapper.get('[role="dialog"]').text()).toContain("Запросить передачу");
   });
 
   it("resets on opening, keeps search errors local, and closes through the overlay action", async () => {
@@ -258,7 +378,8 @@ describe("pet transfer overlay", () => {
       props: { modelValue: true, mode: "incoming" }, global: { plugins: [createPinia()] },
     });
     const selected = { ...directoryPet, ownerAccountId: "owner-2", ownerDisplayName: "Иван Петров", ownerProfileRevision: 3 };
-    mocks.lookupPetDirectory.mockResolvedValueOnce(selected).mockResolvedValueOnce({ ...selected, ownerProfileRevision: 4 });
+    mocks.searchPetDirectory.mockResolvedValueOnce({ items: [selected], page: 1, pageSize: 10, total: 1, pageCount: 1 });
+    mocks.lookupPetDirectory.mockResolvedValueOnce({ ...selected, ownerProfileRevision: 4 });
     const petForm = incoming.findAll("form.directory-dialog-search")[1]!;
     await petForm.get('input[type="search"]').setValue("pet-1");
     await petForm.trigger("submit");
@@ -271,6 +392,72 @@ describe("pet transfer overlay", () => {
 });
 
 describe("pet transfer request manager", () => {
+  it("opens the outgoing dialog from the transfer list and disables it without eligible pets", async () => {
+    state.medical.pets = [pet];
+    const wrapper = mount(PetTransferManager, { global: { plugins: [createPinia()] } });
+    const outgoingButton = wrapper.get('button[title="Передать питомца"]');
+    expect(outgoingButton.getComponent(AppIcon).props("name")).toBe("building-circle-arrow-right");
+    expect(wrapper.get('button[title="Запросить передачу"]').getComponent(AppIcon).props("name"))
+      .toBe("arrow-right-to-city");
+
+    await outgoingButton.trigger("click");
+    expect(wrapper.get('[role="dialog"] select[aria-label="Питомец для передачи"]').exists()).toBe(true);
+    await wrapper.get('[role="dialog"] button[title="Закрыть"]').trigger("click");
+
+    state.medical = {
+      ...state.medical,
+      transferRequests: [transfer({ initiatedByAccountId: "owner-1" })],
+    };
+    const blocked = mount(PetTransferManager, { global: { plugins: [createPinia()] } });
+    expect(blocked.get('button[title="Нет питомцев, доступных для передачи"]').attributes("disabled")).toBeDefined();
+  });
+
+  it("opens an emailed pending request directly for authoritative confirmation", async () => {
+    state.medical.transferRequests = [transfer()];
+    const wrapper = mount(PetTransferManager, {
+      props: { linkedRequestId: "transfer-1" },
+      global: { plugins: [createPinia()] },
+    });
+    await flushPromises();
+
+    expect(mocks.refresh).toHaveBeenCalledOnce();
+    expect(wrapper.get('[role="alertdialog"]').text()).toContain("Принять передачу питомца?");
+    expect(wrapper.get('[role="alertdialog"]').text()).toContain("Кошка Ёжик");
+  });
+
+  it("waits for synchronization before opening an emailed request", async () => {
+    state.medical.transferRequests = [transfer()];
+    state.sync = reactive({ ...state.sync, syncing: true });
+    const wrapper = mount(PetTransferManager, {
+      props: { linkedRequestId: "transfer-1" },
+      global: { plugins: [createPinia()] },
+    });
+    await flushPromises();
+    expect(mocks.refresh).not.toHaveBeenCalled();
+
+    state.sync.syncing = false;
+    await flushPromises();
+
+    expect(mocks.refresh).toHaveBeenCalledOnce();
+    expect(wrapper.get('[role="alertdialog"]').text()).toContain("Принять передачу питомца?");
+  });
+
+  it("does not open confirmation for an unknown or self-initiated emailed request", async () => {
+    state.medical.transferRequests = [transfer({ initiatedByAccountId: "owner-1" })];
+    const wrapper = mount(PetTransferManager, {
+      props: { linkedRequestId: "missing-transfer" },
+      global: { plugins: [createPinia()] },
+    });
+    await flushPromises();
+    expect(mocks.refresh).not.toHaveBeenCalled();
+
+    await wrapper.setProps({ linkedRequestId: "transfer-1" });
+    await flushPromises();
+
+    expect(mocks.refresh).not.toHaveBeenCalled();
+    expect(wrapper.find('[role="alertdialog"]').exists()).toBe(false);
+  });
+
   it("renders table-first rows with the current viewer marked and handles accept, reject, and cancel overlays", async () => {
     state.medical.transferRequests = [
       transfer(),
@@ -372,6 +559,11 @@ describe("pet transfer request manager", () => {
     expect(wrapper.text()).toContain("Отклонена");
     expect(wrapper.text()).toContain("Отменена");
     expect(wrapper.text()).toContain("Устарела");
+    const completedRow = wrapper.findAll(".transfer-table tbody tr")
+      .find((row) => row.text().includes("Завершена"))!;
+    const completedActions = completedRow.findAll("td").at(-1)!;
+    expect(completedActions.classes()).toContain("is-empty");
+    expect(completedActions.text()).toBe("");
 
     await wrapper.get('button[title="Принять передачу"]').trigger("click");
     await flushPromises();
@@ -389,7 +581,9 @@ describe("pet transfer request manager", () => {
     state.medical.transferRequests = [transfer()];
     state.sync.syncing = true;
     const wrapper = mount(PetTransferManager, { global: { plugins: [createPinia()] } });
-    expect(wrapper.get('button[aria-label*="синхронизируются"]').attributes("disabled")).toBeDefined();
+    expect(wrapper.findAll('button[aria-label*="синхронизируются"]')).toHaveLength(2);
+    expect(wrapper.findAll('button[aria-label*="синхронизируются"]')
+      .every((button) => button.attributes("disabled") !== undefined)).toBe(true);
     expect(wrapper.get('button[title="Принять передачу"]').attributes("disabled")).toBeDefined();
     state.sync.syncing = false;
   });

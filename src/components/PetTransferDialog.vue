@@ -41,6 +41,7 @@ const petPage = ref(1);
 const petPageSize = ref(10);
 const petTotal = ref(0);
 const selectedDirectoryPet = ref<DirectoryPetDto | null>(null);
+const selectedOutgoingPet = ref<PetProfile | null>(null);
 const ownershipLossAcknowledged = ref(false);
 const reviewHeading = ref<HTMLElement | null>(null);
 
@@ -48,7 +49,20 @@ const title = computed(() => step.value === "confirm"
   ? props.mode === "outgoing" ? "Подтвердить передачу питомца" : "Подтвердить запрос передачи"
   : props.mode === "outgoing" ? "Передать питомца" : "Запросить передачу");
 const currentAccountId = computed(() => appState.session.accountId ?? "");
-const reviewPet = computed(() => props.mode === "outgoing" ? props.pet : selectedDirectoryPet.value);
+const reviewPet = computed(() => props.mode === "outgoing"
+  ? props.pet ?? selectedOutgoingPet.value
+  : selectedDirectoryPet.value);
+const outgoingPets = computed(() => props.mode === "outgoing" && !props.pet
+  ? appState.medical.pets.filter((candidate) => !candidate.tombstoned && !hasPendingTransfer(candidate.petId))
+  : []);
+const selectedOutgoingPetId = computed({
+  get: () => selectedOutgoingPet.value?.petId ?? "",
+  set: (petId: string) => {
+    const pet = outgoingPets.value.find((candidate) => candidate.petId === petId);
+    if (pet) selectOutgoingPet(pet);
+    else selectedOutgoingPet.value = null;
+  },
+});
 const reviewFromOwner = computed(() => props.mode === "outgoing"
   ? {
       accountId: currentAccountId.value,
@@ -63,6 +77,10 @@ const reviewToOwner = computed(() => props.mode === "outgoing"
       accountId: currentAccountId.value,
       displayName: [appState.control.profile?.firstName, appState.control.profile?.patronymic, appState.control.profile?.lastName].filter(Boolean).join(" "),
     });
+
+function hasPendingTransfer(petId: string) {
+  return appState.medical.transferRequests.some((request) => request.petId === petId && request.status === "pending");
+}
 
 function reset() {
   busy.value = false;
@@ -82,6 +100,7 @@ function reset() {
   petPageSize.value = 10;
   petTotal.value = 0;
   selectedDirectoryPet.value = null;
+  selectedOutgoingPet.value = null;
   ownershipLossAcknowledged.value = false;
 }
 
@@ -110,7 +129,7 @@ async function findOwners(page = ownerPage.value) {
 
 function selectOwner(owner: DirectoryProfileDto) {
   selectedOwner.value = owner;
-  if (props.mode === "outgoing") openConfirmation();
+  if (props.mode === "outgoing" && reviewPet.value) openConfirmation();
   else {
     petResults.value = [];
     petSearchPerformed.value = false;
@@ -126,18 +145,16 @@ async function findPets(page = petPage.value) {
   try {
     const query = petQuery.value.trim();
     if (!query) throw new Error("Укажите кличку или полный идентификатор питомца.");
-    if (!selectedOwner.value) {
-      const pet = await lookupPetDirectory(query);
-      if (pet.ownerAccountId === currentAccountId.value) throw new Error("Нельзя запросить передачу собственного питомца.");
-      petResults.value = [pet];
-      petPage.value = 1;
-      petTotal.value = 1;
-    } else {
-      const result = await searchPetDirectory("", query, page, petPageSize.value, "pet", selectedOwner.value.accountId);
-      petPage.value = result.page;
-      petResults.value = result.items;
-      petTotal.value = result.total;
+    const exactLookup = !selectedOwner.value;
+    const result = await searchPetDirectory("", query, exactLookup ? 1 : page, petPageSize.value, "pet", selectedOwner.value?.accountId ?? "", true);
+    const exactItems = exactLookup ? result.items.filter((pet) => pet.petId === query) : result.items;
+    const availableItems = exactItems.filter((pet) => !hasPendingTransfer(pet.petId));
+    if (exactLookup && availableItems.some((pet) => pet.ownerAccountId === currentAccountId.value)) {
+      throw new Error("Нельзя запросить передачу собственного питомца.");
     }
+    petPage.value = exactLookup ? 1 : result.page;
+    petResults.value = availableItems;
+    petTotal.value = Math.max(0, result.total - (result.items.length - availableItems.length));
     petSearchPerformed.value = true;
   } catch (reason) {
     error.value = reason instanceof Error ? reason.message : "Не удалось найти питомца.";
@@ -147,8 +164,25 @@ async function findPets(page = petPage.value) {
 }
 
 function selectPet(pet: DirectoryPetDto) {
+  if (hasPendingTransfer(pet.petId)) {
+    petResults.value = petResults.value.filter((result) => result.petId !== pet.petId);
+    petTotal.value = Math.max(0, petTotal.value - 1);
+    error.value = "Передача этого питомца уже ожидает решения.";
+    return;
+  }
   selectedDirectoryPet.value = pet;
   openConfirmation();
+}
+
+function selectOutgoingPet(pet: PetProfile) {
+  if (hasPendingTransfer(pet.petId)) {
+    selectedOutgoingPet.value = null;
+    error.value = "Передача этого питомца уже ожидает решения.";
+    return;
+  }
+  selectedOutgoingPet.value = pet;
+  error.value = "";
+  if (selectedOwner.value) openConfirmation();
 }
 
 function openConfirmation() {
@@ -182,9 +216,12 @@ async function requestTransfer() {
     let currentPet: DirectoryPetDto;
     let targetOwner: DirectoryProfileDto | null = null;
     if (props.mode === "outgoing") {
-      if (!props.pet || !selectedOwner.value) throw new Error("Выберите принимающего владельца.");
-      currentPet = await lookupPetDirectory(props.pet.petId);
-      if (currentPet.ownerAccountId !== currentAccountId.value || currentPet.revision !== props.pet.revision) {
+      const outgoingPet = props.pet ?? selectedOutgoingPet.value;
+      if (!outgoingPet) throw new Error("Выберите питомца для передачи.");
+      if (!selectedOwner.value) throw new Error("Выберите принимающего владельца.");
+      if (hasPendingTransfer(outgoingPet.petId)) throw new Error("Передача этого питомца уже ожидает решения.");
+      currentPet = await lookupPetDirectory(outgoingPet.petId);
+      if (currentPet.ownerAccountId !== currentAccountId.value || currentPet.revision !== outgoingPet.revision) {
         throw new Error("Данные питомца или владельца изменились. Обновите страницу.");
       }
       const owners = await searchOwnerDirectory(selectedOwner.value.accountId, 1, 50);
@@ -240,6 +277,16 @@ function changePetPageSize(pageSize: number) { petPageSize.value = pageSize; pet
 
       <template v-if="step === 'search'">
         <p v-if="mode === 'outgoing' && pet"><strong>{{ pet.species }} {{ pet.name }}</strong><small class="transfer-identity-id">{{ pet.petId }}</small></p>
+        <label v-if="mode === 'outgoing' && !pet" class="transfer-owned-pet-selector">
+          <span>Питомец для передачи</span>
+          <select v-model="selectedOutgoingPetId" aria-label="Питомец для передачи" :disabled="!outgoingPets.length">
+            <option value="" disabled>Выберите питомца</option>
+            <option v-for="ownedPet in outgoingPets" :key="ownedPet.petId" :value="ownedPet.petId">
+              {{ ownedPet.species }} {{ ownedPet.name }}
+            </option>
+          </select>
+        </label>
+        <p v-if="mode === 'outgoing' && !pet && !outgoingPets.length">Нет питомцев, доступных для передачи.</p>
         <form class="form-stack directory-dialog-search" @submit.prevent="findOwners(1)">
           <label>
             <span>{{ mode === 'outgoing' ? 'ФИО принимающего владельца, его часть или полный идентификатор' : 'ФИО текущего владельца, его часть или полный идентификатор' }}</span>
@@ -253,6 +300,14 @@ function changePetPageSize(pageSize: number) { petPageSize.value = pageSize; pet
         </div>
         <p v-if="ownerSearchPerformed && !ownerResults.length">Владельцы не найдены.</p>
         <AppPaginator v-if="ownerTotal" :page="ownerPage" :page-size="ownerPageSize" :total-items="ownerTotal" aria-label="Навигация по найденным владельцам" @update:page="changeOwnerPage" @update:page-size="changeOwnerPageSize" />
+
+        <template v-if="mode === 'outgoing' && !pet">
+          <div v-if="selectedOwner" class="transfer-selected-owner">
+            <span>Выбран принимающий владелец</span>
+            <PersonIdentity :display-name="selectedOwner.displayName" :account-id="selectedOwner.accountId" />
+            <button class="outline-action inline access-icon-action" type="button" title="Сбросить владельца" aria-label="Сбросить владельца" @click="selectedOwner = null"><AppIcon name="close" /></button>
+          </div>
+        </template>
 
         <template v-if="mode === 'incoming'">
           <div v-if="selectedOwner" class="transfer-selected-owner">

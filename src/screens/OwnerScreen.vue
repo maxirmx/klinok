@@ -113,6 +113,7 @@ const selectedPet = computed(() =>
 );
 const isHome = computed(() => props.scenarioId === "owner-home");
 const isTransfers = computed(() => props.scenarioId === "owner-transfers");
+const linkedTransferRequestId = computed(() => typeof route.query.request === "string" ? route.query.request : "");
 const isCreate = computed(() => props.scenarioId === "owner-pet-create");
 const isEdit = computed(() => props.scenarioId === "owner-pet-edit");
 const isAccess = computed(() => props.scenarioId === "owner-pet-access");
@@ -175,7 +176,6 @@ function updateMedicalSort(value: string) { medicalSort.value = value as "desc" 
 
 const pageTitle = computed(() => {
   if (isHome.value) return "Мои питомцы";
-  if (isTransfers.value) return "Передачи питомцев";
   if (isCreate.value) return "Добавить питомца";
   if (isEdit.value) return selectedPet.value ? `Редактировать: ${selectedPet.value.name}` : "Редактировать питомца";
   if (isAccess.value) return "Доступ врачей";
@@ -701,11 +701,13 @@ async function confirmMedicalRecord() {
 
 <template>
   <WorkspaceShell role="owner" title="Кабинет владельца" :profile-name="profileName" @sign-out="signOut">
-    <div v-if="isHome || isTransfers || isForm || isAccess || !selectedPet" class="owner-section-heading owner-page-heading">
+    <div
+      v-if="!isTransfers && (isHome || isForm || isAccess || !selectedPet)"
+      class="owner-section-heading owner-page-heading"
+    >
       <div>
         <h2>{{ pageTitle }}</h2>
         <p v-if="isHome">Профили и медицинская история ваших животных</p>
-        <p v-else-if="isTransfers">Создавайте и обрабатывайте запросы передачи питомцев.</p>
         <p v-else-if="isAccess">Управляйте запросами, доступом и правом делегирования.</p>
       </div>
       <div v-if="isHome" class="row-actions owner-page-heading-actions">
@@ -780,7 +782,7 @@ async function confirmMedicalRecord() {
       </div>
     </section>
 
-    <PetTransferManager v-else-if="isTransfers" />
+    <PetTransferManager v-else-if="isTransfers" :linked-request-id="linkedTransferRequestId" />
 
     <section v-else-if="isForm && (isCreate || selectedPet)" class="owner-form-layout">
       <form class="panel form-stack owner-pet-form" @submit.prevent="savePet">

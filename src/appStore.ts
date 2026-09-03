@@ -288,7 +288,7 @@ export async function updateAdministratorUserProfile(accountId: string, input: P
   }
 }
 export function lookupPetDirectory(petId: string): Promise<DirectoryPetDto> { return auth.lookupDirectoryPet(petId); }
-export function searchPetDirectory(owner = "", pet = "", page = 1, pageSize = 20, sort = "owner", ownerAccountId = ""): Promise<DirectoryPageDto<DirectoryPetDto>> { return auth.searchDirectoryPets(owner, pet, page, pageSize, sort, ownerAccountId); }
+export function searchPetDirectory(owner = "", pet = "", page = 1, pageSize = 20, sort = "owner", ownerAccountId = "", transferableOnly = false): Promise<DirectoryPageDto<DirectoryPetDto>> { return auth.searchDirectoryPets(owner, pet, page, pageSize, sort, ownerAccountId, transferableOnly); }
 export function loadDoctorPetAccesses(query = "", status: DoctorPetAccessDto["status"] | "all" = "all", page = 1, pageSize = 20, sort = "owner", direction = "asc"): Promise<DirectoryPageDto<DoctorPetAccessDto>> { return auth.getMyPetAccesses(query, status, page, pageSize, sort, direction); }
 export async function updateCredentials(input: { email?: string; password?: string }): Promise<void> { const result = await auth.updateCredentials(input); state.session = { ...state.session, email: result.email }; }
 export async function switchRole(role: Role): Promise<void> {

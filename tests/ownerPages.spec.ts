@@ -179,6 +179,7 @@ async function mountAt(path: string, scenarioId: string, attachToDocument = fals
     history: createMemoryHistory(),
     routes: [
       { path: "/owner/home", component: { template: "<div />" } },
+      { path: "/owner/transfers", component: { template: "<div />" } },
       { path: "/owner/pets/new", component: { template: "<div />" } },
       { path: "/owner/pets/:petId", component: { template: "<div />" } },
       { path: "/owner/pets/:petId/edit", component: { template: "<div />" } },
@@ -240,6 +241,14 @@ afterEach(() => {
 });
 
 describe("Owner pages", () => {
+  it("does not repeat the transfer manager heading on the transfers page", async () => {
+    const wrapper = await mountAt("/owner/transfers", "owner-transfers");
+
+    expect(wrapper.find(".owner-page-heading").exists()).toBe(false);
+    expect(wrapper.get(".pet-transfer-manager h3").text()).toBe("Запросы передачи");
+    expect(wrapper.text()).not.toContain("Создавайте и обрабатывайте запросы передачи питомцев.");
+  });
+
   it("shows access and medical approvals by pet and hides them after resolution", async () => {
     const pendingAccess = {
       requestId: "request-1",

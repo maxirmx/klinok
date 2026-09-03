@@ -149,9 +149,10 @@ export class AuthClient {
     });
   }
   lookupDirectoryPet(petId: string) { return this.request<DirectoryPetDto>(`/api/directory/pets/${encodeURIComponent(petId)}`); }
-  searchDirectoryPets(owner = "", pet = "", page = 1, pageSize = 20, sort = "owner", ownerAccountId = "") {
+  searchDirectoryPets(owner = "", pet = "", page = 1, pageSize = 20, sort = "owner", ownerAccountId = "", transferableOnly = false) {
     const params = new URLSearchParams({ owner, pet, page: String(page), pageSize: String(pageSize), sort, direction: "asc" });
     if (ownerAccountId) params.set("ownerAccountId", ownerAccountId);
+    if (transferableOnly) params.set("transferableOnly", "true");
     return this.request<DirectoryPageDto<DirectoryPetDto>>(`/api/directory/pets?${params}`);
   }
   getMyDirectoryPets(query = "", page = 1, pageSize = 20, sort = "owner", direction = "asc") {

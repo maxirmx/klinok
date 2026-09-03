@@ -310,7 +310,8 @@ describe("application store orchestration", () => {
     expect(harness.auth.lookupDirectoryProfiles).toHaveBeenCalledTimes(2);
     await store.updateAdministratorUserProfile("account-2", { firstName: "Иван", lastName: "Врач", expectedRevision: 2 });
     await store.lookupPetDirectory("pet-1");
-    await store.searchPetDirectory("Анна", "Барс", 2, 10, "owner");
+    await store.searchPetDirectory("Анна", "Барс", 2, 10, "owner", "owner-2", true);
+    expect(harness.auth.searchDirectoryPets).toHaveBeenCalledWith("Анна", "Барс", 2, 10, "owner", "owner-2", true);
     await store.loadDoctorPetAccesses("Барс", "granted", 2, 10, "pet", "desc");
     await store.updateCredentials({ email: "new@example.ru" });
     expect(store.appState.session.email).toBe("new@example.ru");

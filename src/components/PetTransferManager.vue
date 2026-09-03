@@ -3,7 +3,7 @@
 // All rights reserved.
 // This file is a part of Klinok application
 
-import { computed, ref } from "vue";
+import { computed, ref, watch } from "vue";
 import type { PetTransferRequest } from "@klinok/contracts";
 import { appState, requireRepository } from "../appStore";
 import { useAlertStore } from "../stores/alert";
@@ -14,11 +14,14 @@ import ModalDialog from "./ModalDialog.vue";
 import PersonIdentity from "./PersonIdentity.vue";
 import PetTransferDialog from "./PetTransferDialog.vue";
 
+const props = defineProps<{ linkedRequestId?: string }>();
+
 const alertStore = useAlertStore();
 const pageSizes = [10, 20, 50] as const;
 const page = ref(1);
 const pageSize = ref<(typeof pageSizes)[number]>(10);
 const requestDialogOpen = ref(false);
+const outgoingDialogOpen = ref(false);
 const acceptTarget = ref<PetTransferRequest | null>(null);
 const acceptBusy = ref(false);
 const acceptError = ref("");
@@ -31,10 +34,19 @@ const rejectError = ref("");
 const cancelError = ref("");
 const rejectStale = ref(false);
 const cancelStale = ref(false);
+const handledLinkedRequestId = ref("");
 
 const currentAccountId = computed(() => appState.session.accountId ?? "");
 const actionsAvailable = computed(() => appState.repositoryConnected
   && appState.sync.connectionState === "connected" && !appState.sync.syncing);
+const transferablePets = computed(() => appState.medical.pets.filter((pet) => !pet.tombstoned
+  && !appState.medical.transferRequests.some((request) => request.petId === pet.petId && request.status === "pending")));
+const outgoingActionAvailable = computed(() => actionsAvailable.value && transferablePets.value.length > 0);
+const outgoingActionTitle = computed(() => !actionsAvailable.value
+  ? "Передача временно недоступна: данные синхронизируются"
+  : transferablePets.value.length
+    ? "Передать питомца"
+    : "Нет питомцев, доступных для передачи");
 const rows = computed(() => [...(appState.medical.transferRequests ?? [])]
   .sort((left, right) => right.createdAt.localeCompare(left.createdAt)));
 const pagedRows = computed(() => rows.value.slice((page.value - 1) * pageSize.value, page.value * pageSize.value));
@@ -125,6 +137,27 @@ async function openAccept(request: PetTransferRequest) {
   }
 }
 
+async function openLinkedRequest(requestId: string) {
+  if (!requestId || handledLinkedRequestId.value === requestId) return;
+  const requestIndex = rows.value.findIndex((request) => request.transferRequestId === requestId);
+  if (requestIndex < 0) return;
+  page.value = Math.floor(requestIndex / pageSize.value) + 1;
+  const request = rows.value[requestIndex]!;
+  if (request.status !== "pending" || initiatedByCurrent(request)) {
+    handledLinkedRequestId.value = requestId;
+    return;
+  }
+  if (!actionsAvailable.value) return;
+  handledLinkedRequestId.value = requestId;
+  await openAccept(request);
+}
+
+watch(
+  [() => props.linkedRequestId ?? "", rows, actionsAvailable],
+  ([requestId]) => { void openLinkedRequest(String(requestId)); },
+  { immediate: true },
+);
+
 async function acceptTransfer() {
   const target = acceptTarget.value;
   if (!target) return;
@@ -186,14 +219,24 @@ async function cancelTransfer() {
   <section class="panel pet-transfer-manager">
     <div class="owner-section-heading transfer-manager-heading">
       <div><h3>Запросы передачи</h3><p>Входящие и исходящие запросы сохраняют профиль и историю питомца.</p></div>
-      <button
-        class="primary-action inline owner-profile-action"
-        type="button"
-        :disabled="!actionsAvailable"
-        :title="actionsAvailable ? 'Запросить передачу' : 'Передача временно недоступна: данные синхронизируются'"
-        :aria-label="actionsAvailable ? 'Запросить передачу' : 'Передача временно недоступна: данные синхронизируются'"
-        @click="requestDialogOpen = true"
-      ><AppIcon name="arrow-right-to-city" /></button>
+      <div class="row-actions transfer-manager-actions">
+        <button
+          class="outline-action inline owner-profile-action"
+          type="button"
+          :disabled="!outgoingActionAvailable"
+          :title="outgoingActionTitle"
+          :aria-label="outgoingActionTitle"
+          @click="outgoingDialogOpen = true"
+        ><AppIcon name="building-circle-arrow-right" /></button>
+        <button
+          class="primary-action inline owner-profile-action"
+          type="button"
+          :disabled="!actionsAvailable"
+          :title="actionsAvailable ? 'Запросить передачу' : 'Передача временно недоступна: данные синхронизируются'"
+          :aria-label="actionsAvailable ? 'Запросить передачу' : 'Передача временно недоступна: данные синхронизируются'"
+          @click="requestDialogOpen = true"
+        ><AppIcon name="arrow-right-to-city" /></button>
+      </div>
     </div>
 
     <div class="owner-access-table-wrap">
@@ -206,7 +249,7 @@ async function cancelTransfer() {
             <td data-label="Новый владелец"><PersonIdentity :display-name="ownerDisplayName(request.toOwnerDisplayName, request.toOwnerAccountId)" :account-id="request.toOwnerAccountId" /></td>
             <td data-label="Статус"><span class="status-badge" :class="request.status">{{ statusLabel(request.status) }}</span></td>
             <td data-label="Создан">{{ createdAt(request.createdAt) }}</td>
-            <td data-label="Действия">
+            <td data-label="Действия" :class="{ 'is-empty': request.status !== 'pending' }">
               <div v-if="request.status === 'pending'" class="row-actions transfer-row-actions">
                 <button v-if="initiatedByCurrent(request)" class="outline-action inline danger-outline owner-profile-action" type="button" :disabled="!actionsAvailable" title="Отменить запрос передачи" aria-label="Отменить запрос передачи" @click="openCancel(request)"><AppIcon name="close" /></button>
                 <template v-else>
@@ -214,7 +257,6 @@ async function cancelTransfer() {
                   <button class="primary-action inline owner-profile-action" type="button" :disabled="!actionsAvailable" title="Принять передачу" aria-label="Принять передачу" @click="openAccept(request)"><AppIcon name="check" /></button>
                 </template>
               </div>
-              <span v-else>—</span>
             </td>
           </tr>
           <tr v-if="!pagedRows.length"><td class="doctor-access-empty" data-label="Результат" colspan="6">Запросов передачи пока нет.</td></tr>
@@ -224,6 +266,7 @@ async function cancelTransfer() {
     <AppPaginator v-if="rows.length" v-model:page="page" v-model:page-size="pageSize" :total-items="rows.length" :page-sizes="pageSizes" aria-label="Навигация по запросам передачи" />
 
     <PetTransferDialog v-model="requestDialogOpen" mode="incoming" />
+    <PetTransferDialog v-model="outgoingDialogOpen" mode="outgoing" />
 
     <ModalDialog v-model="acceptOpen" title="Принять передачу питомца?" :busy="acceptBusy" :role="acceptingAsCurrentOwner ? 'alertdialog' : 'dialog'">
       <form v-if="acceptTarget" class="form-stack directory-dialog-form transfer-review" @submit.prevent="acceptTransfer">
