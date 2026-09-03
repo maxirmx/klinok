@@ -1590,6 +1590,8 @@ label > input[type="checkbox"] {
 .form-alert.success { color: #067647; background: #ecfdf3; }
 .app-alert {
   display: flex;
+  width: 100%;
+  box-sizing: border-box;
   align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
@@ -1754,7 +1756,12 @@ label > input[type="checkbox"] {
   background: #f8faf9;
 }
 .workspace-sidebar { display: none; }
-.workspace-main { min-width: 0; min-height: 100dvh; background: #f8faf9; }
+.workspace-main {
+  --workspace-content-inline-padding: 14px;
+  min-width: 0;
+  min-height: 100dvh;
+  background: #f8faf9;
+}
 .workspace-topbar {
   position: sticky;
   top: 0;
@@ -1775,11 +1782,10 @@ label > input[type="checkbox"] {
   padding: 24px 14px calc(104px + env(safe-area-inset-bottom, 0px));
 }
 .workspace-main > .workspace-alert {
-  width: calc(100% - 28px);
-  max-width: 1320px;
-  margin: 16px auto 0;
+  width: auto;
+  max-width: none;
+  margin: 16px var(--workspace-content-inline-padding) 0;
 }
-.workspace-shell.pet-detail-view .workspace-main > .workspace-alert { max-width: none; }
 .workspace-content > .form-alert { max-width: 1320px; margin-right: auto; margin-left: auto; }
 [data-workspace-section] { scroll-margin-top: 98px; }
 .workspace-bottom-nav {
@@ -1923,7 +1929,8 @@ label > input[type="checkbox"] {
 .workspace-topbar h1 { font-size: 18px; line-height: 1.15; }
 .workspace-topbar :is(h1, p) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .workspace-topbar p { margin-top: 2px; font-size: 11px; }
-.workspace-content { padding: 10px 10px calc(76px + env(safe-area-inset-bottom, 0px)); }
+.workspace-main { --workspace-content-inline-padding: 10px; }
+.workspace-content { padding: 10px var(--workspace-content-inline-padding) calc(76px + env(safe-area-inset-bottom, 0px)); }
 .workspace-content .form-stack > label {
   display: grid;
   gap: 3px;
@@ -2009,6 +2016,7 @@ label > input[type="checkbox"] {
 
 @media (min-width: 768px) {
   .workspace-shell { grid-template-columns: 204px minmax(0, 1fr); }
+  .workspace-main { --workspace-content-inline-padding: 14px; }
   .workspace-sidebar {
     gap: 5px;
     padding: 14px 10px 10px;
@@ -2025,7 +2033,7 @@ label > input[type="checkbox"] {
   }
   .workspace-nav-item .app-icon { width: 18px; height: 18px; }
   .workspace-version { margin: 3px 9px 0; font-size: 9.5px; }
-  .workspace-content { padding: 12px 14px 24px; }
+  .workspace-content { padding: 12px var(--workspace-content-inline-padding) 24px; }
 }
 
 @media (max-width: 520px) {

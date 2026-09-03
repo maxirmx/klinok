@@ -123,6 +123,7 @@ describe("pet transfer overlay", () => {
         modelValue: true,
         title: "Запросить передачу",
         actionTitle: "Выбрать питомца",
+        currentAccountId: "owner-1",
         unavailablePetIds,
         unavailablePetError: "Передача уже ожидает решения.",
       },
@@ -133,6 +134,7 @@ describe("pet transfer overlay", () => {
     await form.get('.doctor-request-pet-field input[type="search"]').setValue("Ёжик");
     await form.trigger("submit");
     await flushPromises();
+    expect(wrapper.getComponent(PersonIdentity).props("displayName")).toBe("Алёна Ёлкина (Я)");
     const action = wrapper.get('button[title="Выбрать питомца"]');
 
     unavailablePetIds.push("pet-1");
@@ -169,6 +171,8 @@ describe("pet transfer overlay", () => {
 
     await wrapper.get('button[title="Выбрать владельца"]').trigger("click");
     expect(wrapper.get('[role="alertdialog"]').text()).toContain("Подтвердить передачу питомца");
+    expect(wrapper.get(".transfer-review").findAllComponents(PersonIdentity)
+      .map((identity) => identity.props("displayName"))).toEqual(["Алёна Ёлкина (Я)", "Иван Петров"]);
     expect(wrapper.find(".transfer-review > h3").exists()).toBe(false);
     expect(wrapper.get("fieldset.transfer-acknowledgement legend").classes()).toContain("visually-hidden");
     expect(wrapper.get("fieldset.transfer-acknowledgement label").findAll(":scope > *").map((child) => child.element.tagName)).toEqual(["INPUT", "SPAN"]);
@@ -272,6 +276,8 @@ describe("pet transfer overlay", () => {
     expect(wrapper.text()).toContain("Иван Петров");
     await wrapper.get('button[title="Выбрать питомца"]').trigger("click");
     expect(wrapper.get('[role="dialog"]').text()).toContain("Подтвердить запрос передачи");
+    expect(wrapper.get(".transfer-review").findAllComponents(PersonIdentity)
+      .map((identity) => identity.props("displayName"))).toEqual(["Иван Петров", "Алёна Ёлкина (Я)"]);
     expect(wrapper.find("fieldset.transfer-acknowledgement").exists()).toBe(false);
     await wrapper.get("form.transfer-review").trigger("submit");
     await flushPromises();
@@ -320,6 +326,24 @@ describe("pet transfer overlay", () => {
 
     expect(wrapper.get('[role="alert"]').text()).toContain("собственного питомца");
     expect(wrapper.find('button[title="Выбрать питомца"]').exists()).toBe(false);
+  });
+
+  it("marks the current Owner in outgoing transfer search results", async () => {
+    mocks.searchOwnerDirectory.mockResolvedValue({
+      items: [{ accountId: "owner-1", revision: 2, firstName: "Алёна", lastName: "Ёлкина", displayName: "Алёна Ёлкина", updatedAt: timestamp }],
+      page: 1, pageSize: 10, total: 1, pageCount: 1,
+    });
+    const wrapper = mount(PetTransferDialog, {
+      props: { modelValue: true, mode: "outgoing", pet },
+      global: { plugins: [createPinia()] },
+    });
+
+    await wrapper.get('input[type="search"]').setValue("Алёна");
+    await wrapper.get("form.directory-dialog-search").trigger("submit");
+    await flushPromises();
+
+    expect(wrapper.get(".directory-dialog-result").getComponent(PersonIdentity).props("displayName"))
+      .toBe("Алёна Ёлкина (Я)");
   });
 
   it("keeps stale search errors inside the overlay and preserves the selected review", async () => {
@@ -558,6 +582,8 @@ describe("pet transfer request manager", () => {
     await wrapper.get('button[title="Принять передачу"]').trigger("click");
     await flushPromises();
     const accept = wrapper.get('[role="alertdialog"]');
+    expect(accept.findAllComponents(PersonIdentity).map((identity) => identity.props("displayName")))
+      .toEqual(["Алёна Ёлкина (Я)", "Иван Петров"]);
     expect(accept.text()).toContain("потеряю доступ к профилю");
     await accept.get("form").trigger("submit");
     expect(accept.get('[role="alert"]').text()).toContain("Подтвердите потерю управления");
@@ -650,7 +676,9 @@ describe("pet transfer request manager", () => {
     await wrapper.get('[role="alertdialog"] button.outline-action').trigger("click");
     expect(wrapper.find('[role="alertdialog"]').exists()).toBe(false);
     await wrapper.get('button[title="Отменить запрос передачи"]').trigger("click");
-    await wrapper.get('[role="alertdialog"] button.outline-action').trigger("click");
+    const cancellationDialog = wrapper.get('[role="alertdialog"]');
+    expect(cancellationDialog.get("button.outline-action").text()).toBe("Сохранить запрос");
+    await cancellationDialog.get("button.outline-action").trigger("click");
     expect(wrapper.find('[role="alertdialog"]').exists()).toBe(false);
   });
 

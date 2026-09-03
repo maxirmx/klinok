@@ -198,11 +198,28 @@ async function requestIncomingTransfer(page: Page, petId: string): Promise<void>
   await result.getByRole("button", { name: "Выбрать питомца" }).click();
   const review = page.getByRole("dialog", { name: "Подтвердить запрос передачи" });
   await expect(review.locator(".transfer-review dl")).toBeFocused();
+  await expect(review.locator(".person-identity-name").nth(1)).toContainText("(Я)");
   await expect(review.getByRole("checkbox")).toHaveCount(0);
   await review.getByRole("button", { name: "Отправить запрос передачи" }).click();
   await expect(review).toBeHidden();
   await expect(trigger).toBeFocused();
-  await expect(page.getByText("Запрос передачи отправлен.")).toBeVisible();
+  const alert = page.locator(".workspace-alert");
+  await expect(alert).toContainText("Запрос передачи отправлен.");
+  const alertAlignment = await alert.evaluate((element) => {
+    const alertBox = element.getBoundingClientRect();
+    const content = document.querySelector<HTMLElement>(".workspace-content");
+    if (!content) throw new Error("Workspace content was not found.");
+    const contentBox = content.getBoundingClientRect();
+    const contentStyle = getComputedStyle(content);
+    return {
+      alertLeft: alertBox.left,
+      alertRight: alertBox.right,
+      contentLeft: contentBox.left + Number.parseFloat(contentStyle.paddingLeft),
+      contentRight: contentBox.right - Number.parseFloat(contentStyle.paddingRight),
+    };
+  });
+  expect(Math.abs(alertAlignment.alertLeft - alertAlignment.contentLeft)).toBeLessThanOrEqual(1);
+  expect(Math.abs(alertAlignment.alertRight - alertAlignment.contentRight)).toBeLessThanOrEqual(1);
 }
 
 test("pet card moves in both directions through one overlay flow", async ({ browser, request }) => {
@@ -360,6 +377,7 @@ test("pet card moves in both directions through one overlay flow", async ({ brow
   await ownerBResult.getByRole("button", { name: "Выбрать владельца" }).click();
   const outgoingReview = ownerAPage.getByRole("alertdialog", { name: "Подтвердить передачу питомца" });
   await expect(outgoingReview.locator(".transfer-review dl")).toBeFocused();
+  await expect(outgoingReview.locator(".person-identity-name").nth(0)).toContainText("(Я)");
   await expect(outgoingReview.locator(".transfer-review > h3")).toHaveCount(0);
   await expect(outgoingReview.locator(".transfer-acknowledgement legend")).toHaveClass("visually-hidden");
   const petNameBox = await outgoingReview.locator(".transfer-review dl > div").nth(0).locator("dd > strong").boundingBox();
@@ -419,6 +437,7 @@ test("pet card moves in both directions through one overlay flow", async ({ brow
   await expect(firstTransferRow).toContainText("Ожидает решения");
   const receiverAcceptance = ownerBPage.getByRole("dialog", { name: "Принять передачу питомца?" });
   await expect(receiverAcceptance).toBeVisible();
+  await expect(receiverAcceptance.locator(".person-identity-name").nth(1)).toContainText("(Я)");
   await expect(receiverAcceptance.getByRole("checkbox")).toHaveCount(0);
   await receiverAcceptance.getByRole("button", { name: "Принять передачу" }).click();
   await expect(ownerBPage.getByText("Передача питомца завершена.")).toBeVisible();
@@ -456,6 +475,7 @@ test("pet card moves in both directions through one overlay flow", async ({ brow
   await incomingRow.getByRole("button", { name: "Принять передачу" }).click();
   const staleAcceptance = ownerBPage.getByRole("alertdialog", { name: "Принять передачу питомца?" });
   await expect(staleAcceptance).toBeVisible();
+  await expect(staleAcceptance.locator(".person-identity-name").nth(0)).toContainText("(Я)");
   expect(await staleAcceptance.evaluate((element) => element.scrollWidth <= element.clientWidth + 1)).toBe(true);
   await staleAcceptance.getByRole("checkbox", { name: /потеряю доступ к профилю/ }).check();
 
@@ -464,6 +484,7 @@ test("pet card moves in both directions through one overlay flow", async ({ brow
   const initiatedRow = ownerAPage.locator(".transfer-table tbody tr").filter({ hasText: petId }).filter({ hasText: "Ожидает решения" });
   await initiatedRow.getByRole("button", { name: "Отменить запрос передачи" }).click();
   const cancelDialog = ownerAPage.getByRole("alertdialog", { name: "Отменить запрос передачи?" });
+  await expect(cancelDialog.getByRole("button", { name: "Сохранить запрос", exact: true })).toBeVisible();
   const destructiveConfirmation = cancelDialog.getByRole("button", { name: "Отменить запрос" });
   const destructiveConfirmationStyle = await destructiveConfirmation.evaluate((element) => {
     const style = getComputedStyle(element);

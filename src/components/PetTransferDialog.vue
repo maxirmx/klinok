@@ -81,6 +81,10 @@ function hasPendingTransfer(petId: string) {
   return appState.medical.transferRequests.some((request) => request.petId === petId && request.status === "pending");
 }
 
+function ownerDisplayName(displayName: string, accountId: string): string {
+  return accountId === currentAccountId.value ? `${displayName} (Я)` : displayName;
+}
+
 function incomingPetActionError(pet: DirectoryPetDto): string {
   if (pet.ownerAccountId === currentAccountId.value) return "Нельзя запросить передачу собственного питомца.";
   if (hasPendingTransfer(pet.petId)) return "Передача этого питомца уже ожидает решения.";
@@ -255,6 +259,7 @@ function changeOwnerPageSize(pageSize: number) { ownerPageSize.value = pageSize;
     action-title="Выбрать питомца"
     :busy="busy"
     :error="error"
+    :current-account-id="currentAccountId"
     transferable-only
     :excluded-owner-account-id="currentAccountId"
     excluded-owner-error="Нельзя запросить передачу собственного питомца."
@@ -296,7 +301,7 @@ function changeOwnerPageSize(pageSize: number) { ownerPageSize.value = pageSize;
           <button class="primary-action inline access-icon-action" type="submit" :disabled="busy" :title="busy ? 'Поиск владельца…' : 'Найти владельца'" :aria-label="busy ? 'Поиск владельца…' : 'Найти владельца'"><AppIcon name="search" /></button>
         </form>
         <div v-for="owner in ownerResults" :key="owner.accountId" class="list-row directory-dialog-result">
-          <PersonIdentity :display-name="owner.displayName" :account-id="owner.accountId" />
+          <PersonIdentity :display-name="ownerDisplayName(owner.displayName, owner.accountId)" :account-id="owner.accountId" />
           <button class="outline-action inline access-icon-action" type="button" title="Выбрать владельца" aria-label="Выбрать владельца" @click="selectOwner(owner)"><AppIcon name="check" /></button>
         </div>
         <p v-if="ownerSearchPerformed && !ownerResults.length">Владельцы не найдены.</p>
@@ -305,7 +310,7 @@ function changeOwnerPageSize(pageSize: number) { ownerPageSize.value = pageSize;
         <template v-if="mode === 'outgoing' && !pet">
           <div v-if="selectedOwner" class="transfer-selected-owner">
             <span>Выбран принимающий владелец</span>
-            <PersonIdentity :display-name="selectedOwner.displayName" :account-id="selectedOwner.accountId" />
+            <PersonIdentity :display-name="ownerDisplayName(selectedOwner.displayName, selectedOwner.accountId)" :account-id="selectedOwner.accountId" />
             <button class="outline-action inline access-icon-action" type="button" title="Сбросить владельца" aria-label="Сбросить владельца" @click="selectedOwner = null"><AppIcon name="close" /></button>
           </div>
         </template>
@@ -316,8 +321,8 @@ function changeOwnerPageSize(pageSize: number) { ownerPageSize.value = pageSize;
       <form v-else class="form-stack transfer-review" @submit.prevent="requestTransfer">
         <dl ref="reviewHeading" tabindex="-1" aria-label="Участники передачи">
           <div><dt>Питомец</dt><dd><strong>{{ reviewPet?.species }} {{ reviewPet?.name }}</strong><small>{{ reviewPet?.petId }}</small></dd></div>
-          <div><dt>Текущий владелец</dt><dd><PersonIdentity v-if="reviewFromOwner" :display-name="reviewFromOwner.displayName" :account-id="reviewFromOwner.accountId" /></dd></div>
-          <div><dt>Новый владелец</dt><dd><PersonIdentity :display-name="reviewToOwner?.displayName ?? ''" :account-id="reviewToOwner?.accountId ?? ''" /></dd></div>
+          <div><dt>Текущий владелец</dt><dd><PersonIdentity v-if="reviewFromOwner" :display-name="ownerDisplayName(reviewFromOwner.displayName, reviewFromOwner.accountId)" :account-id="reviewFromOwner.accountId" /></dd></div>
+          <div><dt>Новый владелец</dt><dd><PersonIdentity :display-name="ownerDisplayName(reviewToOwner?.displayName ?? '', reviewToOwner?.accountId ?? '')" :account-id="reviewToOwner?.accountId ?? ''" /></dd></div>
         </dl>
         <fieldset v-if="mode === 'outgoing'" class="transfer-acknowledgement">
           <legend class="visually-hidden">Подтверждение текущего владельца</legend>

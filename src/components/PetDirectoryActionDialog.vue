@@ -19,6 +19,7 @@ const props = withDefaults(defineProps<{
   searchTitle?: string;
   searchBusyTitle?: string;
   closeTitle?: string;
+  currentAccountId?: string;
   transferableOnly?: boolean;
   excludedOwnerAccountId?: string;
   excludedOwnerError?: string;
@@ -31,6 +32,7 @@ const props = withDefaults(defineProps<{
   searchTitle: "Найти питомца",
   searchBusyTitle: "Поиск питомца…",
   closeTitle: "Закрыть",
+  currentAccountId: "",
   transferableOnly: false,
   excludedOwnerAccountId: "",
   excludedOwnerError: "Питомец этого владельца недоступен для операции.",
@@ -58,6 +60,10 @@ function isExcludedOwner(pet: DirectoryPetDto): boolean {
 
 function isUnavailable(pet: DirectoryPetDto): boolean {
   return props.unavailablePetIds.includes(pet.petId);
+}
+
+function ownerDisplayName(pet: DirectoryPetDto): string {
+  return pet.ownerAccountId === props.currentAccountId ? `${pet.ownerDisplayName} (Я)` : pet.ownerDisplayName;
 }
 
 function clearErrors() {
@@ -160,7 +166,7 @@ function selectPet(pet: DirectoryPetDto) {
         <div>
           <strong>{{ pet.species }} {{ pet.name }}</strong>
           <small>{{ pet.petId }}</small>
-          <PersonIdentity :display-name="pet.ownerDisplayName" :account-id="pet.ownerAccountId" />
+          <PersonIdentity :display-name="ownerDisplayName(pet)" :account-id="pet.ownerAccountId" />
         </div>
         <button
           class="primary-action inline access-icon-action"

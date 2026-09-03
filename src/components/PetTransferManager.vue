@@ -273,8 +273,8 @@ async function cancelTransfer() {
         <p v-if="acceptError" class="form-alert error" role="alert">{{ acceptError }}</p>
         <dl>
           <div><dt>Питомец</dt><dd><strong>{{ acceptTarget.petSpecies }} {{ acceptTarget.petName }}</strong><small>{{ acceptTarget.petId }}</small></dd></div>
-          <div><dt>Текущий владелец</dt><dd><PersonIdentity :display-name="acceptTarget.fromOwnerDisplayName" :account-id="acceptTarget.fromOwnerAccountId" /></dd></div>
-          <div><dt>Новый владелец</dt><dd><PersonIdentity :display-name="acceptTarget.toOwnerDisplayName" :account-id="acceptTarget.toOwnerAccountId" /></dd></div>
+          <div><dt>Текущий владелец</dt><dd><PersonIdentity :display-name="ownerDisplayName(acceptTarget.fromOwnerDisplayName, acceptTarget.fromOwnerAccountId)" :account-id="acceptTarget.fromOwnerAccountId" /></dd></div>
+          <div><dt>Новый владелец</dt><dd><PersonIdentity :display-name="ownerDisplayName(acceptTarget.toOwnerDisplayName, acceptTarget.toOwnerAccountId)" :account-id="acceptTarget.toOwnerAccountId" /></dd></div>
         </dl>
         <fieldset v-if="acceptingAsCurrentOwner" class="transfer-acknowledgement">
           <legend class="visually-hidden">Подтверждение текущего владельца</legend>
@@ -288,6 +288,6 @@ async function cancelTransfer() {
     </ModalDialog>
 
     <ConfirmationDialog v-model="rejectOpen" title="Отклонить запрос передачи?" :description="rejectTarget ? `Передача питомца ${rejectTarget.petName} не состоится.` : ''" confirm-label="Отклонить запрос" :error="rejectError" :busy="decisionBusy" :confirm-disabled="rejectStale" @confirm="rejectTransfer" />
-    <ConfirmationDialog v-model="cancelOpen" title="Отменить запрос передачи?" :description="cancelTarget ? `Запрос передачи питомца ${cancelTarget.petName} будет отменён.` : ''" confirm-label="Отменить запрос" :error="cancelError" :busy="decisionBusy" :confirm-disabled="cancelStale" @confirm="cancelTransfer" />
+    <ConfirmationDialog v-model="cancelOpen" title="Отменить запрос передачи?" :description="cancelTarget ? `Запрос передачи питомца ${cancelTarget.petName} будет отменён.` : ''" confirm-label="Отменить запрос" cancel-label="Сохранить запрос" :error="cancelError" :busy="decisionBusy" :confirm-disabled="cancelStale" @confirm="cancelTransfer" />
   </section>
 </template>
