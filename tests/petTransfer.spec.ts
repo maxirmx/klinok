@@ -626,6 +626,7 @@ describe("pet transfer request manager", () => {
     ]);
     expect(rows[0]!.findAll(".transfer-row-actions button").map((button) => button.attributes("title")))
       .toEqual(["Принять передачу", "Отклонить запрос передачи"]);
+    expect(rows.every((row) => row.classes().includes("transfer-row-has-actions"))).toBe(true);
 
     await wrapper.get('button[title="Принять передачу"]').trigger("click");
     await flushPromises();
@@ -651,6 +652,18 @@ describe("pet transfer request manager", () => {
     await wrapper.get('[role="alertdialog"] button.primary-action').trigger("click");
     await flushPromises();
     expect(mocks.cancelPetTransfer).toHaveBeenCalledWith("transfer-2");
+  });
+
+  it("marks only pending transfer rows for the compact status action layout", () => {
+    state.medical.transferRequests = [
+      transfer(),
+      transfer({ transferRequestId: "transfer-2", status: "rejected" }),
+    ];
+    const wrapper = mount(PetTransferManager, { global: { plugins: [createPinia()] } });
+    const rows = wrapper.findAll(".transfer-table tbody tr");
+
+    expect(rows[0]!.classes()).toContain("transfer-row-has-actions");
+    expect(rows[1]!.classes()).not.toContain("transfer-row-has-actions");
   });
 
   it("shows the new Owner's retained-access choice without letting the current Owner change it", async () => {
@@ -758,7 +771,9 @@ describe("pet transfer request manager", () => {
     await wrapper.get('[role="alertdialog"] button[title="Отмена"]').trigger("click");
     expect(wrapper.find('[role="alertdialog"]').exists()).toBe(false);
     await wrapper.get('button[title="Отклонить запрос передачи"]').trigger("click");
-    await wrapper.get('[role="alertdialog"] button.outline-action').trigger("click");
+    const rejectionDialog = wrapper.get('[role="alertdialog"]');
+    expect(rejectionDialog.get("button.outline-action").text()).toBe("Сохранить запрос");
+    await rejectionDialog.get("button.outline-action").trigger("click");
     expect(wrapper.find('[role="alertdialog"]').exists()).toBe(false);
     await wrapper.get('button[title="Отменить запрос передачи"]').trigger("click");
     const cancellationDialog = wrapper.get('[role="alertdialog"]');

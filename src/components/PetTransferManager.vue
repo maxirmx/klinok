@@ -265,7 +265,7 @@ async function cancelTransfer() {
       <table class="owner-access-table transfer-table">
         <thead><tr><th>Питомец</th><th>Текущий владелец</th><th>Новый владелец</th><th>Статус</th><th>Создан</th><th>Действия</th></tr></thead>
         <tbody>
-          <tr v-for="request in pagedRows" :key="request.transferRequestId">
+          <tr v-for="request in pagedRows" :key="request.transferRequestId" :class="{ 'transfer-row-has-actions': request.status === 'pending' }">
             <td data-label="Питомец"><strong>{{ request.petSpecies }} {{ request.petName }}</strong><small>{{ request.petId }}</small></td>
             <td data-label="Текущий владелец"><PersonIdentity :display-name="ownerDisplayName(request.fromOwnerDisplayName, request.fromOwnerAccountId)" :account-id="request.fromOwnerAccountId" /></td>
             <td data-label="Новый владелец"><PersonIdentity :display-name="ownerDisplayName(request.toOwnerDisplayName, request.toOwnerAccountId)" :account-id="request.toOwnerAccountId" /></td>
@@ -318,7 +318,7 @@ async function cancelTransfer() {
       </form>
     </ModalDialog>
 
-    <ConfirmationDialog v-model="rejectOpen" title="Отклонить запрос передачи?" :description="rejectTarget ? `Передача питомца ${rejectTarget.petName} не состоится.` : ''" confirm-label="Отклонить запрос" :error="rejectError" :busy="decisionBusy" :confirm-disabled="rejectStale" @confirm="rejectTransfer" />
+    <ConfirmationDialog v-model="rejectOpen" title="Отклонить запрос передачи?" :description="rejectTarget ? `Передача питомца ${rejectTarget.petName} не состоится.` : ''" confirm-label="Отклонить запрос" cancel-label="Сохранить запрос" :error="rejectError" :busy="decisionBusy" :confirm-disabled="rejectStale" @confirm="rejectTransfer" />
     <ConfirmationDialog v-model="cancelOpen" title="Отменить запрос передачи?" :description="cancelTarget ? `Запрос передачи питомца ${cancelTarget.petName} будет отменён.` : ''" confirm-label="Отменить запрос" cancel-label="Сохранить запрос" :error="cancelError" :busy="decisionBusy" :confirm-disabled="cancelStale" @confirm="cancelTransfer" />
   </section>
 </template>
