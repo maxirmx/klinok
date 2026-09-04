@@ -18,6 +18,8 @@ const prefix = "instrumental.finding.ultrasound-abdomen";
 const id = (code: string) => `${prefix}.${code}`;
 const xrayPrefix = "instrumental.finding.xray-thorax";
 const xrayId = (code: string) => `${xrayPrefix}.${code}`;
+const abdomenXrayPrefix = "instrumental.finding.xray-abdomen";
+const abdomenXrayId = (code: string) => `${abdomenXrayPrefix}.${code}`;
 
 function mountEditor(initial: InstrumentalTestsSectionValue = { studies: [] }, errors?: object) {
   let current = initial;
@@ -888,5 +890,104 @@ describe("InstrumentalTestsEditor", () => {
     await flushPromises();
     expect(current().studies).toHaveLength(0);
     expect(wrapper.find('[role="alertdialog"]').exists()).toBe(false);
+  });
+
+  it("edits abdominal X-ray multi-selects, composite sets, and conditional branches", async () => {
+    const { wrapper, current } = mountEditor();
+    const checkbox = (panel: DOMWrapper<Element>, name: string) => panel.findAll("label.check-row")
+      .find((label) => label.text() === name)!.get<HTMLInputElement>('input[type="checkbox"]');
+    const panel = (name: string) => wrapper.findAll("fieldset")
+      .find((candidate) => candidate.get("legend").text() === name)!;
+
+    await chooseType(wrapper, "instrumental.study.xray-abdomen");
+    expect(current().studies[0]).toMatchObject({
+      typeId: "instrumental.study.xray-abdomen",
+      typeName: "Рентгенография брюшной полости",
+      mode: "tree",
+    });
+
+    await addFinding(wrapper, abdomenXrayId("1"));
+    await checkbox(panel("Проекции"), "Левая латеролатеральная").setValue(true);
+    await checkbox(panel("Проекции"), "Правая латеролатеральная").setValue(true);
+    await checkbox(panel("Проекции"), "Вентродорсальная").setValue(true);
+    expect(current().studies[0]?.mode === "tree"
+      ? current().studies[0].findings[0]?.children[0]?.children.map((item) => item.findingId)
+      : []).toEqual([abdomenXrayId("1.0.1"), abdomenXrayId("1.0.2"), abdomenXrayId("1.0.3")]);
+
+    await addFinding(wrapper, abdomenXrayId("8"));
+    await selectChoice(wrapper, abdomenXrayId("8.0.3"));
+    const pathologyPanel = panel("Признаки патологий");
+    await checkbox(pathologyPanel, "Остеофиты").setValue(true);
+    await checkbox(pathologyPanel, "Перелом").setValue(true);
+    const fracture = wrapper.get<HTMLTextAreaElement>('textarea[aria-label="Описание перелома"]');
+    expect(fracture.attributes("rows")).toBe("2");
+    expect(fracture.classes()).toContain("medical-card-comment");
+    await fracture.setValue("Перелом таза");
+
+    await addFinding(wrapper, abdomenXrayId("9"));
+    await addFinding(wrapper, abdomenXrayId("9.0"));
+    const diaphragm = wrapper.get(`[data-finding-id="${abdomenXrayId("9.0")}"]`);
+    const regularity = diaphragm.get<HTMLSelectElement>('select[aria-label="Ровность купола"]');
+    const definition = diaphragm.get<HTMLSelectElement>('select[aria-label="Чёткость купола"]');
+    const projection = diaphragm.get<HTMLSelectElement>('select[aria-label="Проекция измерения"]');
+    await regularity.setValue(abdomenXrayId("9.0.1"));
+    await definition.setValue(abdomenXrayId("9.0.3"));
+    await projection.setValue(abdomenXrayId("9.0.5"));
+    await diaphragm.get('input[aria-label="Межреберье на LL-проекции"]').setValue("7");
+    await regularity.setValue(abdomenXrayId("9.0.2"));
+    expect(definition.element.value).toBe(abdomenXrayId("9.0.3"));
+    expect(projection.element.value).toBe(abdomenXrayId("9.0.5"));
+    await projection.setValue(abdomenXrayId("9.0.6"));
+    expect(diaphragm.find('input[aria-label="Межреберье на LL-проекции"]').exists()).toBe(false);
+    expect(diaphragm.get<HTMLInputElement>('input[aria-label="Межреберье на VD-проекции"]').element.value).toBe("");
+
+    await addFinding(wrapper, abdomenXrayId("21"));
+    await addFinding(wrapper, abdomenXrayId("21.3"));
+    await selectChoice(wrapper, abdomenXrayId("21.3.2"));
+    const smallIntestine = panel("Содержимое тонкого кишечника");
+    await checkbox(smallIntestine, "Жидкость").setValue(true);
+    await checkbox(smallIntestine, "Газ").setValue(true);
+    await checkbox(smallIntestine, "Другое").setValue(true);
+    await wrapper.get('textarea[aria-label="Описание содержимого"]').setValue("Непереваренные массы");
+    expect(checkbox(smallIntestine, "Жидкость").element.checked).toBe(true);
+    expect(checkbox(smallIntestine, "Газ").element.checked).toBe(true);
+
+    await addFinding(wrapper, abdomenXrayId("23"));
+    await addFinding(wrapper, abdomenXrayId("23.1"));
+    await selectChoice(wrapper, abdomenXrayId("23.1.0.1"));
+    await addFinding(wrapper, abdomenXrayId("23.1.1"));
+    await selectChoice(wrapper, abdomenXrayId("23.1.1.1"));
+    await selectChoice(wrapper, abdomenXrayId("23.1.0.2"));
+    const reproductive = current().studies[0]?.mode === "tree"
+      ? current().studies[0].findings.find((finding) => finding.findingId === abdomenXrayId("23"))
+      : undefined;
+    expect(reproductive?.children.find((finding) => finding.findingId === abdomenXrayId("23.1"))?.children)
+      .toEqual([expect.objectContaining({ findingId: abdomenXrayId("23.1.0.2"), children: [] })]);
+
+    await addFinding(wrapper, abdomenXrayId("23.3"));
+    await addFinding(wrapper, abdomenXrayId("23.3.1"));
+    await selectChoice(wrapper, abdomenXrayId("23.3.1.2"));
+    const osPenis = wrapper.get(`[data-finding-id="${abdomenXrayId("23.3.1.2.characteristics")}"]`);
+    const clarity = osPenis.get<HTMLSelectElement>('select[aria-label="Чёткость"]');
+    const fractureCheckbox = checkbox(panel("Перелом"), "Имеет перелом");
+    await clarity.setValue(abdomenXrayId("23.3.1.3"));
+    await fractureCheckbox.setValue(true);
+    expect(clarity.element.value).toBe(abdomenXrayId("23.3.1.3"));
+    expect(fractureCheckbox.element.checked).toBe(true);
+    expect(osPenis.get(".instrumental-finding-content").attributes("data-hierarchy-depth")).toBe("3");
+
+    await selectChoice(wrapper, abdomenXrayId("23.3.1.1"));
+    expect(wrapper.find(`[data-finding-id="${abdomenXrayId("23.3.1.2.characteristics")}"]`).exists()).toBe(false);
+    const osPenisValue = reproductive?.children.find((finding) => finding.findingId === abdomenXrayId("23.3"))
+      ?.children.find((finding) => finding.findingId === abdomenXrayId("23.3.1"));
+    expect(osPenisValue?.children).toEqual([
+      expect.objectContaining({ findingId: abdomenXrayId("23.3.1.1"), children: [] }),
+    ]);
+
+    const reopened = mountEditor(current());
+    expect(reopened.wrapper.get('select[aria-label="Значение показателя «Os penis»"]').element)
+      .toHaveProperty("value", abdomenXrayId("23.3.1.1"));
+    expect(reopened.wrapper.get('textarea[aria-label="Описание перелома"]').element)
+      .toHaveProperty("value", "Перелом таза");
   });
 });

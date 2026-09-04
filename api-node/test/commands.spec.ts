@@ -668,6 +668,35 @@ describe("command boundary", () => {
       mode: "tree",
       findings: [{ findingName: "Заключение", value: "Без патологии" }],
     }] });
+    const abdominalXray = validateMedicalEncounter({
+      ...base,
+      sections: {
+        ...base.sections,
+        "instrumental-tests": { studies: [{
+          id: "223e4567-e89b-12d3-a456-426614174000",
+          date: "2026-08-10",
+          typeId: "instrumental.study.xray-abdomen",
+          typeName: "forged",
+          mode: "tree",
+          findings: [{
+            findingId: "instrumental.finding.xray-abdomen.26",
+            findingName: "forged",
+            value: "  Без рентгенологических признаков патологии  ",
+            children: [],
+          }],
+        }] },
+      },
+    });
+    expect(abdominalXray.sections["instrumental-tests"]).toMatchObject({ studies: [{
+      typeId: "instrumental.study.xray-abdomen",
+      typeName: "Рентгенография брюшной полости",
+      mode: "tree",
+      findings: [{
+        findingId: "instrumental.finding.xray-abdomen.26",
+        findingName: "Заключение",
+        value: "Без рентгенологических признаков патологии",
+      }],
+    }] });
     expect(() => validateMedicalEncounter({
       ...base,
       sections: { ...base.sections, "instrumental-tests": { studies: [] } },

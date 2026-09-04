@@ -18,6 +18,8 @@ const prefix = "instrumental.finding.ultrasound-abdomen";
 const id = (code: string) => `${prefix}.${code}`;
 const xrayPrefix = "instrumental.finding.xray-thorax";
 const xrayId = (code: string) => `${xrayPrefix}.${code}`;
+const abdomenXrayPrefix = "instrumental.finding.xray-abdomen";
+const abdomenXrayId = (code: string) => `${abdomenXrayPrefix}.${code}`;
 const value = (id: string, children: InstrumentalFindingValue[] = [], text?: string): InstrumentalFindingValue => ({
   findingId: id,
   findingName: "forged",
@@ -30,6 +32,7 @@ describe("instrumental study contracts", () => {
     expect(INSTRUMENTAL_STUDY_CATALOG.map((study) => [study.name, study.mode])).toEqual([
       ["УЗИ органов брюшной полости", "tree"],
       ["Рентгенография грудной полости", "tree"],
+      ["Рентгенография брюшной полости", "tree"],
     ]);
     const roots = INSTRUMENTAL_STUDY_CATALOG[0]!.findings;
     expect(roots).toHaveLength(19);
@@ -52,6 +55,177 @@ describe("instrumental study contracts", () => {
       "9.2.1", "9.3.5.2.3", "10.0", "10.5", "11.3.7", "11.4", "16.1.3", "16.2.3", "16.3.3",
     ]);
     expect(integers.every((item) => item.unit === "мм" && !item.name.includes("мм"))).toBe(true);
+  });
+
+  it("defines the complete abdominal X-ray hierarchy and choice matrix", () => {
+    const xray = INSTRUMENTAL_STUDY_CATALOG.find((study) => study.id === "instrumental.study.xray-abdomen")!;
+    expect(xray.findings).toHaveLength(26);
+    expect(xray.findings.map((item) => item.id.replace(`${abdomenXrayPrefix}.`, ""))).toEqual([
+      "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13",
+      "14", "15", "16", "17", "18", "19", "20", "21", "22", "23", "24", "25", "26",
+    ]);
+    expect(xray.findings.map((item) => item.name)).toEqual([
+      "Выполненные проекции", "Качество рентгенограмм", "Режим экспозиции", "Область интересов",
+      "Охват области интересов", "Мягкие ткани", "Упитанность", "Костно-суставной аппарат",
+      "Купол диафрагмы", "Серозная дифференциация", "Брюшная стенка", "Печень", "Селезёнка",
+      "Область поджелудочной железы", "Почки", "Мочеточники", "Мочевой пузырь", "Уретра",
+      "Ретроперитонеальное пространство", "Желудок", "Тонкий отдел кишечника",
+      "Толстый отдел кишечника", "Репродуктивная система", "Перитонеальная полость", "Комментарии", "Заключение",
+    ]);
+
+    const multiple: InstrumentalFindingCatalogItem[] = [];
+    const sets: InstrumentalFindingCatalogItem[] = [];
+    const required: InstrumentalFindingCatalogItem[] = [];
+    const visit = (items: readonly InstrumentalFindingCatalogItem[]) => items.forEach((item) => {
+      if (item.selectionMode === "multiple") multiple.push(item);
+      if (item.selectionSets?.length) sets.push(item);
+      if (item.required) required.push(item);
+      visit(item.children);
+    });
+    visit(xray.findings);
+    expect(multiple.map((item) => item.id)).toEqual([
+      abdomenXrayId("1.0"), abdomenXrayId("8.0.3.findings"), abdomenXrayId("21.3.2.contents"),
+      abdomenXrayId("22.3.2.contents"), abdomenXrayId("23.3.1.2.characteristics"),
+    ]);
+    expect(sets.map((item) => [item.id, item.selectionSets?.map((set) => [set.key, set.selectionMode ?? "single"])])).toEqual([
+      [abdomenXrayId("9.0"), [["regularity", "single"], ["definition", "single"], ["projection", "single"]]],
+      [abdomenXrayId("11.0"), [["regularity", "single"], ["definition", "single"]]],
+      [abdomenXrayId("12.3"), [["definition", "single"], ["rib-arch-position", "single"]]],
+      [abdomenXrayId("13.1"), [["size", "single"], ["homogeneity", "single"]]],
+      [abdomenXrayId("23.3.1.2.characteristics"), [["definition", "single"], ["fracture", "multiple"]]],
+    ]);
+    expect(instrumentalFindingById(abdomenXrayId("6.0.2.4"))?.name).toBe("Другое");
+    expect(instrumentalFindingById(abdomenXrayId("16.0.1"))?.name).toBe("Визуализируются");
+    expect(instrumentalFindingById(abdomenXrayId("17.2.1"))?.name).toBe("Округлая");
+    expect(instrumentalFindingById(abdomenXrayId("20.2.3.1"))).toMatchObject({
+      name: "Описание дислокации", kind: "long-text", required: true,
+    });
+    expect(instrumentalFindingById(abdomenXrayId("23.1.0.1"))?.children[0]?.id).toBe(abdomenXrayId("23.1.1"));
+    expect(required.every((item) => item.kind === "short-text" || item.kind === "long-text")).toBe(true);
+    expect(instrumentalFindingById(abdomenXrayId("9.0.5.intercostal"))).toMatchObject({
+      kind: "short-text", required: true,
+    });
+    expect(instrumentalFindingById(abdomenXrayId("8.0.3.2.text"))).toMatchObject({
+      kind: "long-text", required: true,
+    });
+  });
+
+  it("normalizes every independent abdominal X-ray checkbox group in catalog order", () => {
+    const normalized = normalizeInstrumentalTestsValue({ studies: [{
+      ...base,
+      typeId: "instrumental.study.xray-abdomen",
+      findings: [
+        value(abdomenXrayId("22"), [value(abdomenXrayId("22.3"), [value(abdomenXrayId("22.3.2"), [
+          value(abdomenXrayId("22.3.2.contents"), [
+            value(abdomenXrayId("22.3.2.7"), [value(abdomenXrayId("22.3.2.7.text"), [], " Другое содержимое ")]),
+            value(abdomenXrayId("22.3.2.2")), value(abdomenXrayId("22.3.2.1")),
+          ]),
+        ])])]),
+        value(abdomenXrayId("1"), [value(abdomenXrayId("1.0"), [
+          value(abdomenXrayId("1.0.4")), value(abdomenXrayId("1.0.1")),
+          value(abdomenXrayId("1.0.3")), value(abdomenXrayId("1.0.2")),
+        ])]),
+        value(abdomenXrayId("21"), [value(abdomenXrayId("21.3"), [value(abdomenXrayId("21.3.2"), [
+          value(abdomenXrayId("21.3.2.contents"), [
+            value(abdomenXrayId("21.3.2.6"), [value(abdomenXrayId("21.3.2.6.text"), [], " Иное ")]),
+            value(abdomenXrayId("21.3.2.1")), value(abdomenXrayId("21.3.2.2")),
+          ]),
+        ])])]),
+        value(abdomenXrayId("8"), [value(abdomenXrayId("8.0.3"), [
+          value(abdomenXrayId("8.0.3.findings"), [
+            value(abdomenXrayId("8.0.3.5"), [value(abdomenXrayId("8.0.3.5.text"), [], " Иная патология ")]),
+            value(abdomenXrayId("8.0.3.2"), [value(abdomenXrayId("8.0.3.2.text"), [], " Перелом таза ")]),
+            value(abdomenXrayId("8.0.3.1")),
+          ]),
+        ])]),
+      ],
+    }] }, "2026-08-15").studies[0]!;
+    if (normalized.mode !== "tree") throw new Error("Expected tree study");
+    expect(normalized).toMatchObject({
+      typeId: "instrumental.study.xray-abdomen",
+      typeName: "Рентгенография брюшной полости",
+    });
+    expect(normalized.findings.map((item) => item.findingId)).toEqual([
+      abdomenXrayId("1"), abdomenXrayId("8"), abdomenXrayId("21"), abdomenXrayId("22"),
+    ]);
+    expect(normalized.findings[0]?.children[0]?.children.map((item) => item.findingId)).toEqual([
+      abdomenXrayId("1.0.1"), abdomenXrayId("1.0.2"), abdomenXrayId("1.0.3"), abdomenXrayId("1.0.4"),
+    ]);
+    expect(normalized.findings[1]?.children[0]?.children[0]?.children.map((item) => item.findingId)).toEqual([
+      abdomenXrayId("8.0.3.1"), abdomenXrayId("8.0.3.2"), abdomenXrayId("8.0.3.5"),
+    ]);
+    expect(normalized.findings[1]?.children[0]?.children[0]?.children[1]?.children[0]).toMatchObject({
+      findingName: "Описание перелома", value: "Перелом таза",
+    });
+  });
+
+  it("enforces each abdominal X-ray composite choice set independently", () => {
+    const invalidCases: [string, InstrumentalFindingValue, string][] = [
+      ["diaphragm regularity", value(abdomenXrayId("9"), [value(abdomenXrayId("9.0"), [
+        value(abdomenXrayId("9.0.1")), value(abdomenXrayId("9.0.2")), value(abdomenXrayId("9.0.3")),
+      ])]), "Ровность купола"],
+      ["abdominal wall definition", value(abdomenXrayId("11"), [value(abdomenXrayId("11.0"), [
+        value(abdomenXrayId("11.0.1")), value(abdomenXrayId("11.0.3")), value(abdomenXrayId("11.0.4")),
+      ])]), "Чёткость стенки"],
+      ["liver rib arch position", value(abdomenXrayId("12"), [value(abdomenXrayId("12.3"), [
+        value(abdomenXrayId("12.3.1")), value(abdomenXrayId("12.3.3")), value(abdomenXrayId("12.3.4")),
+      ])]), "Положение относительно рёберной дуги"],
+      ["spleen homogeneity", value(abdomenXrayId("13"), [value(abdomenXrayId("13.1"), [
+        value(abdomenXrayId("13.1.1")), value(abdomenXrayId("13.1.3")), value(abdomenXrayId("13.1.4")),
+      ])]), "Однородность тени"],
+      ["Os penis definition", value(abdomenXrayId("23"), [value(abdomenXrayId("23.3"), [
+        value(abdomenXrayId("23.3.1"), [value(abdomenXrayId("23.3.1.2"), [
+          value(abdomenXrayId("23.3.1.2.characteristics"), [
+            value(abdomenXrayId("23.3.1.3")), value(abdomenXrayId("23.3.1.4")), value(abdomenXrayId("23.3.1.5")),
+          ]),
+        ])]),
+      ])]), "Чёткость"],
+    ];
+    for (const [, finding, error] of invalidCases) {
+      expect(() => normalizeInstrumentalTestsValue({ studies: [{
+        ...base, typeId: "instrumental.study.xray-abdomen", findings: [finding],
+      }] }, "2026-08-15")).toThrow(error);
+    }
+
+    const normalized = normalizeInstrumentalTestsValue({ studies: [{
+      ...base,
+      typeId: "instrumental.study.xray-abdomen",
+      findings: [
+        value(abdomenXrayId("9"), [value(abdomenXrayId("9.0"), [
+          value(abdomenXrayId("9.0.2")), value(abdomenXrayId("9.0.3")),
+        ])]),
+        value(abdomenXrayId("11"), [value(abdomenXrayId("11.0"), [
+          value(abdomenXrayId("11.0.2")), value(abdomenXrayId("11.0.3")),
+        ])]),
+        value(abdomenXrayId("12"), [value(abdomenXrayId("12.3"), [
+          value(abdomenXrayId("12.3.2")), value(abdomenXrayId("12.3.6")),
+        ])]),
+        value(abdomenXrayId("13"), [value(abdomenXrayId("13.1"), [
+          value(abdomenXrayId("13.1.2")), value(abdomenXrayId("13.1.4")),
+        ])]),
+        value(abdomenXrayId("23"), [value(abdomenXrayId("23.3"), [value(abdomenXrayId("23.3.1"), [
+          value(abdomenXrayId("23.3.1.2"), [value(abdomenXrayId("23.3.1.2.characteristics"), [
+            value(abdomenXrayId("23.3.1.4")), value(abdomenXrayId("23.3.1.5")),
+          ])]),
+        ])])]),
+      ],
+    }] }, "2026-08-15").studies[0]!;
+    expect(normalized.mode === "tree" ? normalized.findings : []).toHaveLength(5);
+  });
+
+  it("requires active abdominal X-ray continuations and rejects hidden branch data", () => {
+    expect(() => normalizeInstrumentalTestsValue({ studies: [{
+      ...base,
+      typeId: "instrumental.study.xray-abdomen",
+      findings: [value(abdomenXrayId("9"), [value(abdomenXrayId("9.0"), [value(abdomenXrayId("9.0.5"))])])],
+    }] }, "2026-08-15")).toThrow("Межреберье на LL-проекции");
+    expect(() => normalizeInstrumentalTestsValue({ studies: [{
+      ...base,
+      typeId: "instrumental.study.xray-abdomen",
+      findings: [value(abdomenXrayId("23"), [value(abdomenXrayId("23.1"), [
+        value(abdomenXrayId("23.1.0.2"), [value(abdomenXrayId("23.1.1"), [value(abdomenXrayId("23.1.1.1"))])]),
+      ])])],
+    }] }, "2026-08-15")).toThrow("структура");
   });
 
   it("defines the complete thoracic X-ray hierarchy, selection modes, conflicts, and required continuations", () => {

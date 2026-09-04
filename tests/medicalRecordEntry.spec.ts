@@ -257,6 +257,95 @@ describe("MedicalRecordEntry", () => {
     expect(history.text()).toContain("Контроль");
   });
 
+  it("renders composite and multiple abdominal X-ray findings recursively", () => {
+    const wrapper = mount(MedicalRecordEntry, {
+      props: {
+        record: {
+          ...record,
+          sections: {
+            ...record.sections,
+            "instrumental-tests": {
+              kind: "instrumental-tests",
+              templateVersion: "instrumental-tests-v1",
+              value: { studies: [{
+                id: "123e4567-e89b-12d3-a456-426614174000",
+                date: "2026-07-21",
+                typeId: "instrumental.study.xray-abdomen",
+                typeName: "Рентгенография брюшной полости",
+                mode: "tree",
+                findings: [{
+                  findingId: "instrumental.finding.xray-abdomen.9",
+                  findingName: "Купол диафрагмы",
+                  children: [{
+                    findingId: "instrumental.finding.xray-abdomen.9.0",
+                    findingName: "Характеристики купола",
+                    children: [{
+                      findingId: "instrumental.finding.xray-abdomen.9.0.2",
+                      findingName: "Неровный",
+                      children: [],
+                    }, {
+                      findingId: "instrumental.finding.xray-abdomen.9.0.5",
+                      findingName: "На LL-проекции в области межреберья",
+                      children: [{
+                        findingId: "instrumental.finding.xray-abdomen.9.0.5.intercostal",
+                        findingName: "Межреберье на LL-проекции",
+                        value: "7",
+                        children: [],
+                      }],
+                    }],
+                  }],
+                }, {
+                  findingId: "instrumental.finding.xray-abdomen.21",
+                  findingName: "Тонкий отдел кишечника",
+                  children: [{
+                    findingId: "instrumental.finding.xray-abdomen.21.3",
+                    findingName: "Содержимое",
+                    children: [{
+                      findingId: "instrumental.finding.xray-abdomen.21.3.2",
+                      findingName: "Визуализируется",
+                      children: [{
+                        findingId: "instrumental.finding.xray-abdomen.21.3.2.contents",
+                        findingName: "Содержимое тонкого кишечника",
+                        children: [{
+                          findingId: "instrumental.finding.xray-abdomen.21.3.2.1",
+                          findingName: "Жидкость",
+                          children: [],
+                        }, {
+                          findingId: "instrumental.finding.xray-abdomen.21.3.2.2",
+                          findingName: "Газ",
+                          children: [],
+                        }],
+                      }],
+                    }],
+                  }],
+                }, {
+                  findingId: "instrumental.finding.xray-abdomen.26",
+                  findingName: "Заключение",
+                  value: "Признаки кишечной непроходимости",
+                  children: [],
+                }],
+              }] },
+              authorAccountId: "doctor-1",
+              authorDisplayName: "Вера Врач",
+              updatedAt: "2026-07-21T12:00:00.000Z",
+            },
+          },
+        },
+        mode: "details",
+        confirmed: false,
+        open: true,
+      },
+    });
+    const history = wrapper.get(".instrumental-history");
+    expect(history.text()).toContain("21.07.2026 · Рентгенография брюшной полости");
+    expect(history.text()).toContain("Неровный");
+    expect(history.text()).toContain("Межреберье на LL-проекции: 7");
+    expect(history.text()).toContain("Жидкость");
+    expect(history.text()).toContain("Газ");
+    expect(history.text()).toContain("Заключение: Признаки кишечной непроходимости");
+    expect(history.findAll(".instrumental-history-findings .instrumental-history-findings").length).toBeGreaterThanOrEqual(5);
+  });
+
   it("keeps the collapsed record header limited to date, author, and status", () => {
     const wrapper = mount(MedicalRecordEntry, {
       props: {
