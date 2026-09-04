@@ -3438,6 +3438,30 @@ label > input[type="checkbox"] {
   .transfer-table { min-width: 0; }
   .transfer-table :is(th, td):nth-child(4),
   .transfer-table :is(th, td):nth-child(5) { white-space: normal; }
+  .transfer-table tr.transfer-row-has-actions {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+  .transfer-table tr.transfer-row-has-actions > td { grid-column: 1 / -1; }
+  .transfer-table tr.transfer-row-has-actions > td:nth-child(1) { grid-row: 1; }
+  .transfer-table tr.transfer-row-has-actions > td:nth-child(2) { grid-row: 2; }
+  .transfer-table tr.transfer-row-has-actions > td:nth-child(3) { grid-row: 3; }
+  .transfer-table tr.transfer-row-has-actions > td:nth-child(4) {
+    grid-column: 1;
+    grid-row: 4;
+    grid-template-columns: minmax(76px, .45fr) minmax(0, 1fr);
+  }
+  .transfer-table tr.transfer-row-has-actions > td:nth-child(5) { grid-row: 5; }
+  .transfer-table tr.transfer-row-has-actions > td:nth-child(6) {
+    display: flex;
+    width: auto;
+    grid-column: 2;
+    grid-row: 4;
+    align-items: flex-start;
+    justify-content: flex-end;
+    padding-inline-start: 0;
+  }
+  .transfer-table tr.transfer-row-has-actions > td:nth-child(6)::before { display: none; }
   .transfer-review dl > div { grid-template-columns: minmax(104px, .45fr) minmax(0, 1fr); }
 }
 .laboratory-study-create, .laboratory-study-list { display: grid; gap: 1rem; }

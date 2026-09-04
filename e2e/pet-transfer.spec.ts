@@ -479,6 +479,11 @@ test("pet card moves in both directions through one overlay flow", async ({ brow
   await ownerBPage.setViewportSize({ width: 390, height: 844 });
   await expect(ownerBPage.locator(".transfer-table thead")).toBeHidden();
   expect(await ownerBPage.locator(".pet-transfer-manager").evaluate((element) => element.scrollWidth <= element.clientWidth + 1)).toBe(true);
+  const mobileStatusCell = await incomingRow.locator("td").nth(3).boundingBox();
+  const mobileActionsCell = await incomingRow.locator("td").nth(5).boundingBox();
+  expect(mobileStatusCell).not.toBeNull();
+  expect(mobileActionsCell).not.toBeNull();
+  expect(Math.abs(mobileStatusCell!.y - mobileActionsCell!.y)).toBeLessThanOrEqual(1);
   await incomingRow.getByRole("button", { name: "Принять передачу" }).click();
   const staleAcceptance = ownerBPage.getByRole("alertdialog", { name: "Принять передачу питомца?" });
   await expect(staleAcceptance).toBeVisible();
