@@ -11,8 +11,20 @@ const prefix = "instrumental.finding.ultrasound-abdomen";
 const id = (code: string) => `${prefix}.${code}`;
 const xrayPrefix = "instrumental.finding.xray-thorax";
 const xrayId = (code: string) => `${xrayPrefix}.${code}`;
+const abdomenXrayPrefix = "instrumental.finding.xray-abdomen";
+const abdomenXrayId = (code: string) => `${abdomenXrayPrefix}.${code}`;
 const finding = (code: string, children: InstrumentalFindingValue[] = [], value?: string): InstrumentalFindingValue => ({
   findingId: id(code),
+  findingName: "forged",
+  ...(value === undefined ? {} : { value }),
+  children,
+});
+const abdomenXrayFinding = (
+  code: string,
+  children: InstrumentalFindingValue[] = [],
+  value?: string,
+): InstrumentalFindingValue => ({
+  findingId: abdomenXrayId(code),
   findingName: "forged",
   ...(value === undefined ? {} : { value }),
   children,
@@ -125,6 +137,90 @@ describe("instrumental draft validation", () => {
     }));
     expect(parseInstrumentalTestsDraft(lungDraft(normalWithPattern), "2026-08-15").errors.studies[0]?.findings)
       .toEqual({ [xrayId("17.3")]: "Для показателя «Лёгочный рисунок» выбраны несовместимые варианты." });
+  });
+
+  it("places abdominal X-ray composite-set and continuation errors beside their controls", () => {
+    const cases: [InstrumentalFindingValue, string, string][] = [
+      [abdomenXrayFinding("9", [abdomenXrayFinding("9.0", [
+        abdomenXrayFinding("9.0.1"), abdomenXrayFinding("9.0.2"),
+      ])]), `${abdomenXrayId("9.0")}:regularity`, "Ровность купола"],
+      [abdomenXrayFinding("11", [abdomenXrayFinding("11.0", [
+        abdomenXrayFinding("11.0.3"), abdomenXrayFinding("11.0.4"),
+      ])]), `${abdomenXrayId("11.0")}:definition`, "Чёткость стенки"],
+      [abdomenXrayFinding("12", [abdomenXrayFinding("12.3", [
+        abdomenXrayFinding("12.3.3"), abdomenXrayFinding("12.3.4"),
+      ])]), `${abdomenXrayId("12.3")}:rib-arch-position`, "Положение относительно рёберной дуги"],
+      [abdomenXrayFinding("13", [abdomenXrayFinding("13.1", [
+        abdomenXrayFinding("13.1.3"), abdomenXrayFinding("13.1.4"),
+      ])]), `${abdomenXrayId("13.1")}:homogeneity`, "Однородность тени"],
+      [abdomenXrayFinding("23", [abdomenXrayFinding("23.3", [abdomenXrayFinding("23.3.1", [
+        abdomenXrayFinding("23.3.1.2", [abdomenXrayFinding("23.3.1.2.characteristics", [
+          abdomenXrayFinding("23.3.1.3"), abdomenXrayFinding("23.3.1.4"),
+        ])]),
+      ])])]), `${abdomenXrayId("23.3.1.2.characteristics")}:definition`, "Чёткость"],
+    ];
+    for (const [root, key, name] of cases) {
+      const result = parseInstrumentalTestsDraft({ studies: [{
+        ...base,
+        typeId: "instrumental.study.xray-abdomen",
+        typeName: "Рентгенография брюшной полости",
+        mode: "tree",
+        findings: [root],
+      }] }, "2026-08-15");
+      expect(result.errors.studies[0]?.findings).toEqual({
+        [key]: `Для характеристики «${name}» можно выбрать не более одного значения.`,
+      });
+    }
+
+    const continuations = parseInstrumentalTestsDraft({ studies: [{
+      ...base,
+      typeId: "instrumental.study.xray-abdomen",
+      typeName: "Рентгенография брюшной полости",
+      mode: "tree",
+      findings: [
+        abdomenXrayFinding("8", [abdomenXrayFinding("8.0.3", [
+          abdomenXrayFinding("8.0.3.findings", [abdomenXrayFinding("8.0.3.2")]),
+        ])]),
+        abdomenXrayFinding("9", [abdomenXrayFinding("9.0", [abdomenXrayFinding("9.0.5")])]),
+      ],
+    }] }, "2026-08-15");
+    expect(continuations.errors.studies[0]?.findings).toEqual({
+      [abdomenXrayId("8.0.3.2.text")]: "Заполните поле «Описание перелома».",
+      [abdomenXrayId("9.0.5.intercostal")]: "Заполните поле «Межреберье на LL-проекции».",
+    });
+  });
+
+  it("accepts one value from every abdominal X-ray composite set", () => {
+    const result = parseInstrumentalTestsDraft({ studies: [{
+      ...base,
+      typeId: "instrumental.study.xray-abdomen",
+      typeName: "forged",
+      mode: "tree",
+      findings: [
+        abdomenXrayFinding("9", [abdomenXrayFinding("9.0", [
+          abdomenXrayFinding("9.0.1"), abdomenXrayFinding("9.0.3"),
+        ])]),
+        abdomenXrayFinding("11", [abdomenXrayFinding("11.0", [
+          abdomenXrayFinding("11.0.2"), abdomenXrayFinding("11.0.4"),
+        ])]),
+        abdomenXrayFinding("12", [abdomenXrayFinding("12.3", [
+          abdomenXrayFinding("12.3.1"), abdomenXrayFinding("12.3.5"),
+        ])]),
+        abdomenXrayFinding("13", [abdomenXrayFinding("13.1", [
+          abdomenXrayFinding("13.1.2"), abdomenXrayFinding("13.1.3"),
+        ])]),
+        abdomenXrayFinding("23", [abdomenXrayFinding("23.3", [abdomenXrayFinding("23.3.1", [
+          abdomenXrayFinding("23.3.1.2", [abdomenXrayFinding("23.3.1.2.characteristics", [
+            abdomenXrayFinding("23.3.1.3"), abdomenXrayFinding("23.3.1.5"),
+          ])]),
+        ])])]),
+      ],
+    }] }, "2026-08-15");
+    expect(result.errors.studies[0]?.findings).toEqual({});
+    expect(result.value?.studies[0]).toMatchObject({
+      typeId: "instrumental.study.xray-abdomen",
+      typeName: "Рентгенография брюшной полости",
+    });
   });
 
   it("places a separate inline error beside each missing prostate contour characteristic", () => {

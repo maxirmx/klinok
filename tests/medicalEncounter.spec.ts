@@ -160,7 +160,7 @@ describe("medical encounter templates", () => {
     expect(sections["what-happened"].value.selectedIds).toEqual(["well.8", "well.9"]);
   });
 
-  it("indexes structured ultrasound and thoracic X-ray results", () => {
+  it("indexes structured ultrasound, thoracic X-ray, and abdominal X-ray results", () => {
     const tree = {
       studies: [{
         id: "123e4567-e89b-12d3-a456-426614174000",
@@ -191,6 +191,25 @@ describe("medical encounter templates", () => {
         children: [],
       }],
     }] })).toContain("Рентгенография грудной полости Заключение Очаговых изменений нет");
+    expect(sectionSearchText({ studies: [{
+      ...tree.studies[0],
+      typeId: "instrumental.study.xray-abdomen",
+      typeName: "Рентгенография брюшной полости",
+      mode: "tree",
+      comment: undefined,
+      findings: [{
+        findingId: "instrumental.finding.xray-abdomen.21",
+        findingName: "Тонкий отдел кишечника",
+        children: [],
+      }, {
+          findingId: "instrumental.finding.xray-abdomen.26",
+          findingName: "Заключение",
+          value: "Признаки кишечной непроходимости",
+          children: [],
+      }],
+    }] })).toContain(
+      "Рентгенография брюшной полости Тонкий отдел кишечника Заключение Признаки кишечной непроходимости",
+    );
   });
 
   it("defines, validates, and indexes the structured outcome template", () => {

@@ -2,6 +2,7 @@
 // All rights reserved.
 // This file is a part of Klinok application
 
+import { XRAY_ABDOMEN_FINDINGS } from "./xrayAbdomen.js";
 import { XRAY_THORAX_FINDINGS } from "./xrayThorax.js";
 
 export type InstrumentalStudyMode = "tree" | "narrative";
@@ -302,6 +303,7 @@ const ultrasoundAbdomen: readonly InstrumentalFindingCatalogItem[] = [
 export const INSTRUMENTAL_STUDY_CATALOG: readonly InstrumentalStudyTypeCatalogItem[] = [
   { id: "instrumental.study.ultrasound-abdomen", name: "УЗИ органов брюшной полости", mode: "tree", findings: ultrasoundAbdomen },
   { id: "instrumental.study.xray-thorax", name: "Рентгенография грудной полости", mode: "tree", findings: XRAY_THORAX_FINDINGS },
+  { id: "instrumental.study.xray-abdomen", name: "Рентгенография брюшной полости", mode: "tree", findings: XRAY_ABDOMEN_FINDINGS },
 ];
 
 export const INSTRUMENTAL_STUDY_OPTIONS = INSTRUMENTAL_STUDY_CATALOG.map(({ id, name }) => ({ id, label: name }));

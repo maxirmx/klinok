@@ -1021,6 +1021,165 @@ test("fresh provisioning, Doctor approval, grant, draft, and confirmation", asyn
   const xrayConclusion = xrayStudy.getByLabel("Заключение", { exact: true });
   await xrayConclusion.fill("Очаговых и диффузных изменений в лёгочных полях не выявлено");
 
+  await instrumentalType.fill("Рентгенография брюшной полости");
+  await instrumentalCard.getByRole("option", { name: "Рентгенография брюшной полости", exact: true }).click();
+  await addInstrumentalStudy.click();
+  const abdominalXrayStudy = instrumentalCard.locator(".instrumental-study-card").filter({
+    has: doctorPage.getByRole("heading", { name: "Рентгенография брюшной полости", exact: true }),
+  });
+  const deleteAbdominalXrayStudy = abdominalXrayStudy.getByRole("button", { name: "Удалить исследование" });
+  const addAbdominalXrayFinding = async (findingName: string) => {
+    const combobox = abdominalXrayStudy.getByRole("combobox", { name: "Добавить раздел исследования", exact: true });
+    await combobox.fill(findingName);
+    await abdominalXrayStudy.getByRole("option", { name: findingName, exact: true }).click();
+    const add = combobox.locator("xpath=ancestor::div[contains(concat(' ', normalize-space(@class), ' '), ' instrumental-finding-create ')][1]")
+      .getByRole("button", { name: "Добавить раздел" });
+    await add.click();
+    return add;
+  };
+  const addAbdominalXrayIndicator = async (parentName: string, findingName: string) => {
+    const combobox = abdominalXrayStudy.getByRole("combobox", {
+      name: `Добавить показатель для «${parentName}»`,
+      exact: true,
+    });
+    await combobox.fill(findingName);
+    await abdominalXrayStudy.getByRole("option", { name: findingName, exact: true }).click();
+    const add = combobox.locator("xpath=ancestor::div[contains(concat(' ', normalize-space(@class), ' '), ' instrumental-finding-create ')][1]")
+      .getByRole("button", { name: "Добавить показатель", exact: true });
+    await add.click();
+    return add;
+  };
+
+  const addAbdominalProjections = await addAbdominalXrayFinding("Выполненные проекции");
+  const abdominalProjections = abdominalXrayStudy.getByRole("group", { name: "Проекции", exact: true });
+  await abdominalProjections.getByRole("checkbox", { name: "Левая латеролатеральная", exact: true }).check();
+  await abdominalProjections.getByRole("checkbox", { name: "Правая латеролатеральная", exact: true }).check();
+  await abdominalProjections.getByRole("checkbox", { name: "Вентродорсальная", exact: true }).check();
+
+  const addAbdominalSkeleton = await addAbdominalXrayFinding("Костно-суставной аппарат");
+  await abdominalXrayStudy.getByRole("combobox", {
+    name: "Значение показателя «Костно-суставной аппарат»",
+    exact: true,
+  }).selectOption({ label: "Имеет признаки патологий" });
+  const abdominalPathologies = abdominalXrayStudy.getByRole("group", { name: "Признаки патологий", exact: true });
+  await abdominalPathologies.getByRole("checkbox", { name: "Остеофиты", exact: true }).check();
+  await abdominalPathologies.getByRole("checkbox", { name: "Перелом", exact: true }).check();
+  await abdominalXrayStudy.getByLabel("Описание перелома", { exact: true }).fill("Перелом таза");
+
+  const addAbdominalDiaphragm = await addAbdominalXrayFinding("Купол диафрагмы");
+  const addAbdominalDiaphragmCharacteristics = await addAbdominalXrayIndicator(
+    "Купол диафрагмы",
+    "Характеристики купола",
+  );
+  const abdominalDiaphragm = abdominalXrayStudy.locator(
+    '[data-finding-id="instrumental.finding.xray-abdomen.9.0"]',
+  );
+  const abdominalDiaphragmRegularity = abdominalDiaphragm.getByRole("combobox", {
+    name: "Ровность купола", exact: true,
+  });
+  const abdominalDiaphragmDefinition = abdominalDiaphragm.getByRole("combobox", {
+    name: "Чёткость купола", exact: true,
+  });
+  const abdominalDiaphragmProjection = abdominalDiaphragm.getByRole("combobox", {
+    name: "Проекция измерения", exact: true,
+  });
+  await abdominalDiaphragmRegularity.selectOption({ label: "Ровный" });
+  await abdominalDiaphragmDefinition.selectOption({ label: "Чёткий" });
+  await abdominalDiaphragmProjection.selectOption({ label: "На LL-проекции в области межреберья" });
+  await abdominalDiaphragm.getByLabel("Межреберье на LL-проекции", { exact: true }).fill("8");
+  await abdominalDiaphragmRegularity.selectOption({ label: "Неровный" });
+  await expect(abdominalDiaphragmDefinition).toHaveValue("instrumental.finding.xray-abdomen.9.0.3");
+  await expect(abdominalDiaphragmProjection).toHaveValue("instrumental.finding.xray-abdomen.9.0.5");
+
+  const addAbdominalWall = await addAbdominalXrayFinding("Брюшная стенка");
+  const addAbdominalWallCharacteristics = await addAbdominalXrayIndicator(
+    "Брюшная стенка",
+    "Характеристики брюшной стенки",
+  );
+  const abdominalWall = abdominalXrayStudy.locator(
+    '[data-finding-id="instrumental.finding.xray-abdomen.11.0"]',
+  );
+  await abdominalWall.getByRole("combobox", { name: "Ровность стенки", exact: true })
+    .selectOption({ label: "Ровная" });
+  await abdominalWall.getByRole("combobox", { name: "Чёткость стенки", exact: true })
+    .selectOption({ label: "Нечёткая" });
+
+  const addAbdominalLiver = await addAbdominalXrayFinding("Печень");
+  const addAbdominalLiverBorders = await addAbdominalXrayIndicator("Печень", "Границы");
+  const abdominalLiverBorders = abdominalXrayStudy.locator(
+    '[data-finding-id="instrumental.finding.xray-abdomen.12.3"]',
+  );
+  await abdominalLiverBorders.getByRole("combobox", { name: "Чёткость границ", exact: true })
+    .selectOption({ label: "Чёткие" });
+  await abdominalLiverBorders.getByRole("combobox", {
+    name: "Положение относительно рёберной дуги", exact: true,
+  }).selectOption({ label: "Вровень с рёберной дугой" });
+
+  const addAbdominalSpleen = await addAbdominalXrayFinding("Селезёнка");
+  const addAbdominalSpleenShadow = await addAbdominalXrayIndicator("Селезёнка", "Тень");
+  const abdominalSpleenShadow = abdominalXrayStudy.locator(
+    '[data-finding-id="instrumental.finding.xray-abdomen.13.1"]',
+  );
+  await abdominalSpleenShadow.getByRole("combobox", { name: "Размер тени", exact: true })
+    .selectOption({ label: "Не увеличена" });
+  await abdominalSpleenShadow.getByRole("combobox", { name: "Однородность тени", exact: true })
+    .selectOption({ label: "Однородная" });
+
+  const addSmallIntestine = await addAbdominalXrayFinding("Тонкий отдел кишечника");
+  const addSmallIntestineContents = await addAbdominalXrayIndicator("Тонкий отдел кишечника", "Содержимое");
+  const smallIntestineContents = abdominalXrayStudy.locator(
+    '[data-finding-id="instrumental.finding.xray-abdomen.21.3"]',
+  );
+  await smallIntestineContents.getByRole("combobox", { name: "Значение показателя «Содержимое»", exact: true })
+    .selectOption({ label: "Визуализируется" });
+  const smallIntestineContentsPanel = abdominalXrayStudy.getByRole("group", {
+    name: "Содержимое тонкого кишечника", exact: true,
+  });
+  await smallIntestineContentsPanel.getByRole("checkbox", { name: "Жидкость", exact: true }).check();
+  await smallIntestineContentsPanel.getByRole("checkbox", { name: "Газ", exact: true }).check();
+
+  const addLargeIntestine = await addAbdominalXrayFinding("Толстый отдел кишечника");
+  const addLargeIntestineContents = await addAbdominalXrayIndicator("Толстый отдел кишечника", "Содержимое");
+  const largeIntestineContents = abdominalXrayStudy.locator(
+    '[data-finding-id="instrumental.finding.xray-abdomen.22.3"]',
+  );
+  await largeIntestineContents.getByRole("combobox", { name: "Значение показателя «Содержимое»", exact: true })
+    .selectOption({ label: "Визуализируется" });
+  const largeIntestineContentsPanel = abdominalXrayStudy.getByRole("group", {
+    name: "Содержимое толстого кишечника", exact: true,
+  });
+  await largeIntestineContentsPanel.getByRole("checkbox", { name: "Жидкость", exact: true }).check();
+  await largeIntestineContentsPanel.getByRole("checkbox", { name: "Газ", exact: true }).check();
+  await largeIntestineContentsPanel.getByRole("checkbox", { name: "Каловые массы", exact: true }).check();
+
+  const addReproductiveSystem = await addAbdominalXrayFinding("Репродуктивная система");
+  const addPenis = await addAbdominalXrayIndicator("Репродуктивная система", "Половой член");
+  const addOsPenis = await addAbdominalXrayIndicator("Половой член", "Os penis");
+  const osPenis = abdominalXrayStudy.locator('[data-finding-id="instrumental.finding.xray-abdomen.23.3.1"]');
+  const osPenisVisibility = osPenis.getByRole("combobox", { name: "Значение показателя «Os penis»", exact: true });
+  await osPenisVisibility.selectOption({ label: "Визуализируется" });
+  let osPenisCharacteristics = abdominalXrayStudy.locator(
+    '[data-finding-id="instrumental.finding.xray-abdomen.23.3.1.2.characteristics"]',
+  );
+  await osPenisCharacteristics.getByRole("combobox", { name: "Чёткость", exact: true })
+    .selectOption({ label: "Чётко" });
+  await osPenisCharacteristics.getByRole("checkbox", { name: "Имеет перелом", exact: true }).check();
+  await expect(osPenisCharacteristics.locator(":scope > .instrumental-finding-content"))
+    .toHaveAttribute("data-hierarchy-depth", "3");
+  await osPenisVisibility.selectOption({ label: "Не визуализируется" });
+  await expect(osPenisCharacteristics).toHaveCount(0);
+  await osPenisVisibility.selectOption({ label: "Визуализируется" });
+  osPenisCharacteristics = abdominalXrayStudy.locator(
+    '[data-finding-id="instrumental.finding.xray-abdomen.23.3.1.2.characteristics"]',
+  );
+  await osPenisCharacteristics.getByRole("combobox", { name: "Чёткость", exact: true })
+    .selectOption({ label: "Нечётко" });
+  await osPenisCharacteristics.getByRole("checkbox", { name: "Имеет перелом", exact: true }).check();
+
+  const addAbdominalConclusion = await addAbdominalXrayFinding("Заключение");
+  const abdominalConclusion = abdominalXrayStudy.getByLabel("Заключение", { exact: true });
+  await abdominalConclusion.fill("Признаки кишечной непроходимости");
+
   await addSectionSelect.selectOption("recommendations");
   const recommendationsCard = doctorPage.locator(".encounter-section-card").filter({
     has: doctorPage.getByRole("heading", { name: "Рекомендации", exact: true, level: 3 }),
@@ -1086,6 +1245,25 @@ test("fresh provisioning, Doctor approval, grant, draft, and confirmation", asyn
     addXrayLungs,
     addXrayConclusion,
     deleteXrayStudy,
+    addAbdominalProjections,
+    addAbdominalSkeleton,
+    addAbdominalDiaphragm,
+    addAbdominalDiaphragmCharacteristics,
+    addAbdominalWall,
+    addAbdominalWallCharacteristics,
+    addAbdominalLiver,
+    addAbdominalLiverBorders,
+    addAbdominalSpleen,
+    addAbdominalSpleenShadow,
+    addSmallIntestine,
+    addSmallIntestineContents,
+    addLargeIntestine,
+    addLargeIntestineContents,
+    addReproductiveSystem,
+    addPenis,
+    addOsPenis,
+    addAbdominalConclusion,
+    deleteAbdominalXrayStudy,
     deleteSediment,
     deleteConcrementSize,
     therapeuticCard.getByRole("button", { name: "Удалить раздел", exact: true }),
@@ -1267,6 +1445,10 @@ test("fresh provisioning, Doctor approval, grant, draft, and confirmation", asyn
   await expect(doctorRecord).toContainText("Рентгенография грудной полости");
   await expect(doctorRecord).toContainText("Межреберье на LL-проекции: 7");
   await expect(doctorRecord).toContainText("Очаговых и диффузных изменений в лёгочных полях не выявлено");
+  await expect(doctorRecord).toContainText("Рентгенография брюшной полости");
+  await expect(doctorRecord).toContainText("Межреберье на LL-проекции: 8");
+  await expect(doctorRecord).toContainText("Перелом таза");
+  await expect(doctorRecord).toContainText("Признаки кишечной непроходимости");
   await doctorRecord.getByRole("button", { name: "Редактировать запись" }).click();
   const inlineEditor = doctorRecord.locator(".encounter-editor-inline");
   await expect(inlineEditor.getByLabel("Взятие анализов", { exact: true })).toBeChecked();
@@ -1297,6 +1479,25 @@ test("fresh provisioning, Doctor approval, grant, draft, and confirmation", asyn
   await expect(inlineXrayStudy.getByLabel("Межреберье на LL-проекции", { exact: true })).toHaveValue("7");
   await expect(inlineXrayStudy.getByLabel("Заключение", { exact: true }))
     .toHaveValue("Очаговых и диффузных изменений в лёгочных полях не выявлено");
+  const inlineAbdominalXrayStudy = inlineEditor.locator(".instrumental-study-card").filter({
+    has: doctorPage.getByRole("heading", { name: "Рентгенография брюшной полости", exact: true }),
+  });
+  await expect(inlineAbdominalXrayStudy.getByRole("checkbox", { name: "Левая латеролатеральная", exact: true }))
+    .toBeChecked();
+  await expect(inlineAbdominalXrayStudy.getByRole("checkbox", { name: "Правая латеролатеральная", exact: true }))
+    .toBeChecked();
+  await expect(inlineAbdominalXrayStudy.getByRole("checkbox", { name: "Вентродорсальная", exact: true }))
+    .toBeChecked();
+  await expect(inlineAbdominalXrayStudy.getByRole("combobox", { name: "Ровность купола", exact: true }))
+    .toHaveValue("instrumental.finding.xray-abdomen.9.0.2");
+  await expect(inlineAbdominalXrayStudy.getByRole("combobox", { name: "Чёткость купола", exact: true }))
+    .toHaveValue("instrumental.finding.xray-abdomen.9.0.3");
+  await expect(inlineAbdominalXrayStudy.getByLabel("Межреберье на LL-проекции", { exact: true })).toHaveValue("8");
+  await expect(inlineAbdominalXrayStudy.getByRole("combobox", { name: "Чёткость", exact: true }))
+    .toHaveValue("instrumental.finding.xray-abdomen.23.3.1.4");
+  await expect(inlineAbdominalXrayStudy.getByRole("checkbox", { name: "Имеет перелом", exact: true })).toBeChecked();
+  await expect(inlineAbdominalXrayStudy.getByLabel("Заключение", { exact: true }))
+    .toHaveValue("Признаки кишечной непроходимости");
   await editCancel.click();
   await expect(inlineEditor).toHaveCount(0);
   await doctorPage.context().setOffline(false);
@@ -1310,6 +1511,8 @@ test("fresh provisioning, Doctor approval, grant, draft, and confirmation", asyn
   await ownerHistorySearch.fill("Проведение исследования");
   await expect(ownerRecord).toBeVisible({ timeout: replicationTimeout });
   await ownerHistorySearch.fill("диффузных изменений");
+  await expect(ownerRecord).toBeVisible({ timeout: replicationTimeout });
+  await ownerHistorySearch.fill("кишечной непроходимости");
   await expect(ownerRecord).toBeVisible({ timeout: replicationTimeout });
   await ownerHistorySearch.fill("");
   const laboratoryComparison = ownerPage.locator(".laboratory-comparison");
@@ -1454,6 +1657,21 @@ test("fresh provisioning, Doctor approval, grant, draft, and confirmation", asyn
     .filter({ hasText: "Рентгенография грудной полости" });
   await expect(ownerXrayStudy.getByText("Межреберье на LL-проекции: 7", { exact: true })).toBeVisible();
   await expect(ownerXrayStudy.getByText("Заключение: Очаговых и диффузных изменений в лёгочных полях не выявлено", { exact: true })).toBeVisible();
+  const ownerAbdominalXrayStudy = ownerInstrumental.locator(".instrumental-history-study")
+    .filter({ hasText: "Рентгенография брюшной полости" });
+  await expect(ownerAbdominalXrayStudy.getByText("Левая латеролатеральная", { exact: true })).toBeVisible();
+  await expect(ownerAbdominalXrayStudy.getByText("Правая латеролатеральная", { exact: true })).toBeVisible();
+  await expect(ownerAbdominalXrayStudy.getByText("Вентродорсальная", { exact: true })).toBeVisible();
+  await expect(ownerAbdominalXrayStudy.getByText("Описание перелома: Перелом таза", { exact: true })).toBeVisible();
+  await expect(ownerAbdominalXrayStudy.getByText("Межреберье на LL-проекции: 8", { exact: true })).toBeVisible();
+  await expect(ownerAbdominalXrayStudy.getByText("Жидкость", { exact: true })).toHaveCount(2);
+  await expect(ownerAbdominalXrayStudy.getByText("Газ", { exact: true })).toHaveCount(2);
+  await expect(ownerAbdominalXrayStudy.getByText("Нечётко", { exact: true })).toBeVisible();
+  await expect(ownerAbdominalXrayStudy.getByText("Имеет перелом", { exact: true })).toBeVisible();
+  await expect(ownerAbdominalXrayStudy.getByText(
+    "Заключение: Признаки кишечной непроходимости",
+    { exact: true },
+  )).toBeVisible();
   await expect(ownerRecord.locator("summary")).not.toContainText("Диагноз:");
   const ownerDiagnosis = ownerRecord.locator(".encounter-history-section").filter({
     has: ownerPage.getByRole("heading", { name: "Диагноз", exact: true }),
