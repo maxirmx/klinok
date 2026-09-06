@@ -3680,8 +3680,9 @@ label > input[type="checkbox"] {
 }
 .instrumental-multiple-choice-panel { min-width: 0; }
 .instrumental-multiple-choice-panel > .medical-card-options { margin-top: 3px; }
-.instrumental-multiple-choice-option { display: grid; min-width: 0; align-content: start; gap: 3px; }
+.instrumental-multiple-choice-option { display: contents; }
 .instrumental-multiple-choice-option > .instrumental-finding-level {
+  grid-column: 1 / -1;
   grid-template-columns: minmax(0, 1fr);
   min-width: 0;
 }

@@ -1064,7 +1064,17 @@ test("fresh provisioning, Doctor approval, grant, draft, and confirmation", asyn
   const abdominalPathologies = abdominalXrayStudy.getByRole("group", { name: "Признаки патологий", exact: true });
   await abdominalPathologies.getByRole("checkbox", { name: "Остеофиты", exact: true }).check();
   await abdominalPathologies.getByRole("checkbox", { name: "Перелом", exact: true }).check();
-  await abdominalXrayStudy.getByLabel("Описание перелома", { exact: true }).fill("Перелом таза");
+  const abdominalPathologyOptions = abdominalPathologies.locator(":scope > .medical-card-options");
+  const fractureDescription = abdominalXrayStudy.getByLabel("Описание перелома", { exact: true });
+  await fractureDescription.fill("Перелом таза");
+  const [pathologyOptionsBox, fractureDescriptionBox] = await Promise.all([
+    abdominalPathologyOptions.boundingBox(),
+    fractureDescription.boundingBox(),
+  ]);
+  expect(pathologyOptionsBox).not.toBeNull();
+  expect(fractureDescriptionBox).not.toBeNull();
+  expect(Math.abs(fractureDescriptionBox!.x - pathologyOptionsBox!.x)).toBeLessThanOrEqual(1);
+  expect(Math.abs(fractureDescriptionBox!.width - pathologyOptionsBox!.width)).toBeLessThanOrEqual(1);
 
   const addAbdominalDiaphragm = await addAbdominalXrayFinding("Купол диафрагмы");
   const addAbdominalDiaphragmCharacteristics = await addAbdominalXrayIndicator(

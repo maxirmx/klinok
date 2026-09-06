@@ -922,6 +922,8 @@ describe("InstrumentalTestsEditor", () => {
     const fracture = wrapper.get<HTMLTextAreaElement>('textarea[aria-label="Описание перелома"]');
     expect(fracture.attributes("rows")).toBe("2");
     expect(fracture.classes()).toContain("medical-card-comment");
+    expect(fracture.element.closest(".instrumental-finding-level")?.parentElement?.classList)
+      .toContain("instrumental-multiple-choice-option");
     await fracture.setValue("Перелом таза");
 
     await addFinding(wrapper, abdomenXrayId("9"));
@@ -948,7 +950,10 @@ describe("InstrumentalTestsEditor", () => {
     await checkbox(smallIntestine, "Жидкость").setValue(true);
     await checkbox(smallIntestine, "Газ").setValue(true);
     await checkbox(smallIntestine, "Другое").setValue(true);
-    await wrapper.get('textarea[aria-label="Описание содержимого"]').setValue("Непереваренные массы");
+    const contentsDescription = wrapper.get('textarea[aria-label="Описание содержимого"]');
+    expect(contentsDescription.element.closest(".instrumental-finding-level")?.parentElement?.classList)
+      .toContain("instrumental-multiple-choice-option");
+    await contentsDescription.setValue("Непереваренные массы");
     expect(checkbox(smallIntestine, "Жидкость").element.checked).toBe(true);
     expect(checkbox(smallIntestine, "Газ").element.checked).toBe(true);
 
