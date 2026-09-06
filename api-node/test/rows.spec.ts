@@ -33,6 +33,57 @@ describe("PostgreSQL row conversion", () => {
     expect(record.sections["what-happened"]).toBeDefined();
   });
 
+  it("migrates legacy therapeutic sections at the projection boundary", () => {
+    const record = recordFromRow({
+      record_id: "record-therapeutic",
+      pet_id: "pet-1",
+      revision: 1,
+      author_account_id: "doctor-1",
+      author_display_name: "Иван Врач",
+      encounter_date: "2026-08-15",
+      title: "Приём",
+      text: "Осмотр",
+      sections: {
+        "therapeutic-appointment": {
+          templateVersion: "therapeutic-appointment-v1",
+          value: {
+            diseaseAnamnesis: {
+              text: "Рвота",
+              problems: [{ id: "problem-1", title: "Рвота", medicationIds: [] }],
+              selectedIds: [
+                "disease.vomiting.state.present",
+                "disease.vomiting.foam.foamy",
+                "disease.removed.option",
+              ],
+            },
+            lifeAnamnesis: { text: "", selectedIds: [], currentMedications: "", allergies: "" },
+            examination: { text: "", selectedIds: ["exam.locomotion.state.changed"] },
+            recommendations: "",
+            prescriptions: "",
+          },
+        },
+      },
+      created_at: "2026-08-15T10:00:00.000Z",
+      updated_at: "2026-08-15T10:00:00.000Z",
+    });
+
+    expect(record.sections["therapeutic-appointment"]).toMatchObject({
+      kind: "therapeutic-appointment",
+      templateVersion: "therapeutic-appointment-v2",
+      authorAccountId: "doctor-1",
+      authorDisplayName: "Иван Врач",
+      value: {
+        schemaVersion: 2,
+        diseaseAnamnesis: {
+          problems: [{ id: "problem-1", title: "Рвота", description: "", medicationIds: [] }],
+          selectedIds: ["disease.vomiting.state.present", "disease.vomiting.contents.foamy"],
+        },
+        examination: { selectedIds: [], coatComment: "", locomotionComment: "" },
+        migrationNotes: expect.arrayContaining(["Анамнез болезни: disease.removed.option"]),
+      },
+    });
+  });
+
   it("maps ownership transfer rows with current display data and immutable identifiers", () => {
     expect(transferRequestFromRow({
       transfer_request_id: "transfer-1",

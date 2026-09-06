@@ -5,6 +5,7 @@
 import type { DiagnosisSectionValue } from "./diagnosis.js";
 import type { InstrumentalTestsSectionValue } from "./instrumental.js";
 import type { LaboratoryTestsSectionValue } from "./laboratory.js";
+import type { TherapeuticAppointmentSectionValue } from "./therapeutic.js";
 
 export {
   INSTRUMENTAL_STUDY_CATALOG,
@@ -63,6 +64,16 @@ export {
   whatHappenedPath,
   type WhatHappenedOption,
 } from "./whatHappened.js";
+export {
+  THERAPEUTIC_V2_MULTIPLE_QUESTION_IDS,
+  THERAPEUTIC_V2_QUESTION_IDS,
+  isKnownTherapeuticV2OptionId,
+  isTherapeuticAppointmentV2Value,
+  migrateTherapeuticAppointmentValue,
+  type TherapeuticAppointmentSectionValue,
+  type TherapeuticMigrationOptions,
+  type TherapeuticProblemValue,
+} from "./therapeutic.js";
 
 export const ROLES = ["administrator", "doctor", "owner"] as const;
 export type Role = (typeof ROLES)[number];
@@ -311,29 +322,9 @@ export interface VaccinationSectionValue {
   administrationSite?: string;
   nextRevaccinationDate?: string;
 }
-export interface TherapeuticProblemValue {
-  id: string;
-  sourceWhatHappenedId?: string;
-  title: string;
-  onsetId?: string;
-  frequencyId?: string;
-  priorTherapyId?: string;
-  medicationUseId?: string;
-  medicationIds: readonly string[];
-  medicationName?: string;
-  medicationDynamicsId?: string;
-}
-export interface TherapeuticAppointmentSectionValue {
-  diseaseAnamnesis: { text: string; problems: readonly TherapeuticProblemValue[]; selectedIds: readonly string[] };
-  lifeAnamnesis: { text: string; selectedIds: readonly string[]; currentMedications: string; allergies: string };
-  examination: { text: string; selectedIds: readonly string[] };
-  recommendations: string;
-  prescriptions: string;
-}
-
 export interface MedicalEncounterSection {
   kind: MedicalEncounterSectionKind;
-  templateVersion: "what-happened-v1" | "outcome-v1" | "diagnosis-v1" | "diagnosis-v2" | "general-data-v1" | "vaccination-v1" | "therapeutic-appointment-v1" | "laboratory-tests-v1" | "instrumental-tests-v1" | "free-text-v0";
+  templateVersion: "what-happened-v1" | "outcome-v1" | "diagnosis-v1" | "diagnosis-v2" | "general-data-v1" | "vaccination-v1" | "therapeutic-appointment-v2" | "laboratory-tests-v1" | "instrumental-tests-v1" | "free-text-v0";
   value: WhatHappenedSectionValue | OutcomeSectionValue | DiagnosisSectionValue | GeneralDataSectionValue | VaccinationSectionValue | TherapeuticAppointmentSectionValue | LaboratoryTestsSectionValue | InstrumentalTestsSectionValue | FreeTextSectionValue;
   authorAccountId: string;
   authorDisplayName: string;

@@ -55,6 +55,8 @@ export {
   laboratoryStudyTypeById,
   normalizeLaboratoryTestsValue,
   normalizeInstrumentalTestsValue,
+  isTherapeuticAppointmentV2Value,
+  migrateTherapeuticAppointmentValue,
   WHAT_HAPPENED_LEAF_COUNT,
   WHAT_HAPPENED_TAXONOMY_IDS,
   WHAT_HAPPENED_TREE,

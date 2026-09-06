@@ -1180,13 +1180,13 @@ label > input[type="checkbox"] {
   display: grid;
   grid-template-columns: minmax(130px, 190px) minmax(0, 1fr);
   min-width: 0;
-  align-items: center;
+  align-items: start;
   gap: 6px 10px;
 }
 .therapeutic-primary-text,
 .therapeutic-short-text > textarea,
-.therapeutic-problem-card label:not(.check-row) :is(input, .app-select),
-.therapeutic-select-field .app-select { width: 100%; min-width: 0; box-sizing: border-box; }
+.therapeutic-problem-card label:not(.check-row) :is(input, textarea, .app-select),
+.therapeutic-select-field :is(textarea, .app-select) { width: 100%; min-width: 0; box-sizing: border-box; }
 .therapeutic-select-field-wide {
   grid-column: 1 / -1;
   grid-template-columns: minmax(130px, 190px) minmax(0, 1fr);
@@ -1202,7 +1202,8 @@ label > input[type="checkbox"] {
   border-radius: 9px;
   background: #fbfcfd;
 }
-.therapeutic-problem-title { grid-column: 1 / -1; }
+.therapeutic-problem-title,
+.therapeutic-problem-description { grid-column: 1 / -1; }
 .therapeutic-problem-medication-name { grid-column: 1 / -1; }
 .therapeutic-problem-fields,
 .therapeutic-question-grid {
@@ -1277,6 +1278,8 @@ label > input[type="checkbox"] {
 .therapeutic-history-values > div { display: grid; min-width: 0; gap: 2px; font: inherit; }
 .therapeutic-history-values dt { color: var(--text-muted); font-size: 10px; font-weight: 600; }
 .therapeutic-history-values dd { min-width: 0; margin: 0; overflow-wrap: anywhere; text-align: left; }
+.therapeutic-migration-notes { min-width: 0; }
+.therapeutic-migration-notes > :is(h4, ul) { margin-block: 0; }
 .general-data-pressure {
   grid-column: 1 / -1;
   display: grid;

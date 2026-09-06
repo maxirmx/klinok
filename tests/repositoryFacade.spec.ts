@@ -156,6 +156,38 @@ afterEach(() => {
 });
 
 describe("Klinok repository facade", () => {
+  it("migrates therapeutic history before exposing or caching a snapshot", async () => {
+    const legacy = snapshot();
+    legacy.medical.records[0]!.sections["therapeutic-appointment"] = {
+      kind: "therapeutic-appointment",
+      templateVersion: "free-text-v0",
+      value: { text: "Старый терапевтический приём" },
+      authorAccountId: "doctor-1",
+      authorDisplayName: "Иван Врач",
+      updatedAt: timestamp,
+    } as never;
+    const api = client({ state: vi.fn(async () => legacy) });
+    const repository = await KlinokRepository.create({
+      client: api,
+      session: { authenticated: true, accountId: "account-1" },
+      initialRole: "owner",
+      offlineLeaseDays: 7,
+    });
+    try {
+      expect(repository.current.medical.records[0]!.sections["therapeutic-appointment"]).toMatchObject({
+        templateVersion: "therapeutic-appointment-v2",
+        value: {
+          schemaVersion: 2,
+          diseaseAnamnesis: { text: "Старый терапевтический приём" },
+        },
+      });
+      expect(offlineState.snapshots.get("account-1:owner")?.medical.records[0]!
+        .sections["therapeutic-appointment"]?.templateVersion).toBe("therapeutic-appointment-v2");
+    } finally {
+      await repository.dispose();
+    }
+  });
+
   it("adapts control operations, revisions, subscriptions, and role decisions", async () => {
     const api = client();
     const repository = bareRepository(api);
@@ -257,6 +289,14 @@ describe("Klinok repository facade", () => {
         outcome: { selectedIds: [], comment: "" },
       },
     })).rejects.toThrow("неизвестный или повторяющийся вариант");
+    await expect(repository.medical.saveEncounter({
+      recordId: "record-1", petId: "pet-1", encounterDate: "2026-08-10",
+      sections: {
+        "what-happened": { selectedIds: ["problem.eyes.1"], comment: "Повтор" },
+        outcome: { selectedIds: [], comment: "" },
+        "therapeutic-appointment": { text: "Старый формат" } as never,
+      },
+    })).rejects.toThrow("версии 2");
     await expect(repository.medical.saveEncounter({
       recordId: "record-1", petId: "pet-1", encounterDate: "2026-08-10",
       sections: {

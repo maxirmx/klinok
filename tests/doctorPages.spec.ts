@@ -15,6 +15,7 @@ import InstrumentalFindingEditor from "../src/components/InstrumentalFindingEdit
 import InstrumentalTestsEditor from "../src/components/InstrumentalTestsEditor.vue";
 import PetDirectoryActionDialog from "../src/components/PetDirectoryActionDialog.vue";
 import DoctorScreen from "../src/screens/DoctorScreen.vue";
+import { migrateTherapeuticAppointmentValue } from "../src/therapeuticAppointment";
 import type { SyncNotification } from "../src/repositories/offlineStore";
 import type { MedicalRecordDraft, MedicalSnapshot, PetProfile } from "../src/repositories/types";
 
@@ -1037,7 +1038,7 @@ describe("Doctor pages", () => {
       expect(repositoryMocks.saveEncounter).not.toHaveBeenCalled();
       expect(document.activeElement).toBe(date.element);
       expect(wrapper.get(".encounter-diagnosis .field-error").text()).toContain("хотя бы один диагноз");
-      expect(therapeutic.get(".therapeutic-problem-title .field-error").text()).toContain("название проблемы");
+      expect(therapeutic.find(".therapeutic-problem-title .field-error").exists()).toBe(false);
       expect(wrapper.get(".encounter-laboratory-tests .field-error").text()).toContain("хотя бы одно лабораторное");
       expect(wrapper.get(".encounter-instrumental-tests .field-error").text()).toContain("хотя бы одно инструментальное");
       expect(wrapper.get(".general-data-fields").element.previousElementSibling?.textContent)
@@ -1052,16 +1053,6 @@ describe("Doctor pages", () => {
       expect(document.activeElement).toBe(generalError);
 
       await wrapper.get<HTMLInputElement>('.general-data-fields input[type="number"]').setValue("12");
-      await therapeutic.findAll('[role="tab"]')[3]!.trigger("click");
-      await wrapper.get('button[title="Сохранить запись"]').trigger("click");
-      await flushPromises();
-      const problemTitle = therapeutic.get<HTMLInputElement>(".therapeutic-problem-title input");
-      const problemError = therapeutic.get(".therapeutic-problem-title .field-error");
-      expect(therapeutic.findAll('[role="tab"]')[0]!.attributes("aria-selected")).toBe("true");
-      expect(document.activeElement).toBe(problemTitle.element);
-      expect(problemTitle.attributes("aria-describedby")).toBe(problemError.attributes("id"));
-
-      await problemTitle.setValue("Кашель");
       await wrapper.get('button[title="Сохранить запись"]').trigger("click");
       await flushPromises();
       const vaccinationError = wrapper.get(".vaccination-fields").element.previousElementSibling as HTMLElement;
@@ -1897,15 +1888,15 @@ describe("Doctor pages", () => {
     }));
   });
 
-  it("preserves a legacy free-text therapeutic section while editing", async () => {
+  it("opens a migrated free-text therapeutic section only in the v2 editor", async () => {
     const legacyRecord: MedicalRecordDraft = {
       ...medicalRecord,
       sections: {
         ...medicalRecord.sections,
         "therapeutic-appointment": {
           kind: "therapeutic-appointment",
-          templateVersion: "free-text-v0",
-          value: { text: "Старый текст терапевтического приёма" },
+          templateVersion: "therapeutic-appointment-v2",
+          value: migrateTherapeuticAppointmentValue({ text: "Старый текст терапевтического приёма" }),
           authorAccountId: "doctor-1",
           authorDisplayName: "Вера Врач",
           updatedAt: "2026-07-21T10:00:00.000Z",
@@ -1915,18 +1906,13 @@ describe("Doctor pages", () => {
     await setMedical(snapshot(undefined, { records: [legacyRecord] }));
     const wrapper = await mountAt("/doctor/pets/pet-1", "doctor-pet-detail");
     await flushPromises();
+    expect(wrapper.get(".therapeutic-appointment-view").text()).toContain("Старый текст терапевтического приёма");
     await wrapper.get(".medical-record-edit").trigger("click");
     const card = wrapper.findAll(".encounter-section-card")
       .find((candidate) => candidate.get("h3").text() === "Терапевтический приём")!;
-    expect(card.find(".therapeutic-appointment-form").exists()).toBe(false);
-    expect(card.get<HTMLTextAreaElement>("textarea").element.value).toBe("Старый текст терапевтического приёма");
-    await wrapper.get('.encounter-editor-inline button[title="Сохранить запись"]').trigger("click");
-    await flushPromises();
-    expect(repositoryMocks.saveEncounter).toHaveBeenCalledWith(expect.objectContaining({
-      sections: expect.objectContaining({
-        "therapeutic-appointment": { text: "Старый текст терапевтического приёма" },
-      }),
-    }));
+    expect(card.find(".therapeutic-appointment-form").exists()).toBe(true);
+    expect(card.findAll<HTMLTextAreaElement>('textarea[aria-label="Комментарий"]')[0]!.element.value)
+      .toBe("Старый текст терапевтического приёма");
   });
 
   it("allows selections from only one general condition at a time", async () => {

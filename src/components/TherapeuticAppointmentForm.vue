@@ -65,8 +65,23 @@ const diseaseText = computed({
 });
 const lifeSelectedIds = computed({
   get: () => therapeutic.value.lifeAnamnesis.selectedIds,
-  set: (selectedIds: string[]) => updateLifeAnamnesis({ selectedIds }),
+  set: (selectedIds: string[]) => updateLifeAnamnesis({
+    selectedIds,
+    ...(!selectedIds.includes("life.ectoparasites.state.yes") ? { ectoparasiteName: "" } : {}),
+    ...(!selectedIds.includes("life.deworming.state.yes") ? { dewormingName: "" } : {}),
+    ...(!selectedIds.some((id) => ["life.diet.type.natural", "life.diet.type.mixed"].includes(id))
+      ? { naturalDietProducts: "" } : {}),
+    ...(!selectedIds.some((id) => ["life.diet.type.commercial", "life.diet.type.mixed"].includes(id))
+      ? { commercialFoodName: "" } : {}),
+  }),
 });
+const lifeTextValues = computed(() => ({
+  "life.ectoparasites.name": therapeutic.value.lifeAnamnesis.ectoparasiteName,
+  "life.deworming.name": therapeutic.value.lifeAnamnesis.dewormingName,
+  "life.diet.natural-products": therapeutic.value.lifeAnamnesis.naturalDietProducts,
+  "life.diet.commercial-name": therapeutic.value.lifeAnamnesis.commercialFoodName,
+  "life.diseases.name": therapeutic.value.lifeAnamnesis.diseaseName,
+}));
 const lifeCurrentMedications = computed({
   get: () => therapeutic.value.lifeAnamnesis.currentMedications,
   set: (currentMedications: string) => updateLifeAnamnesis({ currentMedications }),
@@ -83,6 +98,10 @@ const examinationSelectedIds = computed({
   get: () => therapeutic.value.examination.selectedIds,
   set: (selectedIds: string[]) => updateExamination({ selectedIds }),
 });
+const examinationTextValues = computed(() => ({
+  "exam.coat.comment": therapeutic.value.examination.coatComment,
+  "exam.locomotion.comment": therapeutic.value.examination.locomotionComment,
+}));
 const examinationText = computed({
   get: () => therapeutic.value.examination.text,
   set: (text: string) => updateExamination({ text }),
@@ -155,6 +174,30 @@ function updateProblem(id: string, update: (problem: TherapeuticProblemDraft) =>
 function updateProblemTitle(id: string, event: Event) {
   const title = (event.target as HTMLInputElement).value;
   updateProblem(id, (problem) => ({ ...problem, title }));
+}
+
+function updateProblemDescription(id: string, event: Event) {
+  const description = (event.target as HTMLTextAreaElement).value;
+  updateProblem(id, (problem) => ({ ...problem, description }));
+}
+
+function updateLifeTextValue(id: string, value: string) {
+  const field = {
+    "life.ectoparasites.name": "ectoparasiteName",
+    "life.deworming.name": "dewormingName",
+    "life.diet.natural-products": "naturalDietProducts",
+    "life.diet.commercial-name": "commercialFoodName",
+    "life.diseases.name": "diseaseName",
+  }[id] as keyof TherapeuticAppointmentDraft["lifeAnamnesis"] | undefined;
+  if (field) updateLifeAnamnesis({ [field]: value });
+}
+
+function updateExaminationTextValue(id: string, value: string) {
+  const field = {
+    "exam.coat.comment": "coatComment",
+    "exam.locomotion.comment": "locomotionComment",
+  }[id] as keyof TherapeuticAppointmentDraft["examination"] | undefined;
+  if (field) updateExamination({ [field]: value });
 }
 
 function updateProblemMedicationName(id: string, event: Event) {
@@ -238,6 +281,10 @@ function errorId(field: string) {
 <template>
   <div ref="formRoot" class="therapeutic-appointment-form">
     <p v-if="errors.section" :id="errorId('section')" class="field-error" role="alert" tabindex="-1" data-encounter-error-anchor="true">{{ errors.section }}</p>
+    <section v-if="therapeutic.migrationNotes.length" class="therapeutic-migration-notes" aria-label="Перенесённые данные">
+      <h4>Перенесённые данные</h4>
+      <ul><li v-for="note in therapeutic.migrationNotes" :key="note">{{ note }}</li></ul>
+    </section>
     <div class="therapeutic-tabs" role="tablist" aria-label="Разделы терапевтического приёма">
       <button
         v-for="(tab, index) in THERAPEUTIC_TABS"
@@ -305,6 +352,16 @@ function errorId(field: string) {
             />
             <small v-if="errors.problems?.[problem.id]" :id="errorId(`problem-${problem.id}`)" class="field-error" role="alert">{{ errors.problems[problem.id] }}</small>
           </label>
+          <label class="therapeutic-problem-description">
+            <span>Описание проблемы</span>
+            <textarea
+              :value="problem.description"
+              class="medical-card-comment"
+              rows="2"
+              aria-label="Описание проблемы"
+              @input="updateProblemDescription(problem.id, $event)"
+            />
+          </label>
           <div class="therapeutic-problem-fields">
             <label><span>Как давно началось</span><AppSelect :model-value="problem.onsetId ?? ''" :options="onsetOptions" @update:model-value="updateProblemSelect(problem.id, 'onsetId', $event)" /></label>
             <label><span>Периодичность проявления</span><AppSelect :model-value="problem.frequencyId ?? ''" :options="frequencyOptions" @update:model-value="updateProblemSelect(problem.id, 'frequencyId', $event)" /></label>
@@ -350,7 +407,12 @@ function errorId(field: string) {
       :hidden="activeTab !== 'life'"
     >
       <h4>Анамнез жизни</h4>
-      <TherapeuticQuestionGroups v-model="lifeSelectedIds" :categories="LIFE_ANAMNESIS_CATEGORIES" />
+      <TherapeuticQuestionGroups
+        v-model="lifeSelectedIds"
+        :categories="LIFE_ANAMNESIS_CATEGORIES"
+        :text-values="lifeTextValues"
+        @update:text-value="updateLifeTextValue"
+      />
       <section class="therapeutic-category therapeutic-short-text">
         <h5>Получаемые в данный момент препараты</h5>
         <textarea
@@ -388,7 +450,12 @@ function errorId(field: string) {
       :hidden="activeTab !== 'examination'"
     >
       <h4>Осмотр</h4>
-      <TherapeuticQuestionGroups v-model="examinationSelectedIds" :categories="EXAMINATION_CATEGORIES" />
+      <TherapeuticQuestionGroups
+        v-model="examinationSelectedIds"
+        :categories="EXAMINATION_CATEGORIES"
+        :text-values="examinationTextValues"
+        @update:text-value="updateExaminationTextValue"
+      />
       <section class="medical-card-comment-section">
         <h5>Комментарий</h5>
         <textarea

@@ -20,6 +20,7 @@ import type {
 } from "@klinok/contracts";
 import { canonicalWhatHappenedIds, isWhatHappenedTaxonomyId } from "@klinok/contracts";
 import { normalizePetInput } from "../petProfile";
+import { isTherapeuticAppointmentValue, migrateTherapeuticAppointmentValue } from "../therapeuticAppointment";
 import { authErrorText } from "../russianMessages";
 import { AuthClient, AuthClientError } from "./authClient";
 import {
@@ -39,6 +40,28 @@ import {
 type Listener<T> = (snapshot: T) => void;
 type RoleDecisionInput = { accountId: string; requestId: string; revision: number; role: Role; status: "approved" | "rejected" | "revoked"; expectedStatus?: RoleRequest["status"]; reason?: string };
 const COMMAND_BATCH_SIZE = 50;
+
+function normalizeSnapshotTherapeuticAppointments(snapshot: AppSnapshotDto): AppSnapshotDto {
+  let changed = false;
+  const records = snapshot.medical.records.map((record) => {
+    const section = record.sections["therapeutic-appointment"] as (typeof record.sections)["therapeutic-appointment"] | undefined;
+    if (!section) return record;
+    const value = migrateTherapeuticAppointmentValue(section.value);
+    changed = true;
+    return {
+      ...record,
+      sections: {
+        ...record.sections,
+        "therapeutic-appointment": {
+          ...section,
+          templateVersion: "therapeutic-appointment-v2" as const,
+          value,
+        },
+      },
+    };
+  });
+  return changed ? { ...snapshot, medical: { ...snapshot.medical, records } } : snapshot;
+}
 
 function commandAction(type: ClientCommand["type"]): string {
   return {
@@ -68,7 +91,7 @@ function optimisticRecord(command: ClientCommand, snapshot: AppSnapshotDto): Med
       : kind === "diagnosis" ? "diagnosis-v2"
       : kind === "general-data" && !(value && typeof value === "object" && "text" in value) ? "general-data-v1"
         : kind === "vaccination" && !(value && typeof value === "object" && "text" in value) ? "vaccination-v1"
-          : kind === "therapeutic-appointment" && !(value && typeof value === "object" && "text" in value) ? "therapeutic-appointment-v1"
+          : kind === "therapeutic-appointment" && !(value && typeof value === "object" && "text" in value) ? "therapeutic-appointment-v2"
             : kind === "laboratory-tests" && !(value && typeof value === "object" && "text" in value) ? "laboratory-tests-v1"
               : kind === "instrumental-tests" && !(value && typeof value === "object" && "text" in value) ? "instrumental-tests-v1"
                 : "free-text-v0",
@@ -262,6 +285,10 @@ class ApiMedicalRepository {
     if (new Set(selectedIds).size !== selectedIds.length || selectedIds.some((id) => !isWhatHappenedTaxonomyId(id))) {
       throw new Error("Раздел «Что случилось» содержит неизвестный или повторяющийся вариант.");
     }
+    const therapeutic = input.sections["therapeutic-appointment"];
+    if (therapeutic !== undefined && !isTherapeuticAppointmentValue(therapeutic)) {
+      throw new Error("Раздел «Терапевтический приём» должен содержать корректные данные версии 2.");
+    }
     const normalizedInput: MedicalEncounterInput = {
       ...input,
       sections: {
@@ -326,13 +353,13 @@ export class KlinokRepository {
   static async create(options: { client: AuthClient; session: Required<Pick<AuthSessionDto, "accountId">> & AuthSessionDto; initialRole: Role; offlineLeaseDays: number; onSessionInvalid?: () => void | Promise<void> }): Promise<KlinokRepository> {
     let snapshot: AppSnapshotDto;
     try {
-      snapshot = await options.client.state(options.initialRole);
+      snapshot = normalizeSnapshotTherapeuticAppointments(await options.client.state(options.initialRole));
       await putCachedSnapshot(options.session.accountId, options.initialRole, snapshot);
     } catch (reason) {
       if (!(reason instanceof AuthClientError) || reason.code !== "NETWORK_UNAVAILABLE") throw reason;
       const cached = await getCachedSnapshot(options.session.accountId, options.initialRole, options.offlineLeaseDays);
       if (!cached) throw reason;
-      snapshot = cached;
+      snapshot = normalizeSnapshotTherapeuticAppointments(cached);
     }
     const pending = await listCommands(options.session.accountId);
     const repository = new KlinokRepository(options.session.accountId, options.client, options.initialRole, options.offlineLeaseDays,
@@ -484,7 +511,7 @@ export class KlinokRepository {
     if (this.disposed) return;
     const role = this.role;
     try {
-      const snapshot = await this.client.state(role);
+      const snapshot = normalizeSnapshotTherapeuticAppointments(await this.client.state(role));
       if (this.disposed || role !== this.role || (this.current.role === role && snapshot.revision < this.current.revision)) return;
       const pending = await listCommands(this.accountId);
       if (this.disposed || role !== this.role || (this.current.role === role && snapshot.revision < this.current.revision)) return;
@@ -522,7 +549,7 @@ export class KlinokRepository {
     const previousRole = this.role;
     this.role = role;
     try {
-      const snapshot = await this.client.state(role);
+      const snapshot = normalizeSnapshotTherapeuticAppointments(await this.client.state(role));
       if (this.disposed) return;
       await putCachedSnapshot(this.accountId, role, snapshot);
       this.current = applyOptimistic(snapshot, (await listCommands(this.accountId)).filter((command) => command.activeRole === role));
@@ -530,7 +557,7 @@ export class KlinokRepository {
       if (!(reason instanceof AuthClientError) || reason.code !== "NETWORK_UNAVAILABLE") { this.role = previousRole; throw reason; }
       const cached = await getCachedSnapshot(this.accountId, role, this.offlineLeaseDays);
       if (!cached) { this.role = previousRole; throw reason; }
-      this.current = applyOptimistic(cached, (await listCommands(this.accountId)).filter((command) => command.activeRole === role));
+      this.current = applyOptimistic(normalizeSnapshotTherapeuticAppointments(cached), (await listCommands(this.accountId)).filter((command) => command.activeRole === role));
     }
     this.emit(); await this.emitSync();
   }

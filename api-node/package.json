@@ -9,7 +9,8 @@
     "start": "node dist/server.js",
     "dev": "tsx src/server.ts",
     "provision": "node dist/provision.js",
-    "test": "vitest run --run --config vitest.config.ts"
+    "test": "vitest run --run --config vitest.config.ts",
+    "coverage": "vitest run --coverage --config vitest.config.ts"
   },
   "dependencies": {
     "@fastify/cookie": "^11.0.2",

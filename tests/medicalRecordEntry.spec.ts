@@ -702,13 +702,15 @@ describe("MedicalRecordEntry", () => {
             ...record.sections,
             "therapeutic-appointment": {
               kind: "therapeutic-appointment",
-              templateVersion: "therapeutic-appointment-v1",
+              templateVersion: "therapeutic-appointment-v2",
               value: {
+                schemaVersion: 2,
                 diseaseAnamnesis: {
                   text: "Снижение аппетита\nсо вчерашнего дня",
                   problems: [{
                     id: "problem-1",
                     title: "Не ест",
+                    description: "Отказывается от привычного корма",
                     onsetId: "problem.onset.yesterday",
                     priorTherapyId: "problem.therapy.performed",
                     medicationUseId: "problem.medication.used",
@@ -718,6 +720,7 @@ describe("MedicalRecordEntry", () => {
                   }, {
                     id: "problem-2",
                     title: "Вялость",
+                    description: "",
                     onsetId: "problem.onset.today",
                     medicationIds: [],
                   }],
@@ -726,6 +729,11 @@ describe("MedicalRecordEntry", () => {
                 lifeAnamnesis: {
                   text: "Содержится в квартире",
                   selectedIds: ["life.housing.place.apartment"],
+                  ectoparasiteName: "",
+                  dewormingName: "",
+                  naturalDietProducts: "",
+                  commercialFoodName: "",
+                  diseaseName: "",
                   currentMedications: "Не получает",
                   allergies: "Не выявлены",
                 },
@@ -736,9 +744,12 @@ describe("MedicalRecordEntry", () => {
                     "exam.mucosa.color.pale-pink",
                     "exam.mucosa.moisture.moist",
                   ],
+                  coatComment: "",
+                  locomotionComment: "",
                 },
                 recommendations: "Контроль через неделю",
                 prescriptions: "Диетический корм",
+                migrationNotes: [],
               },
               authorAccountId: "doctor-1",
               authorDisplayName: "Вера Врач",
@@ -791,13 +802,18 @@ describe("MedicalRecordEntry", () => {
             ...record.sections,
             "therapeutic-appointment": {
               kind: "therapeutic-appointment",
-              templateVersion: "therapeutic-appointment-v1",
+              templateVersion: "therapeutic-appointment-v2",
               value: {
+                schemaVersion: 2,
                 diseaseAnamnesis: { text: "", problems: [], selectedIds: [] },
-                lifeAnamnesis: { text: "", selectedIds: [], currentMedications: "", allergies: "" },
-                examination: { text: "", selectedIds: [] },
+                lifeAnamnesis: {
+                  text: "", selectedIds: [], ectoparasiteName: "", dewormingName: "", naturalDietProducts: "",
+                  commercialFoodName: "", diseaseName: "", currentMedications: "", allergies: "",
+                },
+                examination: { text: "", selectedIds: [], coatComment: "", locomotionComment: "" },
                 recommendations: "Только рекомендации",
                 prescriptions: "",
+                migrationNotes: [],
               },
               authorAccountId: "doctor-1",
               authorDisplayName: "Вера Врач",
