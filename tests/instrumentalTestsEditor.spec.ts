@@ -723,7 +723,7 @@ describe("InstrumentalTestsEditor", () => {
     const diaphragm = wrapper.get(`[data-finding-id="${xrayId("10.0")}"]`);
     const regularity = diaphragm.get<HTMLSelectElement>('select[aria-label="Ровность купола"]');
     const definition = diaphragm.get<HTMLSelectElement>('select[aria-label="Чёткость купола"]');
-    const projection = diaphragm.get<HTMLSelectElement>('select[aria-label="Проекция"]');
+    const projection = diaphragm.get<HTMLSelectElement>('select[aria-label="Проекция измерения"]');
     const fields = diaphragm.findAll(".instrumental-selection-set-field");
     expect(fields).toHaveLength(3);
     expect(fields.slice(0, 2).every((field) => !field.classes().includes("instrumental-selection-set-field-wide"))).toBe(true);
@@ -731,10 +731,21 @@ describe("InstrumentalTestsEditor", () => {
     expect(regularity.findAll("option").map((option) => option.text())).toEqual(["Не указано", "Ровный", "Неровный"]);
     expect(definition.findAll("option").map((option) => option.text())).toEqual(["Не указано", "Чёткий", "Нечёткий"]);
     expect(projection.findAll("option").map((option) => option.text())).toEqual([
-      "Не указано", "На LL-проекции в области межреберья", "На VD-проекции в области межреберья",
+      "Не указано", "На LL-проекции", "На VD-проекции",
     ]);
     await projection.setValue(xrayId("10.0.5"));
     const intercostal = diaphragm.get<HTMLInputElement>('input[aria-label="Межреберье на LL-проекции"]');
+    const projectionField = projection.element.closest<HTMLElement>(".instrumental-selection-set-field")!;
+    expect(projectionField.classList).toContain("instrumental-selection-set-field-inline");
+    expect(Array.from(projectionField.querySelectorAll(".instrumental-selection-set-inline-affix"))
+      .map((affix) => affix.textContent)).toEqual(["в области", "межреберья"]);
+    expect(diaphragm.find(`[data-finding-id="${xrayId("10.0.5.intercostal")}"]`).exists()).toBe(false);
+    await wrapper.setProps({ errors: { studies: [{ findings: {
+      [xrayId("10.0.5.intercostal")]: "Заполните поле «Межреберье на LL-проекции».",
+    } }] } });
+    const intercostalError = projectionField.querySelector<HTMLElement>(".field-error")!;
+    expect(intercostal.attributes("aria-invalid")).toBe("true");
+    expect(intercostal.attributes("aria-describedby")).toBe(intercostalError.id);
     await intercostal.setValue("7");
     await regularity.setValue(xrayId("10.0.1"));
     await definition.setValue(xrayId("10.0.3"));
@@ -873,7 +884,8 @@ describe("InstrumentalTestsEditor", () => {
     await wrapper.setProps({ errors: { studies: [{ findings: {
       [`${xrayId("10.0")}:regularity`]: "Для характеристики «Ровность купола» можно выбрать не более одного значения.",
     } }] } });
-    const conflictError = regularity.element.closest("label")!.querySelector<HTMLElement>(".field-error")!;
+    const conflictError = regularity.element.closest(".instrumental-selection-set-field")!
+      .querySelector<HTMLElement>(".field-error")!;
     expect(regularity.attributes("aria-invalid")).toBe("true");
     expect(regularity.attributes("aria-describedby")).toBe(conflictError.id);
 
@@ -922,6 +934,8 @@ describe("InstrumentalTestsEditor", () => {
     const fracture = wrapper.get<HTMLTextAreaElement>('textarea[aria-label="Описание перелома"]');
     expect(fracture.attributes("rows")).toBe("2");
     expect(fracture.classes()).toContain("medical-card-comment");
+    expect(fracture.element.closest(".instrumental-finding-level")?.parentElement?.classList)
+      .toContain("instrumental-multiple-choice-option");
     await fracture.setValue("Перелом таза");
 
     await addFinding(wrapper, abdomenXrayId("9"));
@@ -930,6 +944,9 @@ describe("InstrumentalTestsEditor", () => {
     const regularity = diaphragm.get<HTMLSelectElement>('select[aria-label="Ровность купола"]');
     const definition = diaphragm.get<HTMLSelectElement>('select[aria-label="Чёткость купола"]');
     const projection = diaphragm.get<HTMLSelectElement>('select[aria-label="Проекция измерения"]');
+    expect(projection.findAll("option").map((option) => option.text())).toEqual([
+      "Не указано", "На LL-проекции", "На VD-проекции",
+    ]);
     await regularity.setValue(abdomenXrayId("9.0.1"));
     await definition.setValue(abdomenXrayId("9.0.3"));
     await projection.setValue(abdomenXrayId("9.0.5"));
@@ -939,7 +956,9 @@ describe("InstrumentalTestsEditor", () => {
     expect(projection.element.value).toBe(abdomenXrayId("9.0.5"));
     await projection.setValue(abdomenXrayId("9.0.6"));
     expect(diaphragm.find('input[aria-label="Межреберье на LL-проекции"]').exists()).toBe(false);
-    expect(diaphragm.get<HTMLInputElement>('input[aria-label="Межреберье на VD-проекции"]').element.value).toBe("");
+    const vdIntercostal = diaphragm.get<HTMLInputElement>('input[aria-label="Межреберье на VD-проекции"]');
+    expect(vdIntercostal.element.value).toBe("");
+    expect(vdIntercostal.element.closest(".instrumental-selection-set-field-inline")).not.toBeNull();
 
     await addFinding(wrapper, abdomenXrayId("21"));
     await addFinding(wrapper, abdomenXrayId("21.3"));
@@ -948,7 +967,10 @@ describe("InstrumentalTestsEditor", () => {
     await checkbox(smallIntestine, "Жидкость").setValue(true);
     await checkbox(smallIntestine, "Газ").setValue(true);
     await checkbox(smallIntestine, "Другое").setValue(true);
-    await wrapper.get('textarea[aria-label="Описание содержимого"]').setValue("Непереваренные массы");
+    const contentsDescription = wrapper.get('textarea[aria-label="Описание содержимого"]');
+    expect(contentsDescription.element.closest(".instrumental-finding-level")?.parentElement?.classList)
+      .toContain("instrumental-multiple-choice-option");
+    await contentsDescription.setValue("Непереваренные массы");
     expect(checkbox(smallIntestine, "Жидкость").element.checked).toBe(true);
     expect(checkbox(smallIntestine, "Газ").element.checked).toBe(true);
 

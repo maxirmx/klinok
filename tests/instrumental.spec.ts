@@ -105,6 +105,9 @@ describe("instrumental study contracts", () => {
     expect(instrumentalFindingById(abdomenXrayId("9.0.5.intercostal"))).toMatchObject({
       kind: "short-text", required: true,
     });
+    expect(instrumentalFindingById(abdomenXrayId("9.0.5"))?.selectionLabel).toBe("На LL-проекции");
+    expect(instrumentalFindingById(abdomenXrayId("9.0"))?.selectionSets?.at(-1)?.inlineChildInput)
+      .toEqual({ prefix: "в области", suffix: "межреберья" });
     expect(instrumentalFindingById(abdomenXrayId("8.0.3.2.text"))).toMatchObject({
       kind: "long-text", required: true,
     });
@@ -260,10 +263,12 @@ describe("instrumental study contracts", () => {
       required: true,
     }, {
       key: "projection",
-      name: "Проекция",
+      name: "Проекция измерения",
       choiceIds: [xrayId("10.0.5"), xrayId("10.0.6")],
       required: true,
+      inlineChildInput: { prefix: "в области", suffix: "межреберья" },
     }]);
+    expect(instrumentalFindingById(xrayId("10.0.5"))?.selectionLabel).toBe("На LL-проекции");
     expect(instrumentalFindingById(xrayId("10.0"))?.conflictPairs).toBeUndefined();
     expect(instrumentalFindingById(xrayId("12.2"))?.selectionSets).toEqual([{
       key: "regularity",

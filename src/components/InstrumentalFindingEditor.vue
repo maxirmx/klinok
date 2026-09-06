@@ -14,6 +14,7 @@ import AppCatalogCombobox from "./AppCatalogCombobox.vue";
 import AppIcon from "./AppIcon.vue";
 import AppSelect from "./AppSelect.vue";
 import ConfirmationDialog from "./ConfirmationDialog.vue";
+import InstrumentalSelectionSetField from "./InstrumentalSelectionSetField.vue";
 
 const props = withDefaults(defineProps<{
   catalog: readonly InstrumentalFindingCatalogItem[];
@@ -233,6 +234,46 @@ function selectionSetError(item: InstrumentalFindingCatalogItem | undefined, set
 function errorId(...parts: string[]) {
   return `${errorBaseId}-${parts.join("-").replace(/[^a-zA-Z0-9_-]/g, "-")}-error`;
 }
+function inlineSelectionSetInput(
+  finding: InstrumentalFindingValue,
+  item: InstrumentalFindingCatalogItem | undefined,
+  set: InstrumentalSelectionSet,
+) {
+  if (!item || !set.inlineChildInput) return undefined;
+  const selectedId = selectedSelectionSetChoice(finding, item, set);
+  const selectedItem = selectionSetCatalog(item, set).find((choiceItem) => choiceItem.id === selectedId);
+  const selectedValue = finding.children.find((child) => child.findingId === selectedId);
+  const inputItem = selectedItem?.children.find((child) => child.kind === "short-text");
+  const inputValue = selectedValue?.children.find((child) => child.findingId === inputItem?.id);
+  if (!inputItem || !inputValue) return undefined;
+  const inputError = props.errors[inputItem.id];
+  return {
+    value: inputValue.value ?? "",
+    label: inputItem.name,
+    prefix: set.inlineChildInput.prefix,
+    suffix: set.inlineChildInput.suffix,
+    invalid: Boolean(inputError),
+    describedBy: inputError ? errorId(inputItem.id) : undefined,
+    error: inputError,
+    errorId: inputError ? errorId(inputItem.id) : undefined,
+  };
+}
+function updateInlineSelectionSetInput(
+  finding: InstrumentalFindingValue,
+  item: InstrumentalFindingCatalogItem | undefined,
+  set: InstrumentalSelectionSet,
+  value: string,
+) {
+  if (!item) return;
+  const selectedId = selectedSelectionSetChoice(finding, item, set);
+  const selectedItem = selectionSetCatalog(item, set).find((choiceItem) => choiceItem.id === selectedId);
+  const selectedValue = finding.children.find((child) => child.findingId === selectedId);
+  const inputItem = selectedItem?.children.find((child) => child.kind === "short-text");
+  if (!selectedItem || !selectedValue || !inputItem) return;
+  const inputValue = selectedValue.children.find((child) => child.findingId === inputItem.id);
+  if (!inputValue) return;
+  inputValue.value = value;
+}
 function naturallyWideSelectionSet(item: InstrumentalFindingCatalogItem | undefined, set: InstrumentalSelectionSet) {
   return [set.name, ...selectionSetCatalog(item, set).map((choiceItem) => choiceItem.name)]
     .some((label) => label.length > 40);
@@ -266,7 +307,7 @@ function availableDirectIndicatorCatalog(
 function selectOptions(items: readonly InstrumentalFindingCatalogItem[]) {
   return [
     { value: "", label: "Не указано" },
-    ...items.map((item) => ({ value: item.id, label: item.name })),
+    ...items.map((item) => ({ value: item.id, label: item.selectionLabel ?? item.name })),
   ];
 }
 function directChoiceOptions(item?: InstrumentalFindingCatalogItem) {
@@ -382,7 +423,10 @@ function selectedChoiceId(finding: InstrumentalFindingValue, item?: Instrumental
 function selectedFindingChoicesWithChildren(finding: InstrumentalFindingValue, item?: InstrumentalFindingCatalogItem) {
   return finding.children.filter((child) => {
     const choiceItem = directChoiceCatalog(item).find((candidate) => candidate.id === child.findingId);
-    return choiceItem?.children.length;
+    if (!choiceItem?.children.length) return false;
+    const inlineSet = item?.selectionSets?.find((set) =>
+      set.inlineChildInput && set.choiceIds.includes(child.findingId));
+    return !inlineSet || !inlineSelectionSetInput(finding, item, inlineSet);
   });
 }
 function choiceChildrenCatalog(value: InstrumentalFindingValue, item?: InstrumentalFindingCatalogItem) {
@@ -563,22 +607,18 @@ function updateIntegerValue(finding: InstrumentalFindingValue, event: Event) {
               v-for="(set, setIndex) in selectionItem.selectionSets ?? []"
               :key="set.key"
             >
-              <label
+              <InstrumentalSelectionSetField
                 v-if="!multipleSelectionSet(set)"
-                class="instrumental-selection-set-field"
-                :class="{ 'instrumental-selection-set-field-wide': wideSelectionSet(selectionItem, setIndex) }"
-              >
-                <span>{{ set.name }}</span>
-                <AppSelect
-                  :model-value="selectedInlineSelectionSetChoice(selectionItem, set)"
-                  :options="selectOptions(selectionSetCatalog(selectionItem, set))"
-                  :aria-label="set.name"
-                  :invalid="Boolean(selectionSetError(selectionItem, set))"
-                  :aria-describedby="selectionSetError(selectionItem, set) ? errorId(selectionSetErrorKey(selectionItem, set)) : undefined"
-                  @update:model-value="requestInlineSelectionSetChoice(selectionItem, set, $event)"
-                />
-                <small v-if="selectionSetError(selectionItem, set)" :id="errorId(selectionSetErrorKey(selectionItem, set))" class="field-error" role="alert">{{ selectionSetError(selectionItem, set) }}</small>
-              </label>
+                :label="set.name"
+                :model-value="selectedInlineSelectionSetChoice(selectionItem, set)"
+                :options="selectOptions(selectionSetCatalog(selectionItem, set))"
+                :wide="wideSelectionSet(selectionItem, setIndex)"
+                :invalid="Boolean(selectionSetError(selectionItem, set))"
+                :described-by="selectionSetError(selectionItem, set) ? errorId(selectionSetErrorKey(selectionItem, set)) : undefined"
+                :error="selectionSetError(selectionItem, set)"
+                :error-id="selectionSetError(selectionItem, set) ? errorId(selectionSetErrorKey(selectionItem, set)) : undefined"
+                @update:model-value="requestInlineSelectionSetChoice(selectionItem, set, $event)"
+              />
               <fieldset
                 v-else
                 class="medical-card-option-panel instrumental-multiple-choice-panel instrumental-selection-set-field instrumental-selection-set-field-wide"
@@ -731,23 +771,21 @@ function updateIntegerValue(finding: InstrumentalFindingValue, event: Event) {
           <div class="instrumental-result-control">
             <span v-if="!isRootChoiceFinding(finding)" class="instrumental-result-mobile-name">{{ finding.findingName }}</span>
             <div class="instrumental-selection-set-grid">
-              <label
+              <InstrumentalSelectionSetField
                 v-for="(set, setIndex) in catalogItem(finding)?.selectionSets ?? []"
                 :key="set.key"
-                class="instrumental-selection-set-field"
-                :class="{ 'instrumental-selection-set-field-wide': wideSelectionSet(catalogItem(finding), setIndex) }"
-              >
-                <span>{{ set.name }}</span>
-                <AppSelect
-                  :model-value="selectedSelectionSetChoice(finding, catalogItem(finding), set)"
-                  :options="selectOptions(selectionSetCatalog(catalogItem(finding), set))"
-                  :aria-label="set.name"
-                  :invalid="Boolean(selectionSetError(catalogItem(finding), set))"
-                  :aria-describedby="selectionSetError(catalogItem(finding), set) ? errorId(selectionSetErrorKey(catalogItem(finding), set)) : undefined"
-                  @update:model-value="requestSelectionSetChoice(finding, catalogItem(finding), set, $event)"
-                />
-                <small v-if="selectionSetError(catalogItem(finding), set)" :id="errorId(selectionSetErrorKey(catalogItem(finding), set))" class="field-error" role="alert">{{ selectionSetError(catalogItem(finding), set) }}</small>
-              </label>
+                :label="set.name"
+                :model-value="selectedSelectionSetChoice(finding, catalogItem(finding), set)"
+                :options="selectOptions(selectionSetCatalog(catalogItem(finding), set))"
+                :wide="wideSelectionSet(catalogItem(finding), setIndex)"
+                :invalid="Boolean(selectionSetError(catalogItem(finding), set))"
+                :described-by="selectionSetError(catalogItem(finding), set) ? errorId(selectionSetErrorKey(catalogItem(finding), set)) : undefined"
+                :error="selectionSetError(catalogItem(finding), set)"
+                :error-id="selectionSetError(catalogItem(finding), set) ? errorId(selectionSetErrorKey(catalogItem(finding), set)) : undefined"
+                :inline-input="inlineSelectionSetInput(finding, catalogItem(finding), set)"
+                @update:model-value="requestSelectionSetChoice(finding, catalogItem(finding), set, $event)"
+                @update:inline-input-value="updateInlineSelectionSetInput(finding, catalogItem(finding), set, $event)"
+              />
             </div>
           </div>
         </template>
