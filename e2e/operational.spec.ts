@@ -43,6 +43,16 @@ async function expectTopAligned(action: Locator, peer: Locator): Promise<void> {
   expect(Math.abs(actionBox!.y - peerBox!.y)).toBeLessThanOrEqual(1);
 }
 
+async function expectInlineProjectionInput(selector: Locator, input: Locator): Promise<void> {
+  const [selectorBox, inputBox] = await Promise.all([selector.boundingBox(), input.boundingBox()]);
+  expect(selectorBox).not.toBeNull();
+  expect(inputBox).not.toBeNull();
+  expect(inputBox!.x).toBeGreaterThan(selectorBox!.x + selectorBox!.width);
+  const selectorCenter = selectorBox!.y + selectorBox!.height / 2;
+  const inputCenter = inputBox!.y + inputBox!.height / 2;
+  expect(Math.abs(inputCenter - selectorCenter)).toBeLessThanOrEqual(1);
+}
+
 async function expectHierarchyIndent(parent: Locator, child: Locator, minimum = 18): Promise<void> {
   const [parentBox, childBox] = await Promise.all([parent.boundingBox(), child.boundingBox()]);
   expect(parentBox).not.toBeNull();
@@ -865,13 +875,18 @@ test("fresh provisioning, Doctor approval, grant, draft, and confirmation", asyn
   const diaphragmCharacteristics = xrayStudy.locator(`[data-finding-id="instrumental.finding.xray-thorax.10.0"]`);
   const diaphragmRegularity = diaphragmCharacteristics.getByRole("combobox", { name: "Ровность купола", exact: true });
   const diaphragmDefinition = diaphragmCharacteristics.getByRole("combobox", { name: "Чёткость купола", exact: true });
-  const diaphragmProjection = diaphragmCharacteristics.getByRole("combobox", { name: "Проекция", exact: true });
+  const diaphragmProjection = diaphragmCharacteristics.getByRole("combobox", {
+    name: "Проекция измерения", exact: true,
+  });
   await expect(diaphragmCharacteristics.getByRole("combobox")).toHaveCount(3);
   await diaphragmRegularity.selectOption({ label: "Неровный" });
   await diaphragmDefinition.selectOption({ label: "Чёткий" });
-  await diaphragmProjection.selectOption({ label: "На LL-проекции в области межреберья" });
+  await diaphragmProjection.selectOption({ label: "На LL-проекции" });
   const xrayIntercostal = diaphragmCharacteristics.getByLabel("Межреберье на LL-проекции", { exact: true });
   await expect(xrayIntercostal).toBeVisible();
+  await expect(diaphragmCharacteristics.locator(".instrumental-selection-set-inline-affix"))
+    .toHaveText(["в области", "межреберья"]);
+  await expectInlineProjectionInput(diaphragmProjection, xrayIntercostal);
   await xrayIntercostal.fill("7");
   const verifyCheckboxConflict = async (leftPanel: Locator, left: string, rightPanel: Locator, right: string) => {
     const leftChoice = leftPanel.getByRole("checkbox", { name: left, exact: true });
@@ -1095,8 +1110,12 @@ test("fresh provisioning, Doctor approval, grant, draft, and confirmation", asyn
   });
   await abdominalDiaphragmRegularity.selectOption({ label: "Ровный" });
   await abdominalDiaphragmDefinition.selectOption({ label: "Чёткий" });
-  await abdominalDiaphragmProjection.selectOption({ label: "На LL-проекции в области межреберья" });
-  await abdominalDiaphragm.getByLabel("Межреберье на LL-проекции", { exact: true }).fill("8");
+  await abdominalDiaphragmProjection.selectOption({ label: "На LL-проекции" });
+  const abdominalIntercostal = abdominalDiaphragm.getByLabel("Межреберье на LL-проекции", { exact: true });
+  await expect(abdominalDiaphragm.locator(".instrumental-selection-set-inline-affix"))
+    .toHaveText(["в области", "межреберья"]);
+  await expectInlineProjectionInput(abdominalDiaphragmProjection, abdominalIntercostal);
+  await abdominalIntercostal.fill("8");
   await abdominalDiaphragmRegularity.selectOption({ label: "Неровный" });
   await expect(abdominalDiaphragmDefinition).toHaveValue("instrumental.finding.xray-abdomen.9.0.3");
   await expect(abdominalDiaphragmProjection).toHaveValue("instrumental.finding.xray-abdomen.9.0.5");
@@ -1453,10 +1472,10 @@ test("fresh provisioning, Doctor approval, grant, draft, and confirmation", asyn
   await expect(doctorRecord).toContainText("Ровные");
   await expect(doctorRecord).toContainText("Нечёткие");
   await expect(doctorRecord).toContainText("Рентгенография грудной полости");
-  await expect(doctorRecord).toContainText("Межреберье на LL-проекции: 7");
+  await expect(doctorRecord).toContainText("На LL-проекции в области 7 межреберья");
   await expect(doctorRecord).toContainText("Очаговых и диффузных изменений в лёгочных полях не выявлено");
   await expect(doctorRecord).toContainText("Рентгенография брюшной полости");
-  await expect(doctorRecord).toContainText("Межреберье на LL-проекции: 8");
+  await expect(doctorRecord).toContainText("На LL-проекции в области 8 межреберья");
   await expect(doctorRecord).toContainText("Перелом таза");
   await expect(doctorRecord).toContainText("Признаки кишечной непроходимости");
   await doctorRecord.getByRole("button", { name: "Редактировать запись" }).click();
@@ -1665,7 +1684,7 @@ test("fresh provisioning, Doctor approval, grant, draft, and confirmation", asyn
   await expect(ownerUltrasoundStudy.getByText("Нечёткие", { exact: true })).toBeVisible();
   const ownerXrayStudy = ownerInstrumental.locator(".instrumental-history-study")
     .filter({ hasText: "Рентгенография грудной полости" });
-  await expect(ownerXrayStudy.getByText("Межреберье на LL-проекции: 7", { exact: true })).toBeVisible();
+  await expect(ownerXrayStudy.getByText("На LL-проекции в области 7 межреберья", { exact: true })).toBeVisible();
   await expect(ownerXrayStudy.getByText("Заключение: Очаговых и диффузных изменений в лёгочных полях не выявлено", { exact: true })).toBeVisible();
   const ownerAbdominalXrayStudy = ownerInstrumental.locator(".instrumental-history-study")
     .filter({ hasText: "Рентгенография брюшной полости" });
@@ -1673,7 +1692,7 @@ test("fresh provisioning, Doctor approval, grant, draft, and confirmation", asyn
   await expect(ownerAbdominalXrayStudy.getByText("Правая латеролатеральная", { exact: true })).toBeVisible();
   await expect(ownerAbdominalXrayStudy.getByText("Вентродорсальная", { exact: true })).toBeVisible();
   await expect(ownerAbdominalXrayStudy.getByText("Описание перелома: Перелом таза", { exact: true })).toBeVisible();
-  await expect(ownerAbdominalXrayStudy.getByText("Межреберье на LL-проекции: 8", { exact: true })).toBeVisible();
+  await expect(ownerAbdominalXrayStudy.getByText("На LL-проекции в области 8 межреберья", { exact: true })).toBeVisible();
   await expect(ownerAbdominalXrayStudy.getByText("Жидкость", { exact: true })).toHaveCount(2);
   await expect(ownerAbdominalXrayStudy.getByText("Газ", { exact: true })).toHaveCount(2);
   await expect(ownerAbdominalXrayStudy.getByText("Нечётко", { exact: true })).toBeVisible();

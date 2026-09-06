@@ -17,11 +17,16 @@ export interface InstrumentalSelectionSet {
   readonly selectionMode?: InstrumentalSelectionMode;
   readonly showName?: boolean;
   readonly required?: boolean;
+  readonly inlineChildInput?: {
+    readonly prefix: string;
+    readonly suffix: string;
+  };
 }
 
 export interface InstrumentalFindingCatalogItem {
   readonly id: string;
   readonly name: string;
+  readonly selectionLabel?: string;
   readonly kind: InstrumentalFindingKind;
   readonly unit?: string;
   readonly selectionMode?: InstrumentalSelectionMode;

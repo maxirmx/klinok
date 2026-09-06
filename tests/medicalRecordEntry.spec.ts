@@ -245,14 +245,15 @@ describe("MedicalRecordEntry", () => {
     });
     const history = wrapper.get(".instrumental-history");
     expect(history.findAll(".instrumental-history-study")).toHaveLength(2);
-    expect(history.findAll(".instrumental-history-findings .instrumental-history-findings")).toHaveLength(6);
+    expect(history.findAll(".instrumental-history-findings .instrumental-history-findings")).toHaveLength(5);
     expect(history.text()).toContain("20.07.2026 · УЗИ органов брюшной полости");
     expect(history.text()).toContain("Взвесь/осадок: Незначительно");
     expect(history.text()).toContain("Размер: 12 мм");
     expect(history.text()).toContain("Размер образований: 7 мм");
     expect(history.text()).toContain("21.07.2026 · Рентгенография грудной полости");
     expect(history.text()).toContain("Чёткий");
-    expect(history.text()).toContain("Межреберье на LL-проекции: 7");
+    expect(history.text()).toContain("На LL-проекции в области 7 межреберья");
+    expect(history.text()).not.toContain("Межреберье на LL-проекции: 7");
     expect(history.text()).toContain("Заключение: Очаговых и диффузных изменений в лёгочных полях не выявлено");
     expect(history.text()).toContain("Контроль");
   });
@@ -339,7 +340,8 @@ describe("MedicalRecordEntry", () => {
     const history = wrapper.get(".instrumental-history");
     expect(history.text()).toContain("21.07.2026 · Рентгенография брюшной полости");
     expect(history.text()).toContain("Неровный");
-    expect(history.text()).toContain("Межреберье на LL-проекции: 7");
+    expect(history.text()).toContain("На LL-проекции в области 7 межреберья");
+    expect(history.text()).not.toContain("Межреберье на LL-проекции: 7");
     expect(history.text()).toContain("Жидкость");
     expect(history.text()).toContain("Газ");
     expect(history.text()).toContain("Заключение: Признаки кишечной непроходимости");

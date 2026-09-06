@@ -118,12 +118,12 @@ export const XRAY_THORAX_FINDINGS: readonly InstrumentalFindingCatalogItem[] = [
     requiredSelectionSetGroup("10.0", "Характеристики купола", [
       choice("10.0.1", "Ровный"), choice("10.0.2", "Неровный"),
       choice("10.0.3", "Чёткий"), choice("10.0.4", "Нечёткий"),
-      choice("10.0.5", "На LL-проекции в области межреберья", [
+      { ...choice("10.0.5", "На LL-проекции в области межреберья", [
         requiredShortText("10.0.5.intercostal", "Межреберье на LL-проекции"),
-      ]),
-      choice("10.0.6", "На VD-проекции в области межреберья", [
+      ]), selectionLabel: "На LL-проекции" },
+      { ...choice("10.0.6", "На VD-проекции в области межреберья", [
         requiredShortText("10.0.6.intercostal", "Межреберье на VD-проекции"),
-      ]),
+      ]), selectionLabel: "На VD-проекции" },
     ], [{
       key: "regularity",
       name: "Ровность купола",
@@ -136,9 +136,10 @@ export const XRAY_THORAX_FINDINGS: readonly InstrumentalFindingCatalogItem[] = [
       required: true,
     }, {
       key: "projection",
-      name: "Проекция",
+      name: "Проекция измерения",
       choiceIds: [id("10.0.5"), id("10.0.6")],
       required: true,
+      inlineChildInput: { prefix: "в области", suffix: "межреберья" },
     }]),
     group("10.1", "Ножки диафрагмы", [
       choice("10.1.1", "Визуализируются", [

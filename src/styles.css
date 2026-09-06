@@ -3700,6 +3700,22 @@ label > input[type="checkbox"] {
   align-content: start;
   gap: 2px;
 }
+.encounter-editor .instrumental-selection-set-field > span {
+  color: #344054;
+  font-family: var(--font);
+  font-size: 10.5px;
+  font-weight: 400;
+  line-height: 1.3;
+}
+.instrumental-selection-set-control { display: grid; min-width: 0; gap: 2px; }
+.instrumental-selection-set-inline-control {
+  grid-template-columns: auto minmax(4rem, 1fr) auto;
+  align-items: center;
+  gap: 6px;
+}
+.instrumental-selection-set-inline-control > .app-select { grid-column: 1 / -1; }
+.instrumental-selection-set-inline-affix { min-width: 0; color: var(--ink); font-size: 11.5px; }
+.instrumental-selection-set-inline-input { width: 100%; min-width: 0; box-sizing: border-box; }
 .instrumental-selection-set-field > .medical-card-options {
   grid-template-columns: repeat(auto-fill, minmax(min(180px, 100%), 1fr));
 }
@@ -3749,6 +3765,10 @@ label > input[type="checkbox"] {
   .instrumental-result-content > .instrumental-panel-label { grid-column: 2; }
   .instrumental-selection-set-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .instrumental-selection-set-field-wide { grid-column: 1 / -1; }
+  .instrumental-selection-set-inline-control {
+    grid-template-columns: minmax(9rem, 1fr) auto minmax(3.75rem, 5rem) auto;
+  }
+  .instrumental-selection-set-inline-control > .app-select { grid-column: auto; }
   .instrumental-result-desktop-name {
     position: relative;
     display: block;
