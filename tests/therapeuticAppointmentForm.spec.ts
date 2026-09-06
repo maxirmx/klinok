@@ -62,7 +62,7 @@ describe("TherapeuticAppointmentForm", () => {
     expect(sectionError.attributes("role")).toBe("alert");
   });
 
-  it("reveals and describes an invalid problem title", async () => {
+  it("reveals and describes a problem validation error", async () => {
     const { wrapper, draft } = mountForm();
     await wrapper.get('button[aria-label="Добавить проблему"]').trigger("click");
     const problemId = draft.diseaseAnamnesis.problems[0]!.id;
@@ -145,9 +145,8 @@ describe("TherapeuticAppointmentForm", () => {
     expect(urination.findAll(".therapeutic-select-field")).toHaveLength(1);
     expect(urination.get(".therapeutic-select-field").classes()).toContain("therapeutic-select-field-wide");
     await urination.get("select").setValue("disease.urination.state.changed");
-    expect(urination.findAll(".therapeutic-select-field")).toHaveLength(2);
-    expect(urination.findAll(".therapeutic-select-field")
-      .every((field) => !field.classes().includes("therapeutic-select-field-wide"))).toBe(true);
+    expect(urination.findAll(".therapeutic-select-field")).toHaveLength(1);
+    expect(urination.get(".therapeutic-multiple-field").text()).toContain("Непродуктивное");
   });
 
   it("places headed comment sections last in every structured tab", () => {
@@ -243,11 +242,53 @@ describe("TherapeuticAppointmentForm", () => {
     expect(problem.findAll("select")).toHaveLength(5);
   });
 
+  it("edits v2 problem and conditional free-text fields", async () => {
+    const { wrapper, draft } = mountForm();
+    await wrapper.get('button[aria-label="Добавить проблему"]').trigger("click");
+    await wrapper.get<HTMLTextAreaElement>('.therapeutic-problem-description textarea')
+      .setValue("Рвота после кормления");
+    expect(draft.diseaseAnamnesis.problems[0]?.description).toBe("Рвота после кормления");
+
+    await wrapper.findAll('[role="tab"]')[1]!.trigger("click");
+    const lifePanel = wrapper.findAll('[role="tabpanel"]')[1]!;
+    const ectoparasites = lifePanel.findAll(".therapeutic-category")
+      .find((category) => category.get("h5").text() === "Обработки от эктопаразитов")!;
+    const ectoparasiteName = ectoparasites.get<HTMLTextAreaElement>('textarea[aria-label="Название"]');
+    expect(ectoparasiteName.element.parentElement?.style.display).toBe("none");
+    await ectoparasites.get("select").setValue("life.ectoparasites.state.yes");
+    expect(ectoparasiteName.element.parentElement?.style.display).toBe("");
+    await ectoparasiteName.setValue("Селамектин");
+    expect(draft.lifeAnamnesis.ectoparasiteName).toBe("Селамектин");
+    await ectoparasites.get("select").setValue("life.ectoparasites.state.none");
+    expect(draft.lifeAnamnesis.ectoparasiteName).toBe("");
+
+    await wrapper.findAll('[role="tab"]')[2]!.trigger("click");
+    const examinationPanel = wrapper.findAll('[role="tabpanel"]')[2]!;
+    const locomotion = examinationPanel.findAll(".therapeutic-category")
+      .find((category) => category.get("h5").text() === "Опороспособность")!;
+    const lameness = locomotion.findAll("select")[0]!;
+    await lameness.setValue("exam.locomotion.state.lameness");
+    const ataxia = locomotion.findAll(".check-row").find((row) => row.text() === "Атаксия")!.get("input");
+    await ataxia.setValue(true);
+    await locomotion.get<HTMLTextAreaElement>('textarea[aria-label="Комментарии"]').setValue("Хромота справа");
+    expect(draft.examination.selectedIds).toEqual(expect.arrayContaining([
+      "exam.locomotion.state.lameness",
+      "exam.locomotion.findings.ataxia",
+    ]));
+    expect(draft.examination.locomotionComment).toBe("Хромота справа");
+
+    const chest = examinationPanel.findAll(".therapeutic-category")
+      .find((category) => category.get("h5").text() === "Грудная полость")!;
+    expect(chest.text()).toContain("При аускультации");
+    expect(chest.text()).not.toMatch(/Дыхание в л[её]гких/i);
+  });
+
   it("emits a new draft instead of mutating the incoming problem model", async () => {
     const original = emptyTherapeuticAppointmentDraft();
     original.diseaseAnamnesis.problems.push({
       id: "problem-1",
       title: "Снижение аппетита",
+      description: "",
       medicationIds: [],
     });
     const wrapper = mount(TherapeuticAppointmentForm, {

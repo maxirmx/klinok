@@ -72,6 +72,7 @@ export default [
       '**/dist/**',
       'dist-ssr/**',
       'coverage/**',
+      '**/coverage/**',
       '*.local',
       '.idea',
       '*.suo',

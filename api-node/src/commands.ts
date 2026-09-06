@@ -11,6 +11,7 @@ import {
   isOutcomeTaxonomyId,
   isWhatHappenedTaxonomyId,
   normalizeInstrumentalTestsValue,
+  isTherapeuticAppointmentV2Value,
   normalizeLaboratoryTestsValue,
   type ClientCommand,
   type CommandResult,
@@ -192,6 +193,10 @@ export function validateMedicalEncounter(value: unknown): MedicalEncounterInput 
     throw new ApiError(400, "VALIDATION_FAILED", "The outcome section contains incompatible options.");
   }
   const diagnosis = sections.diagnosis === undefined ? undefined : diagnosisSection(sections.diagnosis);
+  if (sections["therapeutic-appointment"] !== undefined
+    && !isTherapeuticAppointmentV2Value(sections["therapeutic-appointment"])) {
+    throw new ApiError(400, "VALIDATION_FAILED", "The therapeutic-appointment section must use schema v2.");
+  }
   for (const [kind, sectionValue] of Object.entries(sections)) {
     if (kind === "what-happened" || kind === "outcome" || kind === "diagnosis") continue;
     const structured = object(sectionValue);
@@ -229,7 +234,7 @@ function medicalSections(input: MedicalEncounterInput, accountId: string, author
         : kind === "diagnosis" ? "diagnosis-v2"
         : kind === "general-data" && !(value && typeof value === "object" && "text" in value) ? "general-data-v1"
           : kind === "vaccination" && !(value && typeof value === "object" && "text" in value) ? "vaccination-v1"
-            : kind === "therapeutic-appointment" && !(value && typeof value === "object" && "text" in value) ? "therapeutic-appointment-v1"
+            : kind === "therapeutic-appointment" && !(value && typeof value === "object" && "text" in value) ? "therapeutic-appointment-v2"
               : kind === "laboratory-tests" && !(value && typeof value === "object" && "text" in value) ? "laboratory-tests-v1"
                 : kind === "instrumental-tests" && !(value && typeof value === "object" && "text" in value) ? "instrumental-tests-v1"
               : "free-text-v0",

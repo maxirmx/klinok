@@ -13,6 +13,7 @@ import type {
   Role,
   RoleRequest,
 } from "@klinok/contracts";
+import { migrateTherapeuticAppointmentValue } from "@klinok/contracts";
 
 export function iso(value: Date | string): string { return new Date(value).toISOString(); }
 
@@ -140,6 +141,25 @@ export function transferRequestFromRow(row: Record<string, unknown>): PetTransfe
 export function recordFromRow(row: Record<string, unknown>): MedicalRecordDraft {
   const sections = { ...(row.sections as MedicalRecordDraft["sections"]) };
   if (sections["laboratory-tests"]?.templateVersion === "free-text-v0") delete sections["laboratory-tests"];
+  const therapeutic = (row.sections as Record<string, {
+    templateVersion?: string;
+    value?: unknown;
+    kind?: string;
+    authorAccountId?: string;
+    authorDisplayName?: string;
+    updatedAt?: string;
+  }> | undefined)?.["therapeutic-appointment"];
+  if (therapeutic) {
+    sections["therapeutic-appointment"] = {
+      ...therapeutic,
+      kind: "therapeutic-appointment",
+      templateVersion: "therapeutic-appointment-v2",
+      value: migrateTherapeuticAppointmentValue(therapeutic.value),
+      authorAccountId: String(therapeutic.authorAccountId ?? row.author_account_id ?? ""),
+      authorDisplayName: String(therapeutic.authorDisplayName ?? row.author_display_name ?? ""),
+      updatedAt: String(therapeutic.updatedAt ?? iso(row.updated_at as Date | string)),
+    };
+  }
   return {
     recordId: String(row.record_id),
     petId: String(row.pet_id),

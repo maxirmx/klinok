@@ -23,7 +23,7 @@
     "lint": "eslint . --ext .vue,.ts,.js,.jsx,.cjs,.mjs --fix",
     "lint:check": "eslint . --ext .vue,.ts,.js,.jsx,.cjs,.mjs",
     "precoverage": "npm run build:contracts",
-    "coverage": "vitest run --coverage",
+    "coverage": "vitest run --coverage && npm run coverage --workspace @klinok/api-node",
     "test:e2e": "playwright test",
     "test:e2e:compose": "sh scripts/compose-smoke.sh"
   },

@@ -14,7 +14,7 @@ defineProps<{ groups: readonly TherapeuticSelectionGroup[] }>();
       <span>{{ group.label }}</span>
       <ul class="therapeutic-history-findings">
         <li v-for="detail in group.details" :key="detail.key" class="therapeutic-history-finding-detail">
-          <span>{{ detail.label }}: {{ detail.value }}</span>
+          <span><template v-if="detail.label">{{ detail.label }}: </template>{{ detail.value }}</span>
         </li>
       </ul>
     </li>

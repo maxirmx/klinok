@@ -22,10 +22,21 @@ const diseaseSelectionGroups = computed(() => therapeuticSelectionGroups(
 const lifeSelectionGroups = computed(() => therapeuticSelectionGroups(
   props.value.lifeAnamnesis.selectedIds,
   LIFE_ANAMNESIS_CATEGORIES,
+  {
+    "life.ectoparasites.name": props.value.lifeAnamnesis.ectoparasiteName,
+    "life.deworming.name": props.value.lifeAnamnesis.dewormingName,
+    "life.diet.natural-products": props.value.lifeAnamnesis.naturalDietProducts,
+    "life.diet.commercial-name": props.value.lifeAnamnesis.commercialFoodName,
+    "life.diseases.name": props.value.lifeAnamnesis.diseaseName,
+  },
 ));
 const examinationSelectionGroups = computed(() => therapeuticSelectionGroups(
   props.value.examination.selectedIds,
   EXAMINATION_CATEGORIES,
+  {
+    "exam.coat.comment": props.value.examination.coatComment,
+    "exam.locomotion.comment": props.value.examination.locomotionComment,
+  },
 ));
 const hasLife = computed(() => Boolean(props.value.lifeAnamnesis.text || lifeSelectionGroups.value.length
   || props.value.lifeAnamnesis.currentMedications || props.value.lifeAnamnesis.allergies));
@@ -39,13 +50,14 @@ const hasExamination = computed(() => Boolean(props.value.examination.text || ex
 
 function problemDetails(problem: TherapeuticProblemValue): Array<{ label: string; value: string }> {
   return [
-    ...(problem.onsetId ? [{ label: "Как давно началось", value: therapeuticOptionLabel(problem.onsetId) }] : []),
-    ...(problem.frequencyId ? [{ label: "Периодичность", value: therapeuticOptionLabel(problem.frequencyId) }] : []),
+    ...(problem.description ? [{ label: "Описание проблемы", value: problem.description }] : []),
+    ...(problem.onsetId ? [{ label: "Как давно началось?", value: therapeuticOptionLabel(problem.onsetId) }] : []),
+    ...(problem.frequencyId ? [{ label: "Проблема проявляется", value: therapeuticOptionLabel(problem.frequencyId) }] : []),
     ...(problem.priorTherapyId ? [{ label: "Терапия до осмотра", value: therapeuticOptionLabel(problem.priorTherapyId) }] : []),
     ...(problem.medicationUseId ? [{ label: "Препараты", value: therapeuticOptionLabel(problem.medicationUseId) }] : []),
-    ...(problem.medicationIds.length ? [{ label: "Виды препаратов", value: problem.medicationIds.map(therapeuticOptionLabel).join(", ") }] : []),
-    ...(problem.medicationName ? [{ label: "Название препарата", value: problem.medicationName }] : []),
-    ...(problem.medicationDynamicsId ? [{ label: "Динамика", value: therapeuticOptionLabel(problem.medicationDynamicsId) }] : []),
+    ...(problem.medicationIds.length ? [{ label: "Препараты", value: problem.medicationIds.map(therapeuticOptionLabel).join(", ") }] : []),
+    ...(problem.medicationName ? [{ label: "Название препаратов", value: problem.medicationName }] : []),
+    ...(problem.medicationDynamicsId ? [{ label: "При этом динамика", value: therapeuticOptionLabel(problem.medicationDynamicsId) }] : []),
   ];
 }
 </script>
@@ -64,7 +76,7 @@ function problemDetails(problem: TherapeuticProblemValue): Array<{ label: string
         <article v-for="({ problem, details }, index) in populatedProblems" :key="problem.id">
           <h5>Проблема {{ index + 1 }}<template v-if="problem.title">: {{ problem.title }}</template></h5>
           <dl v-if="details.length" class="therapeutic-history-values">
-            <div v-for="detail in details" :key="detail.label"><dt>{{ detail.label }}</dt><dd>{{ detail.value }}</dd></div>
+            <div v-for="(detail, detailIndex) in details" :key="`${detail.label}:${detailIndex}`"><dt>{{ detail.label }}</dt><dd>{{ detail.value }}</dd></div>
           </dl>
         </article>
       </div>
@@ -110,6 +122,12 @@ function problemDetails(problem: TherapeuticProblemValue): Array<{ label: string
     >
       <h4>Назначения</h4>
       <p class="therapeutic-history-text">{{ value.prescriptions }}</p>
+    </section>
+    <section v-if="value.migrationNotes.length" class="therapeutic-history-block therapeutic-migration-notes">
+      <h4>Перенесённые данные</h4>
+      <ul>
+        <li v-for="note in value.migrationNotes" :key="note">{{ note }}</li>
+      </ul>
     </section>
   </div>
 </template>

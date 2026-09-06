@@ -5,7 +5,7 @@
 
 import { computed } from "vue";
 import {
-  pruneTherapeuticSelections,
+  replaceTherapeuticSingleSelection,
   therapeuticQuestionSelections,
   therapeuticQuestionVisible,
   toggleTherapeuticMultipleSelection,
@@ -13,10 +13,15 @@ import {
 import type {
   TherapeuticCategoryDefinition,
   TherapeuticQuestionDefinition,
+  TherapeuticTextFieldDefinition,
 } from "../therapeuticAppointment";
 import AppSelect from "./AppSelect.vue";
 
-const props = defineProps<{ categories: readonly TherapeuticCategoryDefinition[] }>();
+const props = withDefaults(defineProps<{
+  categories: readonly TherapeuticCategoryDefinition[];
+  textValues?: Readonly<Record<string, string>>;
+}>(), { textValues: () => ({}) });
+const emit = defineEmits<{ "update:text-value": [id: string, value: string] }>();
 const selectedIds = defineModel<string[]>({ required: true });
 const compactSelectTextLimit = 40;
 
@@ -37,11 +42,7 @@ const wideSelectQuestionIds = computed(() => new Set(props.categories.flatMap((c
 })));
 
 function replaceSingle(question: TherapeuticQuestionDefinition, value: string) {
-  const questionIds = new Set(question.options.map((option) => option.id));
-  selectedIds.value = pruneTherapeuticSelections([
-    ...selectedIds.value.filter((id) => !questionIds.has(id)),
-    ...(value ? [value] : []),
-  ]);
+  selectedIds.value = replaceTherapeuticSingleSelection(question, selectedIds.value, value);
 }
 
 function selectOptions(question: TherapeuticQuestionDefinition) {
@@ -57,6 +58,14 @@ function toggleMultiple(question: TherapeuticQuestionDefinition, id: string) {
 
 function selectedValue(question: TherapeuticQuestionDefinition): string {
   return therapeuticQuestionSelections(question, selectedIds.value)[0] ?? "";
+}
+
+function textFieldVisible(field: TherapeuticTextFieldDefinition): boolean {
+  return !field.visibleWhenAny?.length || field.visibleWhenAny.some((id) => selectedIds.value.includes(id));
+}
+
+function updateTextField(id: string, event: Event) {
+  emit("update:text-value", id, (event.target as HTMLTextAreaElement).value);
 }
 </script>
 
@@ -96,6 +105,21 @@ function selectedValue(question: TherapeuticQuestionDefinition): string {
             </div>
           </fieldset>
         </template>
+        <label
+          v-for="field in category.textFields ?? []"
+          v-show="textFieldVisible(field)"
+          :key="field.id"
+          class="therapeutic-text-field therapeutic-select-field therapeutic-select-field-wide"
+        >
+          <span>{{ field.label }}</span>
+          <textarea
+            :value="textValues[field.id] ?? ''"
+            class="medical-card-comment"
+            rows="2"
+            :aria-label="field.label"
+            @input="updateTextField(field.id, $event)"
+          />
+        </label>
       </div>
     </section>
   </div>

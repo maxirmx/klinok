@@ -6,6 +6,10 @@ import type {
   TherapeuticAppointmentSectionValue,
   TherapeuticProblemValue,
 } from "./repositories/types";
+import {
+  isTherapeuticAppointmentV2Value,
+  migrateTherapeuticAppointmentValue as migrateContractTherapeuticAppointmentValue,
+} from "./repositories/types";
 
 export type TherapeuticTab = "disease" | "life" | "examination" | "recommendations" | "prescriptions";
 export type TherapeuticQuestionMode = "single" | "multiple";
@@ -21,12 +25,21 @@ export interface TherapeuticQuestionDefinition {
   mode: TherapeuticQuestionMode;
   options: readonly TherapeuticOptionDefinition[];
   visibleWhenAny?: readonly string[];
+  readOnlyLabel?: string;
+}
+
+export interface TherapeuticTextFieldDefinition {
+  id: string;
+  label: string;
+  readOnlyLabel: string;
+  visibleWhenAny?: readonly string[];
 }
 
 export interface TherapeuticCategoryDefinition {
   id: string;
   label: string;
   questions: readonly TherapeuticQuestionDefinition[];
+  textFields?: readonly TherapeuticTextFieldDefinition[];
 }
 
 export interface TherapeuticSelectionDetail {
@@ -46,6 +59,7 @@ export interface TherapeuticProblemDraft extends Omit<TherapeuticProblemValue, "
 }
 
 export interface TherapeuticAppointmentDraft {
+  schemaVersion: 2;
   diseaseAnamnesis: {
     text: string;
     problems: TherapeuticProblemDraft[];
@@ -54,15 +68,23 @@ export interface TherapeuticAppointmentDraft {
   lifeAnamnesis: {
     text: string;
     selectedIds: string[];
+    ectoparasiteName: string;
+    dewormingName: string;
+    naturalDietProducts: string;
+    commercialFoodName: string;
+    diseaseName: string;
     currentMedications: string;
     allergies: string;
   };
   examination: {
     text: string;
     selectedIds: string[];
+    coatComment: string;
+    locomotionComment: string;
   };
   recommendations: string;
   prescriptions: string;
+  migrationNotes: string[];
 }
 
 export interface TherapeuticAppointmentDraftErrors {
@@ -79,6 +101,7 @@ function question(
   mode: TherapeuticQuestionMode,
   choices: readonly Choice[],
   visibleWhenAny?: readonly string[],
+  readOnlyLabel?: string,
 ): TherapeuticQuestionDefinition {
   return {
     id,
@@ -86,15 +109,20 @@ function question(
     mode,
     options: choices.map(([key, optionLabel]) => ({ id: `${id}.${key}`, label: optionLabel })),
     ...(visibleWhenAny?.length ? { visibleWhenAny } : {}),
+    ...(readOnlyLabel ? { readOnlyLabel } : {}),
   };
 }
 
-function single(id: string, label: string, choices: readonly Choice[], visibleWhenAny?: readonly string[]) {
-  return question(id, label, "single", choices, visibleWhenAny);
+function single(id: string, label: string, choices: readonly Choice[], visibleWhenAny?: readonly string[], readOnlyLabel?: string) {
+  return question(id, label, "single", choices, visibleWhenAny, readOnlyLabel);
 }
 
-function multiple(id: string, label: string, choices: readonly Choice[], visibleWhenAny?: readonly string[]) {
-  return question(id, label, "multiple", choices, visibleWhenAny);
+function multiple(id: string, label: string, choices: readonly Choice[], visibleWhenAny?: readonly string[], readOnlyLabel?: string) {
+  return question(id, label, "multiple", choices, visibleWhenAny, readOnlyLabel);
+}
+
+function textField(id: string, label: string, readOnlyLabel = label, visibleWhenAny?: readonly string[]): TherapeuticTextFieldDefinition {
+  return { id, label, readOnlyLabel, ...(visibleWhenAny?.length ? { visibleWhenAny } : {}) };
 }
 
 export const PROBLEM_ONSET_OPTIONS: readonly TherapeuticOptionDefinition[] = [
@@ -185,25 +213,24 @@ export const DISEASE_ANAMNESIS_CATEGORIES: readonly TherapeuticCategoryDefinitio
     id: "disease.urination", label: "Мочеиспускание", questions: [
       single("disease.urination.state", "Изменение мочеиспускания", [["unchanged", "Не изменилось"], ["changed", "Изменилось"]]),
       single("disease.urination.baseline", "Обычная частота", [["daily-1-2", "Всегда 1–2 раза в день"], ["daily", "Всегда 1 раз в день"], ["days-2", "Всегда 1 раз в 2 дня"]], ["disease.urination.state.unchanged"]),
-      single("disease.urination.change", "Как изменилось", [["absent", "Отсутствует"], ["absent-day", "Отсутствует более суток"], ["absent-days-2", "Отсутствует более 2 суток"], ["dysuria", "Болезненное (дизурия)"], ["pollakiuria", "Частое (поллакиурия)"], ["periuria", "В неположенном месте (периурия)"], ["stranguria", "Непродуктивное, по каплям (странгурия)"]], ["disease.urination.state.changed"]),
+      multiple("disease.urination.change", "Как изменилось", [["absent", "Отсутствует"], ["absent-day", "Отсутствует более суток"], ["absent-days-2", "Отсутствует более 2 суток"], ["dysuria", "Болезненное (дизурия)"], ["pollakiuria", "Частое (поллакиурия)"], ["periuria", "В неположенном месте (периурия)"], ["stranguria", "Непродуктивное, по каплям (странгурия)"]], ["disease.urination.state.changed"]),
     ],
   },
   {
     id: "disease.urine", label: "Моча", questions: [
       single("disease.urine.state", "Общее состояние", [["unchanged", "Без изменений"], ["changed", "Есть изменения"]]),
-      single("disease.urine.volume", "Общий суточный объём", [["increased", "Увеличен (полиурия)"], ["decreased", "Уменьшен (олигурия)"], ["absent", "Отсутствует (анурия)"]], ["disease.urine.state.changed"]),
-      multiple("disease.urine.quality", "Изменения качества", [["blood", "С кровью"], ["pink", "Розовая"], ["colorless", "Бесцветная"], ["meat-washings", "Цвета мясных помоев"], ["strong-odor", "С сильным запахом"]], ["disease.urine.state.changed"]),
+      single("disease.urine.volume", "Общесуточный объём", [["increased", "Увеличен (полиурия)"], ["decreased", "Уменьшен (олигурия)"], ["absent", "Отсутствует (анурия)"]], ["disease.urine.state.changed"], "Общесуточный объём"),
+      multiple("disease.urine.quality", "Изменение качества", [["blood", "С кровью"], ["pink", "Розовая"], ["colorless", "Бесцветная"], ["meat-washings", "Цвета мясных помоев"], ["strong-odor", "С сильным запахом"]], ["disease.urine.state.changed"], "Изменение качества"),
     ],
   },
   {
     id: "disease.vomiting", label: "Рвота", questions: [
       single("disease.vomiting.state", "Наличие рвоты", [["absent", "Отсутствует"], ["present", "Есть"]]),
       single("disease.vomiting.frequency", "Частота", [["rare", "Редко"], ["often", "Часто"]], ["disease.vomiting.state.present"]),
-      single("disease.vomiting.rare-count", "Количество при редкой рвоте", [["daily-1-2", "1–2 раза в сутки"]], ["disease.vomiting.frequency.rare"]),
+      single("disease.vomiting.rare-count", "Количество при редкой рвоте", [["daily-1-2", "1–2 раза в сутки"], ["days-2-3", "1 раз в 2–3 суток"], ["weekly", "1 раз в неделю"], ["monthly-1-2", "1–2 раза в месяц"]], ["disease.vomiting.frequency.rare"]),
       single("disease.vomiting.often-count", "Количество при частой рвоте", [["daily-3-10", "3–10 раз в сутки"], ["daily-over-10", "Более 10 раз в сутки"]], ["disease.vomiting.frequency.often"]),
       single("disease.vomiting.feeding", "Связь с кормлением", [["before", "В основном до еды"], ["after", "В основном после еды"], ["minutes-after", "Через несколько минут после еды"], ["hours-after", "Через 1–2 часа после еды"], ["unrelated", "Не связана с приёмом корма"]], ["disease.vomiting.state.present"]),
-      multiple("disease.vomiting.contents", "Рвотные массы", [["white-clear", "Белые или прозрачные"], ["yellow", "Жёлтые"], ["blood-traces", "Со следами крови"], ["blood", "С кровью"], ["coffee", "Кофейного цвета"], ["undigested", "С непереваренным кормом"], ["partly-digested", "С полупереваренным кормом"], ["foreign", "С инородными предметами или трихобезоарами"], ["helminths", "С гельминтами"]], ["disease.vomiting.state.present"]),
-      single("disease.vomiting.foam", "Пенистость светлых или жёлтых масс", [["foamy", "Пенистые"], ["not-foamy", "Не пенистые"]], ["disease.vomiting.contents.white-clear", "disease.vomiting.contents.yellow"]),
+      multiple("disease.vomiting.contents", "Рвотные массы", [["foamy", "Пенистые"], ["not-foamy", "Не пенистые"], ["white-clear", "Белые или прозрачные"], ["yellow", "Жёлтые"], ["blood-traces", "Со следами крови"], ["blood", "С кровью"], ["coffee", "Кофейного цвета"], ["undigested", "С непереваренным кормом"], ["partly-digested", "С полупереваренным кормом"], ["foreign", "С инородными предметами или трихобезоарами"], ["helminths", "С гельминтами"]], ["disease.vomiting.state.present"], "Рвотные массы"),
     ],
   },
   {
@@ -242,7 +269,7 @@ export const DISEASE_ANAMNESIS_CATEGORIES: readonly TherapeuticCategoryDefinitio
   {
     id: "disease.pain", label: "Проявление боли/беспокойства", questions: [
       single("disease.pain.state", "Наличие", [["absent", "Отсутствует"], ["localized", "Есть локально"], ["unlocalized", "Есть без локализации"]]),
-      multiple("disease.pain.location", "Локализация", [["muzzle", "Морда"], ["head", "Голова"], ["neck", "Шея"], ["back", "Холка или спина"], ["forelimbs", "Грудные конечности"], ["abdomen", "Живот"], ["lower-back", "Поясница или крестец"], ["hindlimbs", "Тазовые конечности"], ["tail", "Хвост или корень хвоста"]], ["disease.pain.state.localized"]),
+      multiple("disease.pain.location", "Локализация", [["muzzle", "Морда"], ["head", "Голова"], ["neck", "Шея"], ["back", "Холка или спина"], ["forelimbs", "Грудные конечности"], ["abdomen", "Живот"], ["lower-back", "Поясница или крестец"], ["hindlimbs", "Тазовые конечности"], ["tail", "Хвост или корень хвоста"]], ["disease.pain.state.localized"], "В области"),
     ],
   },
 ];
@@ -272,22 +299,22 @@ export const LIFE_ANAMNESIS_CATEGORIES: readonly TherapeuticCategoryDefinition[]
     single("life.ectoparasites.none-reason", "Если не проводились", [["never", "Никогда не обрабатывали или не знают"], ["long-ago", "Давно не обрабатывали"]], ["life.ectoparasites.state.none"]),
     single("life.ectoparasites.regularity", "Регулярность", [["regular", "Регулярно"], ["irregular", "Нерегулярно"]], ["life.ectoparasites.state.yes"]),
     single("life.ectoparasites.interval", "Интервал", [["month", "Каждый месяц"], ["quarter", "Каждый квартал"], ["half-year", "Каждые полгода"], ["year", "Каждый год"]], ["life.ectoparasites.regularity.regular"]),
-    single("life.ectoparasites.last", "Последний раз", [["unknown", "Неизвестно"], ["days", "Несколько дней назад"], ["days-7-14", "7–14 дней назад"], ["month", "Месяц назад"], ["less-month", "Меньше месяца назад"], ["over-month", "Больше месяца назад"], ["less-half-year", "Меньше полугода назад"], ["half-year", "Полгода назад"], ["over-half-year", "Более полугода назад"]], ["life.ectoparasites.state.yes"]),
-    multiple("life.ectoparasites.method", "Чем обрабатывали", [["drops", "Капли на кожу, шею или холку"], ["tablets", "Таблетки"], ["collar", "Ошейник"], ["spray", "Спрей"]], ["life.ectoparasites.state.yes"]),
-  ] },
+    single("life.ectoparasites.last", "Последний раз", [["unknown", "Неизвестно"], ["days", "Несколько дней назад"], ["days-7-14", "7–14 дней назад"], ["month", "Месяц назад"], ["less-month", "Меньше месяца назад"], ["over-month", "Больше месяца назад"], ["less-half-year", "Меньше полугода назад"], ["half-year", "Полгода назад"], ["over-half-year", "Более полугода назад"]], ["life.ectoparasites.state.yes"], "Последний раз"),
+    multiple("life.ectoparasites.method", "Чем обрабатывали?", [["drops", "Капли на кожу, шею или холку"], ["tablets", "Таблетки"], ["collar", "Ошейник"], ["spray", "Спрей"]], ["life.ectoparasites.state.yes"], "Чем обрабатывали?"),
+  ], textFields: [textField("life.ectoparasites.name", "Название", "Название", ["life.ectoparasites.state.yes"])] },
   { id: "life.deworming", label: "Дегельминтизация", questions: [
     single("life.deworming.state", "Проводилась ли", [["none", "Не проводилась"], ["yes", "Проводилась"]]),
     single("life.deworming.none-reason", "Если не проводилась", [["never", "Никогда или не знают"], ["years", "Не проводилась несколько лет"]], ["life.deworming.state.none"]),
     single("life.deworming.regularity", "Регулярность", [["regular", "Регулярно"], ["irregular", "Нерегулярно"]], ["life.deworming.state.yes"]),
     single("life.deworming.interval", "Интервал", [["month", "Каждый месяц"], ["quarter", "Каждый квартал"], ["half-year", "Каждые полгода"], ["year", "Каждый год"]], ["life.deworming.regularity.regular"]),
-    single("life.deworming.last", "Последний раз", [["unknown", "Неизвестно"], ["days", "Несколько дней назад"], ["days-7-14", "7–14 дней назад"], ["month", "Месяц назад"], ["months", "Несколько месяцев назад"], ["half-year", "Полгода назад"], ["over-half-year", "Более полугода назад"], ["year", "Год назад"]], ["life.deworming.state.yes"]),
-    multiple("life.deworming.method", "Чем обрабатывали", [["tablets", "Таблетки"], ["drops", "Капли на кожу, холку или шею"]], ["life.deworming.state.yes"]),
-  ] },
+    single("life.deworming.last", "Последний раз", [["unknown", "Неизвестно"], ["days", "Несколько дней назад"], ["days-7-14", "7–14 дней назад"], ["month", "Месяц назад"], ["months", "Несколько месяцев назад"], ["half-year", "Полгода назад"], ["over-half-year", "Более полугода назад"], ["year", "Год назад"]], ["life.deworming.state.yes"], "Последний раз"),
+    multiple("life.deworming.method", "Чем обрабатывали?", [["tablets", "Таблетки"], ["drops", "Капли на кожу, холку или шею"]], ["life.deworming.state.yes"], "Чем обрабатывали?"),
+  ], textFields: [textField("life.deworming.name", "Название", "Название", ["life.deworming.state.yes"])] },
   { id: "life.vaccination", label: "Вакцинация", questions: [
     single("life.vaccination.state", "Статус", [["none", "Не вакцинировано"], ["yes", "Вакцинировано"]]),
     single("life.vaccination.none-reason", "Причина отсутствия", [["never", "Никогда"], ["unknown", "Не знают"], ["unconfirmed", "Нет подтверждения"]], ["life.vaccination.state.none"]),
     single("life.vaccination.regularity", "Регулярность", [["regular", "Регулярно"], ["irregular", "Нерегулярно"]], ["life.vaccination.state.yes"]),
-    single("life.vaccination.last", "Последний раз", [["this-year", "В этом году"], ["year", "Год назад"], ["over-year", "Более года назад"], ["years-2-3", "2–3 года назад"]], ["life.vaccination.state.yes"]),
+    single("life.vaccination.last", "Последний раз", [["this-year", "В этом году"], ["year", "Год назад"], ["over-year", "Более года назад"], ["years-2-3", "2–3 года назад"]], ["life.vaccination.state.yes"], "Последний раз"),
     single("life.vaccination.coverage", "Состав вакцинации", [["complex-rabies", "Комплекс от инфекционных заболеваний и бешенства"], ["complex", "Только от инфекционных заболеваний, без бешенства"], ["rabies", "Только от бешенства"]], ["life.vaccination.state.yes"]),
   ] },
   { id: "life.diet", label: "Рацион", questions: [
@@ -295,11 +322,14 @@ export const LIFE_ANAMNESIS_CATEGORIES: readonly TherapeuticCategoryDefinition[]
     single("life.diet.natural", "Натуральный рацион", [["nutritionist", "Разработан диетологом"], ["self", "Разработан самостоятельно"], ["table", "Со стола"], ["barf", "BARF-рацион"]], ["life.diet.type.natural"]),
     single("life.diet.commercial-purpose", "Промышленный рацион", [["daily", "Повседневный"], ["dietary", "Диетический"]], ["life.diet.type.commercial"]),
     single("life.diet.commercial-form", "Форма промышленного рациона", [["dry", "Только сухой"], ["wet", "Только влажный"], ["mixed", "Сухой и влажный"]], ["life.diet.commercial-purpose.daily", "life.diet.commercial-purpose.dietary"]),
+  ], textFields: [
+    textField("life.diet.natural-products", "Название продуктов", "Название продуктов", ["life.diet.type.natural", "life.diet.type.mixed"]),
+    textField("life.diet.commercial-name", "Название корма", "Название корма", ["life.diet.type.commercial", "life.diet.type.mixed"]),
   ] },
   { id: "life.diseases", label: "Перенесённые/сопутствующие заболевания", questions: [
     multiple("life.diseases.types", "Типы заболеваний", [["infectious", "Инфекционные"], ["trauma", "Травма"], ["genetic", "Врождённые генетические"], ["prenatal", "Врождённые внутриутробные"], ["acquired", "Приобретённые"], ["chronic", "Хронические"]]),
     single("life.diseases.infectious-outcome", "Исход инфекционного заболевания", [["recovered", "Полностью вылечились"], ["carrier-no-shedding", "Носительство без выделения"], ["carrier-shedding", "Носительство с выделением"]], ["life.diseases.types.infectious"]),
-  ] },
+  ], textFields: [textField("life.diseases.name", "Название")] },
 ];
 
 export const EXAMINATION_CATEGORIES: readonly TherapeuticCategoryDefinition[] = [
@@ -312,48 +342,48 @@ export const EXAMINATION_CATEGORIES: readonly TherapeuticCategoryDefinition[] = 
     single("exam.posture.forced", "Вынужденное положение", [["lateral", "Боковое"], ["curved", "Изогнутое"], ["sternal", "Стернальное"], ["stiff", "Скованное"]], ["exam.posture.type.forced"]),
   ] },
   { id: "exam.mucosa", label: "Видимые слизистые оболочки (ВСО)", questions: [
-    single("exam.mucosa.color", "Цвет", [["pale-pink", "Бледно-розовые"], ["bright-pink", "Ярко-розовые"], ["cyanotic", "Цианотичные"], ["icteric", "Иктеричные"], ["pale-white", "Бледные/белые"]]),
-    single("exam.mucosa.moisture", "Влажность", [["moist", "Влажные"], ["sticky", "Липкие/суховатые"], ["dry", "Сухие"]]),
+    single("exam.mucosa.color", "Цвет", [["pale-pink", "Бледно-розовые"], ["bright-pink", "Ярко-розовые"], ["cyanotic", "Цианотичные"], ["icteric", "Иктеричные"], ["pale-white", "Бледные/белые"]], undefined, "Цвет"),
+    single("exam.mucosa.moisture", "Влажность", [["moist", "Влажные"], ["sticky", "Липкие/суховатые"], ["dry", "Сухие"]], undefined, "Влажность"),
   ] },
   { id: "exam.crt", label: "Скорость наполнения капилляров (СНК)", questions: [
     single("exam.crt.value", "СНК", [["under-1", "Менее 1 сек"], ["one", "1 сек"], ["one-two", "1–2 сек"], ["over-2", "Более 2 сек"], ["unavailable", "Не оценивается"]]),
   ] },
   { id: "exam.oral", label: "Ротовая полость", questions: [
     single("exam.oral.state", "Общее состояние", [["normal", "Без изменений"], ["changed", "Есть изменения"]]),
-    multiple("exam.oral.findings", "Изменения", [["ulcers", "Язвы"], ["hyperemia", "Участки гиперемии"], ["papules-pustules", "Папулы/пустулы"], ["wounds", "Раны"], ["necrosis", "Участки некроза"], ["masses", "Новообразования"], ["foreign", "Инородное тело"]], ["exam.oral.state.changed"]),
+    multiple("exam.oral.findings", "Изменения", [["ulcers", "Язвы"], ["hyperemia", "Участки гиперемии"], ["papules-pustules", "Папулы/пустулы"], ["wounds", "Раны"], ["necrosis", "Участки некроза"], ["masses", "Новообразования"], ["foreign", "Инородное тело"], ["petechiae", "Петехии/кровоизлияния"]], ["exam.oral.state.changed"]),
     single("exam.oral.lesions", "Поражения", [["absent", "Отсутствуют"], ["present", "Есть"]]),
-    multiple("exam.oral.locations", "Область поражения", [["lips", "Губы"], ["gums", "Дёсны"], ["tongue-tip", "Кончик языка"], ["tongue-back", "Спинка языка"], ["tongue-root", "Корень языка"], ["cheeks", "Щёки"], ["tmj", "Верхнечелюстной сустав"], ["hard-palate", "Твёрдое нёбо"], ["soft-palate", "Мягкое нёбо"]], ["exam.oral.lesions.present"]),
-    single("exam.oral.calculus", "Дентолитиаз", [["absent", "Отсутствует"], ["present", "Есть"]]),
+    multiple("exam.oral.locations", "Область поражения", [["lips", "Губы"], ["gums", "Дёсны"], ["tongue-tip", "Кончик языка"], ["tongue-back", "Спинка языка"], ["tongue-root", "Корень языка"], ["cheeks", "Щёки"], ["tmj", "Верхнечелюстной сустав"], ["hard-palate", "Твёрдое нёбо"], ["soft-palate", "Мягкое нёбо"]], ["exam.oral.lesions.present"], "В области"),
+    single("exam.oral.calculus", "Дентолитиаз", [["absent", "Отсутствует"], ["present", "Есть"]], undefined, "Дентолитиаз"),
     single("exam.oral.calculus-grade", "Выраженность дентолитиаза", [["slight", "Незначительный/налёт"], ["moderate", "Умеренный"], ["marked", "Выраженный"], ["significant", "Значимый"]], ["exam.oral.calculus.present"]),
-    single("exam.oral.gingivitis", "Гингивит/гингивостоматит", [["absent", "Не наблюдается"], ["present", "Наблюдается"]]),
+    single("exam.oral.gingivitis", "Гингивит/гингивостоматит", [["absent", "Не наблюдается"], ["present", "Наблюдается"]], undefined, "Гингивит/гингивостоматит"),
     single("exam.oral.gingivitis-grade", "Выраженность воспаления", [["slight", "Незначительный"], ["moderate", "Умеренный"], ["marked", "Выраженный"], ["significant", "Значимый"]], ["exam.oral.gingivitis.present"]),
   ] },
   { id: "exam.eyes", label: "Глаза", questions: [
-    single("exam.eyes.state", "Изменения", [["none", "Не наблюдаются"], ["present", "Наблюдаются"]]),
+    single("exam.eyes.state", "Изменения", [["none", "Не наблюдаются"], ["present", "Наблюдаются"]], undefined, "Изменения"),
     single("exam.eyes.side", "Локализация", [["bilateral", "Билатерально"], ["right", "В правом глазу"], ["left", "В левом глазу"], ["no-right", "Отсутствует правый глаз"], ["no-left", "Отсутствует левый глаз"], ["no-both", "Отсутствуют оба глаза"]], ["exam.eyes.state.present"]),
-    single("exam.eyes.size-state", "Размер", [["unchanged", "Не изменён"], ["changed", "Изменён"]]),
+    single("exam.eyes.size-state", "Размер", [["unchanged", "Не изменён"], ["changed", "Изменён"]], undefined, "Размер"),
     single("exam.eyes.size", "Изменение размера", [["enlarged", "Увеличен (буфтальм)"], ["reduced", "Уменьшен"]], ["exam.eyes.size-state.changed"]),
-    single("exam.eyes.discharge-state", "Выделения", [["absent", "Отсутствуют"], ["present", "Есть"]]),
+    single("exam.eyes.discharge-state", "Выделения", [["absent", "Отсутствуют"], ["present", "Есть"]], undefined, "Выделения"),
     multiple("exam.eyes.discharge", "Характер выделений", [["epiphora", "Эпифора (слезотечение)"], ["catarrhal", "Катаральные"], ["mucous", "Слизистые"], ["purulent", "Гнойные"], ["dry-pus", "Сухой гной"], ["hemorrhagic", "Геморрагические"]], ["exam.eyes.discharge-state.present"]),
-    single("exam.eyes.eyelids-state", "Веки", [["normal", "Не изменены"], ["changed", "Есть изменения"]]),
+    single("exam.eyes.eyelids-state", "Веки", [["normal", "Не изменены"], ["changed", "Есть изменения"]], undefined, "Веки"),
     multiple("exam.eyes.eyelids", "Изменения век", [["edema", "Отёчность"], ["blepharospasm", "Блефароспазм"], ["medial-entropion", "Медиальный заворот (энтропион)"], ["lateral-entropion", "Латеральный заворот (энтропион)"], ["medial-ectropion", "Медиальный выворот (эктропион)"], ["lateral-ectropion", "Латеральный выворот (эктропион)"], ["distichiasis", "Дистрихиаз"]], ["exam.eyes.eyelids-state.changed"]),
-    multiple("exam.eyes.conjunctiva", "Конъюнктива", [["normal", "Без изменений"], ["hyperemic", "Гиперемирована"], ["edematous", "Отёчная"], ["hemorrhage", "С кровоизлияниями"], ["integrity", "С нарушением целостности"], ["third-eyelid", "С пролапсом третьего века"], ["cartilage", "С заломом ножки хряща третьего века"]]),
-    multiple("exam.eyes.cornea", "Роговица", [["normal", "Без изменений"], ["opaque", "Непрозрачная"], ["dull", "Неблестящая"], ["vascular", "С инъекцией сосудов"], ["ulcer", "С язвой"], ["hemorrhage", "С кровоизлиянием"], ["gaping", "С зиянием"]]),
-    multiple("exam.eyes.anterior-chamber", "Передняя камера глаза", [["normal", "Без изменений"], ["hyphema", "С кровоизлиянием (гифема)"], ["precipitates", "С преципитатами"]]),
-    multiple("exam.eyes.pupil", "Зрачок", [["normal", "Без изменений"], ["cataract", "Изменён катарактой"], ["mydriasis", "Расширен (мидриаз)"], ["miosis", "Сужен (миоз)"], ["anisocoria", "Разного размера (анизокория)"]]),
+    multiple("exam.eyes.conjunctiva", "Конъюнктива", [["normal", "Без изменений"], ["hyperemic", "Гиперемирована"], ["edematous", "Отёчная"], ["hemorrhage", "С кровоизлияниями"], ["integrity", "С нарушением целостности"], ["third-eyelid", "С пролапсом третьего века"], ["cartilage", "С заломом ножки хряща третьего века"]], undefined, "Конъюнктива"),
+    multiple("exam.eyes.cornea", "Роговица", [["normal", "Без изменений"], ["opaque", "Непрозрачная"], ["dull", "Неблестящая"], ["vascular", "С инъекцией сосудов"], ["ulcer", "С язвой"], ["hemorrhage", "С кровоизлиянием"], ["gaping", "С зиянием"]], undefined, "Роговица"),
+    multiple("exam.eyes.anterior-chamber", "Передняя камера глаза", [["normal", "Без изменений"], ["hyphema", "С кровоизлиянием (гифема)"], ["precipitates", "С преципитатами"]], undefined, "Передняя камера глаза"),
+    multiple("exam.eyes.pupil", "Зрачок", [["normal", "Без изменений"], ["cataract", "Изменён катарактой"], ["mydriasis", "Расширен (мидриаз)"], ["miosis", "Сужен (миоз)"], ["anisocoria", "Разного размера (анизокория)"]], undefined, "Зрачок"),
   ] },
   { id: "exam.ear", label: "Наружный слуховой проход (НСП)", questions: [
-    multiple("exam.ear.changes", "Изменения", [["none", "Не наблюдаются"], ["left", "Есть слева"], ["right", "Есть справа"]]),
-    multiple("exam.ear.skin", "Кожа", [["clean", "Чистая, без признаков воспаления"], ["erythema", "С участками эритемы"], ["ulcers", "С язвами"]]),
-    single("exam.ear.secretion", "Количество церумена/секрета", [["scant", "Скудное"], ["moderate", "Умеренное"], ["increased", "Повышенное"], ["significant", "Значимое, канал заполнен"]]),
-    single("exam.ear.filling", "Чем заполнен канал", [["partial", "Частично"], ["total", "Тотально"], ["pus", "Гноем"], ["brown", "Тёмно-коричневым экссудатом"]], ["exam.ear.secretion.significant"]),
-    single("exam.ear.tympanum", "Барабанная перепонка", [["visible", "Визуализируется"], ["not-visible", "Не визуализируется"]]),
-    multiple("exam.ear.canal", "Канал", [["stenotic", "Стенозирован"], ["relief", "Имеет повышенный рельеф"], ["unavailable", "Недоступен для осмотра"]]),
+    multiple("exam.ear.changes", "Изменения", [["none", "Не наблюдаются"], ["left", "Есть слева"], ["right", "Есть справа"]], undefined, "Изменения"),
+    multiple("exam.ear.skin", "Кожа", [["clean", "Чистая, без признаков воспаления"], ["erythema", "С участками эритемы"], ["ulcers", "С язвами"], ["mass", "С новообразованием"]], undefined, "Кожа"),
+    single("exam.ear.secretion", "Количество церумена/секрета", [["scant", "Скудное"], ["moderate", "Умеренное"], ["increased", "Повышенное"], ["significant", "Значимое, канал заполнен"]], undefined, "Количество церумена/секрета"),
+    single("exam.ear.filling", "Чем/как заполнен канал", [["partial", "Частично"], ["total", "Тотально"], ["pus", "Гноем"], ["brown", "Тёмно-коричневым экссудатом"]], ["exam.ear.secretion.significant"]),
+    single("exam.ear.tympanum", "Барабанная перепонка", [["visible", "Визуализируется"], ["not-visible", "Не визуализируется"]], undefined, "Барабанная перепонка"),
+    multiple("exam.ear.canal", "Канал", [["stenotic", "Стенозирован"], ["relief", "Имеет повышенный рельеф"], ["unavailable", "Недоступен для осмотра"]], undefined, "Канал"),
   ] },
   { id: "exam.lymph", label: "Поверхностные лимфатические узлы (ПЛУ)", questions: [
-    single("exam.lymph.state", "Увеличение", [["normal", "Не увеличены"], ["enlarged", "Увеличены"], ["multifocal", "Увеличены мультифокально"]]),
-    single("exam.lymph.grade", "Степень увеличения", [["slight", "Незначительно"], ["moderate", "Умеренно"], ["significant", "Значимо"]], ["exam.lymph.state.enlarged", "exam.lymph.state.multifocal"]),
-    multiple("exam.lymph.location", "Локализация", [["submandibular", "Подчелюстные"], ["prescapular", "Предлопаточные"], ["inguinal", "Паховые"], ["popliteal", "Подколенные"]], ["exam.lymph.state.enlarged"]),
+    single("exam.lymph.state", "Увеличение", [["normal", "Не увеличены"], ["enlarged", "Увеличены"]]),
+    single("exam.lymph.grade", "Степень увеличения", [["slight", "Незначительно"], ["moderate", "Умеренно"], ["significant", "Значимо"]], ["exam.lymph.state.enlarged"]),
+    multiple("exam.lymph.location", "Локализация", [["submandibular", "Подчелюстные"], ["prescapular", "Предлопаточные"], ["inguinal", "Паховые"], ["popliteal", "Подколенные"]], ["exam.lymph.state.enlarged"], "Локализация"),
   ] },
   { id: "exam.turgor", label: "Тургор", questions: [
     single("exam.turgor.state", "Состояние", [["normal", "В норме"], ["dehydration", "Эксикоз"]]),
@@ -365,60 +395,62 @@ export const EXAMINATION_CATEGORIES: readonly TherapeuticCategoryDefinition[] = 
   { id: "exam.coat", label: "Шерсть", questions: [
     multiple("exam.coat.quality", "Качество", [["shiny", "Блестящая"], ["dull", "Тусклая"], ["unkempt", "Неопрятная"], ["matted", "Сваляна в колтуны"]]),
     multiple("exam.coat.changes", "Изменённые участки", [["physiological-hypotrichosis", "Физиологический гипотрихоз"], ["hypotrichosis", "Гипотрихоз"], ["alopecia", "Алопеция"]]),
-    single("exam.coat.distribution", "Распределение", [["local", "Локально"], ["diffuse", "Диффузно"]], ["exam.coat.changes.hypotrichosis", "exam.coat.changes.alopecia"]),
-    single("exam.coat.number", "Количество локальных участков", [["single", "Единичный"], ["multiple", "Множественные"]], ["exam.coat.distribution.local"]),
-    single("exam.coat.shape", "Форма", [["round", "Округлая"], ["oval", "Овальная"]], ["exam.coat.distribution.local"]),
-  ] },
+    single("exam.coat.hypotrichosis.distribution", "Распределение гипотрихоза", [["local", "Локально"], ["diffuse", "Диффузно"]], ["exam.coat.changes.hypotrichosis"]),
+    single("exam.coat.hypotrichosis.number", "Количество локальных участков гипотрихоза", [["single", "Единично"], ["multiple", "Множественно"]], ["exam.coat.hypotrichosis.distribution.local"]),
+    single("exam.coat.alopecia.distribution", "Распределение алопеции", [["local", "Локально"], ["diffuse", "Диффузно"]], ["exam.coat.changes.alopecia"]),
+    single("exam.coat.alopecia.number", "Количество локальных участков алопеции", [["single", "Единичные"], ["multiple", "Множественные"]], ["exam.coat.alopecia.distribution.local"]),
+    single("exam.coat.shape", "Форма", [["round", "Округлая"], ["oval", "Овальная"]], ["exam.coat.hypotrichosis.distribution.local", "exam.coat.alopecia.distribution.local"]),
+  ], textFields: [textField("exam.coat.comment", "Дополнительно")] },
   { id: "exam.skin", label: "Кожный покров", questions: [
     single("exam.skin.state", "Состояние", [["normal", "Без патологий"], ["changed", "Есть изменения"]]),
     multiple("exam.skin.findings", "Изменения", [["scarification-single", "Единичные скарификации"], ["scarification-multiple", "Множественные скарификации"], ["erythema-single", "Единичные участки эритемы"], ["erythema-multiple", "Множественные участки эритемы"], ["collarettes", "Эпидермальные воротнички"], ["papules", "Папулы"], ["pustules", "Пустулы"], ["erosions", "Эрозии"], ["crust", "Участки, покрытые струпом"], ["ulcers", "Язвы"], ["fistula", "Фистула"], ["hyperpigmentation", "Гиперпигментация"], ["lichenification", "Лихенификация"]], ["exam.skin.state.changed"]),
   ] },
-  { id: "exam.mass", label: "Новообразования кожи", questions: [
+  { id: "exam.mass", label: "Новообразование кожи", questions: [
     single("exam.mass.count", "Количество", [["absent", "Отсутствуют"], ["single", "Единичное"], ["several", "Несколько"], ["multiple", "Множественные"]]),
-    single("exam.mass.location", "Расположение", [["intradermal", "Внутрикожно"], ["subcutaneous", "Подкожно"]], ["exam.mass.count.single", "exam.mass.count.several", "exam.mass.count.multiple"]),
-    single("exam.mass.growth", "Рост", [["endophytic", "Эндофитный"], ["exophytic", "Экзофитный"]], ["exam.mass.location.intradermal"]),
-    single("exam.mass.consistency", "Консистенция", [["dense", "Плотное"], ["doughy", "Тестоватое"], ["soft", "Мягкое"]], ["exam.mass.count.single", "exam.mass.count.several", "exam.mass.count.multiple"]),
-    single("exam.mass.ulceration", "Изъязвлённость", [["yes", "Есть"], ["no", "Нет"]], ["exam.mass.count.single", "exam.mass.count.several", "exam.mass.count.multiple"]),
-    single("exam.mass.mobility", "Подвижность", [["yes", "Есть"], ["no", "Нет"]], ["exam.mass.count.single", "exam.mass.count.several", "exam.mass.count.multiple"]),
-    single("exam.mass.size", "Диаметр", [["under-0-5", "Менее 0,5 см"], ["over-0-5", "Более 0,5 см"], ["over-1", "Более 1 см"], ["over-2", "Более 2 см"]], ["exam.mass.count.single", "exam.mass.count.several", "exam.mass.count.multiple"]),
+    single("exam.mass.location", "Расположение", [["intradermal", "Внутрикожно"], ["subcutaneous", "Подкожно"]], ["exam.mass.count.single", "exam.mass.count.several", "exam.mass.count.multiple"], "Расположение"),
+    single("exam.mass.growth", "Рост", [["endophytic", "Эндофитный"], ["exophytic", "Экзофитный"]], ["exam.mass.location.intradermal"], "Рост"),
+    single("exam.mass.consistency", "Консистенция", [["dense", "Плотное"], ["doughy", "Тестоватое"], ["soft", "Мягкое"]], ["exam.mass.count.single", "exam.mass.count.several", "exam.mass.count.multiple"], "Консистенция"),
+    single("exam.mass.ulceration", "Изъязвлённость", [["yes", "Есть"], ["no", "Нет"]], ["exam.mass.count.single", "exam.mass.count.several", "exam.mass.count.multiple"], "Изъязвлённость"),
+    single("exam.mass.mobility", "Подвижность", [["yes", "Есть"], ["no", "Нет"]], ["exam.mass.count.single", "exam.mass.count.several", "exam.mass.count.multiple"], "Подвижность"),
+    single("exam.mass.size", "Диаметр", [["under-0-5", "Менее 0,5 см"], ["over-0-5", "Более 0,5 см"], ["over-1", "Более 1 см"], ["over-2", "Более 2 см"]], ["exam.mass.count.single", "exam.mass.count.several", "exam.mass.count.multiple"], "Диаметр"),
   ] },
   { id: "exam.abdomen", label: "Брюшная стенка", questions: [
-    single("exam.abdomen.visual", "Визуально", [["normal", "Не изменена"], ["enlarged", "Увеличена"], ["significant", "Значимо увеличена"], ["sagging", "Провисает"]]),
-    single("exam.abdomen.bulging", "Выпячивание", [["none", "Не наблюдается"], ["left", "Латерально слева"], ["right", "Латерально справа"], ["bilateral", "Билатерально"]]),
-    single("exam.abdomen.palpation", "При пальпации", [["soft", "Мягкая"], ["moderate", "Умеренно напряжена"], ["tense", "Напряжённая"], ["anxiety", "Вызывает беспокойство"]]),
-    single("exam.abdomen.pain", "Болезненность", [["none", "Не отмечается"], ["present", "Есть"]]),
-    multiple("exam.abdomen.pain-location", "Область болезненности", [["epigastrium", "Эпигастрий"], ["mesogastrium", "Мезогастрий"], ["hypogastrium", "Гипогастрий"]], ["exam.abdomen.pain.present"]),
-    multiple("exam.abdomen.findings", "Пальпируемые находки", [["bladder", "Мочевой пузырь"], ["feces", "Каловые массы"], ["spleen", "Увеличенная селезёнка"], ["induration", "Уплотнение"], ["kidney", "Почка"], ["uterine-horns", "Увеличенные рога матки"], ["fetus", "Плод"]]),
+    single("exam.abdomen.visual", "Визуально", [["normal", "Не изменена"], ["enlarged", "Увеличена"], ["significant", "Значимо увеличена"], ["sagging", "Провисает"]], undefined, "Визуально"),
+    single("exam.abdomen.bulging", "Выпячивание", [["none", "Не наблюдается"], ["left", "Латерально слева"], ["right", "Латерально справа"], ["bilateral", "Билатерально"]], undefined, "Выпячивание"),
+    single("exam.abdomen.palpation", "При пальпации", [["soft", "Мягкая"], ["moderate", "Умеренно напряжена"], ["tense", "Напряжённая"], ["anxiety", "Вызывает беспокойство"]], undefined, "При пальпации"),
+    single("exam.abdomen.pain", "Болезненность", [["none", "Не отмечается"], ["present", "Есть"]], undefined, "Болезненность"),
+    multiple("exam.abdomen.pain-location", "Область болезненности", [["epigastrium", "Эпигастрий"], ["mesogastrium", "Мезогастрий"], ["hypogastrium", "Гипогастрий"]], ["exam.abdomen.pain.present"], "В области"),
+    multiple("exam.abdomen.findings", "Пальпируемые находки", [["bladder", "Мочевой пузырь"], ["feces", "Каловые массы"], ["spleen", "Увеличенная селезёнка"], ["induration", "Уплотнение"], ["kidney", "Почка"], ["uterine-horns", "Увеличенные рога матки"], ["foreign", "Инородный предмет"], ["fetus", "Плод"]], undefined, "Пальпируемые находки"),
     single("exam.abdomen.bladder", "Мочевой пузырь", [["empty", "Пустой"], ["moderate", "Умеренно наполнен"], ["full", "Переполнен"]], ["exam.abdomen.findings.bladder"]),
     single("exam.abdomen.feces", "Каловые массы", [["none", "Отсутствуют"], ["moderate", "Умеренное количество"], ["significant", "Значимое количество"]], ["exam.abdomen.findings.feces"]),
     single("exam.abdomen.induration", "Область уплотнения", [["epigastrium", "Эпигастрий"], ["mesogastrium", "Мезогастрий"], ["hypogastrium", "Гипогастрий"]], ["exam.abdomen.findings.induration"]),
     single("exam.abdomen.kidney-size", "Размер почки", [["enlarged", "Увеличена"], ["reduced", "Уменьшена"]], ["exam.abdomen.findings.kidney"]),
     single("exam.abdomen.kidney-side", "Сторона", [["left", "Слева"], ["right", "Справа"]], ["exam.abdomen.kidney-size.enlarged", "exam.abdomen.kidney-size.reduced"]),
-    single("exam.abdomen.fetus", "Количество плодов", [["single", "Единичный"], ["multiple", "Несколько"]], ["exam.abdomen.findings.fetus"]),
-    single("exam.abdomen.peristalsis", "Звуки перистальтики", [["absent", "Отсутствуют"], ["moderate", "Умеренные"], ["increased", "Усиленные"]]),
-    single("exam.abdomen.fetal-heartbeat", "Сердцебиение плода", [["heard", "Прослушивается"], ["not-heard", "Не прослушивается"]], ["exam.abdomen.findings.fetus"]),
+    single("exam.abdomen.fetus", "Количество плодов", [["single", "Единичный"], ["multiple", "Несколько"]], ["exam.abdomen.findings.fetus"], "Количество плодов"),
+    single("exam.abdomen.peristalsis", "Звуки перистальтики", [["absent", "Отсутствуют"], ["moderate", "Умеренные"], ["increased", "Усиленные"]], undefined, "Звуки перистальтики"),
+    single("exam.abdomen.fetal-heartbeat", "Сердцебиение плода", [["heard", "Прослушивается"], ["not-heard", "Не прослушивается"]], ["exam.abdomen.findings.fetus"], "Сердцебиение плода"),
   ] },
   { id: "exam.chest", label: "Грудная полость", questions: [
-    single("exam.chest.breathing", "Дыхание", [["thoracic", "Грудного типа"], ["abdominal", "Брюшного типа"], ["mixed", "Грудо-брюшного типа"], ["dyspnea", "С одышкой"], ["agonal", "Агональное"]]),
+    single("exam.chest.breathing", "Дыхание", [["thoracic", "Грудного типа"], ["abdominal", "Брюшного типа"], ["mixed", "Грудо-брюшного типа"], ["dyspnea", "С одышкой"], ["agonal", "Агональное"]], undefined, "Дыхание"),
     single("exam.chest.dyspnea", "Тип одышки", [["inspiratory", "Инспираторная"], ["expiratory", "Экспираторная"]], ["exam.chest.breathing.dyspnea"]),
-    single("exam.chest.wall", "Грудная стенка", [["normal", "Не изменена"], ["left", "Увеличена латерально слева"], ["right", "Увеличена латерально справа"]]),
-    single("exam.chest.heart-tones", "Тоны сердца", [["clear", "Ясные"], ["muffled", "Приглушённые"], ["dull", "Глухие"], ["absent", "Не прослушиваются"]]),
-    single("exam.chest.heart-rhythm", "Ритм сердца", [["rhythmic", "Ритмичный"], ["respiratory-arrhythmia", "Дыхательная аритмия"], ["atrial-fibrillation", "Мерцательная аритмия"], ["gallop", "Ритм галопа"]], ["exam.chest.heart-tones.clear", "exam.chest.heart-tones.muffled", "exam.chest.heart-tones.dull"]),
-    multiple("exam.chest.arrhythmia", "Дополнительные нарушения ритма", [["tachyarrhythmia", "Тахиаритмия"], ["bradyarrhythmia", "Брадиаритмия"], ["extrasystole", "Экстрасистола"]]),
-    single("exam.chest.murmur", "Шум сердца", [["absent", "Отсутствует"], ["systolic", "Систолический"], ["diastolic", "Диастолический"], ["machinery", "Машинный"]]),
-    single("exam.chest.murmur-grade", "Интенсивность шума", [["1", "1"], ["2", "2"], ["3", "3"], ["4", "4"], ["5", "5"], ["6", "6"]], ["exam.chest.murmur.systolic", "exam.chest.murmur.diastolic", "exam.chest.murmur.machinery"]),
-    multiple("exam.chest.lung-breathing", "Дыхание в лёгких", [["vesicular-soft-all", "Везикулярное мягкое по всем полям"], ["vesicular-soft-right", "Везикулярное мягкое справа"], ["vesicular-soft-left", "Везикулярное мягкое слева"], ["vesicular-hard-all", "Везикулярное жёсткое по всем полям"], ["vesicular-hard-right", "Везикулярное жёсткое справа"], ["vesicular-hard-left", "Везикулярное жёсткое слева"], ["bronchial-hard-all", "Бронхиальное жёсткое по всем полям"], ["bronchial-hard-right", "Бронхиальное жёсткое справа"], ["bronchial-hard-left", "Бронхиальное жёсткое слева"]]),
-    multiple("exam.chest.lung-noises", "Шумы", [["upper-airway", "Верхних дыхательных путей"], ["stridor", "Стридор"], ["stertor", "Стертор"], ["friction", "Трение"], ["crepitation", "Крепитация"], ["fine", "Мелкопузырчатые"], ["coarse", "Крупнопузырчатые"]]),
+    single("exam.chest.wall", "Грудная стенка", [["normal", "Не изменена"], ["left", "Увеличена латерально слева"], ["right", "Увеличена латерально справа"]], undefined, "Грудная стенка"),
+    single("exam.chest.heart-tones", "Тоны сердца", [["clear", "Ясные"], ["muffled", "Приглушённые"], ["dull", "Глухие"], ["absent", "Не прослушиваются"]], undefined, "Тоны сердца"),
+    single("exam.chest.heart-rhythm", "Ритм сердца", [["rhythmic", "Ритмичный"], ["respiratory-arrhythmia", "Дыхательная аритмия"], ["atrial-fibrillation", "Мерцательная аритмия"], ["gallop", "Ритм галопа"]], ["exam.chest.heart-tones.clear", "exam.chest.heart-tones.muffled", "exam.chest.heart-tones.dull"], "Ритм сердца"),
+    multiple("exam.chest.arrhythmia", "Дополнительные нарушения ритма", [["tachyarrhythmia", "Тахиаритмия"], ["bradyarrhythmia", "Брадиаритмия"], ["extrasystole", "Экстрасистола"]], undefined, "Дополнительные нарушения ритма"),
+    single("exam.chest.murmur", "Шум", [["absent", "Отсутствует"], ["systolic", "Систолический"], ["diastolic", "Диастолический"], ["machinery", "Машинный"]], undefined, "Шум"),
+    single("exam.chest.murmur-grade", "Интенсивность", [["1", "1"], ["2", "2"], ["3", "3"], ["4", "4"], ["5", "5"], ["6", "6"]], ["exam.chest.murmur.systolic", "exam.chest.murmur.diastolic", "exam.chest.murmur.machinery"], "Интенсивность"),
+    multiple("exam.chest.lung-breathing", "При аускультации", [["vesicular-soft-all", "Везикулярное мягкое по всем полям"], ["vesicular-soft-right", "Везикулярное мягкое справа"], ["vesicular-soft-left", "Везикулярное мягкое слева"], ["vesicular-hard-all", "Везикулярное жёсткое по всем полям"], ["vesicular-hard-right", "Везикулярное жёсткое справа"], ["vesicular-hard-left", "Везикулярное жёсткое слева"], ["bronchial-hard-all", "Бронхиальное жёсткое по всем полям"], ["bronchial-hard-right", "Бронхиальное жёсткое справа"], ["bronchial-hard-left", "Бронхиальное жёсткое слева"]], undefined, "При аускультации"),
+    multiple("exam.chest.lung-noises", "Шумы", [["upper-airway", "Верхних дыхательных путей"], ["stridor", "Стридор"], ["stertor", "Стертор"], ["friction", "Трение"], ["crepitation", "Крепитация"], ["fine", "Мелкопузырчатые"], ["coarse", "Крупнопузырчатые"]], undefined, "Шумы"),
   ] },
   { id: "exam.locomotion", label: "Опороспособность", questions: [
-    single("exam.locomotion.state", "Состояние", [["normal", "В норме"], ["lameness", "Отмечается хромота"], ["changed", "Есть другие изменения"]]),
+    single("exam.locomotion.state", "Состояние", [["normal", "В норме"], ["lameness", "Отмечается хромота"]]),
     single("exam.locomotion.lameness", "Степень хромоты", [["1", "1 степень: проявляется периодически"], ["2", "2 степень: проявляется постоянно"], ["3", "3 степень: периодическое отсутствие опоры"], ["4", "4 степень: постоянное отсутствие опоры"]], ["exam.locomotion.state.lameness"]),
-    multiple("exam.locomotion.findings", "Другие изменения", [["ataxia", "Атаксия"], ["hypomobility", "Гипомобильность"], ["monoparesis", "Монопарез"], ["hemiparesis", "Гемипарез"], ["paraparesis", "Парапарез"], ["tetraparesis", "Тетрапарез"], ["monoplegia", "Моноплегия"], ["paraplegia", "Параплегия"], ["tetraplegia", "Тетраплегия"], ["seizures", "Судороги"], ["dyskinesia", "Дискинезия"]], ["exam.locomotion.state.changed"]),
+    multiple("exam.locomotion.findings", "Другое состояние", [["ataxia", "Атаксия"], ["hypomobility", "Гипомобильность"], ["monoparesis", "Монопарез"], ["hemiparesis", "Гемипарез"], ["paraparesis", "Парапарез"], ["tetraparesis", "Тетрапарез"], ["monoplegia", "Моноплегия"], ["paraplegia", "Параплегия"], ["tetraplegia", "Тетраплегия"], ["seizures", "Судороги"], ["dyskinesia", "Дискинезия"]], undefined, "Другое состояние"),
     single("exam.locomotion.ataxia", "Тип атаксии", [["cerebellar", "Мозжечковая"], ["positional", "Позиционная"], ["vestibular", "Вестибулярная"]], ["exam.locomotion.findings.ataxia"]),
     multiple("exam.locomotion.seizures", "Тип судорог", [["myoclonic", "Миоклонические"], ["tonic", "Тонические"], ["tonic-clonic", "Тонико-клонические"], ["cluster", "Кластерные"]], ["exam.locomotion.findings.seizures"]),
-  ] },
+  ], textFields: [textField("exam.locomotion.comment", "Комментарии")] },
   { id: "exam.completeness", label: "Полнота осмотра", questions: [
-    single("exam.completeness.state", "Осмотр", [["complete", "Проведён полностью"], ["partial", "Проведён частично"], ["none", "Не проводился"]]),
+    single("exam.completeness.state", "Осмотр", [["complete", "Проведён полностью"], ["partial", "Проведён частично"], ["none", "Не проводился"]], undefined, "Осмотр"),
     single("exam.completeness.partial-reason", "Причина частичного осмотра", [["aggressive", "Агрессивное поведение животного"], ["fearful", "Пугливое поведение животного"], ["fear-aggression", "Пугливо-агрессивное поведение животного"], ["owner-refusal", "Несогласие владельца на некоторые методы исследования"]], ["exam.completeness.state.partial"]),
     single("exam.completeness.none-reason", "Причина отсутствия осмотра", [["owner-refusal", "Несогласие владельца на осмотр"], ["animal-absent", "Отсутствие животного"], ["death", "Гибель животного"]], ["exam.completeness.state.none"]),
   ] },
@@ -453,20 +485,44 @@ const exclusiveMultipleOptionIds = new Set([
   "exam.ear.skin.clean",
   "exam.coat.quality.shiny",
 ]);
+const mutuallyExclusivePairs = new Set([
+  ["disease.vomiting.contents.foamy", "disease.vomiting.contents.not-foamy"].sort().join("|"),
+]);
+const locomotionNormalId = "exam.locomotion.state.normal";
+const locomotionFindingIds = new Set(
+  [...optionDefinitions.keys()].filter((id) => id.startsWith("exam.locomotion.findings.")),
+);
+
+function optionsConflict(left: string, right: string): boolean {
+  return mutuallyExclusivePairs.has([left, right].sort().join("|"));
+}
 
 export function emptyTherapeuticAppointmentDraft(): TherapeuticAppointmentDraft {
   return {
+    schemaVersion: 2,
     diseaseAnamnesis: { text: "", problems: [], selectedIds: [] },
-    lifeAnamnesis: { text: "", selectedIds: [], currentMedications: "", allergies: "" },
-    examination: { text: "", selectedIds: [] },
+    lifeAnamnesis: {
+      text: "",
+      selectedIds: [],
+      ectoparasiteName: "",
+      dewormingName: "",
+      naturalDietProducts: "",
+      commercialFoodName: "",
+      diseaseName: "",
+      currentMedications: "",
+      allergies: "",
+    },
+    examination: { text: "", selectedIds: [], coatComment: "", locomotionComment: "" },
     recommendations: "",
     prescriptions: "",
+    migrationNotes: [],
   };
 }
 
 export function therapeuticAppointmentDraft(value?: TherapeuticAppointmentSectionValue): TherapeuticAppointmentDraft {
   if (!value) return emptyTherapeuticAppointmentDraft();
   return {
+    schemaVersion: 2,
     diseaseAnamnesis: {
       text: value.diseaseAnamnesis.text,
       selectedIds: [...value.diseaseAnamnesis.selectedIds],
@@ -475,12 +531,23 @@ export function therapeuticAppointmentDraft(value?: TherapeuticAppointmentSectio
     lifeAnamnesis: {
       text: value.lifeAnamnesis.text,
       selectedIds: [...value.lifeAnamnesis.selectedIds],
+      ectoparasiteName: value.lifeAnamnesis.ectoparasiteName,
+      dewormingName: value.lifeAnamnesis.dewormingName,
+      naturalDietProducts: value.lifeAnamnesis.naturalDietProducts,
+      commercialFoodName: value.lifeAnamnesis.commercialFoodName,
+      diseaseName: value.lifeAnamnesis.diseaseName,
       currentMedications: value.lifeAnamnesis.currentMedications,
       allergies: value.lifeAnamnesis.allergies,
     },
-    examination: { text: value.examination.text, selectedIds: [...value.examination.selectedIds] },
+    examination: {
+      text: value.examination.text,
+      selectedIds: [...value.examination.selectedIds],
+      coatComment: value.examination.coatComment,
+      locomotionComment: value.examination.locomotionComment,
+    },
     recommendations: value.recommendations,
     prescriptions: value.prescriptions,
+    migrationNotes: [...value.migrationNotes],
   };
 }
 
@@ -489,6 +556,7 @@ export function newTherapeuticProblem(sourceWhatHappenedId?: string, title = "")
     id: crypto.randomUUID(),
     ...(sourceWhatHappenedId ? { sourceWhatHappenedId } : {}),
     title,
+    description: "",
     medicationIds: [],
   };
 }
@@ -519,12 +587,39 @@ export function toggleTherapeuticMultipleSelection(
   const questionIds = new Set(questionDefinition.options.map((option) => option.id));
   if (selectedIds.includes(id)) return pruneTherapeuticSelections(selectedIds.filter((candidate) => candidate !== id));
   const withoutConflicts = selectedIds.filter((candidate) => !questionIds.has(candidate)
-    || (!exclusiveMultipleOptionIds.has(id) && !exclusiveMultipleOptionIds.has(candidate)));
-  return pruneTherapeuticSelections([...withoutConflicts, id]);
+    || (!exclusiveMultipleOptionIds.has(id) && !exclusiveMultipleOptionIds.has(candidate)))
+    .filter((candidate) => !optionsConflict(candidate, id))
+    .filter((candidate) => !(locomotionFindingIds.has(id) && candidate === locomotionNormalId));
+  return pruneTherapeuticSelections([...withoutConflicts, id], id);
 }
 
-export function pruneTherapeuticSelections(selectedIds: readonly string[]): string[] {
+export function replaceTherapeuticSingleSelection(
+  questionDefinition: TherapeuticQuestionDefinition,
+  selectedIds: readonly string[],
+  id: string,
+): string[] {
+  const questionIds = new Set(questionDefinition.options.map((option) => option.id));
+  const withoutQuestion = selectedIds.filter((candidate) => !questionIds.has(candidate));
+  const withoutConflicts = id === locomotionNormalId
+    ? withoutQuestion.filter((candidate) => !locomotionFindingIds.has(candidate))
+    : withoutQuestion;
+  return pruneTherapeuticSelections([...withoutConflicts, ...(id ? [id] : [])], id);
+}
+
+export function pruneTherapeuticSelections(selectedIds: readonly string[], preferredId = ""): string[] {
   let next = [...new Set(selectedIds.filter((id) => optionDefinitions.has(id)))];
+  for (const pair of mutuallyExclusivePairs) {
+    const [left, right] = pair.split("|") as [string, string];
+    if (next.includes(left) && next.includes(right)) {
+      const remove = preferredId === left ? right : left;
+      next = next.filter((id) => id !== remove);
+    }
+  }
+  if (next.includes(locomotionNormalId) && next.some((id) => locomotionFindingIds.has(id))) {
+    next = preferredId === locomotionNormalId
+      ? next.filter((id) => !locomotionFindingIds.has(id))
+      : next.filter((id) => id !== locomotionNormalId);
+  }
   let changed = true;
   while (changed) {
     const visible = new Set(allQuestions
@@ -552,15 +647,21 @@ function validateSelections(selectedIds: unknown, categories: readonly Therapeut
       && itemSelections.some((id) => exclusiveMultipleOptionIds.has(id))) {
       return `Поле «${item.label}» содержит несовместимые варианты.`;
     }
+    if (itemSelections.some((id, index) => itemSelections.slice(index + 1).some((other) => optionsConflict(id, other)))) {
+      return `Поле «${item.label}» содержит несовместимые варианты.`;
+    }
     if (!therapeuticQuestionVisible(item, selectedIds) && therapeuticQuestionSelections(item, selectedIds).length) {
       return `Поле «${item.label}» заполнено без необходимого родительского ответа.`;
     }
+  }
+  if (selectedIds.includes(locomotionNormalId) && selectedIds.some((id) => locomotionFindingIds.has(id))) {
+    return "Поле «Опороспособность» содержит несовместимые варианты.";
   }
   return "";
 }
 
 function problemHasContent(problem: TherapeuticProblemDraft): boolean {
-  return Boolean(problem.title.trim() || problem.sourceWhatHappenedId || problem.onsetId || problem.frequencyId
+  return Boolean(problem.title.trim() || problem.description?.trim() || problem.sourceWhatHappenedId || problem.onsetId || problem.frequencyId
     || problem.priorTherapyId || problem.medicationUseId || problem.medicationIds.length
     || problem.medicationName?.trim() || problem.medicationDynamicsId);
 }
@@ -570,6 +671,7 @@ function normalizeProblem(problem: TherapeuticProblemDraft): TherapeuticProblemV
     id: problem.id.trim(),
     ...(problem.sourceWhatHappenedId ? { sourceWhatHappenedId: problem.sourceWhatHappenedId } : {}),
     title: problem.title.trim(),
+    description: problem.description?.trim() ?? "",
     ...(problem.onsetId ? { onsetId: problem.onsetId } : {}),
     ...(problem.frequencyId ? { frequencyId: problem.frequencyId } : {}),
     ...(problem.priorTherapyId ? { priorTherapyId: problem.priorTherapyId } : {}),
@@ -592,7 +694,6 @@ export function parseTherapeuticAppointmentDraft(draft: TherapeuticAppointmentDr
     const problemId = problem.id.trim();
     if (!problemId || ids.has(problemId)) problemErrors[problem.id || "missing"] = "У проблемы должен быть уникальный идентификатор.";
     ids.add(problemId);
-    if (!problem.title.trim()) problemErrors[problem.id] = "Укажите название проблемы.";
     if (problem.onsetId && !onsetIds.has(problem.onsetId)) problemErrors[problem.id] = "Выбран неизвестный срок начала.";
     if (problem.frequencyId && !frequencyIds.has(problem.frequencyId)) problemErrors[problem.id] = "Выбрана неизвестная периодичность.";
     if (problem.priorTherapyId && !therapyIds.has(problem.priorTherapyId)) problemErrors[problem.id] = "Выбран неизвестный вариант терапии.";
@@ -612,9 +713,6 @@ export function parseTherapeuticAppointmentDraft(draft: TherapeuticAppointmentDr
     if (problem.medicationUseId === "problem.medication.none"
       && (problem.medicationIds.length || problem.medicationName?.trim() || problem.medicationDynamicsId)) {
       problemErrors[problem.id] = "При отсутствии препаратов очистите виды, название препарата и динамику.";
-    }
-    if (problem.medicationUseId === "problem.medication.used" && (!problem.medicationIds.length || !problem.medicationDynamicsId)) {
-      problemErrors[problem.id] = "Выберите применявшиеся препараты и динамику.";
     }
     if (!problem.medicationUseId && (problem.medicationIds.length || problem.medicationName?.trim() || problem.medicationDynamicsId)) {
       problemErrors[problem.id] = "Сначала укажите, применялись ли препараты.";
@@ -642,6 +740,7 @@ export function parseTherapeuticAppointmentDraft(draft: TherapeuticAppointmentDr
   }
 
   const value: TherapeuticAppointmentSectionValue = {
+    schemaVersion: 2,
     diseaseAnamnesis: {
       text: draft.diseaseAnamnesis.text.trim(),
       problems: populatedProblems.map(normalizeProblem),
@@ -650,21 +749,31 @@ export function parseTherapeuticAppointmentDraft(draft: TherapeuticAppointmentDr
     lifeAnamnesis: {
       text: draft.lifeAnamnesis.text.trim(),
       selectedIds: pruneTherapeuticSelections(draft.lifeAnamnesis.selectedIds),
+      ectoparasiteName: draft.lifeAnamnesis.ectoparasiteName.trim(),
+      dewormingName: draft.lifeAnamnesis.dewormingName.trim(),
+      naturalDietProducts: draft.lifeAnamnesis.naturalDietProducts.trim(),
+      commercialFoodName: draft.lifeAnamnesis.commercialFoodName.trim(),
+      diseaseName: draft.lifeAnamnesis.diseaseName.trim(),
       currentMedications: draft.lifeAnamnesis.currentMedications.trim(),
       allergies: draft.lifeAnamnesis.allergies.trim(),
     },
     examination: {
       text: draft.examination.text.trim(),
       selectedIds: pruneTherapeuticSelections(draft.examination.selectedIds),
+      coatComment: draft.examination.coatComment.trim(),
+      locomotionComment: draft.examination.locomotionComment.trim(),
     },
     recommendations: draft.recommendations.trim(),
     prescriptions: draft.prescriptions.trim(),
+    migrationNotes: [...new Set(draft.migrationNotes.map((note) => note.trim()).filter(Boolean))],
   };
   const hasContent = Boolean(
     value.diseaseAnamnesis.text || value.diseaseAnamnesis.problems.length || value.diseaseAnamnesis.selectedIds.length
-    || value.lifeAnamnesis.text || value.lifeAnamnesis.selectedIds.length || value.lifeAnamnesis.currentMedications
-    || value.lifeAnamnesis.allergies || value.examination.text || value.examination.selectedIds.length
-    || value.recommendations || value.prescriptions,
+    || value.lifeAnamnesis.text || value.lifeAnamnesis.selectedIds.length || value.lifeAnamnesis.ectoparasiteName
+    || value.lifeAnamnesis.dewormingName || value.lifeAnamnesis.naturalDietProducts || value.lifeAnamnesis.commercialFoodName
+    || value.lifeAnamnesis.diseaseName || value.lifeAnamnesis.currentMedications || value.lifeAnamnesis.allergies
+    || value.examination.text || value.examination.selectedIds.length || value.examination.coatComment
+    || value.examination.locomotionComment || value.recommendations || value.prescriptions || value.migrationNotes.length,
   );
   if (!hasContent && !errors.section) {
     errors.section = "Заполните хотя бы один раздел терапевтического приёма.";
@@ -673,33 +782,44 @@ export function parseTherapeuticAppointmentDraft(draft: TherapeuticAppointmentDr
   return Object.keys(errors).length ? { errors } : { value, errors };
 }
 
-function hasSectionShape(value: unknown): value is TherapeuticAppointmentSectionValue {
-  if (!value || typeof value !== "object") return false;
-  const candidate = value as Partial<TherapeuticAppointmentSectionValue>;
-  return Boolean(candidate.diseaseAnamnesis && candidate.lifeAnamnesis && candidate.examination
-    && typeof candidate.recommendations === "string" && typeof candidate.prescriptions === "string"
-    && typeof candidate.diseaseAnamnesis.text === "string" && Array.isArray(candidate.diseaseAnamnesis.problems)
-    && Array.isArray(candidate.diseaseAnamnesis.selectedIds) && typeof candidate.lifeAnamnesis.text === "string"
-    && Array.isArray(candidate.lifeAnamnesis.selectedIds) && typeof candidate.lifeAnamnesis.currentMedications === "string"
-    && typeof candidate.lifeAnamnesis.allergies === "string" && typeof candidate.examination.text === "string"
-    && Array.isArray(candidate.examination.selectedIds)
-    && candidate.diseaseAnamnesis.selectedIds.every((id) => typeof id === "string")
-    && candidate.lifeAnamnesis.selectedIds.every((id) => typeof id === "string")
-    && candidate.examination.selectedIds.every((id) => typeof id === "string")
-    && candidate.diseaseAnamnesis.problems.every((problem) => Boolean(problem && typeof problem === "object"
-      && typeof problem.id === "string" && typeof problem.title === "string" && Array.isArray(problem.medicationIds)
-      && problem.medicationIds.every((id: unknown) => typeof id === "string")
-      && [problem.sourceWhatHappenedId, problem.onsetId, problem.frequencyId, problem.priorTherapyId,
-        problem.medicationUseId, problem.medicationName, problem.medicationDynamicsId]
-        .every((item) => item === undefined || typeof item === "string"))));
+export function migrateTherapeuticAppointmentValue(value: unknown): TherapeuticAppointmentSectionValue {
+  const migrated = migrateContractTherapeuticAppointmentValue(value, {
+    knownOptionIds: new Set([
+      ...optionDefinitions.keys(),
+      ...onsetIds,
+      ...frequencyIds,
+      ...therapyIds,
+      ...medicationUseIds,
+      ...medicationIds,
+      ...dynamicsIds,
+    ]),
+    optionLabel: therapeuticOptionLabel,
+  });
+  return {
+    ...migrated,
+    diseaseAnamnesis: {
+      ...migrated.diseaseAnamnesis,
+      selectedIds: pruneTherapeuticSelections(migrated.diseaseAnamnesis.selectedIds),
+    },
+    lifeAnamnesis: {
+      ...migrated.lifeAnamnesis,
+      selectedIds: pruneTherapeuticSelections(migrated.lifeAnamnesis.selectedIds),
+    },
+    examination: {
+      ...migrated.examination,
+      selectedIds: pruneTherapeuticSelections(migrated.examination.selectedIds),
+    },
+  };
 }
 
 export function isTherapeuticAppointmentValue(value: unknown): value is TherapeuticAppointmentSectionValue {
-  return hasSectionShape(value) && Boolean(parseTherapeuticAppointmentDraft(therapeuticAppointmentDraft(value)).value);
+  return isTherapeuticAppointmentV2Value(value)
+    && Boolean(parseTherapeuticAppointmentDraft(therapeuticAppointmentDraft(value)).value);
 }
 
 export function normalizeTherapeuticAppointmentValue(value: TherapeuticAppointmentSectionValue): TherapeuticAppointmentSectionValue {
-  return parseTherapeuticAppointmentDraft(therapeuticAppointmentDraft(value)).value ?? value;
+  const migrated = migrateTherapeuticAppointmentValue(value);
+  return parseTherapeuticAppointmentDraft(therapeuticAppointmentDraft(migrated)).value ?? migrated;
 }
 
 export function therapeuticSelectionDetails(
@@ -709,23 +829,29 @@ export function therapeuticSelectionDetails(
   return therapeuticSelectionGroups(selectedIds, categories).flatMap((group) =>
     group.details.map((detail) => ({
       ...detail,
-      label: `${group.label}: ${detail.label}`,
+      label: detail.label ? `${group.label}: ${detail.label}` : group.label,
     })));
 }
 
 export function therapeuticSelectionGroups(
   selectedIds: readonly string[],
   categories: readonly TherapeuticCategoryDefinition[],
+  textValues: Readonly<Record<string, string>> = {},
 ): TherapeuticSelectionGroup[] {
   return categories.flatMap((category) => {
-    const details = category.questions.flatMap((item) => {
+    const selectionDetails = category.questions.flatMap((item) => {
       const selected = therapeuticQuestionSelections(item, selectedIds);
       return selected.length ? [{
         key: item.id,
-        label: item.label,
+        label: item.readOnlyLabel ?? "",
         value: selected.map(therapeuticOptionLabel).join(", "),
       }] : [];
     });
+    const textDetails = (category.textFields ?? []).flatMap((item) => {
+      const value = textValues[item.id]?.trim();
+      return value ? [{ key: item.id, label: item.readOnlyLabel, value }] : [];
+    });
+    const details = [...selectionDetails, ...textDetails];
     return details.length ? [{ key: category.id, label: category.label, details }] : [];
   });
 }
@@ -733,6 +859,7 @@ export function therapeuticSelectionGroups(
 export function therapeuticAppointmentSearchText(value: TherapeuticAppointmentSectionValue): string {
   const problems = value.diseaseAnamnesis.problems.flatMap((problem) => [
     problem.title,
+    problem.description,
     problem.onsetId ? therapeuticOptionLabel(problem.onsetId) : "",
     problem.frequencyId ? therapeuticOptionLabel(problem.frequencyId) : "",
     problem.priorTherapyId ? therapeuticOptionLabel(problem.priorTherapyId) : "",
@@ -747,16 +874,23 @@ export function therapeuticAppointmentSearchText(value: TherapeuticAppointmentSe
     ...value.examination.selectedIds,
   ].map(therapeuticOptionLabel);
   return [value.diseaseAnamnesis.text, ...problems, value.lifeAnamnesis.text,
-    value.lifeAnamnesis.currentMedications, value.lifeAnamnesis.allergies,
-    value.examination.text, ...selected, value.recommendations, value.prescriptions]
+    value.lifeAnamnesis.ectoparasiteName, value.lifeAnamnesis.dewormingName,
+    value.lifeAnamnesis.naturalDietProducts, value.lifeAnamnesis.commercialFoodName,
+    value.lifeAnamnesis.diseaseName, value.lifeAnamnesis.currentMedications, value.lifeAnamnesis.allergies,
+    value.examination.text, value.examination.coatComment, value.examination.locomotionComment,
+    ...selected, value.recommendations, value.prescriptions, ...value.migrationNotes]
     .filter(Boolean).join("; ");
 }
 
-export function therapeuticCatalogDiagnostics(): { questionIds: string[]; optionIds: string[]; dependencyIds: string[] } {
+export function therapeuticCatalogDiagnostics(): { questionIds: string[]; textFieldIds: string[]; optionIds: string[]; dependencyIds: string[] } {
   return {
     questionIds: allQuestions.map((item) => item.id),
+    textFieldIds: allCategories.flatMap((category) => (category.textFields ?? []).map((item) => item.id)),
     optionIds: allQuestions.flatMap((item) => item.options.map((option) => option.id)),
-    dependencyIds: allQuestions.flatMap((item) => [...(item.visibleWhenAny ?? [])]),
+    dependencyIds: [
+      ...allQuestions.flatMap((item) => [...(item.visibleWhenAny ?? [])]),
+      ...allCategories.flatMap((category) => (category.textFields ?? []).flatMap((item) => [...(item.visibleWhenAny ?? [])])),
+    ],
   };
 }
 

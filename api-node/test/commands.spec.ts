@@ -623,6 +623,66 @@ describe("command boundary", () => {
     expect(result.sections["laboratory-tests"]).toBeUndefined();
   });
 
+  it("accepts only therapeutic appointment schema v2 at the command boundary", () => {
+    const base = {
+      petId: "pet-1",
+      encounterDate: "2026-08-10",
+      sections: {
+        "what-happened": { selectedIds: ["problem.digestive.7"], comment: "Рвота" },
+        outcome: { selectedIds: ["outcome.observation"], comment: "" },
+      },
+    };
+    const legacy = {
+      diseaseAnamnesis: { text: "Рвота", problems: [], selectedIds: [] },
+      lifeAnamnesis: { text: "", selectedIds: [], currentMedications: "", allergies: "" },
+      examination: { text: "", selectedIds: [] },
+      recommendations: "",
+      prescriptions: "",
+    };
+    expect(() => validateMedicalEncounter({
+      ...base,
+      sections: { ...base.sections, "therapeutic-appointment": legacy },
+    })).toThrow("must use schema v2");
+
+    const v2 = {
+      schemaVersion: 2 as const,
+      diseaseAnamnesis: { text: "Рвота", problems: [], selectedIds: [] },
+      lifeAnamnesis: {
+        text: "", selectedIds: [], ectoparasiteName: "", dewormingName: "", naturalDietProducts: "",
+        commercialFoodName: "", diseaseName: "", currentMedications: "", allergies: "",
+      },
+      examination: { text: "", selectedIds: [], coatComment: "", locomotionComment: "" },
+      recommendations: "",
+      prescriptions: "",
+      migrationNotes: [],
+    };
+    expect(validateMedicalEncounter({
+      ...base,
+      sections: { ...base.sections, "therapeutic-appointment": v2 },
+    }).sections["therapeutic-appointment"]).toEqual(v2);
+    for (const selectedIds of [
+      ["disease.unknown.option"],
+      ["disease.urination.change.dysuria"],
+      ["disease.activity.state.unchanged", "disease.activity.state.changed"],
+      [
+        "disease.vomiting.state.present",
+        "disease.vomiting.contents.foamy",
+        "disease.vomiting.contents.not-foamy",
+      ],
+    ]) {
+      expect(() => validateMedicalEncounter({
+        ...base,
+        sections: {
+          ...base.sections,
+          "therapeutic-appointment": {
+            ...v2,
+            diseaseAnamnesis: { ...v2.diseaseAnamnesis, selectedIds },
+          },
+        },
+      })).toThrow("must use schema v2");
+    }
+  });
+
   it("preserves legacy instrumental text and normalizes structured instrumental studies", () => {
     const base = {
       petId: "pet-1",
