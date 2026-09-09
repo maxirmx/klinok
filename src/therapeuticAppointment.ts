@@ -46,6 +46,7 @@ export interface TherapeuticSelectionDetail {
   key: string;
   label: string;
   value: string;
+  children: readonly TherapeuticSelectionDetail[];
 }
 
 export interface TherapeuticSelectionGroup {
@@ -487,6 +488,9 @@ const exclusiveMultipleOptionIds = new Set([
 ]);
 const mutuallyExclusivePairs = new Set([
   ["disease.vomiting.contents.foamy", "disease.vomiting.contents.not-foamy"].sort().join("|"),
+  ["disease.urination.change.absent", "disease.urination.change.absent-day"].sort().join("|"),
+  ["disease.urination.change.absent", "disease.urination.change.absent-days-2"].sort().join("|"),
+  ["disease.urination.change.absent-day", "disease.urination.change.absent-days-2"].sort().join("|"),
 ]);
 const locomotionNormalId = "exam.locomotion.state.normal";
 const locomotionFindingIds = new Set(
@@ -827,10 +831,16 @@ export function therapeuticSelectionDetails(
   categories: readonly TherapeuticCategoryDefinition[],
 ): TherapeuticSelectionDetail[] {
   return therapeuticSelectionGroups(selectedIds, categories).flatMap((group) =>
-    group.details.map((detail) => ({
+    flattenTherapeuticSelectionDetails(group.details).map((detail) => ({
       ...detail,
       label: detail.label ? `${group.label}: ${detail.label}` : group.label,
     })));
+}
+
+function flattenTherapeuticSelectionDetails(
+  details: readonly TherapeuticSelectionDetail[],
+): TherapeuticSelectionDetail[] {
+  return details.flatMap((detail) => [detail, ...flattenTherapeuticSelectionDetails(detail.children)]);
 }
 
 export function therapeuticSelectionGroups(
@@ -839,9 +849,17 @@ export function therapeuticSelectionGroups(
   textValues: Readonly<Record<string, string>> = {},
 ): TherapeuticSelectionGroup[] {
   return categories.flatMap((category) => {
+    type SelectionNode = Omit<TherapeuticSelectionDetail, "children"> & {
+      children: SelectionNode[];
+    };
+    const questionOrder = new Map(category.questions.map((item, index) => [item.id, index]));
+    const questionIdByOptionId = new Map(category.questions.flatMap((item) => (
+      item.options.map((option) => [option.id, item.id] as const)
+    )));
     const selectionDetails = category.questions.flatMap((item) => {
       const selected = therapeuticQuestionSelections(item, selectedIds);
       return selected.length ? [{
+        definition: item,
         key: item.id,
         label: item.readOnlyLabel ?? "",
         value: selected.map(therapeuticOptionLabel).join(", "),
@@ -849,9 +867,28 @@ export function therapeuticSelectionGroups(
     });
     const textDetails = (category.textFields ?? []).flatMap((item) => {
       const value = textValues[item.id]?.trim();
-      return value ? [{ key: item.id, label: item.readOnlyLabel, value }] : [];
+      return value ? [{ definition: item, key: item.id, label: item.readOnlyLabel, value }] : [];
     });
-    const details = [...selectionDetails, ...textDetails];
+    const flatDetails = [...selectionDetails, ...textDetails];
+    const nodeByKey = new Map<string, SelectionNode>(flatDetails.map(({ key, label, value }) => [key, {
+      key,
+      label,
+      value,
+      children: [],
+    }]));
+    const details: SelectionNode[] = [];
+    for (const { definition, key } of flatDetails) {
+      const node = nodeByKey.get(key)!;
+      const parent = (definition.visibleWhenAny ?? [])
+        .filter((optionId) => selectedIds.includes(optionId))
+        .map((optionId) => questionIdByOptionId.get(optionId))
+        .filter((questionId): questionId is string => Boolean(questionId && nodeByKey.has(questionId)))
+        .sort((left, right) => (questionOrder.get(right) ?? -1) - (questionOrder.get(left) ?? -1))
+        .map((questionId) => nodeByKey.get(questionId)!)
+        .at(0);
+      if (parent) parent.children.push(node);
+      else details.push(node);
+    }
     return details.length ? [{ key: category.id, label: category.label, details }] : [];
   });
 }

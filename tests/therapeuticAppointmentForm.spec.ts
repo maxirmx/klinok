@@ -149,6 +149,33 @@ describe("TherapeuticAppointmentForm", () => {
     expect(urination.get(".therapeutic-multiple-field").text()).toContain("Непродуктивное");
   });
 
+  it("replaces conflicting urination absence durations and keeps other signs selected", async () => {
+    const { wrapper, draft } = mountForm();
+    const urination = wrapper.findAll(".therapeutic-category")
+      .find((category) => category.get("h5").text() === "Мочеиспускание")!;
+    await urination.get("select").setValue("disease.urination.state.changed");
+    const checkbox = (label: string) => urination.findAll(".check-row")
+      .find((row) => row.text() === label)!.get<HTMLInputElement>("input");
+
+    await checkbox("Отсутствует").setValue(true);
+    await checkbox("Болезненное (дизурия)").setValue(true);
+    await checkbox("Частое (поллакиурия)").setValue(true);
+    await checkbox("В неположенном месте (периурия)").setValue(true);
+    await checkbox("Непродуктивное, по каплям (странгурия)").setValue(true);
+    await checkbox("Отсутствует более суток").setValue(true);
+
+    expect(draft.diseaseAnamnesis.selectedIds).toEqual([
+      "disease.urination.state.changed",
+      "disease.urination.change.absent-day",
+      "disease.urination.change.dysuria",
+      "disease.urination.change.pollakiuria",
+      "disease.urination.change.periuria",
+      "disease.urination.change.stranguria",
+    ]);
+    expect(checkbox("Отсутствует").element.checked).toBe(false);
+    expect(checkbox("Отсутствует более суток").element.checked).toBe(true);
+  });
+
   it("places headed comment sections last in every structured tab", () => {
     const { wrapper } = mountForm();
     const panels = wrapper.findAll("[role='tabpanel']").slice(0, 3);

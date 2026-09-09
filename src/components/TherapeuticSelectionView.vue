@@ -4,6 +4,7 @@
 // This file is a part of Klinok application
 
 import type { TherapeuticSelectionGroup } from "../therapeuticAppointment";
+import TherapeuticSelectionDetailList from "./TherapeuticSelectionDetailList.vue";
 
 defineProps<{ groups: readonly TherapeuticSelectionGroup[] }>();
 </script>
@@ -12,11 +13,7 @@ defineProps<{ groups: readonly TherapeuticSelectionGroup[] }>();
   <ul class="therapeutic-history-findings">
     <li v-for="group in groups" :key="group.key" class="therapeutic-history-finding-group">
       <span>{{ group.label }}</span>
-      <ul class="therapeutic-history-findings">
-        <li v-for="detail in group.details" :key="detail.key" class="therapeutic-history-finding-detail">
-          <span><template v-if="detail.label">{{ detail.label }}: </template>{{ detail.value }}</span>
-        </li>
-      </ul>
+      <TherapeuticSelectionDetailList :details="group.details" />
     </li>
   </ul>
 </template>

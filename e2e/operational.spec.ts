@@ -550,6 +550,10 @@ test("fresh provisioning, Doctor approval, grant, draft, and confirmation", asyn
   await doctorPage.getByLabel("Проведение исследования", { exact: true }).check();
   await therapeuticCard.getByLabel("Как давно началось").selectOption("problem.onset.today");
   await expect(therapeuticCard.getByLabel("Как давно началось")).toHaveValue("problem.onset.today");
+  await therapeuticCard.getByRole("combobox", { name: "Изменение активности", exact: true })
+    .selectOption("disease.activity.state.changed");
+  await therapeuticCard.getByRole("combobox", { name: "Как изменилась", exact: true })
+    .selectOption("disease.activity.change.less-active");
   await therapeuticCard.getByRole("tab", { name: "Осмотр" }).click();
   await therapeuticCard.getByRole("combobox", { name: "Цвет", exact: true })
     .selectOption("exam.mucosa.color.pale-pink");
@@ -1749,10 +1753,25 @@ test("fresh provisioning, Doctor approval, grant, draft, and confirmation", asyn
     "Рекомендации",
     "Назначения",
   ]);
+  expect(await ownerTherapeutic.locator("[data-document-section]").evaluateAll((sections) => sections.map(
+    (section) => section.getAttribute("data-document-section"),
+  ))).toEqual([
+    "disease",
+    "examination",
+    "recommendations",
+    "prescriptions",
+  ]);
   await expect(ownerTherapeutic.getByText("Проблема 1: Контрольный осмотр", { exact: true })).toBeVisible();
   const ownerProblem = ownerTherapeutic.locator(".therapeutic-history-problems article").filter({ hasText: "Контрольный осмотр" });
-  await expect(ownerProblem.getByText("Как давно началось?", { exact: true })).toBeVisible();
+  await expect(ownerProblem.getByText("Как давно началось", { exact: true })).toBeVisible();
   await expect(ownerProblem.getByText("Сегодня", { exact: true })).toBeVisible();
+  await expect(ownerTherapeutic.locator(
+    '[data-document-section="disease"] > .therapeutic-history-problems + .therapeutic-history-findings',
+  )).toBeVisible();
+  await expect(ownerTherapeutic.locator(
+    '[data-selection-key="disease.activity.state"] > .therapeutic-history-findings '
+      + '> [data-selection-key="disease.activity.change"]',
+  )).toContainText("Стало менее активным");
   const ownerMucosa = ownerTherapeutic.locator(".therapeutic-history-finding-group").filter({
     has: ownerPage.getByText("Видимые слизистые оболочки (ВСО)", { exact: true }),
   });

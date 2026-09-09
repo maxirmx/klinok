@@ -304,9 +304,31 @@ describe("therapeutic appointment template", () => {
       key: "exam.mucosa",
       label: "Видимые слизистые оболочки (ВСО)",
       details: [
-        { key: "exam.mucosa.color", label: "Цвет", value: "Бледно-розовые" },
-        { key: "exam.mucosa.moisture", label: "Влажность", value: "Влажные" },
+        { key: "exam.mucosa.color", label: "Цвет", value: "Бледно-розовые", children: [] },
+        { key: "exam.mucosa.moisture", label: "Влажность", value: "Влажные", children: [] },
       ],
+    }]);
+
+    const coat = therapeuticSelectionGroups([
+      "exam.coat.changes.hypotrichosis",
+      "exam.coat.hypotrichosis.distribution.local",
+      "exam.coat.hypotrichosis.number.single",
+    ], EXAMINATION_CATEGORIES).find((group) => group.key === "exam.coat")!;
+    expect(coat.details).toEqual([{
+      key: "exam.coat.changes",
+      label: "",
+      value: "Гипотрихоз",
+      children: [{
+        key: "exam.coat.hypotrichosis.distribution",
+        label: "",
+        value: "Локально",
+        children: [{
+          key: "exam.coat.hypotrichosis.number",
+          label: "",
+          value: "Единично",
+          children: [],
+        }],
+      }],
     }]);
   });
 
@@ -326,5 +348,35 @@ describe("therapeutic appointment template", () => {
     ], "exam.locomotion.findings.ataxia")).toEqual([
       "exam.locomotion.findings.ataxia",
     ]);
+  });
+
+  it("keeps urination absence durations exclusive while retaining other urinary signs", () => {
+    const changes = DISEASE_ANAMNESIS_CATEGORIES.find((category) => category.id === "disease.urination")!
+      .questions.find((question) => question.id === "disease.urination.change")!;
+    const absenceIds = [
+      "disease.urination.change.absent",
+      "disease.urination.change.absent-day",
+      "disease.urination.change.absent-days-2",
+    ];
+    const compatibleSigns = [
+      "disease.urination.change.dysuria",
+      "disease.urination.change.pollakiuria",
+      "disease.urination.change.periuria",
+      "disease.urination.change.stranguria",
+    ];
+
+    for (const current of absenceIds) {
+      for (const selected of absenceIds.filter((id) => id !== current)) {
+        expect(toggleTherapeuticMultipleSelection(changes, [
+          "disease.urination.state.changed",
+          current,
+          ...compatibleSigns,
+        ], selected)).toEqual([
+          "disease.urination.state.changed",
+          selected,
+          ...compatibleSigns,
+        ]);
+      }
+    }
   });
 });

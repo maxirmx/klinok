@@ -17,7 +17,12 @@ import {
   LIFE_ANAMNESIS_CATEGORIES,
   migrateTherapeuticAppointmentValue,
   therapeuticSelectionGroups,
+  type TherapeuticSelectionDetail,
 } from "../src/therapeuticAppointment";
+
+function flattenDetails(details: readonly TherapeuticSelectionDetail[]): TherapeuticSelectionDetail[] {
+  return details.flatMap((detail) => [detail, ...flattenDetails(detail.children)]);
+}
 
 function contractValue(): TherapeuticAppointmentSectionValue {
   return {
@@ -206,6 +211,7 @@ describe("therapeutic appointment shared v2 contract", () => {
       { ...base, diseaseAnamnesis: { ...base.diseaseAnamnesis, selectedIds: ["disease.activity.state.changed", "disease.activity.state.unchanged"] } },
       { ...base, diseaseAnamnesis: { ...base.diseaseAnamnesis, selectedIds: ["disease.activity.change.lethargic"] } },
       { ...base, diseaseAnamnesis: { ...base.diseaseAnamnesis, selectedIds: ["disease.vomiting.state.present", "disease.vomiting.contents.foamy", "disease.vomiting.contents.not-foamy"] } },
+      { ...base, diseaseAnamnesis: { ...base.diseaseAnamnesis, selectedIds: ["disease.urination.state.changed", "disease.urination.change.absent", "disease.urination.change.absent-day"] } },
       { ...base, lifeAnamnesis: { ...base.lifeAnamnesis, selectedIds: ["life.travel.places.nowhere", "life.travel.places.dacha"] } },
       { ...base, examination: { ...base.examination, selectedIds: ["exam.locomotion.state.normal", "exam.locomotion.findings.pain"] } },
     ];
@@ -214,8 +220,11 @@ describe("therapeutic appointment shared v2 contract", () => {
     const validMultiple = contractValue();
     validMultiple.diseaseAnamnesis.selectedIds = [
       "disease.urination.state.changed",
+      "disease.urination.change.absent-day",
       "disease.urination.change.dysuria",
       "disease.urination.change.pollakiuria",
+      "disease.urination.change.periuria",
+      "disease.urination.change.stranguria",
     ];
     expect(isContractTherapeuticV2Value(validMultiple)).toBe(true);
   });
@@ -267,6 +276,27 @@ describe("therapeutic appointment v2 migration", () => {
       diseaseAnamnesis: { text: "Старое описание приёма", problems: [], selectedIds: [] },
       migrationNotes: [],
     });
+    expect(migrateTherapeuticAppointmentValue(migrated)).toEqual(migrated);
+  });
+
+  it("keeps the most specific absence duration when normalizing a legacy conflict", () => {
+    const migrated = migrateTherapeuticAppointmentValue({
+      diseaseAnamnesis: {
+        selectedIds: [
+          "disease.urination.state.changed",
+          "disease.urination.change.absent",
+          "disease.urination.change.absent-day",
+          "disease.urination.change.absent-days-2",
+          "disease.urination.change.stranguria",
+        ],
+      },
+    });
+
+    expect(migrated.diseaseAnamnesis.selectedIds).toEqual([
+      "disease.urination.state.changed",
+      "disease.urination.change.absent-days-2",
+      "disease.urination.change.stranguria",
+    ]);
     expect(migrateTherapeuticAppointmentValue(migrated)).toEqual(migrated);
   });
 
@@ -410,8 +440,8 @@ describe("therapeutic appointment v2 read-only labels", () => {
     const activity = diseaseGroups.find((group) => group.key === "disease.activity")!;
     const urine = diseaseGroups.find((group) => group.key === "disease.urine")!;
 
-    expect(activity.details.map((detail) => detail.label)).toEqual(["", ""]);
-    expect(urine.details.map((detail) => detail.label)).toEqual(["", "Общесуточный объём"]);
+    expect(flattenDetails(activity.details).map((detail) => detail.label)).toEqual(["", ""]);
+    expect(flattenDetails(urine.details).map((detail) => detail.label)).toEqual(["", "Общесуточный объём"]);
   });
 
   it("honors the green-or-gray read-only marker for every catalog question", () => {
@@ -420,7 +450,7 @@ describe("therapeutic appointment v2 read-only labels", () => {
         question.options[0] ? [question.options[0].id] : []
       )));
       const details = new Map(therapeuticSelectionGroups(selectedIds, categories)
-        .flatMap((group) => group.details.map((detail) => [detail.key, detail.label] as const)));
+        .flatMap((group) => flattenDetails(group.details).map((detail) => [detail.key, detail.label] as const)));
       for (const question of categories.flatMap((category) => category.questions)) {
         expect(details.get(question.id), question.id).toBe(question.readOnlyLabel ?? "");
       }

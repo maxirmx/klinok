@@ -74,6 +74,14 @@ const exclusiveMultipleOptionIds = new Set([
   "exam.ear.skin.clean",
   "exam.coat.quality.shiny",
 ]);
+const mutuallyExclusiveOptionGroups: readonly (readonly string[])[] = [
+  ["disease.vomiting.contents.foamy", "disease.vomiting.contents.not-foamy"],
+  [
+    "disease.urination.change.absent",
+    "disease.urination.change.absent-day",
+    "disease.urination.change.absent-days-2",
+  ],
+];
 const questionDependencies: Readonly<Record<string, readonly string[]>> = {
   "disease.activity.baseline": ["disease.activity.state.unchanged"],
   "disease.activity.change": ["disease.activity.state.changed"],
@@ -418,7 +426,7 @@ function selectionsAreValid(value: unknown, sectionPrefix: "disease" | "life" | 
   })) return false;
   if (value.some((id) => exclusiveMultipleOptionIds.has(id)
     && value.some((other) => other !== id && questionIdForOption(other) === questionIdForOption(id)))) return false;
-  if (value.includes("disease.vomiting.contents.foamy") && value.includes("disease.vomiting.contents.not-foamy")) return false;
+  if (mutuallyExclusiveOptionGroups.some((group) => group.filter((id) => value.includes(id)).length > 1)) return false;
   if (value.includes("exam.locomotion.state.normal")
     && value.some((id) => id.startsWith("exam.locomotion.findings."))) return false;
   return true;
