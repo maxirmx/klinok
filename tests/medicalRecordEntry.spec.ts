@@ -573,6 +573,45 @@ describe("MedicalRecordEntry", () => {
     expect(wrapper.emitted("delete")?.[0]).toEqual([wrapper.props("record")]);
   });
 
+  it("preserves line breaks in standalone recommendations and procedures", () => {
+    const wrapper = mount(MedicalRecordEntry, {
+      props: {
+        record: {
+          ...record,
+          sections: {
+            "what-happened": record.sections["what-happened"],
+            procedures: {
+              kind: "procedures",
+              templateVersion: "free-text-v0",
+              value: { text: "Первая манипуляция\nВторая манипуляция" },
+              authorAccountId: "doctor-1",
+              authorDisplayName: "Вера Врач",
+              updatedAt: "2026-07-21T11:00:00.000Z",
+            },
+            recommendations: {
+              kind: "recommendations",
+              templateVersion: "free-text-v0",
+              value: { text: "Первая рекомендация\nВторая рекомендация" },
+              authorAccountId: "doctor-1",
+              authorDisplayName: "Вера Врач",
+              updatedAt: "2026-07-21T11:30:00.000Z",
+            },
+            outcome: record.sections.outcome,
+          },
+        },
+        mode: "details",
+        confirmed: true,
+        open: true,
+      },
+    });
+
+    const sectionText = (heading: string) => wrapper.findAll(".encounter-history-section")
+      .find((section) => section.get("h3").text() === heading)!
+      .get(".medical-history-text").text();
+    expect(sectionText("Манипуляции")).toBe("Первая манипуляция\nВторая манипуляция");
+    expect(sectionText("Рекомендации")).toBe("Первая рекомендация\nВторая рекомендация");
+  });
+
   it("renders diagnosis v2 without an absent confirmed diagnosis", () => {
     const diagnosis = record.sections.diagnosis!;
     const wrapper = mount(MedicalRecordEntry, {
@@ -839,7 +878,7 @@ describe("MedicalRecordEntry", () => {
     expect(gingivitis.get(":scope > span").text()).toBe("Гингивит/гингивостоматит: Наблюдается");
     expect(gingivitisGrade.get(":scope > span").text()).toBe("Незначительный");
     expect(gingivitisGrade.element.parentElement?.parentElement).toBe(gingivitis.element);
-    expect(section.get(".therapeutic-history-text").text()).toBe("Снижение аппетита\nсо вчерашнего дня");
+    expect(section.get(".medical-history-text").text()).toBe("Снижение аппетита\nсо вчерашнего дня");
   });
 
   it("omits empty therapeutic history blocks", () => {

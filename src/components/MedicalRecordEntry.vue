@@ -284,7 +284,7 @@ function emitToggle(event: Event) {
             <dd>{{ detail.value }}</dd>
           </div>
         </dl>
-        <p v-else-if="isFreeTextValue(item.section.value)">{{ freeText(item.section.value) }}</p>
+        <p v-else-if="isFreeTextValue(item.section.value)" class="medical-history-text">{{ freeText(item.section.value) }}</p>
         <div v-if="showAuthorAccountId" class="encounter-history-meta">
           <PersonIdentity
             :display-name="item.section.authorDisplayName"

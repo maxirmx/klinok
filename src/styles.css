@@ -1276,7 +1276,7 @@ label > input[type="checkbox"] {
 @container (max-width: 760px) {
   .therapeutic-problem-fields { grid-template-columns: minmax(0, 1fr); }
 }
-.therapeutic-history-text { white-space: pre-wrap; overflow-wrap: anywhere; }
+.medical-history-text { white-space: pre-wrap; overflow-wrap: anywhere; }
 .therapeutic-appointment-view { display: grid; gap: 14px; }
 .therapeutic-history-block { display: grid; min-width: 0; gap: 7px; }
 .therapeutic-history-problems { display: grid; gap: 7px; }
