@@ -53,6 +53,47 @@ async function expectInlineProjectionInput(selector: Locator, input: Locator): P
   expect(Math.abs(inputCenter - selectorCenter)).toBeLessThanOrEqual(1);
 }
 
+async function expectFormLabelsVerticallyCentered(fields: Locator): Promise<void> {
+  const measurements = await fields.evaluateAll((elements) => elements.map((field) => {
+    const label = field.querySelector(":scope > span");
+    const control = field.querySelector(":scope > :is(input, textarea, .app-select)");
+    if (!label || !control) return null;
+    const labelBox = label.getBoundingClientRect();
+    const controlBox = control.getBoundingClientRect();
+    return {
+      label: label.textContent?.trim(),
+      offset: Math.abs(
+        labelBox.top + labelBox.height / 2 - controlBox.top - controlBox.height / 2,
+      ),
+    };
+  }));
+  expect(measurements.length).toBeGreaterThan(0);
+  expect(measurements.every((measurement) => measurement && measurement.offset <= 1), JSON.stringify(measurements))
+    .toBe(true);
+}
+
+async function expectFormHeadersVerticallyCentered(rows: Locator): Promise<void> {
+  const measurements = await rows.evaluateAll((elements) => elements.map((row) => {
+    const heading = row.querySelector(":scope > :is(h4, h5)");
+    const controls = row.matches(".therapeutic-category:not(.therapeutic-short-text)")
+      ? row.querySelectorAll(":scope > .therapeutic-question-grid :is(input, textarea, .app-select)")
+      : row.querySelectorAll(":scope > textarea");
+    const control = [...controls].find((candidate) => candidate.getBoundingClientRect().height > 0);
+    if (!heading || !control) return null;
+    const headingBox = heading.getBoundingClientRect();
+    const controlBox = control.getBoundingClientRect();
+    return {
+      heading: heading.textContent?.trim(),
+      offset: Math.abs(
+        headingBox.top + headingBox.height / 2 - controlBox.top - controlBox.height / 2,
+      ),
+    };
+  }));
+  expect(measurements.length).toBeGreaterThan(0);
+  expect(measurements.every((measurement) => measurement && measurement.offset <= 1), JSON.stringify(measurements))
+    .toBe(true);
+}
+
 async function expectHierarchyIndent(parent: Locator, child: Locator, minimum = 18): Promise<void> {
   const [parentBox, childBox] = await Promise.all([parent.boundingBox(), child.boundingBox()]);
   expect(parentBox).not.toBeNull();
@@ -1225,6 +1266,13 @@ test("fresh provisioning, Doctor approval, grant, draft, and confirmation", asyn
   await expect(proceduresCard).not.toContainText("Временный универсальный шаблон");
 
   await therapeuticCard.getByRole("tab", { name: "Анамнез болезни" }).click();
+  const therapeuticDiseasePanel = therapeuticCard.locator(".therapeutic-tab-panel:not([hidden])");
+  await expectFormLabelsVerticallyCentered(therapeuticDiseasePanel.locator(
+    ".therapeutic-problem-card label:not(.check-row), .therapeutic-select-field",
+  ));
+  await expectFormHeadersVerticallyCentered(therapeuticDiseasePanel.locator(
+    ".therapeutic-category, .medical-card-comment-section",
+  ));
   const therapeuticImport = therapeuticCard.getByRole("button", { name: "Импортировать из «Что случилось»" });
   const therapeuticAdd = therapeuticCard.getByRole("button", { name: "Добавить проблему" });
   const therapeuticDelete = therapeuticCard.getByRole("button", { name: "Удалить проблему 1" });
