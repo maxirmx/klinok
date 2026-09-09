@@ -97,7 +97,7 @@ function tabPopulated(tab: TherapeuticTab): boolean {
         </div>
         <TherapeuticSelectionView v-if="diseaseSelectionGroups.length" :groups="diseaseSelectionGroups" />
         <dl v-if="value.diseaseAnamnesis.text" class="therapeutic-history-values therapeutic-history-comment-values">
-          <div><dt>Комментарий</dt><dd class="therapeutic-history-text">{{ value.diseaseAnamnesis.text }}</dd></div>
+          <div><dt>Комментарий</dt><dd class="medical-history-text">{{ value.diseaseAnamnesis.text }}</dd></div>
         </dl>
       </template>
       <template v-else-if="tab.id === 'life'">
@@ -106,21 +106,21 @@ function tabPopulated(tab: TherapeuticTab): boolean {
           v-if="value.lifeAnamnesis.currentMedications || value.lifeAnamnesis.allergies"
           class="therapeutic-history-values therapeutic-history-standalone-values"
         >
-          <div v-if="value.lifeAnamnesis.currentMedications"><dt>Получаемые в данный момент препараты</dt><dd class="therapeutic-history-text">{{ value.lifeAnamnesis.currentMedications }}</dd></div>
-          <div v-if="value.lifeAnamnesis.allergies"><dt>Аллергии</dt><dd class="therapeutic-history-text">{{ value.lifeAnamnesis.allergies }}</dd></div>
+          <div v-if="value.lifeAnamnesis.currentMedications"><dt>Получаемые в данный момент препараты</dt><dd class="medical-history-text">{{ value.lifeAnamnesis.currentMedications }}</dd></div>
+          <div v-if="value.lifeAnamnesis.allergies"><dt>Аллергии</dt><dd class="medical-history-text">{{ value.lifeAnamnesis.allergies }}</dd></div>
         </dl>
         <dl v-if="value.lifeAnamnesis.text" class="therapeutic-history-values therapeutic-history-comment-values">
-          <div><dt>Комментарий</dt><dd class="therapeutic-history-text">{{ value.lifeAnamnesis.text }}</dd></div>
+          <div><dt>Комментарий</dt><dd class="medical-history-text">{{ value.lifeAnamnesis.text }}</dd></div>
         </dl>
       </template>
       <template v-else-if="tab.id === 'examination'">
         <TherapeuticSelectionView v-if="examinationSelectionGroups.length" :groups="examinationSelectionGroups" />
         <dl v-if="value.examination.text" class="therapeutic-history-values therapeutic-history-comment-values">
-          <div><dt>Комментарий</dt><dd class="therapeutic-history-text">{{ value.examination.text }}</dd></div>
+          <div><dt>Комментарий</dt><dd class="medical-history-text">{{ value.examination.text }}</dd></div>
         </dl>
       </template>
-      <p v-else-if="tab.id === 'recommendations'" class="therapeutic-history-text">{{ value.recommendations }}</p>
-      <p v-else class="therapeutic-history-text">{{ value.prescriptions }}</p>
+      <p v-else-if="tab.id === 'recommendations'" class="medical-history-text">{{ value.recommendations }}</p>
+      <p v-else class="medical-history-text">{{ value.prescriptions }}</p>
     </section>
     <section v-if="value.migrationNotes.length" class="therapeutic-history-block therapeutic-migration-notes">
       <h4>Перенесённые данные</h4>
