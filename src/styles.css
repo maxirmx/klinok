@@ -1180,7 +1180,7 @@ label > input[type="checkbox"] {
   display: grid;
   grid-template-columns: minmax(130px, 190px) minmax(0, 1fr);
   min-width: 0;
-  align-items: start;
+  align-items: center;
   gap: 6px 10px;
 }
 .therapeutic-primary-text,
@@ -1242,12 +1242,19 @@ label > input[type="checkbox"] {
   border-radius: 8px;
   background: #fff;
 }
-.therapeutic-category > h5 { margin: 2px 0 0; }
+.therapeutic-category > h5 {
+  display: flex;
+  min-height: 32px;
+  align-items: center;
+  margin: 0;
+}
+.therapeutic-short-text { align-items: center; }
+.therapeutic-short-text > h5 { min-height: 0; }
 .medical-card-comment-section {
   display: grid;
   grid-template-columns: minmax(150px, .35fr) minmax(0, 1.65fr);
   min-width: 0;
-  align-items: start;
+  align-items: center;
   gap: 10px;
   padding: 9px;
   border: 1px solid var(--line);
@@ -1255,7 +1262,7 @@ label > input[type="checkbox"] {
   background: #fff;
 }
 .medical-card-comment-section > :is(h4, h5) {
-  margin: 2px 0 0;
+  margin: 0;
   font-size: .83em;
   font-weight: 700;
   line-height: 1.2;
