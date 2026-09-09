@@ -712,6 +712,7 @@ describe("MedicalRecordEntry", () => {
                     title: "Не ест",
                     description: "Отказывается от привычного корма",
                     onsetId: "problem.onset.yesterday",
+                    frequencyId: "problem.frequency.daily-1",
                     priorTherapyId: "problem.therapy.performed",
                     medicationUseId: "problem.medication.used",
                     medicationIds: ["problem.medication.type.nsaid"],
@@ -743,6 +744,8 @@ describe("MedicalRecordEntry", () => {
                     "exam.general.state.good",
                     "exam.mucosa.color.pale-pink",
                     "exam.mucosa.moisture.moist",
+                    "exam.oral.gingivitis.present",
+                    "exam.oral.gingivitis-grade.slight",
                   ],
                   coatComment: "",
                   locomotionComment: "",
@@ -778,11 +781,50 @@ describe("MedicalRecordEntry", () => {
     expect(section.text()).toContain("Содержится в квартире");
     expect(section.text()).toContain("Контроль через неделю");
     expect(section.text()).toContain("Диетический корм");
+    const disease = section.get('[data-document-section="disease"]');
+    expect(Array.from(disease.element.children).map((child) => (
+      child.className || child.tagName
+    ))).toEqual([
+      "H4",
+      "therapeutic-history-problems",
+      "therapeutic-history-findings",
+      "therapeutic-history-values therapeutic-history-comment-values",
+    ]);
+    expect(disease.findAll(".therapeutic-history-problems article").at(0)!
+      .findAll("dt").map((label) => label.text())).toEqual([
+      "Описание проблемы",
+      "Как давно началось",
+      "Периодичность проявления",
+      "Терапия до осмотра",
+      "Препараты",
+      "Применявшиеся препараты",
+      "Название препарата",
+      "Динамика",
+    ]);
+    const life = section.get('[data-document-section="life"]');
+    expect(Array.from(life.element.children).map((child) => (
+      child.className || child.tagName
+    ))).toEqual([
+      "H4",
+      "therapeutic-history-findings",
+      "therapeutic-history-values therapeutic-history-standalone-values",
+      "therapeutic-history-values therapeutic-history-comment-values",
+    ]);
+    expect(life.get(".therapeutic-history-standalone-values dt").text())
+      .toBe("Получаемые в данный момент препараты");
     const examination = section.findAll(".therapeutic-history-block")
       .find((block) => block.get("h4").text() === "Осмотр")!;
+    expect(Array.from(examination.element.children).map((child) => (
+      child.className || child.tagName
+    ))).toEqual([
+      "H4",
+      "therapeutic-history-findings",
+      "therapeutic-history-values therapeutic-history-comment-values",
+    ]);
     expect(examination.findAll(".therapeutic-history-finding-group > span").map((item) => item.text())).toEqual([
       "Общее состояние",
       "Видимые слизистые оболочки (ВСО)",
+      "Ротовая полость",
     ]);
     const mucosa = examination.findAll(".therapeutic-history-finding-group")
       .find((group) => group.get(":scope > span").text() === "Видимые слизистые оболочки (ВСО)")!;
@@ -790,6 +832,13 @@ describe("MedicalRecordEntry", () => {
       "Цвет: Бледно-розовые",
       "Влажность: Влажные",
     ]);
+    const oral = examination.findAll(".therapeutic-history-finding-group")
+      .find((group) => group.get(":scope > span").text() === "Ротовая полость")!;
+    const gingivitis = oral.get('[data-selection-key="exam.oral.gingivitis"]');
+    const gingivitisGrade = oral.get('[data-selection-key="exam.oral.gingivitis-grade"]');
+    expect(gingivitis.get(":scope > span").text()).toBe("Гингивит/гингивостоматит: Наблюдается");
+    expect(gingivitisGrade.get(":scope > span").text()).toBe("Незначительный");
+    expect(gingivitisGrade.element.parentElement?.parentElement).toBe(gingivitis.element);
     expect(section.get(".therapeutic-history-text").text()).toBe("Снижение аппетита\nсо вчерашнего дня");
   });
 

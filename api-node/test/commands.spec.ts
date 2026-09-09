@@ -646,7 +646,18 @@ describe("command boundary", () => {
 
     const v2 = {
       schemaVersion: 2 as const,
-      diseaseAnamnesis: { text: "Рвота", problems: [], selectedIds: [] },
+      diseaseAnamnesis: {
+        text: "Рвота",
+        problems: [],
+        selectedIds: [
+          "disease.urination.state.changed",
+          "disease.urination.change.absent-day",
+          "disease.urination.change.dysuria",
+          "disease.urination.change.pollakiuria",
+          "disease.urination.change.periuria",
+          "disease.urination.change.stranguria",
+        ],
+      },
       lifeAnamnesis: {
         text: "", selectedIds: [], ectoparasiteName: "", dewormingName: "", naturalDietProducts: "",
         commercialFoodName: "", diseaseName: "", currentMedications: "", allergies: "",
@@ -664,6 +675,11 @@ describe("command boundary", () => {
       ["disease.unknown.option"],
       ["disease.urination.change.dysuria"],
       ["disease.activity.state.unchanged", "disease.activity.state.changed"],
+      [
+        "disease.urination.state.changed",
+        "disease.urination.change.absent-day",
+        "disease.urination.change.absent-days-2",
+      ],
       [
         "disease.vomiting.state.present",
         "disease.vomiting.contents.foamy",

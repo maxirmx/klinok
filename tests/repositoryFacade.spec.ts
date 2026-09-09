@@ -16,6 +16,7 @@ const offlineState = vi.hoisted(() => ({
   commands: [] as Array<{ accountId: string; role: string; command: ClientCommand }>,
   notifications: [] as Array<Record<string, unknown>>,
   snapshots: new Map<string, AppSnapshotDto>(),
+  snapshotWrites: [] as AppSnapshotDto[],
   clearCalls: [] as string[],
 }));
 
@@ -37,6 +38,7 @@ vi.mock("../src/repositories/offlineStore", () => ({
   listCommands: vi.fn(async (accountId: string) => offlineState.commands.filter((item) => item.accountId === accountId).map((item) => structuredClone(item.command))),
   listNotifications: vi.fn(async (accountId: string) => offlineState.notifications.filter((item) => item.accountId === accountId).map((item) => ({ ...item }))),
   putCachedSnapshot: vi.fn(async (accountId: string, role: string, snapshot: AppSnapshotDto) => {
+    offlineState.snapshotWrites.push(snapshot);
     offlineState.snapshots.set(`${accountId}:${role}`, structuredClone(snapshot));
   }),
   recordNotification: vi.fn(async (notification: Record<string, unknown>) => {
@@ -50,6 +52,7 @@ vi.mock("../src/repositories/offlineStore", () => ({
 
 import { AuthClientError, type AuthClient } from "../src/repositories/authClient";
 import { KlinokRepository } from "../src/repositories";
+import { migrateTherapeuticAppointmentValue } from "../src/therapeuticAppointment";
 
 const timestamp = "2026-08-10T00:00:00.000Z";
 
@@ -146,6 +149,7 @@ beforeEach(() => {
   offlineState.commands = [];
   offlineState.notifications = [];
   offlineState.snapshots.clear();
+  offlineState.snapshotWrites = [];
   offlineState.clearCalls = [];
   vi.clearAllMocks();
 });
@@ -183,6 +187,31 @@ describe("Klinok repository facade", () => {
       });
       expect(offlineState.snapshots.get("account-1:owner")?.medical.records[0]!
         .sections["therapeutic-appointment"]?.templateVersion).toBe("therapeutic-appointment-v2");
+      expect(offlineState.snapshotWrites[0]).not.toBe(legacy);
+    } finally {
+      await repository.dispose();
+    }
+  });
+
+  it("preserves a snapshot that already contains a valid therapeutic v2 section", async () => {
+    const current = snapshot();
+    current.medical.records[0]!.sections["therapeutic-appointment"] = {
+      kind: "therapeutic-appointment",
+      templateVersion: "therapeutic-appointment-v2",
+      value: migrateTherapeuticAppointmentValue({ text: "Анамнез" }),
+      authorAccountId: "doctor-1",
+      authorDisplayName: "Иван Врач",
+      updatedAt: timestamp,
+    };
+    const repository = await KlinokRepository.create({
+      client: client({ state: vi.fn(async () => current) }),
+      session: { authenticated: true, accountId: "account-1" },
+      initialRole: "owner",
+      offlineLeaseDays: 7,
+    });
+
+    try {
+      expect(offlineState.snapshotWrites[0]).toBe(current);
     } finally {
       await repository.dispose();
     }

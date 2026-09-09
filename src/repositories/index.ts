@@ -46,6 +46,7 @@ function normalizeSnapshotTherapeuticAppointments(snapshot: AppSnapshotDto): App
   const records = snapshot.medical.records.map((record) => {
     const section = record.sections["therapeutic-appointment"] as (typeof record.sections)["therapeutic-appointment"] | undefined;
     if (!section) return record;
+    if (section.templateVersion === "therapeutic-appointment-v2" && isTherapeuticAppointmentValue(section.value)) return record;
     const value = migrateTherapeuticAppointmentValue(section.value);
     changed = true;
     return {
