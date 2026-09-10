@@ -53,6 +53,7 @@ const selectedIndicators = computed(() => selectedIds.value.flatMap((id) => {
   const indicator = indicatorMap.value.get(id);
   return indicator ? [indicator] : [];
 }));
+const indicatorColumnsWidth = computed(() => `${selectedIds.value.length * 10.5}rem`);
 const rows = computed(() => occurrences.value
   .filter(({ study }) => study.mode === "panel" && study.results.some((result) => selectedIds.value.includes(result.indicatorId)))
   .sort((left, right) => {
@@ -131,7 +132,15 @@ function removeIndicator(id: string) {
         @update:direction="updateDateSort"
       />
       <div class="owner-access-table-wrap laboratory-results-scroll">
-        <table class="owner-access-table laboratory-results">
+        <table
+          class="owner-access-table laboratory-results"
+          :style="{ '--laboratory-indicator-columns-width': indicatorColumnsWidth }"
+        >
+          <colgroup>
+            <col class="laboratory-results-date-column">
+            <col class="laboratory-results-study-column">
+            <col v-for="id in selectedIds" :key="id" class="laboratory-results-indicator-column">
+          </colgroup>
           <thead>
             <tr>
               <th :aria-sort="dateSort === 'asc' ? 'ascending' : 'descending'">

@@ -642,6 +642,12 @@ test("fresh provisioning, Doctor approval, grant, draft, and confirmation", asyn
   await hematocritInput.fill("42");
   const hemoglobinInput = await addLaboratoryIndicator(/Гемоглобин \(Hgb\)/, "Гемоглобин (Hgb)");
   await hemoglobinInput.fill("145");
+  const erythrocytesInput = await addLaboratoryIndicator(/Эритроциты \(RBC\)/, "Эритроциты (RBC)");
+  await erythrocytesInput.fill("7.2");
+  const plateletsInput = await addLaboratoryIndicator(/Тромбоциты \(Plt\)/, "Тромбоциты (Plt)");
+  await plateletsInput.fill("256");
+  const meanCellVolumeInput = await addLaboratoryIndicator(/Средний объем эритроцита \(MCV\)/, "Средний объем эритроцита (MCV)");
+  await meanCellVolumeInput.fill("45");
   expect(await laboratoryCard.locator(".laboratory-study-card").evaluate((card) => {
     const results = card.querySelector(".laboratory-panel-results");
     const create = card.querySelector(".laboratory-indicator-create");
@@ -1596,18 +1602,60 @@ test("fresh provisioning, Doctor approval, grant, draft, and confirmation", asyn
     ".owner-pet-detail > :is(.owner-epicrisis, .laboratory-comparison, .owner-medical-record)",
   ));
   await ownerPage.setViewportSize({ width: 1280, height: 720 });
-  await laboratoryComparison.locator(".app-catalog-toggle").click();
-  await laboratoryComparison.getByRole("option", { name: /Лейкоциты \(WBC\)/ }).click();
-  await laboratoryComparison.locator(".app-catalog-toggle").click();
-  await laboratoryComparison.getByRole("option", { name: /Гематокрит \(Hct, PCV\)/ }).click();
+  const laboratoryIndicatorToggle = laboratoryComparison.locator(".app-catalog-toggle");
+  for (const indicatorName of [
+    /Лейкоциты \(WBC\)/,
+    /Гематокрит \(Hct, PCV\)/,
+    /Гемоглобин \(Hgb\)/,
+    /Эритроциты \(RBC\)/,
+    /Тромбоциты \(Plt\)/,
+    /Средний объем эритроцита \(MCV\)/,
+  ]) {
+    await laboratoryIndicatorToggle.click();
+    await laboratoryComparison.getByRole("option", { name: indicatorName }).click();
+  }
   await expect(laboratoryComparison.locator(
     ".laboratory-results thead .laboratory-comparison-column-heading",
-  )).toHaveCount(2);
+  )).toHaveCount(6);
   await expect(laboratoryComparison.locator(".laboratory-comparison-selections")).toHaveCount(0);
   await expect(laboratoryComparison.locator(".laboratory-comparison-table")).toBeVisible();
   await expect(laboratoryComparison.locator(".laboratory-results-scroll")).toHaveClass(/owner-access-table-wrap/);
   await expect(laboratoryComparison.locator(".laboratory-results")).toHaveClass(/owner-access-table/);
   await expect(laboratoryComparison.locator(".laboratory-results")).toBeVisible();
+  await ownerPage.setViewportSize({ width: 900, height: 720 });
+  const laboratoryResultsScroll = laboratoryComparison.locator(".laboratory-results-scroll");
+  const laboratoryLayout = await laboratoryResultsScroll.evaluate((scroll) => {
+    const table = scroll.querySelector<HTMLTableElement>(".laboratory-results")!;
+    const headings = [...table.querySelectorAll<HTMLTableCellElement>("thead th")];
+    const panel = scroll.closest<HTMLElement>(".laboratory-comparison")!;
+    return {
+      scrollable: scroll.scrollWidth > scroll.clientWidth + 1,
+      panelFits: panel.scrollWidth <= panel.clientWidth + 1,
+      pageFits: document.documentElement.scrollWidth <= window.innerWidth + 1,
+      tableWidth: table.getBoundingClientRect().width,
+      dateWidth: headings[0]!.getBoundingClientRect().width,
+      studyWidth: headings[1]!.getBoundingClientRect().width,
+      indicatorWidths: headings.slice(2).map((heading) => heading.getBoundingClientRect().width),
+      dateWhiteSpace: getComputedStyle(headings[0]!).whiteSpace,
+      indicatorOverflowWrap: getComputedStyle(headings[2]!.querySelector<HTMLElement>(".laboratory-comparison-column-label")!).overflowWrap,
+    };
+  });
+  expect(laboratoryLayout).toMatchObject({
+    scrollable: true,
+    panelFits: true,
+    pageFits: true,
+    dateWhiteSpace: "nowrap",
+    indicatorOverflowWrap: "normal",
+  });
+  expect(laboratoryLayout.dateWidth).toBeGreaterThanOrEqual(118);
+  expect(laboratoryLayout.studyWidth).toBeGreaterThanOrEqual(222);
+  expect(Math.min(...laboratoryLayout.indicatorWidths)).toBeGreaterThanOrEqual(166);
+  expect(await laboratoryResultsScroll.evaluate((scroll) => {
+    scroll.scrollLeft = scroll.scrollWidth;
+    const offset = scroll.scrollLeft;
+    scroll.scrollLeft = 0;
+    return offset;
+  })).toBeGreaterThan(0);
   const laboratoryDateHeader = laboratoryComparison.locator(".laboratory-results th").first();
   await expect(laboratoryDateHeader).toHaveAttribute("aria-sort", "descending");
   await expectTopAligned(
@@ -1620,7 +1668,7 @@ test("fresh provisioning, Doctor approval, grant, draft, and confirmation", asyn
   await expect(laboratoryComparison).toBeVisible({ timeout: replicationTimeout });
   await expect(laboratoryComparison.locator(
     ".laboratory-results thead .laboratory-comparison-column-heading",
-  )).toHaveCount(2);
+  )).toHaveCount(6);
   const removeLeukocytes = laboratoryComparison.getByRole("button", { name: /Удалить показатель «Лейкоциты \(WBC\),/ });
   const removeHematocrit = laboratoryComparison.getByRole("button", { name: /Удалить показатель «Гематокрит \(Hct, PCV\), %»/ });
   await expect(removeLeukocytes).toBeVisible();
@@ -1639,6 +1687,12 @@ test("fresh provisioning, Doctor approval, grant, draft, and confirmation", asyn
   expect(Math.abs(removeControlMetrics.iconWidth - removeControlMetrics.fontSize)).toBeLessThanOrEqual(1);
   await removeLeukocytes.click();
   await expect(removeLeukocytes).toHaveCount(0);
+  await expect(laboratoryComparison.locator(
+    ".laboratory-results thead .laboratory-comparison-column-heading",
+  )).toHaveCount(5);
+  expect(await laboratoryComparison.locator(".laboratory-results").evaluate((table) =>
+    table.getBoundingClientRect().width
+  )).toBeLessThan(laboratoryLayout.tableWidth);
   await expect(removeHematocrit).toBeVisible();
   await expect(laboratoryComparison.getByRole("columnheader", { name: /Лейкоциты \(WBC\)/ })).toHaveCount(0);
   await expect(laboratoryComparison.getByRole("columnheader", { name: /Гематокрит \(Hct, PCV\)/ })).toBeVisible();

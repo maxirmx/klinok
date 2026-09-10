@@ -129,7 +129,15 @@ describe("LaboratoryComparison", () => {
     expect(comparison.text()).toContain("Реф.: 120–180");
     expect(comparison.findAll("tbody td").filter((cell) => cell.text() === "—")).toHaveLength(2);
     expect(comparison.get(".laboratory-results-scroll").classes()).toContain("owner-access-table-wrap");
-    expect(comparison.get(".laboratory-results").classes()).toContain("owner-access-table");
+    const resultsTable = comparison.get(".laboratory-results");
+    expect(resultsTable.classes()).toContain("owner-access-table");
+    expect(resultsTable.attributes("style")).toContain("--laboratory-indicator-columns-width: 21rem");
+    expect(resultsTable.findAll("col").map((column) => column.classes())).toEqual([
+      ["laboratory-results-date-column"],
+      ["laboratory-results-study-column"],
+      ["laboratory-results-indicator-column"],
+      ["laboratory-results-indicator-column"],
+    ]);
     expect(comparison.findAll(".laboratory-results th").map((header) => header.text())).toEqual([
       "Дата",
       "Исследование",
@@ -274,6 +282,9 @@ describe("LaboratoryComparison", () => {
     await removeHematocrit.trigger("click");
 
     expect(restored.findAll(".laboratory-results thead .laboratory-comparison-column-heading")).toHaveLength(1);
+    expect(restored.get(".laboratory-results").attributes("style"))
+      .toContain("--laboratory-indicator-columns-width: 10.5rem");
+    expect(restored.findAll(".laboratory-results-indicator-column")).toHaveLength(1);
     expect(restored.findAll(".laboratory-results th").map((header) => header.text())).not.toContain("Гематокрит, %");
     expect(restored.get(".laboratory-results").text()).toContain("Гемоглобин, г/л");
     expect(JSON.parse(localStorage.getItem(key) ?? "null").indicatorIds).toEqual([hemoglobin.indicatorId]);
