@@ -152,7 +152,11 @@ const activeOptionId = computed(() => showingCategories.value
       ? `${listboxId}-${optionIndex(filteredOptions.value[activeCategoryIndex.value]!.id)}`
       : `${listboxId}-category-${activeCategoryIndex.value - filteredOptions.value.length}`
   : activeIndex.value >= 0 ? `${listboxId}-${activeIndex.value}` : undefined);
-const rootItemCount = computed(() => filteredOptions.value.length + categories.value.length);
+const rootItemKeys = computed(() => [
+  ...filteredOptions.value.map((option) => `option:${option.id}`),
+  ...categories.value.map((category) => `category:${category.id}`),
+]);
+const rootItemCount = computed(() => rootItemKeys.value.length);
 const toggleTitle = computed(() => {
   if (!allOptions.value.length) return props.disabledTitle;
   return open.value ? props.hideOptionsTitle : props.showOptionsTitle;
@@ -323,15 +327,38 @@ function handleDocumentInteraction(event: Event) {
   if (open.value && !root.value?.contains(event.target as Node)) closeOptions();
 }
 
+function reconcileActiveIndex(
+  options: readonly string[],
+  previousOptions: readonly string[],
+  currentIndex: number,
+): number {
+  if (!options.length) return -1;
+  const activeId = previousOptions[currentIndex];
+  const nextIndex = activeId === undefined ? -1 : options.indexOf(activeId);
+  return nextIndex >= 0 ? nextIndex : Math.min(Math.max(currentIndex, 0), options.length - 1);
+}
+
 watch(() => [props.multiple, selectedLabel.value, customText.value, selectedIds.value.join("\u0000")], () => {
   if (!open.value) syncInputValue();
 }, { immediate: true });
-watch(allOptions, () => {
-  closeOptions();
+watch(allOptions, (options) => {
+  if (!options.length) {
+    closeOptions();
+    return;
+  }
+  if (open.value && activeCategoryId.value && !activeCategory.value) showCategories();
 });
-watch(visibleOptions, (options) => {
+watch(visibleOptions, (options, previousOptions) => {
   if (!open.value || showingCategories.value) return;
-  activeIndex.value = options.length ? Math.min(Math.max(activeIndex.value, 0), options.length - 1) : -1;
+  activeIndex.value = reconcileActiveIndex(
+    options.map((option) => option.id),
+    previousOptions.map((option) => option.id),
+    activeIndex.value,
+  );
+});
+watch(rootItemKeys, (items, previousItems) => {
+  if (!open.value || !showingCategories.value) return;
+  activeCategoryIndex.value = reconcileActiveIndex(items, previousItems, activeCategoryIndex.value);
 });
 onMounted(() => {
   document.addEventListener("pointerdown", handleDocumentInteraction);
