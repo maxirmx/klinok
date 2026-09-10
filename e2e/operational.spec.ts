@@ -1603,6 +1603,19 @@ test("fresh provisioning, Doctor approval, grant, draft, and confirmation", asyn
   ));
   await ownerPage.setViewportSize({ width: 1280, height: 720 });
   const laboratoryIndicatorToggle = laboratoryComparison.locator(".app-catalog-toggle");
+  await laboratoryIndicatorToggle.click();
+  await ownerPage.mouse.move(0, 0);
+  const ownerStateRefresh = ownerPage.waitForResponse((response) => {
+    const url = new URL(response.url());
+    return response.request().method() === "GET"
+      && url.pathname.endsWith("/api/state")
+      && url.searchParams.get("role") === "owner"
+      && (response.ok() || response.status() === 304);
+  });
+  await laboratoryIndicatorToggle.hover();
+  await ownerStateRefresh;
+  await expect(laboratoryIndicatorToggle).toHaveAttribute("aria-expanded", "true");
+  await laboratoryIndicatorToggle.click();
   for (const indicatorName of [
     /Лейкоциты \(WBC\)/,
     /Гематокрит \(Hct, PCV\)/,
