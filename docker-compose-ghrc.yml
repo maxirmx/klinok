@@ -69,3 +69,25 @@ services:
       default:
         aliases:
           - ui
+
+  db-backup:
+    image: ghcr.io/sw-consulting/db-backup:latest
+    restart: always
+    depends_on:
+      postgres-blue:
+        condition: service_healthy
+    environment:
+      DB_HOST: postgres-blue
+      DB_NAME: klinok
+      BACKUP_PROJECT_NAME: klinok
+      DB_USER: klinok
+      DB_PASSWORD: ${KLINOK_POSTGRES_PASSWORD:?KLINOK_POSTGRES_PASSWORD must be set}
+      BACKUP_DIR:  /backups
+      RETENTION_DAYS: "7"
+    volumes:
+      -  ${KLINOK_POSTGRES_BACKUP_DIR:-/srv/klinok/postgres.v3/backup}:/backups
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/healthcheck.sh"]
+      interval: 1h
+      timeout: 10s
+      retries: 3

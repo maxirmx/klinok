@@ -39,6 +39,7 @@ readonly COMPOSE=(docker compose --project-name "$PROJECT_NAME" --env-file "$ENV
 "${COMPOSE[@]}" config --quiet
 "${COMPOSE[@]}" pull
 "${COMPOSE[@]}" up -d postgres-blue
+"${COMPOSE[@]}" up -d db-backup
 "${COMPOSE[@]}" up -d --no-deps api-blue
 "${COMPOSE[@]}" up -d --no-deps ui-blue
 if [[ "$DEPLOYMENT_TARGET" == production ]]; then

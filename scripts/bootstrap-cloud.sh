@@ -49,7 +49,7 @@ readonly COMPOSE=(docker compose --project-name "$PROJECT_NAME" --env-file "$ENV
   -e KLINOK_BOOTSTRAP_EMAIL \
   -e KLINOK_BOOTSTRAP_PASSWORD \
   api-blue node api-node/dist/provision.js
-"${COMPOSE[@]}" up -d api-blue ui-blue
+"${COMPOSE[@]}" up -d api-blue ui-blue db-backup
 if [[ "$DEPLOYMENT_TARGET" == production ]]; then
   "${COMPOSE[@]}" up -d production-edge
 fi
