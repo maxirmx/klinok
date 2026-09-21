@@ -625,6 +625,7 @@ describe("Administrator pages", () => {
     expect(identity.element.children[1]).toBe(identity.get(".person-identity-id-row").element);
     expect(rejectDialog.attributes("aria-describedby"))
       .toBe(rejectDialog.get(".modal-dialog-description").attributes("id"));
+    expect(rejectDialog.get("label > span").text()).toBe("Комментарий пользователю, необязательно");
     await rejectDialog.get("textarea").setValue("Документы не подтверждены");
     await rejectDialog.get("form").trigger("submit");
     await flushPromises();
@@ -649,6 +650,31 @@ describe("Administrator pages", () => {
       role: rejected.role,
       status: rejected.status,
     }, "approved", undefined);
+  });
+
+  it("sends the optional user comment with a role revocation", async () => {
+    const approved = role("doctor-1", "doctor", "approved");
+    await setState({
+      profiles: [profile("doctor-1", "Анна", "Врач")],
+      roles: [approved],
+    });
+    const wrapper = await mountAt("/admin/home", "administrator-home");
+
+    await wrapper.get('button[title="Отозвать роль «Ветеринар»"]').trigger("click");
+    const revokeDialog = wrapper.get('[role="alertdialog"]');
+    expect(revokeDialog.get("label > span").text()).toBe("Комментарий пользователю, необязательно");
+    await revokeDialog.get("textarea").setValue("Нарушены правила работы в системе");
+    await revokeDialog.get("form").trigger("submit");
+    await flushPromises();
+
+    expect(appMocks.decideRole).toHaveBeenCalledWith({
+      accountId: approved.accountId,
+      requestId: approved.requestId,
+      revision: approved.revision,
+      role: approved.role,
+      status: approved.status,
+    }, "revoked", "Нарушены правила работы в системе");
+    expect(wrapper.find('[role="alertdialog"]').exists()).toBe(false);
   });
 
   it("searches, paginates, and remembers the selected page size", async () => {

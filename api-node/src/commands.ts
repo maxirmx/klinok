@@ -470,10 +470,11 @@ async function handleRole(client: PoolClient, actor: Actor, command: ClientComma
     if (before.immutable_bootstrap && role === "administrator") throw new ApiError(409, "BOOTSTRAP_ROLE_IMMUTABLE", "The bootstrap Administrator role is immutable.");
     expected(command, Number(before.revision));
     const restoring = status === "approved" && ["rejected", "revoked"].includes(String(before.status));
+    const reason = optionalText(payload.reason, 1_000);
     const updated = await client.query(
       `UPDATE roles SET status = $3, revision = revision + 1, decided_at = now(), decided_by = $4, reason = $5
        WHERE account_id = $1 AND role = $2 RETURNING *`,
-      [targetId, role, status, actor.accountId, optionalText(payload.reason, 1_000) ?? null],
+      [targetId, role, status, actor.accountId, reason ?? null],
     );
     const invalidatedTransferRequestIds: string[] = [];
     if (role === "owner" && status !== "approved") {
@@ -487,8 +488,11 @@ async function handleRole(client: PoolClient, actor: Actor, command: ClientComma
     }
     const roleLabel = role === "doctor" ? "Ветеринар" : role === "administrator" ? "Администратор" : "Владелец";
     const statusLabel = status === "approved" ? "одобрена" : status === "rejected" ? "отклонена" : "отозвана";
-    await enqueueAccountEmail(client, targetId, "Статус роли в системе \"Клинок\" изменён", `Роль «${roleLabel}» ${statusLabel}.`);
     const value = roleFromRow(updated.rows[0]);
+    const userComment = ["rejected", "revoked"].includes(status) ? value.reason : undefined;
+    const emailText = `Роль «${roleLabel}» ${statusLabel}.`
+      + (userComment ? `\n\nКомментарий администратора:\n${userComment}` : "");
+    await enqueueAccountEmail(client, targetId, "Статус роли в системе \"Клинок\" изменён", emailText);
     return { value, revision: value.revision, audit: {
       action: restoring ? "role.restored" : `role.${status}`,
       aggregateType: "role", aggregateId: value.requestId, relatedAccountId: targetId,

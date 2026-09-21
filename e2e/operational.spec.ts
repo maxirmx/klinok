@@ -407,7 +407,7 @@ async function queryPostgres(sql: string): Promise<string> {
   return result.stdout.trim();
 }
 
-test("fresh provisioning, Doctor approval, grant, draft, and confirmation", async ({ browser, request }) => {
+test("fresh provisioning, Doctor rejection comment, resubmission, approval, grant, draft, and confirmation", async ({ browser, request }) => {
   test.slow();
   const suffix = Date.now();
   const doctorEmail = `doctor-${suffix}@example.ru`;
@@ -445,7 +445,27 @@ test("fresh provisioning, Doctor approval, grant, draft, and confirmation", asyn
   await expect(requestRow).toBeVisible({ timeout: replicationTimeout });
   expect(await administratorPage.locator(".administrator-panel").evaluate((panel) => panel.scrollWidth <= panel.clientWidth + 1)).toBe(true);
   await administratorPage.setViewportSize({ width: 1280, height: 720 });
-  await requestRow.getByRole("button", { name: "Одобрить роль «Ветеринар»", exact: true }).click();
+  await requestRow.getByRole("button", { name: "Отклонить запрос роли «Ветеринар»", exact: true }).click();
+  const rejectionDialog = administratorPage.getByRole("alertdialog", { name: "Отклонить запрос роли «Ветеринар»?" });
+  const rejectionComment = "Документы не подтверждены\nПришлите скан диплома.";
+  await rejectionDialog.getByLabel("Комментарий пользователю, необязательно").fill(rejectionComment);
+  await rejectionDialog.getByRole("button", { name: "Отклонить", exact: true }).click();
+  await expect(rejectionDialog).toBeHidden();
+  await expectEmailText(request, doctorEmail, `Комментарий администратора:\n${rejectionComment}`);
+
+  await doctorPage.bringToFront();
+  await doctorPage.reload();
+  const rejectedDoctorRole = doctorPage.locator(".role-selection-card").filter({ hasText: "Ветеринар" });
+  await expect(rejectedDoctorRole.getByText("Отклонена", { exact: true })).toBeVisible({ timeout: replicationTimeout });
+  await rejectedDoctorRole.getByRole("button", { name: "Отправить запрос роли повторно", exact: true }).click();
+  await expect(rejectedDoctorRole.getByText("Ожидает решения", { exact: true })).toBeVisible({ timeout: replicationTimeout });
+
+  await administratorPage.bringToFront();
+  await administratorPage.reload();
+  await administratorPage.getByLabel("ФИО или идентификатор").fill("Алена");
+  const resubmittedRequestRow = administratorPage.locator(".administrator-table tbody tr").filter({ hasText: doctorAccountId });
+  await expect(resubmittedRequestRow).toBeVisible({ timeout: replicationTimeout });
+  await resubmittedRequestRow.getByRole("button", { name: "Одобрить роль «Ветеринар»", exact: true }).click();
   const approvalDialog = administratorPage.getByRole("dialog", { name: "Одобрить роль «Ветеринар»?" });
   await expect(approvalDialog).toBeVisible();
   await approvalDialog.getByRole("button", { name: "Одобрить", exact: true }).click();

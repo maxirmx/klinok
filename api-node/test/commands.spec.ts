@@ -127,6 +127,70 @@ function pendingTransfer(initiatedBy = "owner-1"): Record<string, unknown> {
   };
 }
 
+function roleDecisionHarness(beforeStatus: "pending" | "approved" | "rejected" | "revoked") {
+  let role = {
+    request_id: "doctor-role", account_id: "doctor-1", role: "doctor", status: beforeStatus, revision: 3,
+    profile_revision: 2, requested_at: timestamp, decided_at: null, decided_by: null, reason: null,
+    immutable_bootstrap: false,
+  } as Record<string, unknown>;
+  const emails: unknown[][] = [];
+  const query = vi.fn(async (sql: string, params: unknown[] = []) => {
+    if (sql.startsWith("SELECT pg_advisory_xact_lock")) return { rows: [], rowCount: 1 };
+    if (sql.startsWith("SELECT actor_account_id")) return { rows: [], rowCount: 0 };
+    if (sql.startsWith("SELECT credential_status")) return { rows: [{ credential_status: "active" }], rowCount: 1 };
+    if (sql.startsWith("SELECT 1 FROM roles")) return { rows: [{}], rowCount: 1 };
+    if (sql.startsWith("SELECT r.*, a.immutable_bootstrap")) return { rows: [{ ...role }], rowCount: 1 };
+    if (sql.startsWith("UPDATE roles SET status")) {
+      role = {
+        ...role,
+        status: params[2],
+        revision: Number(role.revision) + 1,
+        decided_at: timestamp,
+        decided_by: params[3],
+        reason: params[4],
+      };
+      return { rows: [{ ...role }], rowCount: 1 };
+    }
+    if (sql.startsWith("SELECT email FROM accounts")) return { rows: [{ email: "doctor@example.ru" }], rowCount: 1 };
+    if (sql.startsWith("INSERT INTO email_outbox")) {
+      emails.push(params);
+      return { rows: [], rowCount: 1 };
+    }
+    if (sql.startsWith("INSERT INTO operation_receipts")) return { rows: [], rowCount: 1 };
+    throw new Error(`Unexpected SQL: ${sql}`);
+  });
+  const client = { query };
+  const database = { transaction: vi.fn(async (work: (value: typeof client) => Promise<unknown>) => work(client)) };
+  const append = vi.fn(async () => ({ height: 1, blockHash: "a".repeat(64) }));
+  const ledger = {
+    isValid: vi.fn(() => true), append, noteCommitted: vi.fn(),
+  } as unknown as Ledger;
+  return {
+    service: new CommandService(database as never, ledger),
+    role: () => role,
+    emails,
+    append,
+  };
+}
+
+async function decideRole(
+  beforeStatus: "pending" | "approved" | "rejected" | "revoked",
+  status: "approved" | "rejected" | "revoked",
+  reason?: string,
+) {
+  const harness = roleDecisionHarness(beforeStatus);
+  const result = await harness.service.execute({ accountId: "admin-1" }, {
+    operationId: `role-${beforeStatus}-${status}-${reason ?? "empty"}`,
+    type: "role.decide",
+    activeRole: "administrator",
+    entityId: "doctor-role",
+    expectedRevision: 3,
+    createdAt: timestamp,
+    payload: { accountId: "doctor-1", role: "doctor", status, ...(reason === undefined ? {} : { reason }) },
+  });
+  return { ...harness, result };
+}
+
 async function confirmVaccinationAgainst(current: { confirmed: unknown; profile: unknown }, encounterDate: string, recordId = "record-1") {
   const record = {
     record_id: recordId, pet_id: "pet-1", revision: 2, author_account_id: "doctor-1", author_display_name: "Иван Врач",
@@ -175,6 +239,49 @@ async function confirmVaccinationAgainst(current: { confirmed: unknown; profile:
 }
 
 describe("command boundary", () => {
+  it.each([
+    ["pending", "rejected", "  Документы не подтверждены\nПришлите скан диплома.  ", "Документы не подтверждены\nПришлите скан диплома.",
+      "Роль «Ветеринар» отклонена.\n\nКомментарий администратора:\nДокументы не подтверждены\nПришлите скан диплома."],
+    ["approved", "revoked", "  Нарушены правила  ", "Нарушены правила",
+      "Роль «Ветеринар» отозвана.\n\nКомментарий администратора:\nНарушены правила"],
+  ] as const)("sends a normalized Administrator comment when a %s role is %s", async (before, status, input, stored, emailText) => {
+    const harness = await decideRole(before, status, input);
+
+    expect(harness.result).toMatchObject({ status: "applied", revision: 4, value: { status, reason: stored } });
+    expect(harness.role().reason).toBe(stored);
+    expect(harness.emails[0]?.slice(1)).toEqual([
+      "doctor@example.ru", "Статус роли в системе \"Клинок\" изменён", emailText,
+    ]);
+    expect(harness.append).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
+      metadata: expect.objectContaining({ role: "doctor", status, reason: stored }),
+    }));
+  });
+
+  it.each([
+    [undefined],
+    ["   "],
+  ])("keeps rejection email unchanged when its comment is %s", async (reason) => {
+    const harness = await decideRole("pending", "rejected", reason);
+
+    expect(harness.result).toMatchObject({ status: "applied", revision: 4, value: { status: "rejected" } });
+    expect(harness.role().reason).toBeNull();
+    expect(harness.emails[0]?.slice(1)).toEqual([
+      "doctor@example.ru", "Статус роли в системе \"Клинок\" изменён", "Роль «Ветеринар» отклонена.",
+    ]);
+  });
+
+  it.each([
+    ["pending", "approved", "Роль «Ветеринар» одобрена."],
+    ["rejected", "approved", "Роль «Ветеринар» одобрена."],
+  ] as const)("does not expose comments when a %s role is %s", async (before, status, emailText) => {
+    const harness = await decideRole(before, status, "Внутренняя заметка");
+
+    expect(harness.result).toMatchObject({ status: "applied", revision: 4 });
+    expect(harness.emails[0]?.slice(1)).toEqual([
+      "doctor@example.ru", "Статус роли в системе \"Клинок\" изменён", emailText,
+    ]);
+  });
+
   it("creates outgoing and incoming transfer requests only from authoritative parties", async () => {
     const outgoing = transferHarness();
     await expect(outgoing.service.execute({ accountId: "owner-1" }, {

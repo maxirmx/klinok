@@ -859,7 +859,7 @@ onBeforeUnmount(clearDirectoryRefreshTimer);
       </template>
       <form class="form-stack administrator-decision-form" @submit.prevent="submitDecision">
         <label v-if="destructiveDecision">
-          <span>Причина, необязательно</span>
+          <span>Комментарий пользователю, необязательно</span>
           <textarea v-model="decisionReason" rows="3" />
         </label>
         <div class="confirmation-dialog-actions">
