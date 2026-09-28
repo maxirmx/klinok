@@ -1,7 +1,7 @@
 {
   "name": "klinok",
   "private": true,
-  "version": "0.15.4",
+  "version": "0.15.5",
   "type": "module",
   "workspaces": [
     "api-node",
@@ -41,7 +41,8 @@
   "allowScripts": {
     "classic-level@3.0.0": true,
     "esbuild@0.28.2": true,
-    "argon2@0.44.0": true
+    "argon2@0.44.0": true,
+    "fsevents@2.3.3": true
   },
   "devDependencies": {
     "@eslint/js": "^9.39.4",

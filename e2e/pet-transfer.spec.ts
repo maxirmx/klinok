@@ -422,6 +422,46 @@ test("pet card moves in both directions through one overlay flow", async ({ brow
   await expect(blockedIncomingDialog.locator(".doctor-request-result")).toHaveCount(0);
   await expect(blockedIncomingDialog).toContainText("Питомцы не найдены.");
   await blockedIncomingDialog.getByRole("button", { name: "Закрыть" }).click();
+  await ownerBPage.goto("/owner/home");
+  const mobileTransferNavigation = ownerBPage.locator(".workspace-bottom-nav");
+  const mobileTransferButton = mobileTransferNavigation.getByRole("button", { name: "Передачи. Ожидают решения: 1" });
+  for (const width of [320, 390, 421, 767]) {
+    await ownerBPage.setViewportSize({ width, height: 844 });
+    await expect(mobileTransferButton).toBeVisible({ timeout: replicationTimeout });
+    await expect(mobileTransferButton.locator(".pending-count-badge")).toHaveText("1");
+    const bounds = await mobileTransferNavigation.evaluate((navigation) => {
+      const navigationBox = navigation.getBoundingClientRect();
+      const buttons = [...navigation.querySelectorAll("button")];
+      const transferButton = navigation.querySelector<HTMLButtonElement>('button[aria-label="Передачи. Ожидают решения: 1"]');
+      const badge = transferButton?.querySelector<HTMLElement>(".pending-count-badge");
+      const transferBox = transferButton?.getBoundingClientRect();
+      const badgeBox = badge?.getBoundingClientRect();
+      return {
+        viewportWidth: window.innerWidth,
+        navigationWidth: navigation.clientWidth,
+        navigationScrollWidth: navigation.scrollWidth,
+        buttonCount: buttons.length,
+        buttonsFit: buttons.every((button) => {
+          const box = button.getBoundingClientRect();
+          return box.left >= navigationBox.left - 1 && box.right <= navigationBox.right + 1;
+        }),
+        badgeFits: Boolean(transferBox && badgeBox
+          && badgeBox.left >= transferBox.left - 1 && badgeBox.right <= transferBox.right + 1),
+        navigationFits: navigationBox.left >= -1 && navigationBox.right <= window.innerWidth + 1,
+      };
+    });
+    expect(bounds.viewportWidth).toBe(width);
+    expect(bounds.buttonCount).toBe(5);
+    expect(bounds.navigationScrollWidth).toBeLessThanOrEqual(bounds.navigationWidth + 1);
+    expect(bounds.buttonsFit).toBe(true);
+    expect(bounds.badgeFits).toBe(true);
+    expect(bounds.navigationFits).toBe(true);
+  }
+  await ownerBPage.setViewportSize({ width: 390, height: 844 });
+  await mobileTransferButton.click();
+  await expect(ownerBPage).toHaveURL(/\/owner\/transfers$/);
+  await expect(ownerBPage.locator(".transfer-table tbody tr").filter({ hasText: petId })).toContainText("Ожидает решения");
+  await ownerBPage.setViewportSize({ width: 1280, height: 720 });
   const emailedConfirmationLink = await transferConfirmationLink(request, ownerBEmail);
   const emailedConfirmationUrl = new URL(emailedConfirmationLink);
   expect(emailedConfirmationUrl.pathname).toBe("/owner/transfers");
@@ -450,6 +490,9 @@ test("pet card moves in both directions through one overlay flow", async ({ brow
   await expect(ownerBPage.getByText("Передача питомца завершена.")).toBeVisible();
   await expect(firstTransferRow).toContainText("Завершена");
   await expect(firstTransferRow.locator("td").last()).toBeEmpty();
+  await ownerBPage.setViewportSize({ width: 390, height: 844 });
+  await expect(mobileTransferNavigation.getByRole("button", { name: /^Передачи/ })).toHaveCount(0);
+  await ownerBPage.setViewportSize({ width: 1280, height: 720 });
 
   await expectEmailText(request, ownerAEmail, "передано новому владельцу");
   await expectEmailText(request, ownerBEmail, "получили управление");

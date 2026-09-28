@@ -1846,7 +1846,7 @@ label > input[type="checkbox"] {
 .workspace-bottom-nav .pending-count-badge {
   position: absolute;
   top: 3px;
-  left: calc(50% + 7px);
+  right: 2px;
 }
 .workspace-bottom-nav :is(a, button).active { background: var(--brand-bg-sky); color: var(--brand-sky); }
 .workspace-bottom-nav.role-owner .workspace-role-nav-item { color: var(--brand-orange); }

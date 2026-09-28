@@ -290,6 +290,35 @@ describe("Owner pages", () => {
     expect(detail.find(".pending-count-badge").exists()).toBe(false);
   });
 
+  it("shows a narrow transfer notification only to the owner who must decide", async () => {
+    await setSessionAccountId("owner-2");
+    await setMedical(snapshot({ transferRequests: [pendingTransfer] }));
+    const wrapper = await mountAt("/owner/home", "owner-home");
+
+    const sidebarTransfers = wrapper.get('.workspace-sidebar-nav a[href="/owner/transfers"]');
+    expect(sidebarTransfers.get(".pending-count-badge").text()).toBe("1");
+    expect(wrapper.get('.workspace-bottom-nav button[title="Питомцы"]').find(".pending-count-badge").exists()).toBe(false);
+    const mobileTransfers = wrapper.get('.workspace-bottom-nav button[aria-label="Передачи. Ожидают решения: 1"]');
+    expect(mobileTransfers.attributes("title")).toBe("Передачи. Ожидают решения: 1");
+    expect(mobileTransfers.get(".pending-count-badge").text()).toBe("1");
+    expect(wrapper.findAll(".workspace-bottom-nav button")).toHaveLength(5);
+    await mobileTransfers.trigger("click");
+    await flushPromises();
+    expect(wrapper.vm.$route.path).toBe("/owner/transfers");
+    expect(mobileTransfers.classes()).toContain("active");
+
+    await setMedical(snapshot({ transferRequests: [{ ...pendingTransfer, status: "completed", revision: 2 }] }));
+    await flushPromises();
+    expect(wrapper.find('.workspace-bottom-nav button[title^="Передачи"]').exists()).toBe(false);
+    expect(sidebarTransfers.find(".pending-count-badge").exists()).toBe(false);
+
+    await setSessionAccountId("owner-1");
+    await setMedical(snapshot({ pets: [pet], transferRequests: [pendingTransfer] }));
+    await flushPromises();
+    expect(wrapper.find('.workspace-bottom-nav button[title^="Передачи"]').exists()).toBe(false);
+    expect(sidebarTransfers.find(".pending-count-badge").exists()).toBe(false);
+  });
+
   it("renders the pet ribbon and nested route navigation", async () => {
     await setMedical(snapshot({ pets: [pet] }));
     const wrapper = await mountAt("/owner/home", "owner-home");
