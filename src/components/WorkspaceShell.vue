@@ -65,13 +65,20 @@ const ownerRootNavigation: WorkspacePathNavItem = {
   path: "/owner/home",
   exact: true,
 };
+const ownerTransferNavigation: WorkspacePathNavItem = {
+  id: "owner-transfers",
+  label: "Передачи",
+  icon: "arrow-right-to-city",
+  path: "/owner/transfers",
+  exact: true,
+};
 const ownerPending = computed(() => ownerPendingApprovals(appState.medical));
 const ownerTransferPending = computed(() => ownerPendingTransferCount(appState.medical, appState.session.accountId ?? ""));
 const administratorPendingCount = computed(() => props.administratorPendingCount
   ?? administratorPendingRequestCount(appState.control));
 const ownerChildNavigation = computed<WorkspacePendingNavItem[]>(() => [
   { id: "owner-add-pet", label: "Добавить питомца", icon: "plus", path: "/owner/pets/new", exact: true, pendingCount: 0 },
-  { id: "owner-transfers", label: "Передачи", icon: "arrow-right-to-city", path: "/owner/transfers", exact: true, pendingCount: ownerTransferPending.value },
+  { ...ownerTransferNavigation, pendingCount: ownerTransferPending.value },
   ...appState.medical.pets.map((pet) => ({
     id: `owner-pet-${pet.petId}`,
     label: pet.name,
@@ -277,6 +284,19 @@ function administratorItemPendingCount(item: WorkspacePathNavItem): number {
             <AppIcon :name="ownerRootNavigation.icon" />
             <span>{{ ownerRootNavigation.label }}</span>
             <PendingCountBadge :count="ownerPending.total" />
+          </button>
+          <button
+            v-if="ownerTransferPending > 0"
+            class="workspace-role-nav-item"
+            :class="{ active: pathActive(ownerTransferNavigation.path, ownerTransferNavigation.exact) }"
+            type="button"
+            :title="pendingNavigationLabel(ownerTransferNavigation.label, ownerTransferPending)"
+            :aria-label="pendingNavigationLabel(ownerTransferNavigation.label, ownerTransferPending)"
+            @click="selectPath(ownerTransferNavigation.path)"
+          >
+            <AppIcon :name="ownerTransferNavigation.icon" />
+            <span>{{ ownerTransferNavigation.label }}</span>
+            <PendingCountBadge :count="ownerTransferPending" />
           </button>
         </template>
         <template v-else-if="effectiveRole === 'administrator'">
